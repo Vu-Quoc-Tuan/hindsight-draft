@@ -57,6 +57,9 @@ class Tier2AuditAnalysis:
     structural_audit: StructuralAuditResult
     over_merge: OverMergeVerdict
     reason: str | None = None
+    config_version: str | None = None
+    epsilon: float | None = None
+    parameter_provenance: dict[str, str] | None = None
 
 
 def analyze_structural_audit(
@@ -128,4 +131,6 @@ def analyze_structural_audit(
         structural_roles=roles,
         structural_audit=structural_audit,
         over_merge=over_merge,
+        config_version=mining_config.config_version,
+        epsilon=epsilon,
     )

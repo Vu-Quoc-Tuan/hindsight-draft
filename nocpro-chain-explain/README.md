@@ -28,6 +28,7 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | Explanation Drift (Tier-1A basic) | P1-Core | done |
 | **MVP complete** | | **8/8** |
 | Basic structural audit: audit graph, deterministic cuts, conductance | P0 | done |
+| Tier-2 async per-chain job boundary + versioned cache | P0 | done |
 | Multi-evidence over-merge verdict | P1-Core | done |
 | STRUCTURAL role (Tier-2), REDUNDANCY role (Tier-1B) | P0/§4B | done |
 | CommonDependency: SHARED_ANCESTOR + SHARED_ACTIVE_PATH (`channels/common_dependency.py`) | P1-Core | done |
