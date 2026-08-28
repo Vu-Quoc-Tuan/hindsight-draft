@@ -4,11 +4,22 @@
                        top IDENTITY descriptor predicates .
                        size bin . duration bin ]
 
-Backoff (§4A "BACKOFF type->family->category"): when no family taxonomy is
-supplied, the family term falls back to ``alarm_type_name`` -- the nearest
-level actually present in the real export -- rather than inventing a family
-label. ``device_type_name`` is a real column and is used directly, never
-guessed from a device-code prefix.
+Alarm taxonomy resolution is a **data-adapter fallback**, not the
+``BACKOFF type->family->category`` rule the spec defines for ``T_delay``/``H``
+(§4A). That rule backs a *finer* level off to a *coarser* one; using
+``alarm_type_name`` when family is unavailable is the opposite direction, so it
+is labeled ``TYPE_FALLBACK`` rather than described as backoff:
+
+    1. canonical alarm_family, if a real taxonomy resolves it
+    2. else alarm_type_name, labeled TYPE_FALLBACK
+    3. else no term is emitted (never guessed from alarm_name/device_code)
+
+FAMILY and TYPE_FALLBACK terms are namespaced by level before entering the term
+vector, so a family value and a differently-sourced type value that happen to
+share spelling can never collide in the vocabulary.
+
+``device_type_name`` is a real column and is used verbatim, never guessed from
+a device-code prefix.
 
 Everything here is deterministic given (chain members, taxonomy, descriptors,
 config): no randomness, so the same input always yields the same fingerprint.
@@ -18,6 +29,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from enum import Enum
 
 from channels.semantic import AlarmTaxonomy, EMPTY_TAXONOMY
 from descriptor.mining import Descriptor
@@ -31,6 +43,14 @@ DEFAULT_DURATION_BINS: tuple[int, ...] = (10, 30, 60, 300, 900, 3600, 86400)
 
 #: How many top IDENTITY predicates feed the fingerprint.
 DEFAULT_TOP_DESCRIPTOR_PREDICATES = 5
+
+
+class TaxonomyLevel(str, Enum):
+    """Which level resolved the alarm-taxonomy term for one alarm."""
+
+    FAMILY = "FAMILY"
+    #: Resolved from alarm_type_name because no family taxonomy matched.
+    TYPE_FALLBACK = "TYPE_FALLBACK"
 
 
 def _bin_index(value: int, edges: tuple[int, ...]) -> int:
@@ -58,17 +78,36 @@ def duration_bin(
     return f"duration_bin_{_bin_index(duration_seconds, edges)}"
 
 
-def _family_term(alarm: IngestedAlarm, taxonomy: AlarmTaxonomy) -> str | None:
-    """Family term with backoff to ``alarm_type_name`` when untaxonomized."""
+@dataclass(frozen=True)
+class AlarmTaxonomyTerm:
+    """A resolved taxonomy value plus the level that resolved it."""
+
+    value: str
+    level: TaxonomyLevel
+
+    @property
+    def namespaced(self) -> str:
+        """``LEVEL:value``, so FAMILY and TYPE_FALLBACK never share a vocabulary slot."""
+        return f"{self.level.value}:{self.value}"
+
+
+def _family_term(
+    alarm: IngestedAlarm, taxonomy: AlarmTaxonomy
+) -> AlarmTaxonomyTerm | None:
+    """Resolve the alarm-taxonomy term, tagged with the level that resolved it."""
     name = (alarm.alarm_name or "").strip() or None
-    if name is None:
-        return None
-    family = taxonomy.family_of(name)
-    if family is not None:
-        return family
-    # Backoff: nearest real column above raw alarm_name.
-    alarm_type = alarm.raw.get("alarm_type_name")
-    return (alarm_type or "").strip() or None
+    if name is not None:
+        family = taxonomy.family_of(name)
+        if family is not None:
+            return AlarmTaxonomyTerm(value=family, level=TaxonomyLevel.FAMILY)
+
+    # No taxonomy match: fall to alarm_type_name, explicitly labeled as such.
+    alarm_type = (alarm.raw.get("alarm_type_name") or "").strip() or None
+    if alarm_type is not None:
+        return AlarmTaxonomyTerm(value=alarm_type, level=TaxonomyLevel.TYPE_FALLBACK)
+
+    # Neither resolves: no term. Never guessed from alarm_name/device_code.
+    return None
 
 
 def _device_type_term(alarm: IngestedAlarm) -> str | None:
@@ -93,7 +132,16 @@ class TermVector:
 
 @dataclass(frozen=True)
 class ChainFingerprint:
-    """Deterministic fingerprint for one chain, ready for cosine similarity."""
+    """Deterministic fingerprint for one chain, ready for cosine similarity.
+
+    The fingerprint's raw term vectors are model-independent; ``TfIdfModel``
+    weighting is applied at scoring time. But a *scored* result (e.g. cached
+    for reuse) is only meaningful under the model that produced it, so
+    ``scored_with_model_version`` lets a cached/persisted fingerprint record
+    which model last scored it. ``None`` means "never scored", which is the
+    normal state for a freshly built fingerprint headed into
+    :func:`fit_fingerprint_model`.
+    """
 
     chain_id: str
     lineage_component_id: str | None
@@ -103,6 +151,39 @@ class ChainFingerprint:
     size_bin: str
     duration_bin: str
     member_count: int
+    scored_with_model_version: str | None = None
+
+    def scored_with(self, model_version: str) -> ChainFingerprint:
+        """Return a copy stamped with the model version that scored it."""
+        from dataclasses import replace
+
+        return replace(self, scored_with_model_version=model_version)
+
+    def active_blocks(self) -> tuple[str, ...]:
+        """Fingerprint blocks that actually contributed a term.
+
+        Used for the "basis N/5 feature blocks available" diagnostic: a
+        cosine=1.0 result between two singletons with an empty taxonomy is a
+        real collision under a *reduced* representation, not proof the two
+        incidents are identical. The UI must be able to say which blocks were
+        actually compared.
+        """
+        blocks = []
+        if self.family_terms.counts:
+            blocks.append("alarm_taxonomy")
+        if self.device_type_terms.counts:
+            blocks.append("device_type")
+        if self.descriptor_terms:
+            blocks.append("identity_descriptors")
+        # size_bin/duration_bin are always present by construction.
+        blocks.append("size_bin")
+        blocks.append("duration_bin")
+        return tuple(blocks)
+
+    def missing_blocks(self) -> tuple[str, ...]:
+        all_blocks = ("alarm_taxonomy", "device_type", "identity_descriptors", "size_bin", "duration_bin")
+        active = set(self.active_blocks())
+        return tuple(b for b in all_blocks if b not in active)
 
 
 def build_fingerprint(
@@ -119,7 +200,9 @@ def build_fingerprint(
 ) -> ChainFingerprint:
     """Build a chain's fingerprint from its members and mined descriptors."""
     family_terms = [
-        term for alarm in alarms if (term := _family_term(alarm, taxonomy)) is not None
+        term.namespaced
+        for alarm in alarms
+        if (term := _family_term(alarm, taxonomy)) is not None
     ]
     device_terms = [
         term for alarm in alarms if (term := _device_type_term(alarm)) is not None
@@ -142,11 +225,7 @@ def build_fingerprint(
 
 @dataclass
 class TfIdfModel:
-    """Document-frequency model fit over a corpus of chain fingerprints.
-
-    Fit once per snapshot (or benchmark corpus) so idf weights are shared and
-    comparable across every chain scored against them.
-    """
+    """Document-frequency model fit over a corpus of chain fingerprints."""
 
     document_count: int
     document_frequency: dict[str, int]
@@ -173,3 +252,55 @@ class TfIdfModel:
 
     def tfidf(self, vector: TermVector) -> dict[str, float]:
         return {term: count * self.idf(term) for term, count in vector.counts.items()}
+
+
+@dataclass(frozen=True)
+class FingerprintModel:
+    """Everything needed to score fingerprints comparably, bundled as one unit.
+
+    The spec requires cosine to be deterministic, but does not say which
+    corpus the IDF weights are fit on. Left as two loose ``TfIdfModel``
+    instances, nothing stops a caller from re-fitting per query batch or
+    mixing a cached fingerprint's vector with a model fit at a different time
+    -- comparing scores that no longer live in the same vector space.
+
+    Bundling family/device IDF, the taxonomy/descriptor/bin config that
+    produced the fingerprints, and an explicit ``model_version`` into one
+    object makes "same model" a single object identity check instead of an
+    implicit assumption. All fingerprints scored against each other in one
+    request MUST be built with the same ``model_version``, and MUST be scored
+    through the same ``FingerprintModel`` instance.
+    """
+
+    model_version: str
+    family_model: TfIdfModel
+    device_model: TfIdfModel
+    size_bin_edges: tuple[int, ...]
+    duration_bin_edges: tuple[int, ...]
+    top_descriptor_predicates: int
+
+
+def fit_fingerprint_model(
+    fingerprints: list[ChainFingerprint],
+    *,
+    model_version: str,
+    size_bin_edges: tuple[int, ...] = DEFAULT_SIZE_BINS,
+    duration_bin_edges: tuple[int, ...] = DEFAULT_DURATION_BINS,
+    top_descriptor_predicates: int = DEFAULT_TOP_DESCRIPTOR_PREDICATES,
+) -> FingerprintModel:
+    """Fit one versioned model over an index corpus.
+
+    Fit once per index build. Re-fitting per query batch is exactly the
+    inconsistency this type exists to prevent; encode the query fingerprint
+    with the already-fit model instead of fitting a new one from it.
+    """
+    family_model = TfIdfModel.fit([fp.family_terms for fp in fingerprints])
+    device_model = TfIdfModel.fit([fp.device_type_terms for fp in fingerprints])
+    return FingerprintModel(
+        model_version=model_version,
+        family_model=family_model,
+        device_model=device_model,
+        size_bin_edges=size_bin_edges,
+        duration_bin_edges=duration_bin_edges,
+        top_descriptor_predicates=top_descriptor_predicates,
+    )
