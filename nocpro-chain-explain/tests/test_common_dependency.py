@@ -18,6 +18,9 @@ import pytest
 
 from channels import (
     ActivePathIndex,
+    ChannelFamily,
+    DepUpstreamActivePath,
+    DepUpstreamAncestor,
     DependencySemantic,
     DirectedHierarchy,
     VerifiedPath,
@@ -30,6 +33,7 @@ from channels import (
 from channels.base import EvidenceState
 from channels.dependency import ResourceResolver
 from libs.contracts import IngestedAlarm
+from libs.provenance import NormalizedChannel, build_derivation_groups
 
 
 def alarm(alarm_id: str) -> IngestedAlarm:
@@ -156,7 +160,75 @@ def test_shared_ancestor_provenance_is_carried():
     result = evaluate_shared_ancestor(
         alarm("a1"), alarm("a2"), hierarchy=hierarchy_local, resolver=resolver
     )
-    assert result.derivation_tag == DependencySemantic.SHARED_ANCESTOR.value
+    assert result.derivation_tag == "dependency:unversioned"
+    assert result.dependency_semantic is DependencySemantic.SHARED_ANCESTOR
+
+
+def test_dep_upstream_contract_separates_provider_but_deduplicates_same_source():
+    hierarchy = build_directed_hierarchy(
+        [
+            {
+                "source_resource_id": "ROOT",
+                "target_resource_id": "R1",
+                "relation_type": "LOGICAL_DEPENDENCY",
+                "directed": True,
+            },
+            {
+                "source_resource_id": "ROOT",
+                "target_resource_id": "R2",
+                "relation_type": "LOGICAL_DEPENDENCY",
+                "directed": True,
+            },
+        ]
+    )
+    paths = build_active_path_index(
+        [
+            {"path_id": "p1", "resource_id": "R1", "nodes": ["R1", "ROOT"]},
+            {"path_id": "p2", "resource_id": "R2", "nodes": ["R2", "ROOT"]},
+        ]
+    )
+    resolver = ResourceResolver(resolved={"a1": "R1", "a2": "R2"})
+    ancestor = DepUpstreamAncestor(
+        hierarchy=hierarchy,
+        resolver=resolver,
+        source_ref="topology-v17",
+    ).evaluate(alarm("a1"), alarm("a2"))
+    active_path = DepUpstreamActivePath(
+        path_index=paths,
+        resolver=resolver,
+        source_ref="topology-v17",
+    ).evaluate(alarm("a1"), alarm("a2"))
+
+    assert ancestor.channel_id == "DepUpstreamAncestor@topology-v17"
+    assert active_path.channel_id == "DepUpstreamActivePath@topology-v17"
+    assert ancestor.channel_family is ChannelFamily.DEP_UPSTREAM
+    assert active_path.channel_family is ChannelFamily.DEP_UPSTREAM
+    assert ancestor.dependency_semantic is DependencySemantic.SHARED_ANCESTOR
+    assert active_path.dependency_semantic is DependencySemantic.SHARED_ACTIVE_PATH
+    assert ancestor.source_ref == active_path.source_ref == "topology-v17"
+    assert ancestor.derivation_tag == active_path.derivation_tag == (
+        "dependency:topology-v17"
+    )
+
+    groups = build_derivation_groups(
+        [
+            NormalizedChannel(
+                channel_id=value.channel_id,
+                derivation_tag=value.derivation_tag,
+                provenance_class=value.provenance_class,
+                provenance_subtype=value.provenance_subtype,
+                availability=value.availability,
+                supports=value.supports,
+                positive_score=value.positive_score,
+            )
+            for value in (ancestor, active_path)
+        ]
+    )
+    assert len(groups) == 1
+    assert {item.channel_id for item in groups[0].channels} == {
+        "DepUpstreamAncestor@topology-v17",
+        "DepUpstreamActivePath@topology-v17",
+    }
 
 
 # --------------------------------------------------------------------------
@@ -339,8 +411,9 @@ def test_semantic_tier_does_not_force_numeric_score_order():
     # engine must not force active_path_result > ancestor_result.
     assert ancestor_result.positive_score > active_path_result.positive_score
     # The semantic tier itself is still recorded and distinguishable.
-    assert ancestor_result.derivation_tag == DependencySemantic.SHARED_ANCESTOR.value
+    assert ancestor_result.derivation_tag == active_path_result.derivation_tag
+    assert ancestor_result.dependency_semantic is DependencySemantic.SHARED_ANCESTOR
     assert (
-        active_path_result.derivation_tag
-        == DependencySemantic.SHARED_ACTIVE_PATH.value
+        active_path_result.dependency_semantic
+        is DependencySemantic.SHARED_ACTIVE_PATH
     )

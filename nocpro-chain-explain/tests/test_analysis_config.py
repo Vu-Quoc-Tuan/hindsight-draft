@@ -36,6 +36,26 @@ def test_shipped_v1_config_constructs_engine_configs_with_one_version():
     assert mining.config_version == "v1"
     assert role.c_min == config.parameter("role.c_min").value
     assert mining.max_depth == config.parameter("descriptor.max_depth").value
+    assert config.incremental_snapshot.mode.value == "disabled"
+    assert config.incremental_snapshot.reason == (
+        "sequential_production_snapshots_not_available"
+    )
+
+
+def test_incremental_policy_requires_reason_when_explicitly_disabled(tmp_path: Path):
+    text = SHIPPED_CONFIG.read_text(encoding="utf-8").replace(
+        "  reason: sequential_production_snapshots_not_available\n", ""
+    )
+    with pytest.raises(AnalysisConfigError, match="incremental_snapshot.reason"):
+        load_analysis_config(_write(tmp_path, text))
+
+
+def test_incremental_policy_rejects_unbenchmarked_enablement(tmp_path: Path):
+    text = SHIPPED_CONFIG.read_text(encoding="utf-8").replace(
+        "mode: disabled", "mode: enabled"
+    )
+    with pytest.raises(AnalysisConfigError, match="only supports disabled"):
+        load_analysis_config(_write(tmp_path, text))
 
 
 def test_every_required_parameter_carries_an_allowed_source():

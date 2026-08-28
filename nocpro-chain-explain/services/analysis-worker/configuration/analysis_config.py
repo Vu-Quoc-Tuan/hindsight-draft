@@ -30,6 +30,20 @@ class ParameterSource(str, Enum):
     FROZEN_SPEC = "FROZEN_SPEC"
 
 
+class IncrementalSnapshotMode(str, Enum):
+    DISABLED = "disabled"
+
+
+@dataclass(frozen=True)
+class IncrementalSnapshotPolicy:
+    mode: IncrementalSnapshotMode
+    reason: str
+
+    @property
+    def enabled(self) -> bool:
+        return False
+
+
 @dataclass(frozen=True)
 class ConfiguredValue:
     path: str
@@ -133,6 +147,7 @@ class AnalysisConfig:
     config_version: str
     status: str
     parameters: dict[str, ConfiguredValue]
+    incremental_snapshot: IncrementalSnapshotPolicy
 
     REQUIRED_PARAMETERS = tuple(PARAMETER_RULES)
 
@@ -227,8 +242,30 @@ def load_analysis_config(
             source=source,
         )
 
+    raw_incremental = document.get("incremental_snapshot")
+    if not isinstance(raw_incremental, dict):
+        raise AnalysisConfigError("incremental_snapshot must be a YAML mapping")
+    raw_mode = raw_incremental.get("mode")
+    if raw_mode != IncrementalSnapshotMode.DISABLED.value:
+        raise AnalysisConfigError(
+            "incremental_snapshot.mode only supports disabled until sequential "
+            "production snapshots have benchmark evidence"
+        )
+    reason = raw_incremental.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        raise AnalysisConfigError(
+            "incremental_snapshot.reason must be a non-empty string"
+        )
+    incremental_snapshot = IncrementalSnapshotPolicy(
+        mode=IncrementalSnapshotMode.DISABLED,
+        reason=reason.strip(),
+    )
+
     config = AnalysisConfig(
-        config_version=version.strip(), status=status.strip(), parameters=parameters
+        config_version=version.strip(),
+        status=status.strip(),
+        parameters=parameters,
+        incremental_snapshot=incremental_snapshot,
     )
     if "role.s_weak" in parameters and "role.s_min" in parameters:
         if config.value("role.s_weak") > config.value("role.s_min"):

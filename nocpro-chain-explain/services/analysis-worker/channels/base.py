@@ -19,6 +19,8 @@ from enum import Enum
 
 from libs.provenance import ProvenanceClass, ProvenanceSubtype
 
+from .contracts import ChannelFamily, DependencySemantic
+
 
 class EvidenceState(str, Enum):
     SUPPORT = "SUPPORT"
@@ -41,6 +43,12 @@ class ChannelValue:
     negative_score: float = 0.0
     provenance_subtype: ProvenanceSubtype | None = None
     detail: str | None = None
+    #: Stable serialized family. Provider-specific ``channel_id`` stays internal.
+    channel_family: ChannelFamily | None = None
+    #: Dependency claim tier; intentionally independent from numeric score.
+    dependency_semantic: DependencySemantic | None = None
+    #: Versioned source/model identity used to derive the effective group tag.
+    source_ref: str | None = None
 
     def __post_init__(self) -> None:
         # Normalized channels are contractually bounded; raw SYSTEM_FACT values
@@ -80,6 +88,9 @@ def unavailable(
     reason: str,
     threshold: float = 0.0,
     provenance_subtype: ProvenanceSubtype | None = None,
+    channel_family: ChannelFamily | None = None,
+    dependency_semantic: DependencySemantic | None = None,
+    source_ref: str | None = None,
 ) -> ChannelValue:
     """Build an explicit ⊥ value.
 
@@ -95,4 +106,7 @@ def unavailable(
         positive_score=0.0,
         threshold=threshold,
         detail=reason,
+        channel_family=channel_family,
+        dependency_semantic=dependency_semantic,
+        source_ref=source_ref,
     )

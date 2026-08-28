@@ -15,6 +15,8 @@ from groups.indexed_statistics import (
 
 from .semantic import EMPTY_TAXONOMY, AlarmTaxonomy
 from .temporal import DEFAULT_SILENT_GAP_SECONDS, segment_bursts
+from .common_dependency import DEFAULT_LAMBDA_DEP, DEFAULT_THETA_CD
+from .dep_upstream_index import DepUpstreamFitIndex
 from .dependency import (
     DEFAULT_D_MAX,
     PHYSICAL_RELATIONS,
@@ -74,6 +76,8 @@ def build_indexed_statistics(
     taxonomy: AlarmTaxonomy = EMPTY_TAXONOMY,
     silent_gap_seconds: int = DEFAULT_SILENT_GAP_SECONDS,
     d_max: int = DEFAULT_D_MAX,
+    lambda_dep: float = DEFAULT_LAMBDA_DEP,
+    common_dependency_threshold: float = DEFAULT_THETA_CD,
 ) -> IndexedChainStatistics:
     """Build exact statistics for available indexed channels without pair scans."""
     alarms = package.alarms_of(chain_id)
@@ -155,7 +159,34 @@ def build_indexed_statistics(
         statistics,
         d_max=d_max,
     )
+    _add_dep_upstream_statistics(
+        package,
+        alarms,
+        statistics,
+        lambda_dep=lambda_dep,
+        theta=common_dependency_threshold,
+    )
     return statistics
+
+
+def _add_dep_upstream_statistics(
+    package: IngestedPackage,
+    alarms: list[IngestedAlarm],
+    statistics: IndexedChainStatistics,
+    *,
+    lambda_dep: float,
+    theta: float,
+) -> None:
+    index = DepUpstreamFitIndex(
+        package,
+        alarms,
+        lambda_dep=lambda_dep,
+        theta=theta,
+    )
+    statistics.channel_meta.update(index.channel_meta)
+    for alarm in alarms:
+        for entry in index.fits_for(alarm):
+            statistics.fits[(alarm.alarm_id, entry.channel_id)] = entry
 
 
 def _add_dep_hop_statistics(

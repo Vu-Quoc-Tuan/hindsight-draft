@@ -1,14 +1,17 @@
 """Normalized pair-evidence channels (``K_pair``)."""
 
 from .base import ChannelValue, EvidenceState, unavailable
+from .contracts import ChannelFamily, DependencySemantic
 from .common_dependency import (
     DEFAULT_LAMBDA_DEP,
     DEFAULT_THETA_CD,
     ActivePathIndex,
-    DependencySemantic,
+    DepUpstreamActivePath,
+    DepUpstreamAncestor,
     DirectedHierarchy,
     VerifiedPath,
     build_active_path_index,
+    build_dep_upstream_providers,
     build_directed_hierarchy,
     evaluate_shared_active_path,
     evaluate_shared_ancestor,
@@ -87,9 +90,12 @@ __all__ = [
     "AlarmTaxonomy",
     "BurstSegmentation",
     "ChainEvidence",
+    "ChannelFamily",
     "ChannelValue",
     "DelayDistribution",
     "DependencySemantic",
+    "DepUpstreamActivePath",
+    "DepUpstreamAncestor",
     "DirectedHierarchy",
     "EntityChannelSpec",
     "EvidenceState",
@@ -98,6 +104,7 @@ __all__ = [
     "TopologyGraph",
     "VerifiedPath",
     "build_active_path_index",
+    "build_dep_upstream_providers",
     "build_directed_hierarchy",
     "build_topology_graph",
     "entity_channel",

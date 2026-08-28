@@ -39,7 +39,7 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | Hybrid indexed Tier-1B + pairwise oracle | P0 | done |
 | Exact incremental predicate index + reconciliation triggers | P0 | done |
 | Benchmark matrix + overlap measurement tooling | P0 | implemented; Tier-1 real run recorded |
-| Production delta-default policy/threshold | P0 | pending 1–4 week consecutive production snapshots |
+| Production delta-default policy/threshold | P0 | pending; `incremental_snapshot.mode=disabled` until 1–4 week consecutive production snapshots exist |
 | UNAVOIDABLE_DEPENDENCY (dominator), graph motif upgrade | P2 | not started |
 | HTTP API, web UI, persistence/migrations | infra | not started |
 
@@ -186,7 +186,11 @@ skip when the sibling repo or the 680 MB exports are absent.
 - STRUCTURAL (CONNECTOR/NON_CONNECTOR) and REDUNDANCY
   (NEAR_DUPLICATE_CANDIDATE/UNIQUE) are independent of the MEMBERSHIP axis; a
   near-duplicate can still be CORE.
-- CommonDependency (`Dep_upstream`) distinguishes `SHARED_ANCESTOR <
+- CommonDependency uses one serialized `DEP_UPSTREAM` family with separate
+  `DepUpstreamAncestor` and `DepUpstreamActivePath` providers. Both retain a
+  `dependency_semantic` enum, while providers backed by the same source/model
+  share one derivation tag and therefore cannot cast two audit votes merely
+  because both semantic tiers were available. It distinguishes `SHARED_ANCESTOR <
   SHARED_ACTIVE_PATH < UNAVOIDABLE_DEPENDENCY` as a semantic-strength
   ordering, not a numeric constraint on `CD`: a narrow ancestor may score
   higher than a shared active-core-path. Each capability is strictly gated

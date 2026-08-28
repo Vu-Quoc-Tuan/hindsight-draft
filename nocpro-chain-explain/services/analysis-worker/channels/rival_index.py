@@ -21,6 +21,8 @@ from groups.indexed_statistics import (
 )
 
 from .indexed_statistics import read_indexed_field
+from .dep_upstream_index import DepUpstreamFitIndex
+from .common_dependency import DEFAULT_LAMBDA_DEP, DEFAULT_THETA_CD
 from .semantic import EMPTY_TAXONOMY, AlarmTaxonomy
 from .temporal import DEFAULT_SILENT_GAP_SECONDS, context_key
 from .dependency import (
@@ -71,6 +73,7 @@ class RivalFitIndex:
         graph: TopologyGraph,
         resolver: ResourceResolver,
         d_max: int,
+        dep_upstream_index: DepUpstreamFitIndex,
     ) -> None:
         self.chain_id = chain_id
         self.taxonomy = taxonomy
@@ -78,6 +81,7 @@ class RivalFitIndex:
         self.graph = graph
         self.resolver = resolver
         self.d_max = d_max
+        self.dep_upstream_index = dep_upstream_index
         self._peer_ids = {alarm.alarm_id for alarm in peers}
         self._domains: dict[str, int] = {}
         self._groups: dict[str, Counter[str]] = {}
@@ -128,17 +132,26 @@ class RivalFitIndex:
         taxonomy: AlarmTaxonomy = EMPTY_TAXONOMY,
         silent_gap_seconds: int = DEFAULT_SILENT_GAP_SECONDS,
         d_max: int = DEFAULT_D_MAX,
+        lambda_dep: float = DEFAULT_LAMBDA_DEP,
+        common_dependency_threshold: float = DEFAULT_THETA_CD,
     ) -> "RivalFitIndex":
         if chain_id not in package.chains:
             raise KeyError(f"unknown rival chain_id {chain_id!r}")
+        peers = package.alarms_of(chain_id)
         return cls(
             chain_id=chain_id,
-            peers=package.alarms_of(chain_id),
+            peers=peers,
             taxonomy=taxonomy,
             silent_gap_seconds=silent_gap_seconds,
             graph=build_topology_graph(package, relation_types=PHYSICAL_RELATIONS),
             resolver=ResourceResolver.from_package(package),
             d_max=d_max,
+            dep_upstream_index=DepUpstreamFitIndex(
+                package,
+                peers,
+                lambda_dep=lambda_dep,
+                theta=common_dependency_threshold,
+            ),
         )
 
     def _group_key(self, channel_id: str, value: str) -> str:
@@ -273,4 +286,7 @@ class RivalFitIndex:
             self.graph.provenance_subtype,
         )
         statistics.fits[(alarm.alarm_id, "Dep_hop")] = self._dep_fit(alarm)
+        statistics.channel_meta.update(self.dep_upstream_index.channel_meta)
+        for entry in self.dep_upstream_index.fits_for(alarm):
+            statistics.fits[(alarm.alarm_id, entry.channel_id)] = entry
         return tuple(group_fits_from_index(alarm.alarm_id, statistics))

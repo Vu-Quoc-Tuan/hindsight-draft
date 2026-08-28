@@ -31,6 +31,12 @@ from groups.statistics import (
 )
 
 from .base import ChannelValue
+from .common_dependency import (
+    DEFAULT_LAMBDA_DEP,
+    DEFAULT_THETA_CD,
+    DependencyProvider,
+    build_dep_upstream_providers,
+)
 from .pair_detail import PairChannelMatrix
 from .dependency import (
     DEFAULT_D_MAX,
@@ -100,6 +106,8 @@ def evaluate_chain_channels(
     delay_distribution: DelayDistribution | None = None,
     delay_threshold: float = DEFAULT_DELAY_THRESHOLD,
     d_max: int = DEFAULT_D_MAX,
+    lambda_dep: float = DEFAULT_LAMBDA_DEP,
+    common_dependency_threshold: float = DEFAULT_THETA_CD,
     silent_gap_seconds: int = DEFAULT_SILENT_GAP_SECONDS,
     pair_detail_limit: int = DEFAULT_PAIR_DETAIL_LIMIT,
 ) -> ChainEvidence:
@@ -113,6 +121,12 @@ def evaluate_chain_channels(
         resolver = ResourceResolver.from_package(package)
     if topology is None and (package.topology.get("edges") or ()):
         topology = build_topology_graph(package, relation_types=PHYSICAL_RELATIONS)
+    dependency_providers = build_dep_upstream_providers(
+        package,
+        resolver=resolver,
+        lambda_dep=lambda_dep,
+        theta=common_dependency_threshold,
+    )
 
     exact = statistics_are_exact(len(members))
     statistics = ChannelStatistics(
@@ -148,6 +162,7 @@ def evaluate_chain_channels(
             delay_distribution=delay_distribution,
             delay_threshold=delay_threshold,
             d_max=d_max,
+            dependency_providers=dependency_providers,
         )
 
         # Statistics always see every pair.
@@ -184,6 +199,7 @@ def _evaluate_pair(
     delay_distribution: DelayDistribution | None,
     delay_threshold: float,
     d_max: int,
+    dependency_providers: tuple[DependencyProvider, ...],
 ) -> list[ChannelValue]:
     """Evaluate one pair using the canonical channel implementations."""
     values: list[ChannelValue] = evaluate_entity_channels(left, right)
@@ -199,6 +215,7 @@ def _evaluate_pair(
             left, right, graph=topology, resolver=resolver, d_max=d_max
         )
     )
+    values.extend(provider.evaluate(left, right) for provider in dependency_providers)
     return values
 
 
@@ -214,6 +231,8 @@ def evaluate_pair_channels(
     delay_distribution: DelayDistribution | None = None,
     delay_threshold: float = DEFAULT_DELAY_THRESHOLD,
     d_max: int = DEFAULT_D_MAX,
+    lambda_dep: float = DEFAULT_LAMBDA_DEP,
+    common_dependency_threshold: float = DEFAULT_THETA_CD,
     silent_gap_seconds: int = DEFAULT_SILENT_GAP_SECONDS,
 ) -> list[ChannelValue]:
     """Evaluate the full WHY detail for one explicitly requested chain pair."""
@@ -230,6 +249,12 @@ def evaluate_pair_channels(
         resolver = ResourceResolver.from_package(package)
     if topology is None and (package.topology.get("edges") or ()):
         topology = build_topology_graph(package, relation_types=PHYSICAL_RELATIONS)
+    dependency_providers = build_dep_upstream_providers(
+        package,
+        resolver=resolver,
+        lambda_dep=lambda_dep,
+        theta=common_dependency_threshold,
+    )
     return _evaluate_pair(
         package.alarms[alarm_a],
         package.alarms[alarm_b],
@@ -240,6 +265,7 @@ def evaluate_pair_channels(
         delay_distribution=delay_distribution,
         delay_threshold=delay_threshold,
         d_max=d_max,
+        dependency_providers=dependency_providers,
     )
 
 

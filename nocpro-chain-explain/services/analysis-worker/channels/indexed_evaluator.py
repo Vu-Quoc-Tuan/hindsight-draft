@@ -17,6 +17,7 @@ from .semantic import EMPTY_TAXONOMY, AlarmTaxonomy
 from .indexed_statistics import build_indexed_statistics
 from .temporal import DEFAULT_SILENT_GAP_SECONDS
 from .dependency import DEFAULT_D_MAX
+from .common_dependency import DEFAULT_LAMBDA_DEP, DEFAULT_THETA_CD
 
 
 @dataclass
@@ -49,6 +50,8 @@ def evaluate_chain_indexed(
     taxonomy: AlarmTaxonomy = EMPTY_TAXONOMY,
     silent_gap_seconds: int = DEFAULT_SILENT_GAP_SECONDS,
     d_max: int = DEFAULT_D_MAX,
+    lambda_dep: float = DEFAULT_LAMBDA_DEP,
+    common_dependency_threshold: float = DEFAULT_THETA_CD,
 ) -> IndexedChainEvidence:
     """Build exact available Tier-1 statistics without scanning member pairs."""
     if chain_id not in package.chains:
@@ -59,6 +62,8 @@ def evaluate_chain_indexed(
         taxonomy=taxonomy,
         silent_gap_seconds=silent_gap_seconds,
         d_max=d_max,
+        lambda_dep=lambda_dep,
+        common_dependency_threshold=common_dependency_threshold,
     )
     return IndexedChainEvidence(
         chain_id=chain_id,

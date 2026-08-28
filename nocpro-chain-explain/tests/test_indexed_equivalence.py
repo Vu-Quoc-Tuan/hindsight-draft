@@ -270,3 +270,56 @@ def test_indexed_dep_hop_matches_pairwise_with_mapping_and_sparse_topology():
     _assert_equivalent(package, d_max=0)
     dmax_zero = build_indexed_statistics(package, "C1", d_max=0)
     assert dmax_zero.fit_of("a1", "Dep_hop").fit is None
+
+
+def test_indexed_dep_upstream_matches_pairwise_and_deduplicates_semantic_tiers():
+    package = _package(
+        [
+            {"alarm_id": "a1", "alarm_name": "DOWN", "device_code": "D1"},
+            {"alarm_id": "a2", "alarm_name": "DOWN", "device_code": "D2"},
+            {"alarm_id": "a3", "alarm_name": "POWER", "device_code": "D3"},
+        ]
+    )
+    package.topology = {
+        "edges": [
+            {
+                "source_resource_id": "ROOT",
+                "target_resource_id": resource,
+                "relation_type": "LOGICAL_DEPENDENCY",
+                "directed": True,
+                "source_id": "inventory",
+                "source_version": "v17",
+            }
+            for resource in ("R1", "R2", "R3")
+        ],
+        "active_paths": [
+            {
+                "path_id": f"p{index}",
+                "resource_id": resource,
+                "nodes": [resource, "ROOT"],
+                "source_id": "inventory",
+                "source_version": "v17",
+            }
+            for index, resource in enumerate(("R1", "R2", "R3"), start=1)
+        ],
+        "mappings": [
+            {
+                "alarm_id": f"a{index}",
+                "resource_id": resource,
+                "mapping_status": "EXACT",
+            }
+            for index, resource in enumerate(("R1", "R2", "R3"), start=1)
+        ],
+    }
+
+    _assert_equivalent(package)
+
+    indexed = build_indexed_statistics(package, "C1")
+    support = membership_support_from_index("a1", indexed)
+    dependency_groups = [
+        group
+        for group in support.group_fits
+        if group.derivation_tag == "dependency:inventory@v17"
+    ]
+    assert len(dependency_groups) == 1
+    assert len(dependency_groups[0].channel_fits) == 2

@@ -26,15 +26,20 @@ from __future__ import annotations
 import math
 from collections import deque
 from dataclasses import dataclass, field
-from enum import Enum
 
-from libs.contracts import IngestedAlarm
+from libs.contracts import IngestedAlarm, IngestedPackage
 from libs.provenance import ProvenanceClass, ProvenanceSubtype
 
 from .base import ChannelValue, unavailable
+from .contracts import (
+    ChannelFamily,
+    DependencySemantic,
+    dependency_derivation_tag,
+)
 from .dependency import ResourceResolver
 
-CHANNEL_ID = "Dep_upstream"
+ANCESTOR_CHANNEL_ID = "DepUpstreamAncestor"
+ACTIVE_PATH_CHANNEL_ID = "DepUpstreamActivePath"
 
 #: Decay scale for the exponential distance term. Distinct symbol from
 #: history's lambda_H (docs 4A): dependency decay and history reliability are
@@ -43,13 +48,6 @@ DEFAULT_LAMBDA_DEP = 2.0
 
 #: Baseline threshold for CD to count as SUPPORT.
 DEFAULT_THETA_CD = 0.3
-
-
-class DependencySemantic(str, Enum):
-    SHARED_ANCESTOR = "SHARED_ANCESTOR"
-    SHARED_ACTIVE_PATH = "SHARED_ACTIVE_PATH"
-    #: P2; not computed here.
-    UNAVOIDABLE_DEPENDENCY = "UNAVOIDABLE_DEPENDENCY"
 
 
 # --------------------------------------------------------------------------
@@ -172,13 +170,15 @@ def evaluate_shared_ancestor(
     resolver: ResourceResolver,
     lambda_dep: float = DEFAULT_LAMBDA_DEP,
     theta: float = DEFAULT_THETA_CD,
+    source_ref: str = "unversioned",
+    channel_id: str = ANCESTOR_CHANNEL_ID,
 ) -> ChannelValue:
     """``CD_anc(i,j)``: SHARED_ANCESTOR, gated on a valid directed hierarchy."""
 
     def fail(reason: str) -> ChannelValue:
         return unavailable(
-            CHANNEL_ID,
-            DependencySemantic.SHARED_ANCESTOR.value,
+            channel_id,
+            dependency_derivation_tag(source_ref),
             hierarchy.provenance_class if hierarchy else ProvenanceClass.EXTERNAL_OPERATIONAL,
             reason=reason,
             threshold=theta,
@@ -187,6 +187,9 @@ def evaluate_shared_ancestor(
                 if hierarchy
                 else ProvenanceSubtype.TOPOLOGY_EXTERNAL
             ),
+            channel_family=ChannelFamily.DEP_UPSTREAM,
+            dependency_semantic=DependencySemantic.SHARED_ANCESTOR,
+            source_ref=source_ref,
         )
 
     if hierarchy is None or not hierarchy.is_valid:
@@ -219,15 +222,46 @@ def evaluate_shared_ancestor(
     score, witness = best
 
     return ChannelValue(
-        channel_id=CHANNEL_ID,
-        derivation_tag=DependencySemantic.SHARED_ANCESTOR.value,
+        channel_id=channel_id,
+        derivation_tag=dependency_derivation_tag(source_ref),
         provenance_class=hierarchy.provenance_class,
         provenance_subtype=hierarchy.provenance_subtype,
         availability=True,
         positive_score=score,
         threshold=theta,
         detail=f"SHARED_ANCESTOR witness={witness}, CD={score:.4f}",
+        channel_family=ChannelFamily.DEP_UPSTREAM,
+        dependency_semantic=DependencySemantic.SHARED_ANCESTOR,
+        source_ref=source_ref,
     )
+
+
+@dataclass(frozen=True)
+class DepUpstreamAncestor:
+    """Capability-specific provider under the shared ``DEP_UPSTREAM`` family."""
+
+    hierarchy: DirectedHierarchy | None
+    resolver: ResourceResolver
+    source_ref: str
+    lambda_dep: float = DEFAULT_LAMBDA_DEP
+    theta: float = DEFAULT_THETA_CD
+
+    @property
+    def channel_id(self) -> str:
+        """Opaque internal provider key; APIs serialize family + semantic."""
+        return f"{ANCESTOR_CHANNEL_ID}@{self.source_ref}"
+
+    def evaluate(self, alarm_a: IngestedAlarm, alarm_b: IngestedAlarm) -> ChannelValue:
+        return evaluate_shared_ancestor(
+            alarm_a,
+            alarm_b,
+            hierarchy=self.hierarchy,
+            resolver=self.resolver,
+            lambda_dep=self.lambda_dep,
+            theta=self.theta,
+            source_ref=self.source_ref,
+            channel_id=self.channel_id,
+        )
 
 
 # --------------------------------------------------------------------------
@@ -334,6 +368,8 @@ def evaluate_shared_active_path(
     resolver: ResourceResolver,
     lambda_dep: float = DEFAULT_LAMBDA_DEP,
     theta: float = DEFAULT_THETA_CD,
+    source_ref: str = "unversioned",
+    channel_id: str = ACTIVE_PATH_CHANNEL_ID,
 ) -> ChannelValue:
     """``CD_path(i,j)``: SHARED_ACTIVE_PATH, gated on verified ordered paths.
 
@@ -345,8 +381,8 @@ def evaluate_shared_active_path(
 
     def fail(reason: str) -> ChannelValue:
         return unavailable(
-            CHANNEL_ID,
-            DependencySemantic.SHARED_ACTIVE_PATH.value,
+            channel_id,
+            dependency_derivation_tag(source_ref),
             path_index.provenance_class if path_index else ProvenanceClass.EXTERNAL_OPERATIONAL,
             reason=reason,
             threshold=theta,
@@ -355,6 +391,9 @@ def evaluate_shared_active_path(
                 if path_index
                 else ProvenanceSubtype.TOPOLOGY_EXTERNAL
             ),
+            channel_family=ChannelFamily.DEP_UPSTREAM,
+            dependency_semantic=DependencySemantic.SHARED_ACTIVE_PATH,
+            source_ref=source_ref,
         )
 
     if path_index is None or not path_index.is_valid:
@@ -401,12 +440,134 @@ def evaluate_shared_active_path(
     score, witness = best
 
     return ChannelValue(
-        channel_id=CHANNEL_ID,
-        derivation_tag=DependencySemantic.SHARED_ACTIVE_PATH.value,
+        channel_id=channel_id,
+        derivation_tag=dependency_derivation_tag(source_ref),
         provenance_class=path_index.provenance_class,
         provenance_subtype=path_index.provenance_subtype,
         availability=True,
         positive_score=score,
         threshold=theta,
         detail=f"SHARED_ACTIVE_PATH witness={witness}, CD={score:.4f}",
+        channel_family=ChannelFamily.DEP_UPSTREAM,
+        dependency_semantic=DependencySemantic.SHARED_ACTIVE_PATH,
+        source_ref=source_ref,
     )
+
+
+@dataclass(frozen=True)
+class DepUpstreamActivePath:
+    """Active-path provider with independent capability and distance semantics."""
+
+    path_index: ActivePathIndex | None
+    resolver: ResourceResolver
+    source_ref: str
+    lambda_dep: float = DEFAULT_LAMBDA_DEP
+    theta: float = DEFAULT_THETA_CD
+
+    @property
+    def channel_id(self) -> str:
+        """Opaque internal provider key; APIs serialize family + semantic."""
+        return f"{ACTIVE_PATH_CHANNEL_ID}@{self.source_ref}"
+
+    def evaluate(self, alarm_a: IngestedAlarm, alarm_b: IngestedAlarm) -> ChannelValue:
+        return evaluate_shared_active_path(
+            alarm_a,
+            alarm_b,
+            path_index=self.path_index,
+            resolver=self.resolver,
+            lambda_dep=self.lambda_dep,
+            theta=self.theta,
+            source_ref=self.source_ref,
+            channel_id=self.channel_id,
+        )
+
+
+DependencyProvider = DepUpstreamAncestor | DepUpstreamActivePath
+
+
+def _record_source_ref(record: dict, package: IngestedPackage) -> str:
+    """Resolve one stable source/model identity without using semantic tier."""
+    source_id = str(record.get("source_id") or "topology").strip()
+    version = str(
+        record.get("source_version") or package.snapshot.topology_version or ""
+    ).strip()
+    return f"{source_id}@{version}" if version else source_id
+
+
+def build_dep_upstream_providers(
+    package: IngestedPackage,
+    *,
+    resolver: ResourceResolver | None = None,
+    lambda_dep: float = DEFAULT_LAMBDA_DEP,
+    theta: float = DEFAULT_THETA_CD,
+) -> tuple[DependencyProvider, ...]:
+    """Build capability-specific providers grouped by underlying source/model.
+
+    Providers from the same ``source_ref`` intentionally share one derivation
+    tag, so ancestor and active-path detail remain visible while contributing at
+    most one normalized derivation-group vote.
+    """
+    resolved = resolver or ResourceResolver.from_package(package)
+    logical_by_source: dict[str, list[dict]] = {}
+    for edge in package.topology.get("edges") or ():
+        if edge.get("relation_type") != "LOGICAL_DEPENDENCY" or not edge.get(
+            "directed"
+        ):
+            continue
+        source_ref = _record_source_ref(edge, package)
+        logical_by_source.setdefault(source_ref, []).append(edge)
+
+    paths_by_source: dict[str, list[dict]] = {}
+    for path in package.topology.get("active_paths") or ():
+        source_ref = _record_source_ref(path, package)
+        paths_by_source.setdefault(source_ref, []).append(path)
+
+    observed_sources = set(logical_by_source) | set(paths_by_source)
+    fallback_source = (
+        next(iter(observed_sources))
+        if len(observed_sources) == 1
+        else str(package.snapshot.topology_version or "unversioned")
+    )
+    providers: list[DependencyProvider] = [
+        DepUpstreamAncestor(
+            hierarchy=build_directed_hierarchy(records),
+            resolver=resolved,
+            source_ref=source_ref,
+            lambda_dep=lambda_dep,
+            theta=theta,
+        )
+        for source_ref, records in sorted(logical_by_source.items())
+    ]
+    if not providers:
+        providers.append(
+            DepUpstreamAncestor(
+                hierarchy=None,
+                resolver=resolved,
+                source_ref=fallback_source,
+                lambda_dep=lambda_dep,
+                theta=theta,
+            )
+        )
+
+    active_path_providers = [
+        DepUpstreamActivePath(
+            path_index=build_active_path_index(records),
+            resolver=resolved,
+            source_ref=source_ref,
+            lambda_dep=lambda_dep,
+            theta=theta,
+        )
+        for source_ref, records in sorted(paths_by_source.items())
+    ]
+    providers.extend(active_path_providers)
+    if not active_path_providers:
+        providers.append(
+            DepUpstreamActivePath(
+                path_index=None,
+                resolver=resolved,
+                source_ref=fallback_source,
+                lambda_dep=lambda_dep,
+                theta=theta,
+            )
+        )
+    return tuple(providers)

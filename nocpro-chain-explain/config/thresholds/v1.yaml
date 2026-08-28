@@ -1,6 +1,10 @@
 config_version: v1
 status: baseline_requires_calibration
 
+incremental_snapshot:
+  mode: disabled
+  reason: sequential_production_snapshots_not_available
+
 temporal:
   burst:
     gap_seconds: {value: 120, source: DOCUMENTED_DEFAULT}
