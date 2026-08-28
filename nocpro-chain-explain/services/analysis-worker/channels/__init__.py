@@ -38,7 +38,11 @@ from .evaluator import (
     EXACT_STATISTICS_MAX_MEMBERS,
     ChainEvidence,
     evaluate_chain_channels,
+    evaluate_pair_channels,
 )
+from .indexed_evaluator import IndexedChainEvidence, evaluate_chain_indexed
+from .indexed_statistics import build_indexed_statistics
+from .rival_index import RivalFitIndex
 from .pair_detail import PairChannelMatrix
 from .semantic import (
     EMPTY_TAXONOMY,
@@ -94,6 +98,11 @@ __all__ = [
     "entity_channel",
     "evaluate_burst_channel",
     "evaluate_chain_channels",
+    "evaluate_chain_indexed",
+    "evaluate_pair_channels",
+    "IndexedChainEvidence",
+    "RivalFitIndex",
+    "build_indexed_statistics",
     "evaluate_delay_channel",
     "evaluate_dep_hop_channel",
     "evaluate_entity_channels",

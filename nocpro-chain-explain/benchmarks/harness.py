@@ -19,12 +19,28 @@ compared across runs.
 from __future__ import annotations
 
 import json
+import math
 import statistics
 import time
 import tracemalloc
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable
+
+
+def nearest_rank_percentile(values: list[float], percentile: float) -> float:
+    """Return the observed nearest-rank percentile.
+
+    A P95 needs at least 20 observations to resolve a five-percent tail; callers
+    report reliability separately rather than hiding sparse sampling.
+    """
+    if not values:
+        raise ValueError("percentile requires at least one observation")
+    if not 0.0 < percentile <= 1.0:
+        raise ValueError("percentile must be in (0, 1]")
+    ordered = sorted(values)
+    rank = math.ceil(percentile * len(ordered))
+    return ordered[rank - 1]
 
 
 @dataclass(frozen=True)
@@ -61,9 +77,11 @@ class TimingResult:
     def p95(self) -> float | None:
         if self.n < 2:
             return self.p50
-        ordered = sorted(self.durations_seconds)
-        index = int(0.95 * (self.n - 1))
-        return ordered[index]
+        return nearest_rank_percentile(self.durations_seconds, 0.95)
+
+    @property
+    def p95_reliable(self) -> bool:
+        return self.n >= 20
 
     @property
     def mean(self) -> float | None:
@@ -78,6 +96,7 @@ class TimingResult:
             "n": self.n,
             "p50_s": round(self.p50, 4) if self.p50 is not None else None,
             "p95_s": round(self.p95, 4) if self.p95 is not None else None,
+            "p95_reliable": self.p95_reliable,
             "mean_s": round(self.mean, 4) if self.mean is not None else None,
             "peak_memory_mb": (
                 round(self.peak_memory_bytes / 1024 / 1024, 2)

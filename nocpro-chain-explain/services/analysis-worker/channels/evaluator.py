@@ -138,19 +138,16 @@ def evaluate_chain_channels(
 
     for alarm_a, alarm_b in pair_iterator(members):
         left, right = by_id[alarm_a], by_id[alarm_b]
-
-        values: list[ChannelValue] = evaluate_entity_channels(left, right)
-        values.append(evaluate_semantic_channel(left, right, taxonomy))
-        values.append(evaluate_burst_channel(left, right, segmentation))
-        values.append(
-            evaluate_delay_channel(
-                left, right, distribution=delay_distribution, threshold=delay_threshold
-            )
-        )
-        values.append(
-            evaluate_dep_hop_channel(
-                left, right, graph=topology, resolver=resolver, d_max=d_max
-            )
+        values = _evaluate_pair(
+            left,
+            right,
+            taxonomy=taxonomy,
+            segmentation=segmentation,
+            topology=topology,
+            resolver=resolver,
+            delay_distribution=delay_distribution,
+            delay_threshold=delay_threshold,
+            d_max=d_max,
         )
 
         # Statistics always see every pair.
@@ -176,10 +173,81 @@ def evaluate_chain_channels(
     )
 
 
+def _evaluate_pair(
+    left,
+    right,
+    *,
+    taxonomy: AlarmTaxonomy,
+    segmentation: BurstSegmentation,
+    topology: TopologyGraph | None,
+    resolver: ResourceResolver,
+    delay_distribution: DelayDistribution | None,
+    delay_threshold: float,
+    d_max: int,
+) -> list[ChannelValue]:
+    """Evaluate one pair using the canonical channel implementations."""
+    values: list[ChannelValue] = evaluate_entity_channels(left, right)
+    values.append(evaluate_semantic_channel(left, right, taxonomy))
+    values.append(evaluate_burst_channel(left, right, segmentation))
+    values.append(
+        evaluate_delay_channel(
+            left, right, distribution=delay_distribution, threshold=delay_threshold
+        )
+    )
+    values.append(
+        evaluate_dep_hop_channel(
+            left, right, graph=topology, resolver=resolver, d_max=d_max
+        )
+    )
+    return values
+
+
+def evaluate_pair_channels(
+    package: IngestedPackage,
+    chain_id: str,
+    alarm_a: str,
+    alarm_b: str,
+    *,
+    taxonomy: AlarmTaxonomy = EMPTY_TAXONOMY,
+    topology: TopologyGraph | None = None,
+    resolver: ResourceResolver | None = None,
+    delay_distribution: DelayDistribution | None = None,
+    delay_threshold: float = DEFAULT_DELAY_THRESHOLD,
+    d_max: int = DEFAULT_D_MAX,
+    silent_gap_seconds: int = DEFAULT_SILENT_GAP_SECONDS,
+) -> list[ChannelValue]:
+    """Evaluate the full WHY detail for one explicitly requested chain pair."""
+    members = set(package.members_of(chain_id))
+    for alarm_id in (alarm_a, alarm_b):
+        if alarm_id not in members or alarm_id not in package.alarms:
+            raise KeyError(f"alarm {alarm_id!r} is not a member of chain {chain_id!r}")
+    if alarm_a == alarm_b:
+        raise ValueError("pair endpoints must be distinct")
+
+    alarms = package.alarms_of(chain_id)
+    segmentation = segment_bursts(alarms, silent_gap_seconds=silent_gap_seconds)
+    if resolver is None:
+        resolver = ResourceResolver.from_package(package)
+    if topology is None and (package.topology.get("edges") or ()):
+        topology = build_topology_graph(package, relation_types=PHYSICAL_RELATIONS)
+    return _evaluate_pair(
+        package.alarms[alarm_a],
+        package.alarms[alarm_b],
+        taxonomy=taxonomy,
+        segmentation=segmentation,
+        topology=topology,
+        resolver=resolver,
+        delay_distribution=delay_distribution,
+        delay_threshold=delay_threshold,
+        d_max=d_max,
+    )
+
+
 __all__ = [
     "DEFAULT_DELAY_THRESHOLD",
     "DEFAULT_PAIR_DETAIL_LIMIT",
     "EXACT_STATISTICS_MAX_MEMBERS",
     "ChainEvidence",
     "evaluate_chain_channels",
+    "evaluate_pair_channels",
 ]

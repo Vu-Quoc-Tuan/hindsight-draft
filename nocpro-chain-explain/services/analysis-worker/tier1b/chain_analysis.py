@@ -7,23 +7,22 @@ caller.
 
 Order matters and follows the spec's dependency chain:
 
-    channels -> exact statistics -> Fit_g -> descriptors -> Representativeness
+    indexed statistics -> Fit_g -> descriptors -> Representativeness
              -> U_local -> contrastive -> Margin_common -> role
-             -> audit graph -> STRUCTURAL role
              -> REDUNDANCY role
 
-Tier-1B never waits for Tier-2 (ADR-0014), so nothing here triggers deep dive.
+Tier-1B never materializes the full audit graph or waits for Tier-2 (ADR-0014).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from time import perf_counter
 
 from libs.contracts import IngestedPackage
 
-from audit import build_audit_graph, classify_structural_role
 from audit.structural_role import StructuralRole, StructuralRoleResult
-from channels import ChainEvidence, evaluate_chain_channels
+from channels import IndexedChainEvidence, RivalFitIndex, evaluate_chain_indexed
 from channels.base import ChannelValue
 from channels.entity import evaluate_entity_channels
 from channels.semantic import EMPTY_TAXONOMY, AlarmTaxonomy, evaluate_semantic_channel
@@ -59,10 +58,10 @@ from groups import (
     MembershipSupport,
     RoleThresholds,
     classify_membership,
-    membership_support,
+    membership_support_from_index,
 )
 from groups.fit import group_fits
-from groups.redundancy import RedundancyResult, RedundancyRole, classify_redundancy
+from groups.redundancy import RedundancyResult, classify_redundancy_all
 
 
 @dataclass
@@ -80,7 +79,7 @@ class MemberAnalysis:
     #: member reads against every plausible alternative chain, not just the
     #: single closest one.
     margins: tuple[MarginResult, ...] = ()
-    #: STRUCTURAL axis: CONNECTOR / NON_CONNECTOR.
+    #: STRUCTURAL axis is populated by Tier-2; singleton stays NOT_APPLICABLE.
     structural: StructuralRoleResult | None = None
     #: REDUNDANCY axis: NEAR_DUPLICATE_CANDIDATE / UNIQUE.
     redundancy: RedundancyResult | None = None
@@ -101,7 +100,7 @@ class ChainAnalysis:
 
     chain_id: str
     member_count: int
-    evidence: ChainEvidence
+    evidence: IndexedChainEvidence
     descriptors: DescriptorSet
     graybox: GrayBoxMetadata
     members: dict[str, MemberAnalysis] = field(default_factory=dict)
@@ -110,6 +109,12 @@ class ChainAnalysis:
     config_version: str | None = None
     #: Set for |C|=1, where pair-based analysis is NOT_APPLICABLE.
     singleton: bool = False
+    #: Wall-clock phase timings for benchmark attribution, not methodology data.
+    phase_durations: dict[str, float] = field(default_factory=dict)
+
+    @property
+    def audit_graph_mode(self):
+        return self.evidence.audit_graph_mode
 
     def role_counts(self) -> dict[str, int]:
         counts: dict[str, int] = {}
@@ -167,12 +172,14 @@ def analyze_chain(
     enable_contrastive: bool = True,
 ) -> ChainAnalysis:
     """Run Tier-1B analysis for one chain."""
+    analysis_started = perf_counter()
     chain = package.chains.get(chain_id)
     if chain is None:
         raise KeyError(f"unknown chain_id {chain_id!r}")
 
-    evidence = evaluate_chain_channels(package, chain_id, taxonomy=taxonomy)
+    evidence = evaluate_chain_indexed(package, chain_id, taxonomy=taxonomy)
     graybox = adapt_graybox_metadata(package, chain_id)
+    statistics_done = perf_counter()
 
     # Descriptors run over the whole ingested snapshot as the universe.
     index = predicate_index or build_predicate_index(list(package.alarms.values()))
@@ -220,6 +227,7 @@ def analyze_chain(
         config_version=mining_config.config_version,
         identity_insufficient=not identity,
     )
+    descriptors_done = perf_counter()
 
     analysis = ChainAnalysis(
         chain_id=chain_id,
@@ -231,6 +239,10 @@ def analyze_chain(
         auto_title=auto_chain_title(chain_id, descriptors, mining_config),
         config_version=thresholds.config_version,
         singleton=chain.is_singleton,
+        phase_durations={
+            "indexed_statistics": statistics_done - analysis_started,
+            "descriptors": descriptors_done - statistics_done,
+        },
     )
 
     if chain.is_singleton:
@@ -238,7 +250,7 @@ def analyze_chain(
         # also NOT_APPLICABLE: an audit graph needs at least an edge to exist.
         report = build_singleton_report(package, chain_id)
         for alarm_id in package.members_of(chain_id):
-            support = membership_support(alarm_id, evidence.statistics)
+            support = membership_support_from_index(alarm_id, evidence.statistics)
             analysis.members[alarm_id] = MemberAnalysis(
                 alarm_id=alarm_id,
                 support=support,
@@ -266,11 +278,15 @@ def analyze_chain(
                 ),
                 redundancy=None,
             )
+        analysis.phase_durations["membership_and_roles"] = (
+            perf_counter() - descriptors_done
+        )
+        analysis.phase_durations["total"] = perf_counter() - analysis_started
         return analysis
 
     # Rank members by support so the CORE quantile can be applied.
     supports = {
-        alarm_id: membership_support(alarm_id, evidence.statistics)
+        alarm_id: membership_support_from_index(alarm_id, evidence.statistics)
         for alarm_id in evidence.members
     }
     ranked = sorted(
@@ -281,34 +297,45 @@ def analyze_chain(
         alarm_id: (position / (len(ranked) - 1) if len(ranked) > 1 else 0.0)
         for position, (alarm_id, _) in enumerate(ranked)
     }
+    membership_done = perf_counter()
 
     # WHY-4 contrastive rivals: top-3 candidates from the blocking index
     # (§5, §11), not just the single closest one. ``candidates`` is already
     # ranked by blocking overlap, so this is a prefix, not a re-sort.
     rivals = top_contrastive_candidates(candidates, top_k=contrastive_top_k)
 
-    # STRUCTURAL axis: built once from the same audit graph the Audit Engine
-    # uses (never the top-K visualization graph), per the three-graph rule.
-    audit_graph = build_audit_graph(evidence.members, evidence.matrix.values)
+    rival_indexes = {
+        rival.chain_id: RivalFitIndex.from_chain(
+            package, rival.chain_id, taxonomy=taxonomy
+        )
+        for rival in rivals
+    }
+
+    margins_by_member: dict[str, tuple[MarginResult, ...]] = {}
+    for alarm_id in supports:
+        margins_by_member[alarm_id] = tuple(
+            margin_common(
+                alarm_id,
+                supports[alarm_id].group_fits,
+                rival_indexes[rival.chain_id].group_fits_for(
+                    package.alarms[alarm_id]
+                ),
+                compared_chain_id=rival.chain_id,
+                g_min=g_min,
+            )
+            for rival in rivals
+        )
+    contrastive_done = perf_counter()
+
     member_alarms = package.alarms_of(chain_id)
+    redundancy_by_member = classify_redundancy_all(
+        member_alarms, index=index, descriptors=identity
+    )
+    redundancy_done = perf_counter()
 
     for alarm_id, support in supports.items():
         member_representativeness = representativeness(alarm_id, identity, index)
-
-        margins: list[MarginResult] = []
-        for rival in rivals:
-            rival_stats = _rival_statistics(
-                package, alarm_id, rival.chain_id, taxonomy=taxonomy
-            )
-            margins.append(
-                margin_common(
-                    alarm_id,
-                    support.group_fits,
-                    tuple(group_fits(alarm_id, rival_stats)),
-                    compared_chain_id=rival.chain_id,
-                    g_min=g_min,
-                )
-            )
+        margins = margins_by_member[alarm_id]
 
         # Role classification uses the closest candidate's margin: it is the
         # "nearest miss" contrast that decides CORE vs WEAK (§4B), while the
@@ -323,19 +350,25 @@ def analyze_chain(
             representativeness=member_representativeness,
             margin_common=primary_margin.margin if primary_margin else None,
         )
-        structural = classify_structural_role(alarm_id, audit_graph)
-        redundancy = classify_redundancy(
-            alarm_id, member_alarms, index=index, descriptors=identity
-        )
         analysis.members[alarm_id] = MemberAnalysis(
             alarm_id=alarm_id,
             support=support,
             role=role,
             representativeness=member_representativeness,
-            margins=tuple(margins),
-            structural=structural,
-            redundancy=redundancy,
+            margins=margins,
+            structural=None,
+            redundancy=redundancy_by_member[alarm_id],
         )
+
+    analysis.phase_durations.update(
+        {
+            "membership_statistics": membership_done - descriptors_done,
+            "contrastive": contrastive_done - membership_done,
+            "redundancy": redundancy_done - contrastive_done,
+            "role_assembly": perf_counter() - redundancy_done,
+            "total": perf_counter() - analysis_started,
+        }
+    )
 
     return analysis
 

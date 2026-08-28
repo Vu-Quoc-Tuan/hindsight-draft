@@ -14,13 +14,18 @@ The system SHALL NOT materialize all alarm pairs for a global snapshot.
 
 For large chains, unguarded `O(|C|²)` materialization is also prohibited by default.
 
+Dense all-pairs evaluation is not a Tier-1 fallback even for channels that do
+not yet have an indexed provider. Such a channel is `UNAVAILABLE` until an
+equivalent provider exists.
+
 Required patterns:
 - Pair WHY: compute on click.
 - Equality/entity Fit: indexed/grouped counts.
 - Temporal: sort/window or bounded neighborhood.
 - Descriptor: bitmap/inverted counts.
 - Attribution: inverted counts/sampling/supernode approximation for large chains.
-- Audit: full only under configured chain-size threshold; otherwise supernode or guaranteed sparsification policy.
+- Audit: Tier-2 only; full under an explicit configured chain-size threshold,
+  otherwise a benchmark-derived supernode or guaranteed sparsification policy.
 
 ## Rationale
 
@@ -41,9 +46,17 @@ This turns the scalability statement into an enforceable implementation rule.
 
 A configurable guard threshold SHALL select exact vs bounded/aggregate execution. Benchmarks must include large-chain shapes, not only global N.
 
+The three guarantees are independent and explicit:
+
+- `statistics_mode`: `EXACT_INDEXED`, `APPROXIMATED`, or `UNAVAILABLE`;
+- `pair_materialization`: `ON_DEMAND`, `BOUNDED`, or `TRUNCATED`;
+- `audit_graph_mode`: `NOT_COMPUTED`, `EXACT_FULL`, `SPARSIFIED`, or `SUPERNODE`.
+
 ## Invariants / required tests
 
 - No Tier-1B default code path executes nested loops over 20k members.
+- No Tier-1B default code path calls the pairwise correctness oracle.
+- Tier-1B reports `audit_graph_mode=NOT_COMPUTED`.
 - Pair endpoints materialize only requested/bounded pairs.
 - Attribution on a large chain proves it did not allocate C(n,2) state.
 

@@ -29,20 +29,22 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | **MVP complete** | | **8/8** |
 | Basic structural audit: audit graph, deterministic cuts, conductance | P0 | done |
 | Multi-evidence over-merge verdict | P1-Core | done |
-| STRUCTURAL role (CONNECTOR/NON_CONNECTOR), REDUNDANCY role | P0/§4B | done |
+| STRUCTURAL role (Tier-2), REDUNDANCY role (Tier-1B) | P0/§4B | done |
 | CommonDependency: SHARED_ANCESTOR + SHARED_ACTIVE_PATH (`channels/common_dependency.py`) | P1-Core | done |
 | Similar Chains: fingerprint + cosine baseline (`similar_chains/`) | P1-Core | done |
 | **P1-Core (3+1) feature set implemented** | | **4/4** |
 | Contrastive top-3: per-candidate `Margin_common` (§5, §11) | P0 | done |
-| Benchmarks, incremental indexing | P0 | not started |
+| Hybrid indexed Tier-1B + pairwise oracle | P0 | done |
+| Benchmark matrix + overlap measurement | P0 | implemented; real run recorded |
+| Production delta indexing policy | P0 | pending 1–4 week overlap data |
 | UNAVOIDABLE_DEPENDENCY (dominator), graph motif upgrade | P2 | not started |
 | HTTP API, web UI, persistence/migrations | infra | not started |
 
 Per ADR-0029, MVP + P0-complete must stand as a usable project **before** P1.
 The P1-Core feature set above is implemented, but the **P1 milestone is not
-closed**: several P0 acceptance items (contrastive top-3 UI, benchmarks,
-incremental indexing) are still outstanding. Next steps are closing those P0
-items, then integration/full-real-data run/benchmark/evaluation/UI — not
+closed**: contrastive UI and the production-data decision for delta indexing
+are still outstanding. Next steps are closing those P0 items, then
+integration/evaluation/UI — not
 further P1-optional or P2 work.
 
 ### Open questions (unresolved, see ADR-0022)

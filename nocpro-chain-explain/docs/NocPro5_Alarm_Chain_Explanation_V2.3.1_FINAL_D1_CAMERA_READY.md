@@ -372,13 +372,14 @@ Merge: OR                         Two dominant resource blocks detected
                           │  user mở một chain
                           ▼
 ╔═ TIER 1B — FAST LOCAL (on chain open, P95 <5s) ═════════╗
-║  Materialize multi-layer evidence cục bộ (bounded)       ║
-║  Member WHY · Pair WHY · Contrastive top-3               ║
-║  Role 3 trục · Basic structure view                      ║
+║  Indexed/sufficient statistics · evidence cục bộ bounded ║
+║  Member WHY · Pair WHY on-click · Contrastive top-3      ║
+║  Membership/Redundancy · audit_graph=NOT_COMPUTED        ║
 ╚══════════════════════════════════════════════════════════╝
                           │  user bấm "Phân tích sâu"
                           ▼
 ╔═ TIER 2 — ON-DEMAND DEEP DIVE (per-chain, 5–30s, async) ═╗
+║  G*_audit exact/compressed · STRUCTURAL role              ║
 ║  Structural Robustness (balanced cut)                    ║
 ║  Evidence Coverage Attribution (closed-form)             ║
 ║  Similar incidents (dedup theo evolving chain)           ║
@@ -397,6 +398,11 @@ Merge: OR                         Two dominant resource blocks detected
 2. Tier 2 luôn chạy **per-chain**, không bao giờ trên toàn snapshot.
 3. Cache theo khóa (chain fingerprint, snapshot version, config version); bấm lại không tính lại.
 4. Tier 2 async với progress indicator; user vẫn thao tác Tier-1B view trong lúc chờ.
+5. Tier-1 statistical default dùng indexed/sufficient statistics; không có
+   semantics-preserving provider thì channel = `⊥ UNAVAILABLE`, không silent
+   fallback sang dense all-pairs.
+6. Pairwise implementation giữ làm correctness oracle cho chain nhỏ và Pair WHY
+   on-click; không phải production default path.
 
 Sự phân chia 1A/1B giải quyết inconsistency của V2 (architecture nói "background mỗi snapshot" nhưng Evidence Engine nói "materialize lazy per-chain" — giờ 1A làm global/background, 1B làm local/lazy). Chi tiết engine: mục 4–8; đặc tả toán học: mục 4A–4B.
 
@@ -1077,11 +1083,11 @@ Loại khỏi core không phải vì dở, mà vì: không có model access phù
 
 **Cấm tuyệt đối O(N²) trên toàn snapshot** — C(100k,2) ≈ 5×10^9 pair.
 
-**Chiến lược tính toán:** equality → hash group-by ~O(N); time → sort + sliding window O(N log N); topology → precomputed index theo relation_type; historical → precomputed offline (episode-deduped); deep graph analysis → chỉ per-chain (Tier 2).
+**Chiến lược tính toán:** equality → hash group-by ~O(N); time → sort + sliding window O(N log N); topology → precomputed index theo relation_type; historical → precomputed offline (episode-deduped); deep graph analysis → chỉ per-chain (Tier 2). Không claim mọi channel đều O(N): invariant là **NO default dense pair scan**; complexity phụ thuộc provider/capability.
 
-**Bounded computation (bắt buộc):** descriptor: rule ≤ 2–3, top-K values, attribute whitelist, chỉ delta chains; contrastive: top-3 candidate qua blocking index; pair detail: on-click. **Phân biệt rõ (v2.1):** bounded top-K chỉ áp cho VISUALIZATION; STATISTICAL tính trên full indexed counts; AUDIT graph theo quy tắc mục 6 (full/supernode, không top-K).
+**Bounded computation (bắt buộc):** descriptor: rule ≤ 2–3, top-K values, attribute whitelist, chỉ delta chains; contrastive: top-3 candidate qua blocking index; pair detail: on-click. **Phân biệt rõ (v2.1):** bounded top-K chỉ áp cho VISUALIZATION; STATISTICAL tính trên exact indexed/sufficient counts đối với channel available; full/compressed AUDIT graph thuộc Tier 2 theo quy tắc mục 6 (không top-K).
 
-**Mapping tầng (v2.1):** Tier 1A = global indexes + counts + descriptor candidates + lineage + cache (background, 10–30s*); Tier 1B = materialize local evidence + WHY + role khi mở chain (P95 <5s); Tier 2 = deep dive (5–30s). (*hypothesis chờ benchmark.)
+**Mapping tầng (v2.1):** Tier 1A = global indexes + counts + descriptor candidates + lineage + cache (background, 10–30s*); Tier 1B = indexed statistics + local/bounded WHY + Membership/Redundancy khi mở chain, `audit_graph_mode=NOT_COMPUTED` (P95 <5s); Tier 2 = `G*_audit` exact/compressed + STRUCTURAL/deep dive (5–30s). (*hypothesis chờ benchmark.)
 
 **Incremental snapshot indexing — hypothesis cần đo:** thiết kế hỗ trợ delta update (NEW/CLEARED); benefit phụ thuộc overlap thực tế. Việc đo bắt buộc: phân bố J(A_t, A_{t+1}) trên 1–4 tuần production. Median cao (giả thuyết >90%) → incremental giữ 1A ở đáy 10–30s; alarm flood kéo xuống ~50% → cần full-path đủ nhanh dự phòng.
 
@@ -1212,7 +1218,7 @@ Bốn trục: algorithmic + system performance + UI/human + robustness của ch�
 **P0-complete (= MVP +):**
 - Contrastive top-3 với Margin_common + CONTRASTIVE descriptors
 - Multi-channel evidence + layer switcher · contextual burst (cơ bản)
-- Basic structural audit (components/bridge, 3-graph rule)
+- Basic structural audit on-demand ở Tier 2 (components/bridge, 3-graph rule)
 - Joined/left decomposition trong events
 - Incremental indexing + đo overlap production · benchmark ma trận + perf
 

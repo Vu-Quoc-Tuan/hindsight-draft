@@ -1,16 +1,18 @@
-"""Run the benchmark matrix against the real alarm export.
+"""Run the real-data Tier-1/Tier-2 benchmark matrix.
 
-Requires the sibling nocpro-mock repo with its .venv and real data in
-``datasets/raw/alarm_data.csv``. Run from the chain-explain root:
+Run from the chain-explain root::
 
     ../nocpro-mock/.venv/bin/python benchmarks/run_benchmark.py
 
-Results are written to ``benchmarks/results/latest.json``.
+Tier-1B latency uses 20 repetitions by default so the observed nearest-rank P95
+resolves a five-percent tail. Expensive Tier-1A is sampled separately and is
+explicitly marked unreliable when fewer than 20 samples are requested.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -21,36 +23,39 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "services/analysis-
 
 from benchmarks.harness import (
     BenchmarkReport,
-    WorkloadSpec,
+    TimingResult,
     check_against_objectives,
     measure,
 )
-from descriptor import MiningConfig
+from channels import build_indexed_statistics, evaluate_pair_channels
+from descriptor import MiningConfig, build_predicate_index
 from groups import RoleThresholds
 from libs.contracts import load_package
-from tier1a import precompute_snapshot, Tier1Cache
+from tier1a import Tier1Cache, precompute_snapshot
 from tier1b import analyze_chain
+from tier2 import AuditExecutionPolicy, analyze_structural_audit
 
 MOCK_ROOT = Path(__file__).resolve().parents[2] / "nocpro-mock"
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
+TARGET_SIZES = (1, 10, 50, 200, 500, 1072)
 
-THRESHOLDS = RoleThresholds(config_version="bench-v1")
-MINING = MiningConfig(config_version="bench-mine-v1")
+THRESHOLDS = RoleThresholds(config_version="bench-v2")
+MINING = MiningConfig(config_version="bench-mine-v2")
 
 
-def _replay(*, limit: int | None = None, chain_ids: list[str] | None = None):
-    args = [
-        str(MOCK_ROOT / ".venv/bin/python"),
-        "-m", "nocpro_mock.cli", "replay",
-        "--snapshot-id", f"bench_{limit or 'full'}",
-    ]
-    if limit:
-        args += ["--limit", str(limit)]
-    if chain_ids:
-        for cid in chain_ids:
-            args += ["--chain-id", cid]
+def _replay():
     result = subprocess.run(
-        args, cwd=MOCK_ROOT, capture_output=True, text=True,
+        [
+            str(MOCK_ROOT / ".venv/bin/python"),
+            "-m",
+            "nocpro_mock.cli",
+            "replay",
+            "--snapshot-id",
+            "bench_full",
+        ],
+        cwd=MOCK_ROOT,
+        capture_output=True,
+        text=True,
         env={"PYTHONPATH": "src", "PATH": "/usr/bin:/bin"},
     )
     if result.returncode != 0:
@@ -58,75 +63,170 @@ def _replay(*, limit: int | None = None, chain_ids: list[str] | None = None):
     return load_package(json.loads(result.stdout))
 
 
-def run() -> BenchmarkReport:
-    report = BenchmarkReport(metadata={"timestamp": time.strftime("%Y-%m-%dT%H:%M:%S")})
+def _workloads(package) -> list[tuple[int, str, int]]:
+    sizes = [(chain.member_count, chain_id) for chain_id, chain in package.chains.items()]
+    selected: list[tuple[int, str, int]] = []
+    seen: set[str] = set()
+    for target in TARGET_SIZES:
+        actual, chain_id = min(sizes, key=lambda item: (abs(item[0] - target), item[1]))
+        if chain_id not in seen:
+            selected.append((target, chain_id, actual))
+            seen.add(chain_id)
+    return selected
 
-    # --- Workload: full export (8714 alarms / 2824 chains) ---
-    print("Loading full export...")
-    full = _replay()
-    n_alarms = len(full.alarms)
-    n_chains = len(full.chains)
-    max_chain = max(c.member_count for c in full.chains.values())
-    spec = WorkloadSpec(
-        name="full_export",
-        n_alarms=n_alarms,
-        n_chains=n_chains,
-        max_chain_size=max_chain,
-        description=f"{n_alarms} alarms, {n_chains} chains, max={max_chain}",
-    )
-    report.metadata["workload"] = spec.description
 
-    # Tier-1A: precompute over the whole snapshot.
-    print(f"Benchmarking Tier-1A ({spec.description})...")
-    cache = Tier1Cache()
-    r = measure(
-        "tier_1a_snapshot_background",
-        spec.name,
-        lambda: precompute_snapshot(full, mining_config=MINING, cache=cache),
-        repetitions=3,
-    )
-    report.results.append(r)
-    print(f"  Tier-1A: P50={r.p50:.2f}s P95={r.p95:.2f}s mem={r.peak_memory_bytes/1024/1024:.1f}MB")
+def _phase_results(
+    package,
+    chain_id: str,
+    *,
+    workload: str,
+    predicate_index,
+    repetitions: int,
+) -> list[TimingResult]:
+    phases: dict[str, TimingResult] = {}
 
-    # Tier-1B: single chain analysis on the largest chain.
-    largest_id = max(full.chains, key=lambda c: full.chains[c].member_count)
-    print(f"Benchmarking Tier-1B (chain {largest_id}, {full.chains[largest_id].member_count} members)...")
-    r = measure(
-        "tier_1b_on_chain_open_p95",
-        f"chain_{largest_id}_{full.chains[largest_id].member_count}",
-        lambda: analyze_chain(full, largest_id, thresholds=THRESHOLDS, mining_config=MINING),
-        repetitions=3,
-    )
-    report.results.append(r)
-    print(f"  Tier-1B: P50={r.p50:.2f}s P95={r.p95:.2f}s mem={r.peak_memory_bytes/1024/1024:.1f}MB")
-
-    # Tier-1B: singleton (first-class path, 73% of chains).
-    singleton_id = next(
-        (cid for cid, c in full.chains.items() if c.member_count == 1), None
-    )
-    if singleton_id:
-        print(f"Benchmarking Tier-1B singleton ({singleton_id})...")
-        r = measure(
-            "tier_1b_singleton",
-            "singleton",
-            lambda: analyze_chain(full, singleton_id, thresholds=THRESHOLDS, mining_config=MINING),
-            repetitions=3,
+    def run_once():
+        analysis = analyze_chain(
+            package,
+            chain_id,
+            thresholds=THRESHOLDS,
+            mining_config=MINING,
+            predicate_index=predicate_index,
         )
-        report.results.append(r)
-        print(f"  Tier-1B singleton: P50={r.p50:.3f}s")
+        for name, duration in analysis.phase_durations.items():
+            phases.setdefault(
+                name,
+                TimingResult(operation=f"tier_1b_phase_{name}", workload=workload),
+            ).durations_seconds.append(duration)
 
-    # --- Check against design objectives ---
-    warnings = check_against_objectives(report.results)
-    if warnings:
-        print("\n⚠️  Design objective warnings:")
-        for w in warnings:
-            print(f"  {w}")
-    else:
-        print("\n✓ All results within design objectives.")
+    total = measure(
+        "tier_1b_on_chain_open_p95",
+        workload,
+        run_once,
+        repetitions=repetitions,
+        track_memory=False,
+    )
+    return [total, *[phases[name] for name in sorted(phases)]]
 
-    # Write report.
+
+def run() -> BenchmarkReport:
+    tier1b_repetitions = int(os.environ.get("BENCHMARK_REPETITIONS", "20"))
+    tier1a_repetitions = int(os.environ.get("BENCHMARK_TIER1A_REPETITIONS", "3"))
+    report = BenchmarkReport(
+        metadata={
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "p95_method": "observed nearest-rank",
+            "tier_1b_repetitions": tier1b_repetitions,
+            "tier_1a_repetitions": tier1a_repetitions,
+        }
+    )
+
+    print("Loading full export...")
+    load_result = measure(
+        "source_package_load",
+        "full_export",
+        _replay,
+        repetitions=3,
+        track_memory=False,
+    )
+    report.results.append(load_result)
+    package = _replay()
+    report.metadata["workload"] = (
+        f"{len(package.alarms)} alarms, {len(package.chains)} chains, "
+        f"max={max(chain.member_count for chain in package.chains.values())}"
+    )
+
+    print("Building reusable predicate index...")
+    predicate_index = build_predicate_index(list(package.alarms.values()))
+
+    print("Benchmarking Tier-1A full snapshot...")
+    report.results.append(
+        measure(
+            "tier_1a_snapshot_background",
+            "full_export",
+            lambda: precompute_snapshot(package, mining_config=MINING, cache=Tier1Cache()),
+            repetitions=tier1a_repetitions,
+        )
+    )
+
+    matrix = _workloads(package)
+    report.metadata["chain_matrix"] = [
+        {"target_size": target, "actual_size": actual, "chain_id": chain_id}
+        for target, chain_id, actual in matrix
+    ]
+
+    for target, chain_id, actual in matrix:
+        workload = f"target_{target}_chain_{chain_id}_n_{actual}"
+        print(f"Benchmarking Tier-1B {workload}...")
+        report.results.append(
+            measure(
+                "tier_1b_index_build",
+                workload,
+                lambda cid=chain_id: build_indexed_statistics(package, cid),
+                repetitions=tier1b_repetitions,
+                track_memory=False,
+            )
+        )
+        report.results.extend(
+            _phase_results(
+                package,
+                chain_id,
+                workload=workload,
+                predicate_index=predicate_index,
+                repetitions=tier1b_repetitions,
+            )
+        )
+
+        members = package.members_of(chain_id)
+        if len(members) >= 2:
+            report.results.append(
+                measure(
+                    "pair_on_click",
+                    workload,
+                    lambda cid=chain_id, left=members[0], right=members[1]: (
+                        evaluate_pair_channels(package, cid, left, right)
+                    ),
+                    repetitions=tier1b_repetitions,
+                    track_memory=False,
+                )
+            )
+
+        report.results.append(
+            measure(
+                "tier_1b_peak_memory",
+                workload,
+                lambda cid=chain_id: analyze_chain(
+                    package,
+                    cid,
+                    thresholds=THRESHOLDS,
+                    mining_config=MINING,
+                    predicate_index=predicate_index,
+                ),
+                repetitions=1,
+                track_memory=True,
+            )
+        )
+
+        if actual <= 50 and actual >= 2:
+            report.results.append(
+                measure(
+                    "tier_2_exact_audit",
+                    workload,
+                    lambda cid=chain_id, bound=actual: analyze_structural_audit(
+                        package,
+                        cid,
+                        policy=AuditExecutionPolicy(exact_max_members=bound),
+                        mining_config=MINING,
+                        epsilon=0.3,
+                    ),
+                    repetitions=3,
+                    track_memory=False,
+                )
+            )
+
+    report.metadata["objective_warnings"] = check_against_objectives(report.results)
     output = report.write(RESULTS_DIR / "latest.json")
-    print(f"\nReport written to {output}")
+    print(f"Report written to {output}")
     return report
 
 

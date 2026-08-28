@@ -12,6 +12,7 @@ import sys
 
 import pytest
 
+from channels import AlarmTaxonomy
 from descriptor import MiningConfig
 from descriptor.contrastive import (
     blocking_candidates,
@@ -19,7 +20,7 @@ from descriptor.contrastive import (
     margin_common,
 )
 from graybox.singleton import MembershipVerdict
-from groups import RoleThresholds
+from groups import AuditGraphMode, RoleThresholds
 from libs.contracts import load_package
 from tier1b import analyze_chain, auto_chain_title
 from tests.conftest import MOCK_ROOT
@@ -133,6 +134,86 @@ def test_margin_common_is_computed_from_a_rival_chain(two_chain_package):
         # C1 members fit C1 better than C2, so the margin is positive.
         assert member.margin.margin is not None
         assert member.margin.margin > 0
+
+
+def test_indexed_rival_fits_match_pairwise_oracle(two_chain_package):
+    from channels import RivalFitIndex
+    from groups.fit import group_fits
+    from tier1b.chain_analysis import _rival_statistics
+
+    alarm = two_chain_package.alarms["c1_0"]
+    oracle = tuple(
+        group_fits(
+            alarm.alarm_id,
+            _rival_statistics(
+                two_chain_package,
+                alarm.alarm_id,
+                "C2",
+                taxonomy=AlarmTaxonomy({}, {}),
+            ),
+        )
+    )
+    indexed = RivalFitIndex.from_chain(two_chain_package, "C2").group_fits_for(alarm)
+    expected = {fit.derivation_tag: fit for fit in oracle}
+    actual = {fit.derivation_tag: fit for fit in indexed}
+    assert set(expected) <= set(actual)
+    for tag, fit in expected.items():
+        if fit.fit is None:
+            assert actual[tag].fit is None
+        else:
+            assert actual[tag].fit == pytest.approx(fit.fit)
+    assert actual["temporal_delay"].fit is None
+    assert actual["dependency_hop"].fit is None
+
+
+def test_indexed_rival_burst_query_preserves_bridge_insertion():
+    from channels import RivalFitIndex
+    from groups.fit import group_fits
+    from tier1b.chain_analysis import _rival_statistics
+
+    alarms = [
+        _alarm(
+            "target", "C1", location_code="SITE-A", alarm_name="X",
+            canonical_start_time="2026-01-01T00:02:00",
+        ),
+        _alarm(
+            "left", "C2", location_code="SITE-A", alarm_name="Y",
+            canonical_start_time="2026-01-01T00:00:00",
+        ),
+        _alarm(
+            "right", "C2", location_code="SITE-A", alarm_name="Z",
+            canonical_start_time="2026-01-01T00:04:00",
+        ),
+    ]
+    package = _snapshot(
+        alarms,
+        [
+            {"chain_id": "C1", "snapshot_id": "s1", "member_count": 1},
+            {"chain_id": "C2", "snapshot_id": "s1", "member_count": 2},
+        ],
+        [
+            {"chain_id": "C1", "alarm_id": "target", "snapshot_id": "s1"},
+            {"chain_id": "C2", "alarm_id": "left", "snapshot_id": "s1"},
+            {"chain_id": "C2", "alarm_id": "right", "snapshot_id": "s1"},
+        ],
+    )
+    oracle = {
+        fit.derivation_tag: fit
+        for fit in group_fits(
+            "target",
+            _rival_statistics(
+                package, "target", "C2", taxonomy=AlarmTaxonomy({}, {})
+            ),
+        )
+    }
+    indexed = {
+        fit.derivation_tag: fit
+        for fit in RivalFitIndex.from_chain(package, "C2").group_fits_for(
+            package.alarms["target"]
+        )
+    }
+    assert oracle["temporal_burst"].fit == 1.0
+    assert indexed["temporal_burst"].fit == pytest.approx(1.0)
 
 
 def test_members_of_a_clean_block_reach_core(two_chain_package):
@@ -297,30 +378,26 @@ def test_analysis_on_real_snapshot():
 # --------------------------------------------------------------------------
 
 
-def test_multi_member_analysis_produces_all_three_axes(two_chain_package):
-    from audit.structural_role import StructuralRole
+def test_multi_member_analysis_defers_structural_axis_to_tier2(two_chain_package):
     from groups.redundancy import RedundancyRole
 
     analysis = analyze_chain(
         two_chain_package, "C1", thresholds=THRESHOLDS, mining_config=MINING
     )
+    assert analysis.audit_graph_mode is AuditGraphMode.NOT_COMPUTED
     for member in analysis.members.values():
         assert member.role is not None  # MEMBERSHIP
-        assert member.structural is not None  # STRUCTURAL
-        assert member.structural.role in set(StructuralRole)
+        assert member.structural is None  # STRUCTURAL belongs to Tier-2
         assert member.redundancy is not None  # REDUNDANCY
         assert member.redundancy.role in set(RedundancyRole)
 
 
-def test_dense_block_members_are_non_connector(two_chain_package):
-    """A tightly-knit 6-member block has no articulation point."""
-    from audit.structural_role import StructuralRole
-
+def test_dense_block_does_not_materialize_tier1b_audit(two_chain_package):
     analysis = analyze_chain(
         two_chain_package, "C1", thresholds=THRESHOLDS, mining_config=MINING
     )
-    roles = {m.structural.role for m in analysis.members.values()}
-    assert StructuralRole.CONNECTOR not in roles
+    assert analysis.audit_graph_mode is AuditGraphMode.NOT_COMPUTED
+    assert all(member.structural is None for member in analysis.members.values())
 
 
 def test_singleton_structural_role_is_not_applicable():
@@ -408,7 +485,7 @@ def test_near_duplicate_does_not_preclude_core():
 
 
 @pytest.mark.realdata
-def test_real_snapshot_produces_all_three_axes():
+def test_real_snapshot_produces_membership_and_redundancy_without_tier2_audit():
     if not (MOCK_ROOT / "datasets/raw/alarm_data.csv").is_file():
         pytest.skip("real alarm export not present")
     venv = MOCK_ROOT / ".venv/bin/python"
@@ -429,9 +506,10 @@ def test_real_snapshot_produces_all_three_axes():
         package, "6907123", thresholds=THRESHOLDS, mining_config=MINING
     )
     assert len(analysis.members) == 20
+    assert analysis.audit_graph_mode is AuditGraphMode.NOT_COMPUTED
     for member in analysis.members.values():
         assert member.role is not None
-        assert member.structural is not None
+        assert member.structural is None
         assert member.redundancy is not None
 
 

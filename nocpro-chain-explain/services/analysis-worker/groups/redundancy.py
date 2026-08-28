@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from bisect import bisect_left, bisect_right
 
 from descriptor.mining import Descriptor
 from libs.contracts import IngestedAlarm
@@ -133,3 +134,92 @@ def classify_redundancy(
         duplicate_of=None,
         reason="no matching near-duplicate found",
     )
+
+
+def classify_redundancy_all(
+    members: list[IngestedAlarm],
+    *,
+    index,
+    descriptors: tuple[Descriptor, ...],
+    small_dt_seconds: int = DEFAULT_SMALL_DT_SECONDS,
+) -> dict[str, RedundancyResult]:
+    """Classify all members using time-sorted entity postings.
+
+    This preserves :func:`classify_redundancy`'s first-member tie-breaking while
+    avoiding a full scan of the chain for every member.
+    """
+    order = {alarm.alarm_id: position for position, alarm in enumerate(members)}
+    by_id = {alarm.alarm_id: alarm for alarm in members}
+    postings: dict[tuple[str, str, str], list[tuple[object, str]]] = {}
+
+    for alarm in members:
+        name = (alarm.alarm_name or "").strip() or None
+        timestamp = _parse(alarm.canonical_start_time)
+        if name is None or timestamp is None:
+            continue
+        for field in ENTITY_FIELDS:
+            value = getattr(alarm, field, None)
+            if value is not None:
+                postings.setdefault((name, field, value), []).append(
+                    (timestamp, alarm.alarm_id)
+                )
+    for values in postings.values():
+        values.sort()
+
+    results: dict[str, RedundancyResult] = {}
+    for alarm in members:
+        name = (alarm.alarm_name or "").strip() or None
+        timestamp = _parse(alarm.canonical_start_time)
+        if name is None or timestamp is None:
+            results[alarm.alarm_id] = RedundancyResult(
+                alarm_id=alarm.alarm_id,
+                role=RedundancyRole.NOT_APPLICABLE,
+                duplicate_of=None,
+                reason="alarm_name or timestamp unavailable",
+            )
+            continue
+
+        from datetime import timedelta
+
+        lower = timestamp - timedelta(seconds=small_dt_seconds)
+        upper = timestamp + timedelta(seconds=small_dt_seconds)
+        candidate_ids: set[str] = set()
+        for field in ENTITY_FIELDS:
+            value = getattr(alarm, field, None)
+            if value is None:
+                continue
+            values = postings.get((name, field, value), [])
+            left = bisect_left(values, (lower, ""))
+            right = bisect_right(values, (upper, chr(0x10FFFF)))
+            candidate_ids.update(alarm_id for _, alarm_id in values[left:right])
+        candidate_ids.discard(alarm.alarm_id)
+
+        duplicate = None
+        duplicate_delta = 0.0
+        for candidate_id in sorted(candidate_ids, key=order.__getitem__):
+            candidate = by_id[candidate_id]
+            if _adds_new_coverage(alarm.alarm_id, candidate_id, index, descriptors):
+                continue
+            duplicate = candidate_id
+            candidate_time = _parse(candidate.canonical_start_time)
+            duplicate_delta = abs((timestamp - candidate_time).total_seconds())
+            break
+
+        if duplicate is None:
+            results[alarm.alarm_id] = RedundancyResult(
+                alarm_id=alarm.alarm_id,
+                role=RedundancyRole.UNIQUE,
+                duplicate_of=None,
+                reason="no matching near-duplicate found",
+            )
+        else:
+            results[alarm.alarm_id] = RedundancyResult(
+                alarm_id=alarm.alarm_id,
+                role=RedundancyRole.NEAR_DUPLICATE_CANDIDATE,
+                duplicate_of=duplicate,
+                reason=(
+                    f"same alarm_name and entity as {duplicate!r}, "
+                    f"dt={duplicate_delta:.1f}s, no new descriptor coverage"
+                ),
+            )
+    return results

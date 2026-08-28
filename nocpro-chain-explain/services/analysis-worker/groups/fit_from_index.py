@@ -54,6 +54,7 @@ def group_fits_from_index(
             channel_id=channel_id,
             derivation_tag=meta[0],
             provenance_class=meta[1],
+            provenance_subtype=meta[2],
         )
         for channel_id, meta in stats.channel_meta.items()
     ]
