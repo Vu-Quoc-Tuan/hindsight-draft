@@ -1,0 +1,11 @@
+version: "3.9"
+
+services:
+  nocpro-mock:
+    build: .
+    container_name: nocpro-mock
+    volumes:
+      - ./datasets:/app/datasets
+    environment:
+      - PYTHONUNBUFFERED=1
+    # TODO: add kafka/broker dependency if producer.kafka_producer is used

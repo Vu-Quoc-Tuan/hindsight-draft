@@ -1,0 +1,27 @@
+[project]
+name = "nocpro-mock"
+version = "0.1.0"
+description = "Upstream replay, normalization and scenario simulator for nocpro-chain-explain"
+requires-python = ">=3.11"
+# PyYAML is required to read scenario definitions, which use list syntax the
+# stdlib cannot parse. Pinned deliberately.
+dependencies = ["PyYAML==6.0.2"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+nocpro-mock = "nocpro_mock.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nocpro_mock"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "realdata: requires the real exports in datasets/raw",
+]
