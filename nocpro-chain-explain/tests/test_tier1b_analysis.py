@@ -166,6 +166,56 @@ def test_indexed_rival_fits_match_pairwise_oracle(two_chain_package):
     assert actual["dependency_hop"].fit is None
 
 
+def test_indexed_rival_dep_hop_matches_sparse_pairwise_oracle(two_chain_package):
+    from channels import RivalFitIndex
+    from groups.fit import group_fits
+    from tier1b.chain_analysis import _rival_statistics
+
+    two_chain_package.topology = {
+        "edges": [
+            {
+                "source_resource_id": "R1",
+                "target_resource_id": "R2",
+                "relation_type": "IP_ADJACENCY",
+                "directed": False,
+            }
+        ],
+        "mappings": [
+            {
+                "alarm_id": alarm_id,
+                "resource_id": "R1" if alarm_id.startswith("c1_") else "R2",
+                "mapping_status": "EXACT",
+            }
+            for alarm_id in two_chain_package.alarms
+        ],
+    }
+    alarm = two_chain_package.alarms["c1_0"]
+    oracle = {
+        fit.derivation_tag: fit
+        for fit in group_fits(
+            alarm.alarm_id,
+            _rival_statistics(
+                two_chain_package,
+                alarm.alarm_id,
+                "C2",
+                taxonomy=AlarmTaxonomy({}, {}),
+            ),
+        )
+    }
+    indexed = {
+        fit.derivation_tag: fit
+        for fit in RivalFitIndex.from_chain(
+            two_chain_package, "C2"
+        ).group_fits_for(alarm)
+    }
+
+    assert oracle["dependency_hop"].fit == pytest.approx(1.0)
+    assert indexed["dependency_hop"].fit == pytest.approx(
+        oracle["dependency_hop"].fit
+    )
+    assert indexed["dependency_hop"].channel_fits[0].domain_size == 6
+
+
 def test_indexed_rival_burst_query_preserves_bridge_insertion():
     from channels import RivalFitIndex
     from groups.fit import group_fits

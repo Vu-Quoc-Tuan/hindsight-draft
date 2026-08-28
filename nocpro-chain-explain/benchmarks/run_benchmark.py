@@ -181,6 +181,7 @@ def run() -> BenchmarkReport:
                     silent_gap_seconds=int(
                         ANALYSIS_CONFIG.value("temporal.burst.gap_seconds")
                     ),
+                    d_max=int(ANALYSIS_CONFIG.value("dependency.max_hop")),
                 ),
                 repetitions=tier1b_repetitions,
                 track_memory=False,

@@ -365,3 +365,46 @@ def test_relation_families_are_not_mixed():
     # Undirected adjacency stays undirected; the logical graph is directed.
     assert physical.directed is False
     assert logical.directed is True
+
+
+def test_mixed_topology_provenance_fails_closed_instead_of_one_group():
+    from libs.contracts import load_package
+    from channels import PHYSICAL_RELATIONS, build_topology_graph
+
+    package = load_package(
+        {
+            "schema_version": "v1",
+            "snapshot": {
+                "snapshot_id": "s1",
+                "snapshot_time": "2026-01-01T00:00:00",
+                "status": "COMPLETE",
+                "source": "m",
+                "source_kind": "REAL_EXPORT_REPLAY",
+                "produced_at": "2026-01-01T00:00:00",
+            },
+            "topology": {
+                "edges": [
+                    {
+                        "source_resource_id": "R1",
+                        "target_resource_id": "R2",
+                        "relation_type": "IP_ADJACENCY",
+                        "directed": False,
+                        "provenance_class": "EXTERNAL_OPERATIONAL",
+                        "provenance_subtype": "TOPOLOGY_EXTERNAL",
+                    },
+                    {
+                        "source_resource_id": "R2",
+                        "target_resource_id": "R3",
+                        "relation_type": "IP_ADJACENCY",
+                        "directed": False,
+                        "provenance_class": "POST_HOC",
+                    },
+                ]
+            },
+        }
+    )
+
+    graph = build_topology_graph(package, relation_types=PHYSICAL_RELATIONS)
+
+    assert graph.adjacency == {}
+    assert "mixed provenance" in graph.unavailable_reason

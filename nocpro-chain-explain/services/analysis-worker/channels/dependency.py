@@ -48,9 +48,25 @@ class TopologyGraph:
     #: EXTERNAL_OPERATIONAL for inventory/NMS exports, POST_HOC if alarm-derived.
     provenance_class: ProvenanceClass = ProvenanceClass.EXTERNAL_OPERATIONAL
     provenance_subtype: ProvenanceSubtype | None = ProvenanceSubtype.TOPOLOGY_EXTERNAL
+    unavailable_reason: str | None = None
 
     def neighbours(self, node: str) -> set[str]:
         return self.adjacency.get(node, set())
+
+    def reachable_within(self, source: str, *, max_depth: int) -> set[str]:
+        """Resources reachable from ``source`` within the bounded relation graph."""
+        reached = {source}
+        queue: deque[tuple[str, int]] = deque([(source, 0)])
+        while queue:
+            node, depth = queue.popleft()
+            if depth >= max_depth:
+                continue
+            for neighbour in self.neighbours(node):
+                if neighbour in reached:
+                    continue
+                reached.add(neighbour)
+                queue.append((neighbour, depth + 1))
+        return reached
 
     def hop_distance(self, source: str, target: str, *, max_depth: int) -> int | None:
         """BFS distance, or ``None`` when unreachable within ``max_depth``."""
@@ -82,6 +98,8 @@ def build_topology_graph(
     """Build a graph from ingested topology edges for one relation family."""
     graph = TopologyGraph(relation_types=relation_types)
     directed_seen = False
+    eligible_edges: list[dict] = []
+    signatures: set[tuple[ProvenanceClass, ProvenanceSubtype | None]] = set()
 
     for edge in package.topology.get("edges") or ():
         relation = edge.get("relation_type")
@@ -93,6 +111,38 @@ def build_topology_graph(
         if not source or not target:
             continue
 
+        try:
+            provenance_class = ProvenanceClass(
+                edge.get("provenance_class", ProvenanceClass.EXTERNAL_OPERATIONAL.value)
+            )
+            provenance_subtype = (
+                ProvenanceSubtype(
+                    edge.get(
+                        "provenance_subtype",
+                        ProvenanceSubtype.TOPOLOGY_EXTERNAL.value,
+                    )
+                )
+                if provenance_class is ProvenanceClass.EXTERNAL_OPERATIONAL
+                else None
+            )
+        except ValueError:
+            graph.unavailable_reason = "invalid topology provenance metadata"
+            return graph
+        signatures.add((provenance_class, provenance_subtype))
+        eligible_edges.append(edge)
+
+    if len(signatures) > 1:
+        graph.unavailable_reason = (
+            "mixed provenance in one topology relation family; split providers "
+            "before computing Dep_hop"
+        )
+        return graph
+    if signatures:
+        graph.provenance_class, graph.provenance_subtype = next(iter(signatures))
+
+    for edge in eligible_edges:
+        source = edge["source_resource_id"]
+        target = edge["target_resource_id"]
         graph.adjacency.setdefault(source, set()).add(target)
         if edge.get("directed"):
             directed_seen = True
@@ -157,7 +207,11 @@ def evaluate_dep_hop_channel(
         )
 
     if graph is None or not graph.adjacency:
-        return fail("no topology loaded for this relation type")
+        return fail(
+            graph.unavailable_reason
+            if graph and graph.unavailable_reason
+            else "no topology loaded for this relation type"
+        )
 
     resource_a = resolver.resource_of(alarm_a.alarm_id)
     resource_b = resolver.resource_of(alarm_b.alarm_id)

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from libs.contracts import IngestedAlarm, IngestedPackage
-from libs.provenance import ProvenanceClass, ProvenanceSubtype
+from libs.provenance import ProvenanceClass
 
 from groups.fit import GroupFit
 from groups.fit_from_index import group_fits_from_index
@@ -23,6 +23,13 @@ from groups.indexed_statistics import (
 from .indexed_statistics import read_indexed_field
 from .semantic import EMPTY_TAXONOMY, AlarmTaxonomy
 from .temporal import DEFAULT_SILENT_GAP_SECONDS, context_key
+from .dependency import (
+    DEFAULT_D_MAX,
+    PHYSICAL_RELATIONS,
+    ResourceResolver,
+    TopologyGraph,
+    build_topology_graph,
+)
 
 
 EQUALITY_CHANNELS = (
@@ -61,10 +68,17 @@ class RivalFitIndex:
         peers: list[IngestedAlarm],
         taxonomy: AlarmTaxonomy,
         silent_gap_seconds: int,
+        graph: TopologyGraph,
+        resolver: ResourceResolver,
+        d_max: int,
     ) -> None:
         self.chain_id = chain_id
         self.taxonomy = taxonomy
         self.silent_gap_seconds = silent_gap_seconds
+        self.graph = graph
+        self.resolver = resolver
+        self.d_max = d_max
+        self._peer_ids = {alarm.alarm_id for alarm in peers}
         self._domains: dict[str, int] = {}
         self._groups: dict[str, Counter[str]] = {}
 
@@ -91,6 +105,19 @@ class RivalFitIndex:
             key: self._build_burst_posting(times)
             for key, times in by_context.items()
         }
+        self._resource_counts: Counter[str] = Counter(
+            resource
+            for alarm in peers
+            if (resource := resolver.resource_of(alarm.alarm_id)) is not None
+        )
+        self._dep_neighbourhoods = (
+            {
+                resource: graph.reachable_within(resource, max_depth=d_max)
+                for resource in self._resource_counts
+            }
+            if graph.adjacency
+            else {}
+        )
 
     @classmethod
     def from_chain(
@@ -100,6 +127,7 @@ class RivalFitIndex:
         *,
         taxonomy: AlarmTaxonomy = EMPTY_TAXONOMY,
         silent_gap_seconds: int = DEFAULT_SILENT_GAP_SECONDS,
+        d_max: int = DEFAULT_D_MAX,
     ) -> "RivalFitIndex":
         if chain_id not in package.chains:
             raise KeyError(f"unknown rival chain_id {chain_id!r}")
@@ -108,6 +136,9 @@ class RivalFitIndex:
             peers=package.alarms_of(chain_id),
             taxonomy=taxonomy,
             silent_gap_seconds=silent_gap_seconds,
+            graph=build_topology_graph(package, relation_types=PHYSICAL_RELATIONS),
+            resolver=ResourceResolver.from_package(package),
+            d_max=d_max,
         )
 
     def _group_key(self, channel_id: str, value: str) -> str:
@@ -179,6 +210,27 @@ class RivalFitIndex:
             supporting=supporting,
         )
 
+    def _dep_fit(self, alarm: IngestedAlarm) -> ChannelFitFromIndex:
+        resource = self.resolver.resource_of(alarm.alarm_id)
+        domain = 0
+        if resource is not None and self.graph.adjacency:
+            neighbourhood = self._dep_neighbourhoods.get(
+                resource
+            ) or self.graph.reachable_within(
+                resource, max_depth=self.d_max
+            )
+            domain = sum(self._resource_counts[item] for item in neighbourhood)
+            if alarm.alarm_id in self._peer_ids:
+                domain -= 1
+        return ChannelFitFromIndex(
+            channel_id="Dep_hop",
+            derivation_tag="dependency_hop",
+            provenance_class=self.graph.provenance_class,
+            fit=1.0 if domain else None,
+            domain_size=domain,
+            supporting=domain,
+        )
+
     def group_fits_for(self, alarm: IngestedAlarm) -> tuple[GroupFit, ...]:
         statistics = IndexedChainStatistics(
             chain_id=self.chain_id,
@@ -202,23 +254,23 @@ class RivalFitIndex:
             None,
         )
         statistics.fits[(alarm.alarm_id, "T_burst")] = self._burst_fit(alarm)
-        for channel_id, tag, provenance in (
-            ("T_delay", "temporal_delay", ProvenanceClass.POST_HOC),
-            ("Dep_hop", "dependency_hop", ProvenanceClass.EXTERNAL_OPERATIONAL),
-        ):
-            statistics.channel_meta[channel_id] = (
-                tag,
-                provenance,
-                ProvenanceSubtype.TOPOLOGY_EXTERNAL
-                if channel_id == "Dep_hop"
-                else None,
-            )
-            statistics.fits[(alarm.alarm_id, channel_id)] = ChannelFitFromIndex(
-                channel_id=channel_id,
-                derivation_tag=tag,
-                provenance_class=provenance,
-                fit=None,
-                domain_size=0,
-                supporting=0,
-            )
+        statistics.channel_meta["T_delay"] = (
+            "temporal_delay",
+            ProvenanceClass.POST_HOC,
+            None,
+        )
+        statistics.fits[(alarm.alarm_id, "T_delay")] = ChannelFitFromIndex(
+            channel_id="T_delay",
+            derivation_tag="temporal_delay",
+            provenance_class=ProvenanceClass.POST_HOC,
+            fit=None,
+            domain_size=0,
+            supporting=0,
+        )
+        statistics.channel_meta["Dep_hop"] = (
+            "dependency_hop",
+            self.graph.provenance_class,
+            self.graph.provenance_subtype,
+        )
+        statistics.fits[(alarm.alarm_id, "Dep_hop")] = self._dep_fit(alarm)
         return tuple(group_fits_from_index(alarm.alarm_id, statistics))

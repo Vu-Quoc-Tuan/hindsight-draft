@@ -24,6 +24,7 @@ from libs.contracts import IngestedPackage
 from audit.structural_role import StructuralRole, StructuralRoleResult
 from channels import (
     DEFAULT_SILENT_GAP_SECONDS,
+    DEFAULT_D_MAX,
     IndexedChainEvidence,
     RivalFitIndex,
     evaluate_chain_indexed,
@@ -32,6 +33,12 @@ from channels.base import ChannelValue
 from channels.entity import evaluate_entity_channels
 from channels.semantic import EMPTY_TAXONOMY, AlarmTaxonomy, evaluate_semantic_channel
 from channels.temporal import evaluate_burst_channel, segment_bursts
+from channels.dependency import (
+    PHYSICAL_RELATIONS,
+    ResourceResolver,
+    build_topology_graph,
+    evaluate_dep_hop_channel,
+)
 from descriptor import (
     Descriptor,
     DescriptorKind,
@@ -142,6 +149,8 @@ def _rival_statistics(
     rival_chain_id: str,
     *,
     taxonomy: AlarmTaxonomy,
+    silent_gap_seconds: int = DEFAULT_SILENT_GAP_SECONDS,
+    d_max: int = DEFAULT_D_MAX,
 ) -> ChannelStatistics:
     """Accumulate ``Fit_g(x, C')`` statistics for one member against a rival chain.
 
@@ -156,7 +165,11 @@ def _rival_statistics(
         chain_id=rival_chain_id,
         members=tuple([alarm_id, *(a.alarm_id for a in rival_alarms)]),
     )
-    segmentation = segment_bursts([alarm, *rival_alarms])
+    segmentation = segment_bursts(
+        [alarm, *rival_alarms], silent_gap_seconds=silent_gap_seconds
+    )
+    topology = build_topology_graph(package, relation_types=PHYSICAL_RELATIONS)
+    resolver = ResourceResolver.from_package(package)
 
     for other in rival_alarms:
         if other.alarm_id == alarm_id:
@@ -164,6 +177,15 @@ def _rival_statistics(
         values: list[ChannelValue] = evaluate_entity_channels(alarm, other)
         values.append(evaluate_semantic_channel(alarm, other, taxonomy))
         values.append(evaluate_burst_channel(alarm, other, segmentation))
+        values.append(
+            evaluate_dep_hop_channel(
+                alarm,
+                other,
+                graph=topology,
+                resolver=resolver,
+                d_max=d_max,
+            )
+        )
         statistics.record(alarm_id, other.alarm_id, values)
         statistics.pairs_counted += 1
 
@@ -185,6 +207,7 @@ def analyze_chain(
     silent_gap_seconds: int = DEFAULT_SILENT_GAP_SECONDS,
     max_values_per_field: int = DEFAULT_MAX_VALUES_PER_FIELD,
     redundancy_small_dt_seconds: int = DEFAULT_SMALL_DT_SECONDS,
+    d_max: int = DEFAULT_D_MAX,
 ) -> ChainAnalysis:
     """Run Tier-1B analysis for one chain."""
     analysis_started = perf_counter()
@@ -197,6 +220,7 @@ def analyze_chain(
         chain_id,
         taxonomy=taxonomy,
         silent_gap_seconds=silent_gap_seconds,
+        d_max=d_max,
     )
     graybox = adapt_graybox_metadata(package, chain_id)
     statistics_done = perf_counter()
@@ -333,6 +357,7 @@ def analyze_chain(
             rival.chain_id,
             taxonomy=taxonomy,
             silent_gap_seconds=silent_gap_seconds,
+            d_max=d_max,
         )
         for rival in rivals
     }
@@ -435,6 +460,7 @@ def analyze_chain_configured(
         redundancy_small_dt_seconds=int(
             analysis_config.value("redundancy.small_dt_seconds")
         ),
+        d_max=int(analysis_config.value("dependency.max_hop")),
     )
     result.parameter_provenance = {
         path: configured.source.value

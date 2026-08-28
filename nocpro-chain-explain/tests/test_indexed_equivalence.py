@@ -92,9 +92,9 @@ def mixed_package():
     )
 
 
-def _assert_equivalent(package, *, taxonomy=AlarmTaxonomy({}, {})):
-    oracle = evaluate_chain_channels(package, "C1", taxonomy=taxonomy)
-    indexed = build_indexed_statistics(package, "C1", taxonomy=taxonomy)
+def _assert_equivalent(package, *, taxonomy=AlarmTaxonomy({}, {}), d_max=3):
+    oracle = evaluate_chain_channels(package, "C1", taxonomy=taxonomy, d_max=d_max)
+    indexed = build_indexed_statistics(package, "C1", taxonomy=taxonomy, d_max=d_max)
 
     assert set(indexed.channel_ids) == set(oracle.statistics.channel_ids())
     oracle_supports = {}
@@ -221,3 +221,52 @@ def test_deterministic_randomized_indexed_oracle_equivalence():
         categories={},
     )
     _assert_equivalent(_package(rows), taxonomy=taxonomy)
+
+
+def test_indexed_dep_hop_matches_pairwise_with_mapping_and_sparse_topology():
+    package = _package(
+        [
+            {"alarm_id": "a1", "alarm_name": "DOWN", "device_code": "D1"},
+            {"alarm_id": "a2", "alarm_name": "DOWN", "device_code": "D2"},
+            {"alarm_id": "a3", "alarm_name": "POWER", "device_code": "D3"},
+            {"alarm_id": "a4", "alarm_name": "POWER", "device_code": "D4"},
+        ]
+    )
+    package.topology = {
+        "edges": [
+            {
+                "edge_id": "e12",
+                "source_resource_id": "R1",
+                "target_resource_id": "R2",
+                "relation_type": "IP_ADJACENCY",
+                "directed": False,
+            },
+            {
+                "edge_id": "e34",
+                "source_resource_id": "R3",
+                "target_resource_id": "R4",
+                "relation_type": "IP_ADJACENCY",
+                "directed": False,
+            },
+        ],
+        "mappings": [
+            {"alarm_id": "a1", "resource_id": "R1", "mapping_status": "EXACT"},
+            {"alarm_id": "a2", "resource_id": "R2", "mapping_status": "EXACT"},
+            {"alarm_id": "a3", "resource_id": "R3", "mapping_status": "EXACT"},
+            {"alarm_id": "a4", "resource_id": None, "mapping_status": "UNMAPPED"},
+        ],
+    }
+
+    _assert_equivalent(package)
+
+    indexed = build_indexed_statistics(package, "C1")
+    a1 = indexed.fit_of("a1", "Dep_hop")
+    a3 = indexed.fit_of("a3", "Dep_hop")
+    a4 = indexed.fit_of("a4", "Dep_hop")
+    assert a1 is not None and (a1.domain_size, a1.supporting, a1.fit) == (1, 1, 1.0)
+    assert a3 is not None and a3.fit is None
+    assert a4 is not None and a4.fit is None
+
+    _assert_equivalent(package, d_max=0)
+    dmax_zero = build_indexed_statistics(package, "C1", d_max=0)
+    assert dmax_zero.fit_of("a1", "Dep_hop").fit is None

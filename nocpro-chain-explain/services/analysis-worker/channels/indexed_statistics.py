@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections import Counter
+
 from libs.contracts import IngestedAlarm, IngestedPackage
 from libs.provenance import ProvenanceClass, ProvenanceSubtype
 
@@ -13,6 +15,13 @@ from groups.indexed_statistics import (
 
 from .semantic import EMPTY_TAXONOMY, AlarmTaxonomy
 from .temporal import DEFAULT_SILENT_GAP_SECONDS, segment_bursts
+from .dependency import (
+    DEFAULT_D_MAX,
+    PHYSICAL_RELATIONS,
+    ResourceResolver,
+    TopologyGraph,
+    build_topology_graph,
+)
 
 
 EQUALITY_CHANNELS: tuple[tuple[str, str, str], ...] = (
@@ -64,6 +73,7 @@ def build_indexed_statistics(
     *,
     taxonomy: AlarmTaxonomy = EMPTY_TAXONOMY,
     silent_gap_seconds: int = DEFAULT_SILENT_GAP_SECONDS,
+    d_max: int = DEFAULT_D_MAX,
 ) -> IndexedChainStatistics:
     """Build exact statistics for available indexed channels without pair scans."""
     alarms = package.alarms_of(chain_id)
@@ -125,21 +135,76 @@ def build_indexed_statistics(
             supporting=supporting,
         )
 
-    for channel_id, tag, provenance in (
-        ("T_delay", "temporal_delay", ProvenanceClass.POST_HOC),
-        ("Dep_hop", "dependency_hop", ProvenanceClass.EXTERNAL_OPERATIONAL),
-    ):
-        statistics.channel_meta[channel_id] = (
-            tag,
-            provenance,
-            ProvenanceSubtype.TOPOLOGY_EXTERNAL if channel_id == "Dep_hop" else None,
+    statistics.channel_meta["T_delay"] = (
+        "temporal_delay",
+        ProvenanceClass.POST_HOC,
+        None,
+    )
+    for alarm in alarms:
+        statistics.fits[(alarm.alarm_id, "T_delay")] = _entry(
+            channel_id="T_delay",
+            derivation_tag="temporal_delay",
+            provenance_class=ProvenanceClass.POST_HOC,
+            domain_size=0,
+            supporting=0,
         )
-        for alarm in alarms:
-            statistics.fits[(alarm.alarm_id, channel_id)] = _entry(
-                channel_id=channel_id,
-                derivation_tag=tag,
-                provenance_class=provenance,
-                domain_size=0,
-                supporting=0,
-            )
+
+    _add_dep_hop_statistics(
+        package,
+        alarms,
+        statistics,
+        d_max=d_max,
+    )
     return statistics
+
+
+def _add_dep_hop_statistics(
+    package: IngestedPackage,
+    alarms: list[IngestedAlarm],
+    statistics: IndexedChainStatistics,
+    *,
+    d_max: int,
+) -> None:
+    """Exact Dep_hop Fit from bounded topology neighbourhood postings."""
+    channel_id = "Dep_hop"
+    tag = "dependency_hop"
+    graph = build_topology_graph(package, relation_types=PHYSICAL_RELATIONS)
+    resolver = ResourceResolver.from_package(package)
+    statistics.channel_meta[channel_id] = (
+        tag,
+        graph.provenance_class,
+        graph.provenance_subtype,
+    )
+
+    resources = {
+        alarm.alarm_id: resolver.resource_of(alarm.alarm_id) for alarm in alarms
+    }
+    alarms_per_resource = Counter(
+        resource for resource in resources.values() if resource is not None
+    )
+    neighbourhoods: dict[str, set[str]] = {}
+    if graph.adjacency:
+        neighbourhoods = {
+            resource: graph.reachable_within(resource, max_depth=d_max)
+            for resource in alarms_per_resource
+        }
+
+    for alarm in alarms:
+        resource = resources[alarm.alarm_id]
+        if resource is None or not graph.adjacency:
+            domain = supporting = 0
+        else:
+            domain = sum(
+                alarms_per_resource[candidate]
+                for candidate in neighbourhoods[resource]
+            ) - 1
+            # Every available pair has d<=D_max and therefore clears the
+            # channel threshold 1/(1+D_max), exactly as the oracle does.
+            supporting = domain
+        statistics.fits[(alarm.alarm_id, channel_id)] = _entry(
+            channel_id=channel_id,
+            derivation_tag=tag,
+            provenance_class=graph.provenance_class,
+            domain_size=domain,
+            supporting=supporting,
+        )
