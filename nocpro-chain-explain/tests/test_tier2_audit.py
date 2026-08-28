@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from audit import AuditVerdict
 from descriptor import MiningConfig
 from groups import AuditGraphMode
 from libs.contracts import load_package
@@ -66,6 +67,21 @@ def test_small_chain_runs_exact_audit_in_tier2():
     assert result.structural_audit is not None
     assert result.over_merge is not None
     assert result.reason is None
+
+
+def test_tier2_uses_explicit_audit_balance_parameters():
+    result = analyze_structural_audit(
+        _package(6),
+        "C1",
+        policy=AuditExecutionPolicy(exact_max_members=10),
+        mining_config=MINING,
+        epsilon=0.3,
+        rho=0.1,
+        min_side_size=2,
+        small_chain_threshold=4,
+    )
+
+    assert result.structural_audit.verdict is not AuditVerdict.SKIPPED_SMALL_CHAIN
 
 
 def test_large_chain_requires_an_explicit_compressed_policy():

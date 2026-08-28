@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from math import ceil
 
 from .graph import AuditGraph
 
@@ -52,13 +53,22 @@ class ConductanceResult:
     reason: str | None = None
 
 
-def min_side_requirement(chain_size: int, *, rho: float = DEFAULT_RHO) -> int:
-    return max(int(rho * chain_size), MIN_SIDE_SIZE)
+def min_side_requirement(
+    chain_size: int,
+    *,
+    rho: float = DEFAULT_RHO,
+    min_side_size: int = MIN_SIDE_SIZE,
+) -> int:
+    return max(ceil(rho * chain_size), min_side_size)
 
 
-def is_chain_too_small_for_audit(chain_size: int) -> bool:
-    """``|C| < 10``: skip, do not silently score as stable."""
-    return chain_size < SMALL_CHAIN_THRESHOLD
+def is_chain_too_small_for_audit(
+    chain_size: int,
+    *,
+    small_chain_threshold: int = SMALL_CHAIN_THRESHOLD,
+) -> bool:
+    """Skip chains below the configured feasibility threshold."""
+    return chain_size < small_chain_threshold
 
 
 def conductance(graph: AuditGraph, members: frozenset[str], *, label: str) -> ConductanceResult:

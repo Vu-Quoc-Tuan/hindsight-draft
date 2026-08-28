@@ -77,6 +77,7 @@ class _ParameterRule:
 
 
 _PROBABILITY = _ParameterRule(float, 0.0, 1.0)
+_BALANCE_RATIO = _ParameterRule(float, 0.0, 0.5)
 _POSITIVE_FLOAT = _ParameterRule(float, 0.0, inclusive_minimum=False)
 _POSITIVE_INT = _ParameterRule(int, 0, inclusive_minimum=False)
 _NONNEGATIVE_INT = _ParameterRule(int, 0)
@@ -109,7 +110,7 @@ PARAMETER_RULES: dict[str, _ParameterRule] = {
     "contrastive.top_k": _POSITIVE_INT,
     "contrastive.g_min": _POSITIVE_INT,
     "redundancy.small_dt_seconds": _NONNEGATIVE_INT,
-    "audit.rho": _PROBABILITY,
+    "audit.rho": _BALANCE_RATIO,
     "audit.min_side_size": _POSITIVE_INT,
     "audit.small_chain_threshold": _POSITIVE_INT,
     "audit.calibration_n_min": _POSITIVE_INT,
@@ -237,4 +238,14 @@ def load_analysis_config(
             raise AnalysisConfigError(
                 "lineage.boundary_threshold must be <= lineage.stable_threshold"
             )
+    if (
+        "audit.small_chain_threshold" in parameters
+        and "audit.min_side_size" in parameters
+        and config.value("audit.small_chain_threshold")
+        < 2 * config.value("audit.min_side_size")
+    ):
+        raise AnalysisConfigError(
+            "audit.small_chain_threshold must be at least twice "
+            "audit.min_side_size"
+        )
     return config

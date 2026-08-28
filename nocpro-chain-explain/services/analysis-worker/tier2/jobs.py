@@ -201,6 +201,13 @@ class Tier2JobManager:
                 epsilon=float(
                     analysis_config.value("audit.global_weak_baseline")
                 ),
+                rho=float(analysis_config.value("audit.rho")),
+                min_side_size=int(
+                    analysis_config.value("audit.min_side_size")
+                ),
+                small_chain_threshold=int(
+                    analysis_config.value("audit.small_chain_threshold")
+                ),
                 taxonomy=taxonomy,
                 dependency_edges=dependency_edges,
                 failure_domains=failure_domains,

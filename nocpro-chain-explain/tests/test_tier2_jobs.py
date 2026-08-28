@@ -137,6 +137,25 @@ def test_worker_failure_is_a_failed_job_not_a_submit_error(analysis_config):
         manager.shutdown()
 
 
+def test_worker_passes_versioned_audit_balance_parameters(analysis_config):
+    received = {}
+
+    def analyzer(*args, **kwargs):
+        received.update(kwargs)
+        return "ok"
+
+    with Tier2JobManager(analyzer=analyzer, max_workers=1) as manager:
+        submission = manager.submit(_package(), "C1", analysis_config=analysis_config)
+        completed = manager.wait(submission.job_id, timeout=2)
+
+    assert completed.status is JobStatus.SUCCEEDED
+    assert received["rho"] == analysis_config.value("audit.rho")
+    assert received["min_side_size"] == analysis_config.value("audit.min_side_size")
+    assert received["small_chain_threshold"] == analysis_config.value(
+        "audit.small_chain_threshold"
+    )
+
+
 def test_unknown_chain_fails_before_scheduling(analysis_config):
     manager = Tier2JobManager(max_workers=1)
     try:

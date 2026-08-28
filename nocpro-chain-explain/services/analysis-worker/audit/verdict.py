@@ -21,6 +21,9 @@ from descriptor.predicates import bitmap_of_members
 
 from .candidates import Candidate
 from .conductance import (
+    DEFAULT_RHO,
+    MIN_SIDE_SIZE,
+    SMALL_CHAIN_THRESHOLD,
     AuditVerdict,
     ConductanceResult,
     conductance,
@@ -55,9 +58,13 @@ def score_candidates(
     candidates: list[Candidate],
     *,
     chain_size: int,
+    rho: float = DEFAULT_RHO,
+    min_side_size: int = MIN_SIDE_SIZE,
 ) -> list[ScoredCandidate]:
     """Score every candidate, applying the two-sided balance constraint."""
-    requirement = min_side_requirement(chain_size)
+    requirement = min_side_requirement(
+        chain_size, rho=rho, min_side_size=min_side_size
+    )
     scored: list[ScoredCandidate] = []
     for candidate in candidates:
         result = conductance(graph, candidate.members, label=candidate.label)
@@ -81,6 +88,9 @@ def run_structural_audit(
     candidates: list[Candidate],
     *,
     epsilon: float,
+    rho: float = DEFAULT_RHO,
+    min_side_size: int = MIN_SIDE_SIZE,
+    small_chain_threshold: int = SMALL_CHAIN_THRESHOLD,
 ) -> StructuralAuditResult:
     """Run the balanced-conductance structural audit for one chain.
 
@@ -88,7 +98,9 @@ def run_structural_audit(
     test" are different claims and must not be collapsed.
     """
     chain_size = len(graph.members)
-    if is_chain_too_small_for_audit(chain_size):
+    if is_chain_too_small_for_audit(
+        chain_size, small_chain_threshold=small_chain_threshold
+    ):
         return StructuralAuditResult(
             chain_id=chain_id,
             verdict=AuditVerdict.SKIPPED_SMALL_CHAIN,
@@ -97,11 +109,17 @@ def run_structural_audit(
             epsilon=None,
             reason=(
                 f"chain has {chain_size} members; balanced over-merge test "
-                "requires >= 10"
+                f"requires >= {small_chain_threshold}"
             ),
         )
 
-    scored = score_candidates(graph, candidates, chain_size=chain_size)
+    scored = score_candidates(
+        graph,
+        candidates,
+        chain_size=chain_size,
+        rho=rho,
+        min_side_size=min_side_size,
+    )
     feasible = [s for s in scored if s.conductance.feasible and s.conductance.phi is not None]
 
     if not feasible:

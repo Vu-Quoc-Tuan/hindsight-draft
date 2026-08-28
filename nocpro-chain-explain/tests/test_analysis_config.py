@@ -96,6 +96,7 @@ temporal:
         ("role.c_min", 1.1),
         ("descriptor.max_depth", 0),
         ("dependency.lambda_dep", 0),
+        ("audit.rho", 0.6),
     ],
 )
 def test_invalid_parameter_ranges_fail_closed(
@@ -118,6 +119,17 @@ def test_parameter_lookup_is_fail_closed_for_unknown_path():
     config = load_analysis_config(SHIPPED_CONFIG)
     with pytest.raises(AnalysisConfigError, match="unknown parameter"):
         config.parameter("role.not_a_real_threshold")
+
+
+def test_audit_small_chain_threshold_must_make_both_sides_feasible(tmp_path: Path):
+    text = SHIPPED_CONFIG.read_text(encoding="utf-8").replace(
+        "small_chain_threshold: {value: 10, source: FROZEN_SPEC}",
+        "small_chain_threshold: {value: 8, source: FROZEN_SPEC}",
+        1,
+    )
+
+    with pytest.raises(AnalysisConfigError, match="twice audit.min_side_size"):
+        load_analysis_config(_write(tmp_path, text))
 
 
 def test_configured_tier1b_stamps_one_version_through_all_outputs():

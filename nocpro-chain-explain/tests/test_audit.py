@@ -185,6 +185,7 @@ def test_conductance_is_undefined_not_zero_with_no_volume():
 def test_min_side_requirement_uses_rho_and_floor():
     assert min_side_requirement(100) == 20  # rho=0.2 * 100
     assert min_side_requirement(10) == 5  # floor wins
+    assert min_side_requirement(11, rho=0.2, min_side_size=1) == 3
 
 
 # --------------------------------------------------------------------------

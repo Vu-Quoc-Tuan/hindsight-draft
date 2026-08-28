@@ -6,6 +6,9 @@ from dataclasses import dataclass
 
 from audit import (
     AUDIT_EXACT_MAX_MEMBERS,
+    DEFAULT_RHO,
+    MIN_SIDE_SIZE,
+    SMALL_CHAIN_THRESHOLD,
     AuditGraph,
     StructuralRoleResult,
     StructuralAuditResult,
@@ -97,6 +100,9 @@ def analyze_structural_audit(
     policy: AuditExecutionPolicy,
     mining_config: MiningConfig,
     epsilon: float,
+    rho: float = DEFAULT_RHO,
+    min_side_size: int = MIN_SIDE_SIZE,
+    small_chain_threshold: int = SMALL_CHAIN_THRESHOLD,
     taxonomy: AlarmTaxonomy = EMPTY_TAXONOMY,
     dependency_edges: list[tuple[str, str, float]] | None = None,
     failure_domains: list[tuple[str, frozenset[str]]] | None = None,
@@ -153,7 +159,13 @@ def analyze_structural_audit(
         predicate_index=predicate_index,
     )
     structural_audit = run_structural_audit(
-        chain_id, graph, candidates, epsilon=epsilon
+        chain_id,
+        graph,
+        candidates,
+        epsilon=epsilon,
+        rho=rho,
+        min_side_size=min_side_size,
+        small_chain_threshold=small_chain_threshold,
     )
     over_merge = assess_over_merge(
         structural_audit,
