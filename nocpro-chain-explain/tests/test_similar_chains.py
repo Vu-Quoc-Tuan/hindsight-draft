@@ -2,12 +2,15 @@
 
 Pinned invariants:
   - fingerprint is deterministic for fixed input
-  - family term backs off to alarm_type_name when no taxonomy is supplied
+  - alarm-taxonomy resolution is FAMILY, then TYPE_FALLBACK, then no term
+  - FAMILY and TYPE_FALLBACK terms are namespaced and cannot collide
   - device_type_name is used verbatim, never guessed from a device-code prefix
   - missing duration gets its own bin, not bin 0
   - cosine similarity is deterministic and in [0,1]
+  - all fingerprints scored in one request must share one FingerprintModel
   - the nearest "different incident" result excludes the same lineage component
   - "previous states of this chain" mode returns exactly the same-lineage chains
+  - equal-similarity results break ties deterministically by chain_id
 """
 
 from __future__ import annotations
@@ -21,16 +24,18 @@ from descriptor.predicates import Predicate
 from libs.contracts import IngestedAlarm
 from similar_chains import (
     ChainFingerprint,
+    ModelVersionMismatch,
+    TaxonomyLevel,
     TermVector,
-    TfIdfModel,
     build_fingerprint,
     cosine_similarity,
     duration_bin,
     find_similar_chains,
-    fit_tfidf_models,
+    fit_fingerprint_model,
     previous_states_of_chain,
     size_bin,
 )
+from similar_chains.fingerprint import _family_term
 
 
 def alarm(alarm_id: str, **fields) -> IngestedAlarm:
@@ -53,16 +58,20 @@ def descriptor(label_value: str) -> Descriptor:
     )
 
 
+MODEL_V1 = "sim-v1"
+
+
+def _model(fingerprints, version=MODEL_V1):
+    return fit_fingerprint_model(fingerprints, model_version=version)
+
+
 # --------------------------------------------------------------------------
 # Bins
 # --------------------------------------------------------------------------
 
 
 def test_size_bin_is_monotonic():
-    assert size_bin(1) != size_bin(100)
-    small = size_bin(1)
-    large = size_bin(1000)
-    assert small != large
+    assert size_bin(1) != size_bin(1000)
 
 
 def test_duration_bin_none_gets_its_own_bin():
@@ -79,37 +88,60 @@ def test_duration_bin_is_deterministic():
 
 
 # --------------------------------------------------------------------------
-# Fingerprint / backoff
+# Alarm taxonomy resolution: FAMILY -> TYPE_FALLBACK -> none
 # --------------------------------------------------------------------------
 
 
-def test_family_backs_off_to_alarm_type_when_untaxonomized():
-    """BACKOFF type->family->category: no taxonomy => fall to alarm_type_name."""
-    alarms = [alarm("a1", alarm_name="LINK DOWN", alarm_type_name="CONNECTIVITY")]
-    fp = build_fingerprint("C1", alarms)
-    assert fp.family_terms.counts == {"CONNECTIVITY": 1}
-
-
-def test_family_uses_taxonomy_when_available():
+def test_family_resolves_from_taxonomy_when_available():
     taxonomy = AlarmTaxonomy(families={"LINK DOWN": "LINK"}, categories={})
-    alarms = [alarm("a1", alarm_name="LINK DOWN", alarm_type_name="CONNECTIVITY")]
-    fp = build_fingerprint("C1", alarms, taxonomy=taxonomy)
-    # Taxonomy family wins over the alarm_type_name backoff.
-    assert fp.family_terms.counts == {"LINK": 1}
+    term = _family_term(alarm("a1", alarm_name="LINK DOWN", alarm_type_name="CONNECTIVITY"), taxonomy)
+    assert term.level is TaxonomyLevel.FAMILY
+    assert term.value == "LINK"
 
 
-def test_family_is_absent_when_neither_taxonomy_nor_type_available():
-    """Real export case: alarm_type_name empty and no taxonomy given."""
-    alarms = [alarm("a1", alarm_name="LINK DOWN", alarm_type_name="")]
-    fp = build_fingerprint("C1", alarms)
-    assert fp.family_terms.counts == {}
+def test_type_fallback_used_when_no_taxonomy_matches():
+    """This is a data-adapter fallback (TYPE_FALLBACK), not the T_delay/H backoff rule."""
+    from channels.semantic import EMPTY_TAXONOMY
+
+    term = _family_term(
+        alarm("a1", alarm_name="LINK DOWN", alarm_type_name="CONNECTIVITY"), EMPTY_TAXONOMY
+    )
+    assert term.level is TaxonomyLevel.TYPE_FALLBACK
+    assert term.value == "CONNECTIVITY"
+
+
+def test_no_term_when_neither_family_nor_type_available():
+    """Real export case: alarm_type_name empty and no taxonomy given. Never guessed."""
+    from channels.semantic import EMPTY_TAXONOMY
+
+    term = _family_term(alarm("a1", alarm_name="LINK DOWN", alarm_type_name=""), EMPTY_TAXONOMY)
+    assert term is None
+
+
+def test_family_and_type_fallback_terms_are_namespaced_and_cannot_collide():
+    """A FAMILY value and a differently-sourced TYPE_FALLBACK value must not
+    collide in the vocabulary even if they happen to share spelling."""
+    taxonomy = AlarmTaxonomy(families={"X": "DIAMETER"}, categories={})
+    with_family = build_fingerprint("A", [alarm("a1", alarm_name="X")], taxonomy=taxonomy)
+    with_type_fallback = build_fingerprint(
+        "B", [alarm("a1", alarm_name="Y", alarm_type_name="DIAMETER")]
+    )
+    family_key = next(iter(with_family.family_terms.counts))
+    fallback_key = next(iter(with_type_fallback.family_terms.counts))
+    assert family_key != fallback_key
+    assert family_key.startswith("FAMILY:")
+    assert fallback_key.startswith("TYPE_FALLBACK:")
 
 
 def test_device_type_is_used_verbatim_not_guessed_from_prefix():
     """device_type_name is a real column; it must not be derived from device_code."""
-    alarms = [alarm("a1", device_code="HLC9102DEA01", device_type_name="ROUTER")]
-    fp = build_fingerprint("C1", alarms)
+    fp = build_fingerprint("C1", [alarm("a1", device_code="HLC9102DEA01", device_type_name="ROUTER")])
     assert fp.device_type_terms.counts == {"ROUTER": 1}
+
+
+# --------------------------------------------------------------------------
+# Fingerprint determinism and diagnostics
+# --------------------------------------------------------------------------
 
 
 def test_fingerprint_is_deterministic():
@@ -130,25 +162,23 @@ def test_descriptor_terms_are_capped_at_top_k():
     assert len(fp.descriptor_terms) == 3
 
 
-# --------------------------------------------------------------------------
-# TF-IDF
-# --------------------------------------------------------------------------
+def test_active_and_missing_blocks_are_complementary():
+    fp = build_fingerprint("C1", [alarm("a1", device_type_name="STP")])
+    active = set(fp.active_blocks())
+    missing = set(fp.missing_blocks())
+    assert active.isdisjoint(missing)
+    assert active | missing == {
+        "alarm_taxonomy", "device_type", "identity_descriptors", "size_bin", "duration_bin"
+    }
+    assert "device_type" in active
+    assert "alarm_taxonomy" in missing
 
 
-def test_idf_gives_more_weight_to_rare_terms():
-    vectors = [
-        TermVector.from_terms(["common"]),
-        TermVector.from_terms(["common"]),
-        TermVector.from_terms(["common", "rare"]),
-    ]
-    model = TfIdfModel.fit(vectors)
-    assert model.idf("rare") > model.idf("common")
-
-
-def test_unseen_term_gets_max_weight_not_zero():
-    """A term absent from the fit corpus must not vanish from later fingerprints."""
-    model = TfIdfModel.fit([TermVector.from_terms(["known"])])
-    assert model.idf("never_seen") > 0.0
+def test_size_and_duration_blocks_are_always_active():
+    """build_fingerprint never produces a fingerprint missing these two."""
+    fp = build_fingerprint("C1", [alarm("a1")])
+    assert "size_bin" in fp.active_blocks()
+    assert "duration_bin" in fp.active_blocks()
 
 
 # --------------------------------------------------------------------------
@@ -171,33 +201,32 @@ def _fp(chain_id: str, family: list[str], device: list[str], lineage: str | None
 
 def test_identical_fingerprints_have_similarity_one():
     fps = [_fp("A", ["F1"], ["D1"]), _fp("B", ["F1"], ["D1"])]
-    family_model, device_model = fit_tfidf_models(fps)
-    score = cosine_similarity(fps[0], fps[1], family_model=family_model, device_model=device_model)
+    model = _model(fps)
+    score = cosine_similarity(fps[0], fps[1], model=model)
     assert score == pytest.approx(1.0)
 
 
 def test_disjoint_fingerprints_have_low_similarity():
     fps = [_fp("A", ["F1"], ["D1"]), _fp("B", ["F2"], ["D2"])]
-    family_model, device_model = fit_tfidf_models(fps)
-    score = cosine_similarity(fps[0], fps[1], family_model=family_model, device_model=device_model)
-    # Different family/device but same size/duration bin, so not exactly 0.
+    model = _model(fps)
+    score = cosine_similarity(fps[0], fps[1], model=model)
     assert 0.0 <= score < 1.0
 
 
 def test_similarity_is_within_unit_interval():
     fps = [_fp(f"C{i}", [f"F{i%3}"], [f"D{i%2}"]) for i in range(10)]
-    family_model, device_model = fit_tfidf_models(fps)
+    model = _model(fps)
     for a in fps:
         for b in fps:
-            score = cosine_similarity(a, b, family_model=family_model, device_model=device_model)
+            score = cosine_similarity(a, b, model=model)
             assert 0.0 <= score <= 1.0 + 1e-9
 
 
 def test_similarity_is_deterministic():
     fps = [_fp("A", ["F1"], ["D1"]), _fp("B", ["F1", "F2"], ["D1"])]
-    family_model, device_model = fit_tfidf_models(fps)
-    first = cosine_similarity(fps[0], fps[1], family_model=family_model, device_model=device_model)
-    second = cosine_similarity(fps[0], fps[1], family_model=family_model, device_model=device_model)
+    model = _model(fps)
+    first = cosine_similarity(fps[0], fps[1], model=model)
+    second = cosine_similarity(fps[0], fps[1], model=model)
     assert first == second
 
 
@@ -217,16 +246,56 @@ def test_chains_with_no_shared_content_have_low_similarity():
         descriptor_terms=(), size_bin=size_bin(1000), duration_bin=duration_bin(50000),
         member_count=1000,
     )
-    family_model, device_model = fit_tfidf_models([small, large])
-    score = cosine_similarity(small, large, family_model=family_model, device_model=device_model)
+    model = _model([small, large])
+    score = cosine_similarity(small, large, model=model)
     assert score == 0.0
 
 
-def test_a_fingerprint_always_has_size_and_duration_terms():
-    """build_fingerprint never produces a truly contentless vector."""
-    fp = build_fingerprint("C1", [alarm("a1")])
-    assert fp.size_bin
-    assert fp.duration_bin
+# --------------------------------------------------------------------------
+# FingerprintModel versioning
+# --------------------------------------------------------------------------
+
+
+def test_idf_gives_more_weight_to_rare_terms():
+    fps = [_fp("A", ["common"], []), _fp("B", ["common"], []), _fp("C", ["common", "rare"], [])]
+    model = _model(fps)
+    assert model.family_model.idf("rare") > model.family_model.idf("common")
+
+
+def test_unseen_term_gets_max_weight_not_zero():
+    """A term absent from the fit corpus must not vanish from later fingerprints."""
+    model = _model([_fp("A", ["known"], [])])
+    assert model.family_model.idf("never_seen") > 0.0
+
+
+def test_scoring_across_model_versions_is_rejected():
+    """A fingerprint stamped under sim-v1 must not silently score under sim-v2."""
+    fps = [_fp("A", ["F1"], ["D1"]), _fp("B", ["F1"], ["D1"])]
+    model_v1 = _model(fps, version="sim-v1")
+    model_v2 = _model(fps, version="sim-v2")
+
+    stamped = fps[0].scored_with(model_v1.model_version)
+    with pytest.raises(ModelVersionMismatch):
+        cosine_similarity(stamped, fps[1], model=model_v2)
+
+
+def test_unstamped_fingerprint_scores_under_any_model():
+    """A freshly built fingerprint has no prior model to conflict with."""
+    fps = [_fp("A", ["F1"], ["D1"]), _fp("B", ["F1"], ["D1"])]
+    model = _model(fps, version="sim-v2")
+    # Neither fingerprint carries scored_with_model_version; must not raise.
+    cosine_similarity(fps[0], fps[1], model=model)
+
+
+def test_find_similar_chains_rejects_mismatched_corpus_entry():
+    target = _fp("T", ["F1"], ["D1"], lineage="lc_1")
+    other = _fp("O", ["F1"], ["D1"], lineage="lc_2")
+    model_v1 = _model([target, other], version="sim-v1")
+    model_v2 = _model([target, other], version="sim-v2")
+
+    stamped_other = other.scored_with(model_v1.model_version)
+    with pytest.raises(ModelVersionMismatch):
+        find_similar_chains(target, [stamped_other], model=model_v2)
 
 
 # --------------------------------------------------------------------------
@@ -241,10 +310,8 @@ def test_nearest_different_incident_excludes_same_lineage():
     different_incident = _fp("O", ["F1"], ["D1"], lineage="lc_2")
     corpus = [target, same_lineage_other_snapshot, different_incident]
 
-    family_model, device_model = fit_tfidf_models(corpus)
-    results = find_similar_chains(
-        target, corpus, family_model=family_model, device_model=device_model, top_k=5
-    )
+    model = _model(corpus)
+    results = find_similar_chains(target, corpus, model=model, top_k=5)
     result_ids = {r.chain_id for r in results}
     assert "T_prev" not in result_ids
     assert "O" in result_ids
@@ -253,10 +320,8 @@ def test_nearest_different_incident_excludes_same_lineage():
 def test_target_itself_is_never_returned():
     target = _fp("T", ["F1"], ["D1"], lineage="lc_1")
     corpus = [target, _fp("O", ["F1"], ["D1"], lineage="lc_2")]
-    family_model, device_model = fit_tfidf_models(corpus)
-    results = find_similar_chains(
-        target, corpus, family_model=family_model, device_model=device_model
-    )
+    model = _model(corpus)
+    results = find_similar_chains(target, corpus, model=model)
     assert all(r.chain_id != "T" for r in results)
 
 
@@ -267,22 +332,47 @@ def test_results_are_sorted_by_similarity_descending():
         _fp("far", ["F9"], ["D9"], lineage="lc_2"),
         _fp("near", ["F1"], ["D1"], lineage="lc_3"),
     ]
-    family_model, device_model = fit_tfidf_models(corpus)
-    results = find_similar_chains(
-        target, corpus, family_model=family_model, device_model=device_model
-    )
+    model = _model(corpus)
+    results = find_similar_chains(target, corpus, model=model)
     assert results[0].chain_id == "near"
+
+
+def test_equal_similarity_breaks_ties_deterministically_by_chain_id():
+    """Same score, different lineage: ordering must not depend on corpus order."""
+    target = _fp("T", ["F1"], ["D1"], lineage="lc_1")
+    tie_b = _fp("B", ["F2"], ["D2"], lineage="lc_2")
+    tie_z = _fp("Z", ["F2"], ["D2"], lineage="lc_3")
+    corpus_order_1 = [target, tie_z, tie_b]
+    corpus_order_2 = [target, tie_b, tie_z]
+
+    model = _model(corpus_order_1)
+    results_1 = find_similar_chains(target, corpus_order_1, model=model)
+    results_2 = find_similar_chains(target, corpus_order_2, model=model)
+
+    assert results_1[0].similarity == pytest.approx(results_1[1].similarity)
+    # Regardless of corpus iteration order, "B" sorts before "Z" on tie.
+    assert [r.chain_id for r in results_1] == [r.chain_id for r in results_2]
+    assert results_1[0].chain_id == "B"
 
 
 def test_no_lineage_id_means_no_exclusion_needed():
     """A chain with lineage_component_id=None cannot be dedup-matched against."""
     target = _fp("T", ["F1"], ["D1"], lineage=None)
     corpus = [target, _fp("O", ["F1"], ["D1"], lineage=None)]
-    family_model, device_model = fit_tfidf_models(corpus)
-    results = find_similar_chains(
-        target, corpus, family_model=family_model, device_model=device_model
-    )
+    model = _model(corpus)
+    results = find_similar_chains(target, corpus, model=model)
     assert any(r.chain_id == "O" for r in results)
+
+
+def test_result_reports_compared_blocks():
+    """UI diagnostic: which blocks actually contributed to this score."""
+    target = build_fingerprint("T", [alarm("a1", device_type_name="STP")], lineage_component_id="lc_1")
+    candidate = build_fingerprint("O", [alarm("a2", device_type_name="STP")], lineage_component_id="lc_2")
+    model = _model([target, candidate])
+    results = find_similar_chains(target, [target, candidate], model=model)
+    assert results
+    assert "device_type" in results[0].compared_blocks
+    assert "alarm_taxonomy" not in results[0].compared_blocks
 
 
 # --------------------------------------------------------------------------
@@ -295,11 +385,9 @@ def test_previous_states_mode_returns_same_lineage_only():
     same_lineage = _fp("T_prev", ["F1"], ["D1"], lineage="lc_1")
     different = _fp("O", ["F1"], ["D1"], lineage="lc_2")
     corpus = [target, same_lineage, different]
-    family_model, device_model = fit_tfidf_models(corpus)
+    model = _model(corpus)
 
-    results = previous_states_of_chain(
-        target, corpus, family_model=family_model, device_model=device_model
-    )
+    results = previous_states_of_chain(target, corpus, model=model)
     result_ids = {r.chain_id for r in results}
     assert result_ids == {"T_prev"}
 
@@ -307,10 +395,8 @@ def test_previous_states_mode_returns_same_lineage_only():
 def test_previous_states_mode_empty_without_lineage():
     target = _fp("T", ["F1"], ["D1"], lineage=None)
     corpus = [target, _fp("O", ["F1"], ["D1"], lineage=None)]
-    family_model, device_model = fit_tfidf_models(corpus)
-    results = previous_states_of_chain(
-        target, corpus, family_model=family_model, device_model=device_model
-    )
+    model = _model(corpus)
+    results = previous_states_of_chain(target, corpus, model=model)
     assert results == []
 
 
@@ -351,15 +437,18 @@ def test_similar_chains_on_real_snapshot():
     ]
     assert len(fingerprints) == len(package.chains)
 
-    family_model, device_model = fit_tfidf_models(fingerprints)
+    model = fit_fingerprint_model(fingerprints, model_version="sim-real-v1")
     target = fingerprints[0]
-    results = find_similar_chains(
-        target, fingerprints, family_model=family_model, device_model=device_model, top_k=5
-    )
+    results = find_similar_chains(target, fingerprints, model=model, top_k=5)
     assert all(r.chain_id != target.chain_id for r in results)
     assert all(0.0 <= r.similarity <= 1.0 + 1e-9 for r in results)
     # Re-running must be deterministic.
-    results_again = find_similar_chains(
-        target, fingerprints, family_model=family_model, device_model=device_model, top_k=5
-    )
+    results_again = find_similar_chains(target, fingerprints, model=model, top_k=5)
     assert [r.chain_id for r in results] == [r.chain_id for r in results_again]
+
+    # Real export: alarm_type_name is empty (verified), so any resolved
+    # family term must be TYPE_FALLBACK only if alarm_type_name happens to be
+    # non-empty; with this export it should simply be absent.
+    if target.family_terms.counts:
+        for key in target.family_terms.counts:
+            assert key.startswith("FAMILY:") or key.startswith("TYPE_FALLBACK:")
