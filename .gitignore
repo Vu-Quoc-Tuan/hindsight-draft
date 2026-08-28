@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Generated snapshot output is reproducible from the sources.
+nocpro-mock/datasets/generated/*
+!nocpro-mock/datasets/generated/.gitkeep
+
+# Raw real-world exports (680MB+): local input data, not a versioned artifact.
+nocpro-mock/datasets/raw/*
+!nocpro-mock/datasets/raw/.gitkeep
