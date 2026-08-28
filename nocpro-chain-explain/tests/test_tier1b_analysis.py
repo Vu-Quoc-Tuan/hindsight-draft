@@ -433,3 +433,124 @@ def test_real_snapshot_produces_all_three_axes():
         assert member.role is not None
         assert member.structural is not None
         assert member.redundancy is not None
+
+
+# --------------------------------------------------------------------------
+# WHY-4 contrastive top-3 (§5, §11)
+# --------------------------------------------------------------------------
+
+
+def test_margins_are_bounded_to_top_3_candidates():
+    """§11 'contrastive top-3 candidate qua blocking index': never more than 3."""
+    alarms = []
+    memberships = []
+    chains = []
+    for i in range(4):
+        for j in range(6):
+            alarms.append(
+                _alarm(
+                    f"c{i}_{j}", f"C{i}",
+                    device_code=f"D{i}", node_reference=f"R{i}",
+                    alarm_name="LINK DOWN", location_code="SITE_SHARED",
+                    canonical_start_time=f"2026-01-01T0{i}:00:{j:02d}",
+                )
+            )
+            memberships.append({"chain_id": f"C{i}", "alarm_id": f"c{i}_{j}", "snapshot_id": "s1"})
+        chains.append({"chain_id": f"C{i}", "snapshot_id": "s1", "member_count": 6})
+    package = _snapshot(alarms, chains, memberships)
+
+    analysis = analyze_chain(
+        package, "C0", thresholds=THRESHOLDS, mining_config=MINING
+    )
+    # 3 other chains share the blocking key (location_code), all candidates.
+    assert len(analysis.local_candidates) == 3
+    for member in analysis.members.values():
+        assert len(member.margins) <= 3
+
+
+def test_margins_cover_multiple_distinct_rivals():
+    """Each of the top-3 candidates gets its own MarginResult, not just one."""
+    alarms = []
+    memberships = []
+    chains = []
+    for i in range(4):
+        for j in range(6):
+            alarms.append(
+                _alarm(
+                    f"c{i}_{j}", f"C{i}",
+                    device_code=f"D{i}", node_reference=f"R{i}",
+                    alarm_name="LINK DOWN", location_code="SITE_SHARED",
+                    canonical_start_time=f"2026-01-01T0{i}:00:{j:02d}",
+                )
+            )
+            memberships.append({"chain_id": f"C{i}", "alarm_id": f"c{i}_{j}", "snapshot_id": "s1"})
+        chains.append({"chain_id": f"C{i}", "snapshot_id": "s1", "member_count": 6})
+    package = _snapshot(alarms, chains, memberships)
+
+    analysis = analyze_chain(
+        package, "C0", thresholds=THRESHOLDS, mining_config=MINING
+    )
+    member = next(iter(analysis.members.values()))
+    rival_ids = {m.compared_chain_id for m in member.margins}
+    assert len(rival_ids) == len(member.margins), "each margin must target a distinct rival"
+    assert rival_ids <= {"C1", "C2", "C3"}
+
+
+def test_backward_compat_margin_property_matches_first_of_margins(two_chain_package):
+    analysis = analyze_chain(
+        two_chain_package, "C1", thresholds=THRESHOLDS, mining_config=MINING
+    )
+    for member in analysis.members.values():
+        if member.margins:
+            assert member.margin == member.margins[0]
+        else:
+            assert member.margin is None
+
+
+def test_no_candidates_means_empty_margins():
+    """A chain with no blocking competitors gets zero margins, not a crash."""
+    package = _snapshot(
+        [_alarm(f"a{i}", "C1", device_code="D1", alarm_name=f"UNIQUE_{i}") for i in range(6)],
+        [{"chain_id": "C1", "snapshot_id": "s1", "member_count": 6}],
+        [{"chain_id": "C1", "alarm_id": f"a{i}", "snapshot_id": "s1"} for i in range(6)],
+    )
+    analysis = analyze_chain(
+        package, "C1", thresholds=THRESHOLDS, mining_config=MINING
+    )
+    assert analysis.local_candidates == ()
+    for member in analysis.members.values():
+        assert member.margins == ()
+        assert member.margin is None
+
+
+@pytest.mark.realdata
+def test_top_3_margins_on_real_snapshot():
+    if not (MOCK_ROOT / "datasets/raw/alarm_data.csv").is_file():
+        pytest.skip("real alarm export not present")
+    venv = MOCK_ROOT / ".venv/bin/python"
+    interpreter = str(venv) if venv.is_file() else sys.executable
+    result = subprocess.run(
+        [
+            interpreter, "-m", "nocpro_mock.cli", "replay",
+            "--limit", "2000", "--snapshot-id", "s_top3_real",
+        ],
+        cwd=MOCK_ROOT, capture_output=True, text=True,
+        env={"PYTHONPATH": "src", "PATH": "/usr/bin:/bin"},
+    )
+    if result.returncode != 0:
+        pytest.skip(f"mock CLI failed: {result.stderr[:300]}")
+
+    package = load_package(json.loads(result.stdout))
+    candidates = [c for c in package.chains.values() if c.member_count >= 10]
+    if not candidates:
+        pytest.skip("no chain with >=10 members in this batch")
+    target = max(candidates, key=lambda c: c.member_count)
+
+    analysis = analyze_chain(
+        package, target.chain_id, thresholds=THRESHOLDS, mining_config=MINING
+    )
+    assert len(analysis.local_candidates) <= 5  # DEFAULT_U_LOCAL_K
+    for member in analysis.members.values():
+        assert len(member.margins) <= 3
+        rival_ids = [m.compared_chain_id for m in member.margins]
+        assert len(rival_ids) == len(set(rival_ids))

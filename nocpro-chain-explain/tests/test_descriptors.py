@@ -373,3 +373,46 @@ def test_representativeness_map_covers_every_member():
     mapping = representativeness_map(members, descriptors, index)
     assert set(mapping) == set(members)
     assert all(v is not None for v in mapping.values())
+
+
+# --------------------------------------------------------------------------
+# Contrastive top-3 bound (§5, §11)
+# --------------------------------------------------------------------------
+
+
+def test_top_contrastive_candidates_is_bounded_to_three_by_default():
+    from descriptor.contrastive import BlockingCandidate, top_contrastive_candidates
+
+    candidates = tuple(
+        BlockingCandidate(chain_id=f"C{i}", shared_key="k", shared_value="v", overlap=10 - i)
+        for i in range(5)
+    )
+    top3 = top_contrastive_candidates(candidates)
+    assert len(top3) == 3
+    assert [c.chain_id for c in top3] == ["C0", "C1", "C2"]
+
+
+def test_top_contrastive_candidates_does_not_resort():
+    """It takes a prefix of an already-ranked list; it must not re-rank."""
+    from descriptor.contrastive import BlockingCandidate, top_contrastive_candidates
+
+    # Deliberately not sorted by overlap; the function must not fix that.
+    candidates = (
+        BlockingCandidate(chain_id="LOW", shared_key="k", shared_value="v", overlap=1),
+        BlockingCandidate(chain_id="HIGH", shared_key="k", shared_value="v", overlap=100),
+    )
+    top = top_contrastive_candidates(candidates, top_k=2)
+    assert [c.chain_id for c in top] == ["LOW", "HIGH"]
+
+
+def test_top_contrastive_candidates_fewer_than_k_returns_all():
+    from descriptor.contrastive import BlockingCandidate, top_contrastive_candidates
+
+    candidates = (BlockingCandidate(chain_id="only", shared_key="k", shared_value="v", overlap=1),)
+    assert top_contrastive_candidates(candidates) == candidates
+
+
+def test_default_contrastive_top_k_is_three():
+    from descriptor.contrastive import DEFAULT_CONTRASTIVE_TOP_K
+
+    assert DEFAULT_CONTRASTIVE_TOP_K == 3
