@@ -15,6 +15,7 @@ from groups.indexed_statistics import (
 
 from .semantic import EMPTY_TAXONOMY, AlarmTaxonomy
 from .indexed_statistics import build_indexed_statistics
+from .temporal import DEFAULT_SILENT_GAP_SECONDS
 
 
 @dataclass
@@ -45,11 +46,17 @@ def evaluate_chain_indexed(
     chain_id: str,
     *,
     taxonomy: AlarmTaxonomy = EMPTY_TAXONOMY,
+    silent_gap_seconds: int = DEFAULT_SILENT_GAP_SECONDS,
 ) -> IndexedChainEvidence:
     """Build exact available Tier-1 statistics without scanning member pairs."""
     if chain_id not in package.chains:
         raise KeyError(f"unknown chain_id {chain_id!r}")
-    statistics = build_indexed_statistics(package, chain_id, taxonomy=taxonomy)
+    statistics = build_indexed_statistics(
+        package,
+        chain_id,
+        taxonomy=taxonomy,
+        silent_gap_seconds=silent_gap_seconds,
+    )
     return IndexedChainEvidence(
         chain_id=chain_id,
         members=list(statistics.members),

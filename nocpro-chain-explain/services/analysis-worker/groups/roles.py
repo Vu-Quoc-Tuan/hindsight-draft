@@ -50,6 +50,10 @@ class RoleThresholds:
     r_min: float = 0.5
     #: Top quantile for CORE on chains at or above SMALL_CHAIN_THRESHOLD.
     core_quantile: float = 0.5
+    #: Frozen minimum number of distinct computable role groups.
+    min_computable_groups: int = MIN_COMPUTABLE_GROUPS
+    #: Chains below this size use absolute floors without quantiles.
+    small_chain_threshold: int = SMALL_CHAIN_THRESHOLD
 
 
 @dataclass(frozen=True)
@@ -78,14 +82,14 @@ def evaluate_gate(
     coverage = availability_coverage(support)
     computable = support.computable_group_count
 
-    if computable < MIN_COMPUTABLE_GROUPS:
+    if computable < thresholds.min_computable_groups:
         return GateResult(
             passed=False,
             availability_coverage=coverage,
             computable_groups=computable,
             reason=(
                 f"only {computable} computable role-eligible derivation group(s); "
-                f"need >= {MIN_COMPUTABLE_GROUPS}"
+                f"need >= {thresholds.min_computable_groups}"
             ),
         )
     if coverage < thresholds.c_min:
@@ -164,7 +168,7 @@ def classify_membership(
             reason="no computable MembershipSupport",
         )
 
-    small_chain = chain_size < SMALL_CHAIN_THRESHOLD
+    small_chain = chain_size < thresholds.small_chain_threshold
     in_top_quantile = (
         True
         if small_chain or support_rank_quantile is None

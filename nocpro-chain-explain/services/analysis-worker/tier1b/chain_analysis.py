@@ -22,7 +22,12 @@ from time import perf_counter
 from libs.contracts import IngestedPackage
 
 from audit.structural_role import StructuralRole, StructuralRoleResult
-from channels import IndexedChainEvidence, RivalFitIndex, evaluate_chain_indexed
+from channels import (
+    DEFAULT_SILENT_GAP_SECONDS,
+    IndexedChainEvidence,
+    RivalFitIndex,
+    evaluate_chain_indexed,
+)
 from channels.base import ChannelValue
 from channels.entity import evaluate_entity_channels
 from channels.semantic import EMPTY_TAXONOMY, AlarmTaxonomy, evaluate_semantic_channel
@@ -33,6 +38,7 @@ from descriptor import (
     DescriptorSet,
     MiningConfig,
     PredicateIndex,
+    DEFAULT_MAX_VALUES_PER_FIELD,
     bitmap_of_members,
     build_predicate_index,
     mine_descriptors,
@@ -61,7 +67,11 @@ from groups import (
     membership_support_from_index,
 )
 from groups.fit import group_fits
-from groups.redundancy import RedundancyResult, classify_redundancy_all
+from groups.redundancy import (
+    DEFAULT_SMALL_DT_SECONDS,
+    RedundancyResult,
+    classify_redundancy_all,
+)
 
 
 @dataclass
@@ -111,6 +121,8 @@ class ChainAnalysis:
     singleton: bool = False
     #: Wall-clock phase timings for benchmark attribution, not methodology data.
     phase_durations: dict[str, float] = field(default_factory=dict)
+    #: ADR-0025 registry snapshot: parameter path -> source category.
+    parameter_provenance: dict[str, str] = field(default_factory=dict)
 
     @property
     def audit_graph_mode(self):
@@ -170,6 +182,9 @@ def analyze_chain(
     g_min: int = DEFAULT_G_MIN,
     contrastive_top_k: int = DEFAULT_CONTRASTIVE_TOP_K,
     enable_contrastive: bool = True,
+    silent_gap_seconds: int = DEFAULT_SILENT_GAP_SECONDS,
+    max_values_per_field: int = DEFAULT_MAX_VALUES_PER_FIELD,
+    redundancy_small_dt_seconds: int = DEFAULT_SMALL_DT_SECONDS,
 ) -> ChainAnalysis:
     """Run Tier-1B analysis for one chain."""
     analysis_started = perf_counter()
@@ -177,12 +192,20 @@ def analyze_chain(
     if chain is None:
         raise KeyError(f"unknown chain_id {chain_id!r}")
 
-    evidence = evaluate_chain_indexed(package, chain_id, taxonomy=taxonomy)
+    evidence = evaluate_chain_indexed(
+        package,
+        chain_id,
+        taxonomy=taxonomy,
+        silent_gap_seconds=silent_gap_seconds,
+    )
     graybox = adapt_graybox_metadata(package, chain_id)
     statistics_done = perf_counter()
 
     # Descriptors run over the whole ingested snapshot as the universe.
-    index = predicate_index or build_predicate_index(list(package.alarms.values()))
+    index = predicate_index or build_predicate_index(
+        list(package.alarms.values()),
+        max_values_per_field=max_values_per_field,
+    )
     member_ids = set(package.members_of(chain_id))
     target = bitmap_of_members(index, member_ids)
 
@@ -306,7 +329,10 @@ def analyze_chain(
 
     rival_indexes = {
         rival.chain_id: RivalFitIndex.from_chain(
-            package, rival.chain_id, taxonomy=taxonomy
+            package,
+            rival.chain_id,
+            taxonomy=taxonomy,
+            silent_gap_seconds=silent_gap_seconds,
         )
         for rival in rivals
     }
@@ -329,7 +355,10 @@ def analyze_chain(
 
     member_alarms = package.alarms_of(chain_id)
     redundancy_by_member = classify_redundancy_all(
-        member_alarms, index=index, descriptors=identity
+        member_alarms,
+        index=index,
+        descriptors=identity,
+        small_dt_seconds=redundancy_small_dt_seconds,
     )
     redundancy_done = perf_counter()
 
@@ -371,6 +400,47 @@ def analyze_chain(
     )
 
     return analysis
+
+
+def analyze_chain_configured(
+    package: IngestedPackage,
+    chain_id: str,
+    *,
+    analysis_config,
+    taxonomy: AlarmTaxonomy = EMPTY_TAXONOMY,
+    predicate_index: PredicateIndex | None = None,
+    enable_contrastive: bool = True,
+) -> ChainAnalysis:
+    """Run Tier-1B from one validated ADR-0025 parameter registry.
+
+    ``analyze_chain`` remains the explicit, pure orchestration API used by unit
+    tests and controlled experiments.  Production adapters should prefer this
+    wrapper so thresholds cannot drift across independently-created objects.
+    """
+    result = analyze_chain(
+        package,
+        chain_id,
+        thresholds=analysis_config.role_thresholds(),
+        mining_config=analysis_config.mining_config(),
+        taxonomy=taxonomy,
+        predicate_index=predicate_index,
+        u_local_k=int(analysis_config.value("contrastive.local_universe_k")),
+        g_min=int(analysis_config.value("contrastive.g_min")),
+        contrastive_top_k=int(analysis_config.value("contrastive.top_k")),
+        enable_contrastive=enable_contrastive,
+        silent_gap_seconds=int(analysis_config.value("temporal.burst.gap_seconds")),
+        max_values_per_field=int(
+            analysis_config.value("descriptor.max_values_per_field")
+        ),
+        redundancy_small_dt_seconds=int(
+            analysis_config.value("redundancy.small_dt_seconds")
+        ),
+    )
+    result.parameter_provenance = {
+        path: configured.source.value
+        for path, configured in analysis_config.parameters.items()
+    }
+    return result
 
 
 def auto_chain_title(

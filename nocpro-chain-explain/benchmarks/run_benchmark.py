@@ -28,19 +28,20 @@ from benchmarks.harness import (
     measure,
 )
 from channels import build_indexed_statistics, evaluate_pair_channels
-from descriptor import MiningConfig, build_predicate_index
-from groups import RoleThresholds
+from configuration import load_analysis_config
+from descriptor import build_predicate_index
 from libs.contracts import load_package
 from tier1a import Tier1Cache, precompute_snapshot
-from tier1b import analyze_chain
+from tier1b import analyze_chain_configured
 from tier2 import AuditExecutionPolicy, analyze_structural_audit
 
 MOCK_ROOT = Path(__file__).resolve().parents[2] / "nocpro-mock"
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 TARGET_SIZES = (1, 10, 50, 200, 500, 1072)
 
-THRESHOLDS = RoleThresholds(config_version="bench-v2")
-MINING = MiningConfig(config_version="bench-mine-v2")
+CONFIG_PATH = Path(__file__).resolve().parents[1] / "config/thresholds/v1.yaml"
+ANALYSIS_CONFIG = load_analysis_config(CONFIG_PATH)
+MINING = ANALYSIS_CONFIG.mining_config()
 
 
 def _replay():
@@ -86,11 +87,10 @@ def _phase_results(
     phases: dict[str, TimingResult] = {}
 
     def run_once():
-        analysis = analyze_chain(
+        analysis = analyze_chain_configured(
             package,
             chain_id,
-            thresholds=THRESHOLDS,
-            mining_config=MINING,
+            analysis_config=ANALYSIS_CONFIG,
             predicate_index=predicate_index,
         )
         for name, duration in analysis.phase_durations.items():
@@ -118,6 +118,7 @@ def run() -> BenchmarkReport:
             "p95_method": "observed nearest-rank",
             "tier_1b_repetitions": tier1b_repetitions,
             "tier_1a_repetitions": tier1a_repetitions,
+            "analysis_config_version": ANALYSIS_CONFIG.config_version,
         }
     )
 
@@ -137,14 +138,26 @@ def run() -> BenchmarkReport:
     )
 
     print("Building reusable predicate index...")
-    predicate_index = build_predicate_index(list(package.alarms.values()))
+    predicate_index = build_predicate_index(
+        list(package.alarms.values()),
+        max_values_per_field=int(
+            ANALYSIS_CONFIG.value("descriptor.max_values_per_field")
+        ),
+    )
 
     print("Benchmarking Tier-1A full snapshot...")
     report.results.append(
         measure(
             "tier_1a_snapshot_background",
             "full_export",
-            lambda: precompute_snapshot(package, mining_config=MINING, cache=Tier1Cache()),
+            lambda: precompute_snapshot(
+                package,
+                mining_config=MINING,
+                cache=Tier1Cache(),
+                max_values_per_field=int(
+                    ANALYSIS_CONFIG.value("descriptor.max_values_per_field")
+                ),
+            ),
             repetitions=tier1a_repetitions,
         )
     )
@@ -162,7 +175,13 @@ def run() -> BenchmarkReport:
             measure(
                 "tier_1b_index_build",
                 workload,
-                lambda cid=chain_id: build_indexed_statistics(package, cid),
+                lambda cid=chain_id: build_indexed_statistics(
+                    package,
+                    cid,
+                    silent_gap_seconds=int(
+                        ANALYSIS_CONFIG.value("temporal.burst.gap_seconds")
+                    ),
+                ),
                 repetitions=tier1b_repetitions,
                 track_memory=False,
             )
@@ -184,7 +203,21 @@ def run() -> BenchmarkReport:
                     "pair_on_click",
                     workload,
                     lambda cid=chain_id, left=members[0], right=members[1]: (
-                        evaluate_pair_channels(package, cid, left, right)
+                        evaluate_pair_channels(
+                            package,
+                            cid,
+                            left,
+                            right,
+                            delay_threshold=float(
+                                ANALYSIS_CONFIG.value(
+                                    "temporal.delay.support_threshold"
+                                )
+                            ),
+                            d_max=int(ANALYSIS_CONFIG.value("dependency.max_hop")),
+                            silent_gap_seconds=int(
+                                ANALYSIS_CONFIG.value("temporal.burst.gap_seconds")
+                            ),
+                        )
                     ),
                     repetitions=tier1b_repetitions,
                     track_memory=False,
@@ -195,11 +228,10 @@ def run() -> BenchmarkReport:
             measure(
                 "tier_1b_peak_memory",
                 workload,
-                lambda cid=chain_id: analyze_chain(
+                lambda cid=chain_id: analyze_chain_configured(
                     package,
                     cid,
-                    thresholds=THRESHOLDS,
-                    mining_config=MINING,
+                    analysis_config=ANALYSIS_CONFIG,
                     predicate_index=predicate_index,
                 ),
                 repetitions=1,
@@ -217,7 +249,9 @@ def run() -> BenchmarkReport:
                         cid,
                         policy=AuditExecutionPolicy(exact_max_members=bound),
                         mining_config=MINING,
-                        epsilon=0.3,
+                        epsilon=float(
+                            ANALYSIS_CONFIG.value("audit.global_weak_baseline")
+                        ),
                     ),
                     repetitions=3,
                     track_memory=False,

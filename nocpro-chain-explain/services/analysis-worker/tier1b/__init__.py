@@ -4,6 +4,7 @@ from .chain_analysis import (
     ChainAnalysis,
     MemberAnalysis,
     analyze_chain,
+    analyze_chain_configured,
     auto_chain_title,
 )
 
@@ -11,5 +12,6 @@ __all__ = [
     "ChainAnalysis",
     "MemberAnalysis",
     "analyze_chain",
+    "analyze_chain_configured",
     "auto_chain_title",
 ]

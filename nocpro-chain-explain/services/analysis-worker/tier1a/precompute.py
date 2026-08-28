@@ -21,6 +21,7 @@ from descriptor import (
     DescriptorSet,
     MiningConfig,
     PredicateIndex,
+    DEFAULT_MAX_VALUES_PER_FIELD,
     bitmap_of_members,
     build_predicate_index,
     mine_descriptors,
@@ -73,6 +74,7 @@ def precompute_snapshot(
     mining_config: MiningConfig,
     cache: Tier1Cache | None = None,
     max_chains: int | None = None,
+    max_values_per_field: int = DEFAULT_MAX_VALUES_PER_FIELD,
 ) -> SnapshotPrecompute:
     """Run Tier-1A background precompute for a complete snapshot."""
     if not package.snapshot.is_complete:
@@ -81,7 +83,10 @@ def precompute_snapshot(
             f"{package.snapshot.status!r}; Tier-1A requires COMPLETE (ADR-0005)"
         )
 
-    index = build_predicate_index(list(package.alarms.values()))
+    index = build_predicate_index(
+        list(package.alarms.values()),
+        max_values_per_field=max_values_per_field,
+    )
     result = SnapshotPrecompute(
         snapshot_id=package.snapshot.snapshot_id,
         config_version=mining_config.config_version,
