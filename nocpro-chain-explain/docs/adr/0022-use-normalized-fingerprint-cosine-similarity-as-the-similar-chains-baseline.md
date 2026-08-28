@@ -78,6 +78,33 @@ feature blocks" rather than an unqualified confidence number.
   `FingerprintModel` of a different version is rejected, not silently computed.
 - A freshly built (unstamped) fingerprint may be scored under any model.
 
+## Open questions — NOT decided yet
+
+These are known gaps in the current implementation. They are **not** frozen
+decisions; do not implement against them until the user confirms an answer.
+
+1. **Real alarm-family taxonomy source.** The current real export has
+   `alarm_type_name` empty for 100% of rows (0/8714 verified), so
+   `TYPE_FALLBACK` never actually fires today and `FAMILY` never resolves from
+   real data. If a real family/type taxonomy exists elsewhere (a lookup table,
+   a different export, an external KEDB-like source), we need: where it lives,
+   its format, and whether it maps `alarm_name -> family` directly or needs an
+   intermediate join key. Until then, `AlarmTaxonomy` stays caller-supplied and
+   empty by default — this is not a methodology gap, just a missing data
+   source.
+
+2. **Temporal leakage in the TF-IDF fit corpus.** `FingerprintModel` is fit
+   once per index corpus (§ Implementation implications), but nothing yet
+   enforces *which* chains may be in that corpus relative to a query's time.
+   If a benchmark asks "what looked similar to chain C at time t", fitting IDF
+   on chains that occurred after `t` would leak future information into the
+   evaluation, even though the cosine baseline itself stays deterministic.
+   Not decided: whether the index corpus should be windowed to
+   `history < t` per query, or whether a single frozen training corpus is
+   used for all queries regardless of when they occur. This is an evaluation/
+   benchmark design question, not a change to the fingerprint or similarity
+   math above.
+
 ## References
 
 V2.3.1 section 8.3.

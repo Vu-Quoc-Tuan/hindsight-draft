@@ -44,6 +44,21 @@ incremental indexing) are still outstanding. Next steps are closing those P0
 items, then integration/full-real-data run/benchmark/evaluation/UI — not
 further P1-optional or P2 work.
 
+### Open questions (unresolved, see ADR-0022)
+
+Not decided yet — do not implement against these until confirmed:
+
+1. **Real alarm-family taxonomy source.** `alarm_type_name` is empty for
+   100% of rows in the current real export, so the Similar Chains
+   `TYPE_FALLBACK` path never actually fires on real data today. Need: where a
+   real family/type taxonomy would come from, its format, and its join key to
+   `alarm_name`.
+2. **Temporal leakage in the Similar Chains TF-IDF fit corpus.** Not decided
+   whether the index corpus for `FingerprintModel` should be windowed to
+   `history < t` per query, or use one frozen training corpus regardless of
+   query time. This is a benchmark/evaluation design question, not a change
+   to the fingerprint/cosine math.
+
 ## Layout
 
 ```text
