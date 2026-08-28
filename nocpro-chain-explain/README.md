@@ -32,10 +32,17 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | STRUCTURAL role (CONNECTOR/NON_CONNECTOR), REDUNDANCY role | P0/§4B | done |
 | CommonDependency: SHARED_ANCESTOR + SHARED_ACTIVE_PATH (`channels/common_dependency.py`) | P1-Core | done |
 | Similar Chains: fingerprint + cosine baseline (`similar_chains/`) | P1-Core | done |
-| **P1-Core (3+1) complete** | | **4/4** |
+| **P1-Core (3+1) feature set implemented** | | **4/4** |
 | Contrastive top-3 UI, benchmarks, incremental indexing | P0 | not started |
 | UNAVOIDABLE_DEPENDENCY (dominator), graph motif upgrade | P2 | not started |
 | HTTP API, web UI, persistence/migrations | infra | not started |
+
+Per ADR-0029, MVP + P0-complete must stand as a usable project **before** P1.
+The P1-Core feature set above is implemented, but the **P1 milestone is not
+closed**: several P0 acceptance items (contrastive top-3 UI, benchmarks,
+incremental indexing) are still outstanding. Next steps are closing those P0
+items, then integration/full-real-data run/benchmark/evaluation/UI — not
+further P1-optional or P2 work.
 
 ## Layout
 
@@ -170,9 +177,21 @@ skip when the sibling repo or the 680 MB exports are absent.
   SHARED_ACTIVE_PATH. ECMP paths of one resource count once, and `N` is scoped
   to the path universe, never the whole topology inventory.
 - Similar Chains baseline is cosine similarity over a TF-IDF(family) +
-  TF-IDF(device_type) + descriptor + size/duration-bin fingerprint. Family
-  backs off to `alarm_type_name` when no taxonomy is supplied; `device_type_name`
-  is used verbatim, never guessed from a device-code prefix.
+  TF-IDF(device_type) + descriptor + size/duration-bin fingerprint.
+  `device_type_name` is used verbatim, never guessed from a device-code prefix.
+- Alarm-family resolution is FAMILY (real taxonomy) -> TYPE_FALLBACK
+  (`alarm_type_name`, explicitly labeled, not the T_delay/H backoff rule) ->
+  no term. FAMILY/TYPE_FALLBACK values are namespaced so they can never
+  collide in the vocabulary even with identical spelling.
+- All fingerprints compared in one request must share one `FingerprintModel`
+  (one `model_version`); scoring a fingerprint stamped under a different
+  version raises `ModelVersionMismatch` rather than silently mixing vector
+  spaces.
+- Each `SimilarChainResult` reports `compared_blocks`, so a `similarity=1.0`
+  between two chains scored on a reduced basis (e.g. two singletons with no
+  taxonomy) can be shown as "basis: N/5 feature blocks", not an unqualified
+  confidence number.
 - The nearest "different incident" result excludes the same
   `lineage_component_id`; a separate "previous states of this chain" mode
-  returns exactly those matches instead.
+  returns exactly those matches instead. Equal-similarity ties break
+  deterministically by `chain_id`.
