@@ -75,6 +75,7 @@ def precompute_snapshot(
     cache: Tier1Cache | None = None,
     max_chains: int | None = None,
     max_values_per_field: int = DEFAULT_MAX_VALUES_PER_FIELD,
+    predicate_index: PredicateIndex | None = None,
 ) -> SnapshotPrecompute:
     """Run Tier-1A background precompute for a complete snapshot."""
     if not package.snapshot.is_complete:
@@ -83,10 +84,11 @@ def precompute_snapshot(
             f"{package.snapshot.status!r}; Tier-1A requires COMPLETE (ADR-0005)"
         )
 
-    index = build_predicate_index(
-        list(package.alarms.values()),
-        max_values_per_field=max_values_per_field,
+    index = predicate_index or build_predicate_index(
+        list(package.alarms.values()), max_values_per_field=max_values_per_field
     )
+    if set(index.active_ids) != set(package.alarms):
+        raise ValueError("predicate index does not match snapshot alarms")
     result = SnapshotPrecompute(
         snapshot_id=package.snapshot.snapshot_id,
         config_version=mining_config.config_version,

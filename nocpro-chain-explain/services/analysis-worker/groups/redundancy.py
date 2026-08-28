@@ -65,8 +65,8 @@ def _adds_new_coverage(alarm_id: str, other_id: str, index, descriptors: tuple[D
     from the alleged duplicate; otherwise it is contributing new information.
     """
     try:
-        pos_a = index.universe.index(alarm_id)
-        pos_b = index.universe.index(other_id)
+        pos_a = index.position_of(alarm_id)
+        pos_b = index.position_of(other_id)
     except ValueError:
         return False
     for descriptor in descriptors:

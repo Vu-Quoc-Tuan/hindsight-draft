@@ -144,8 +144,8 @@ def descriptor_candidates(
     for descriptor in descriptors[:top_k]:
         members = frozenset(
             index.universe[i]
-            for i in range(index.size)
-            if descriptor.matches_alarm_bit(i)
+            for i in range(len(index.universe))
+            if index.universe[i] is not None and descriptor.matches_alarm_bit(i)
         )
         if len(members) >= 2:
             candidates.append(

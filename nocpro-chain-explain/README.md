@@ -35,8 +35,9 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | **P1-Core (3+1) feature set implemented** | | **4/4** |
 | Contrastive top-3: per-candidate `Margin_common` (§5, §11) | P0 | done |
 | Hybrid indexed Tier-1B + pairwise oracle | P0 | done |
-| Benchmark matrix + overlap measurement | P0 | implemented; real run recorded |
-| Production delta indexing policy | P0 | pending 1–4 week overlap data |
+| Exact incremental predicate index + reconciliation triggers | P0 | done |
+| Benchmark matrix + overlap measurement tooling | P0 | implemented; Tier-1 real run recorded |
+| Production delta-default policy/threshold | P0 | pending 1–4 week consecutive production snapshots |
 | UNAVOIDABLE_DEPENDENCY (dominator), graph motif upgrade | P2 | not started |
 | HTTP API, web UI, persistence/migrations | infra | not started |
 

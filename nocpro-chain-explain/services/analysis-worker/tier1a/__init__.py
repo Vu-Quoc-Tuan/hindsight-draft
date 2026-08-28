@@ -13,6 +13,13 @@ from .precompute import (
     SnapshotPrecompute,
     precompute_snapshot,
 )
+from .incremental import (
+    IncrementalPredicateIndex,
+    IncrementalUpdate,
+    ReconciliationPolicy,
+    ReconciliationReason,
+    reconciliation_reasons,
+)
 
 __all__ = [
     "CacheEntry",
@@ -24,4 +31,9 @@ __all__ = [
     "Tier1Cache",
     "chain_fingerprint",
     "precompute_snapshot",
+    "IncrementalPredicateIndex",
+    "IncrementalUpdate",
+    "ReconciliationPolicy",
+    "ReconciliationReason",
+    "reconciliation_reasons",
 ]

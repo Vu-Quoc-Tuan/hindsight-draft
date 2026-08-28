@@ -75,12 +75,32 @@ class PredicateIndex:
     both objectives run on one engine as the spec requires.
     """
 
-    universe: tuple[str, ...]
+    universe: tuple[str | None, ...]
     bitmaps: dict[Predicate, int]
+    #: Stable-slot incremental indexes can contain tombstones in ``universe``.
+    active_size: int | None = None
+    positions: dict[str, int] | None = None
 
     @property
     def size(self) -> int:
-        return len(self.universe)
+        if self.active_size is not None:
+            return self.active_size
+        return sum(alarm_id is not None for alarm_id in self.universe)
+
+    @property
+    def active_ids(self) -> tuple[str, ...]:
+        return tuple(alarm_id for alarm_id in self.universe if alarm_id is not None)
+
+    def position_of(self, alarm_id: str) -> int:
+        if self.positions is not None:
+            try:
+                return self.positions[alarm_id]
+            except KeyError as exc:
+                raise ValueError(f"{alarm_id!r} is not in the predicate universe") from exc
+        try:
+            return self.universe.index(alarm_id)
+        except ValueError as exc:
+            raise ValueError(f"{alarm_id!r} is not in the predicate universe") from exc
 
     def bitmap(self, predicate: Predicate) -> int:
         return self.bitmaps.get(predicate, 0)
@@ -136,13 +156,21 @@ def build_predicate_index(
         for predicate in predicates[:max_values_per_field]:
             kept[predicate] = raw[predicate]
 
-    return PredicateIndex(universe=ordered_ids, bitmaps=kept)
+    return PredicateIndex(
+        universe=ordered_ids,
+        bitmaps=kept,
+        active_size=len(ordered_ids),
+        positions={alarm_id: position for position, alarm_id in enumerate(ordered_ids)},
+    )
 
 
 def bitmap_of_members(index: PredicateIndex, member_ids: set[str]) -> int:
     """Bitmap for an explicit member set, e.g. the chain being explained."""
     bitmap = 0
-    for position, alarm_id in enumerate(index.universe):
-        if alarm_id in member_ids:
-            bitmap |= 1 << position
+    for alarm_id in member_ids:
+        try:
+            position = index.position_of(alarm_id)
+        except ValueError:
+            continue
+        bitmap |= 1 << position
     return bitmap

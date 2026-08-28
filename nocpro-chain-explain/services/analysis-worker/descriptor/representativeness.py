@@ -26,7 +26,7 @@ def representativeness(
     if not descriptors:
         return None
     try:
-        position = index.universe.index(alarm_id)
+        position = index.position_of(alarm_id)
     except ValueError:
         return None
 
