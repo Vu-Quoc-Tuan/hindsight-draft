@@ -27,7 +27,9 @@ from channels import (
     DEFAULT_D_MAX,
     IndexedChainEvidence,
     RivalFitIndex,
+    FailureDomainEvidence,
     evaluate_chain_indexed,
+    failure_domains_for_chain,
 )
 from channels.base import ChannelValue
 from channels.entity import evaluate_entity_channels
@@ -100,6 +102,8 @@ class MemberAnalysis:
     structural: StructuralRoleResult | None = None
     #: REDUNDANCY axis: NEAR_DUPLICATE_CANDIDATE / UNIQUE.
     redundancy: RedundancyResult | None = None
+    #: H_domain memberships are set-valued context, never pair scores.
+    failure_domains: tuple[FailureDomainEvidence, ...] = ()
 
     @property
     def margin(self) -> MarginResult | None:
@@ -130,6 +134,7 @@ class ChainAnalysis:
     phase_durations: dict[str, float] = field(default_factory=dict)
     #: ADR-0025 registry snapshot: parameter path -> source category.
     parameter_provenance: dict[str, str] = field(default_factory=dict)
+    failure_domains: tuple[FailureDomainEvidence, ...] = ()
 
     @property
     def audit_graph_mode(self):
@@ -223,6 +228,7 @@ def analyze_chain(
         d_max=d_max,
     )
     graybox = adapt_graybox_metadata(package, chain_id)
+    domain_evidence = failure_domains_for_chain(package, chain_id)
     statistics_done = perf_counter()
 
     # Descriptors run over the whole ingested snapshot as the universe.
@@ -286,6 +292,7 @@ def analyze_chain(
         auto_title=auto_chain_title(chain_id, descriptors, mining_config),
         config_version=thresholds.config_version,
         singleton=chain.is_singleton,
+        failure_domains=domain_evidence,
         phase_durations={
             "indexed_statistics": statistics_done - analysis_started,
             "descriptors": descriptors_done - statistics_done,
@@ -324,6 +331,11 @@ def analyze_chain(
                     reason="singleton chain: no pair to audit",
                 ),
                 redundancy=None,
+                failure_domains=tuple(
+                    domain
+                    for domain in domain_evidence
+                    if alarm_id in domain.member_alarm_ids
+                ),
             )
         analysis.phase_durations["membership_and_roles"] = (
             perf_counter() - descriptors_done
@@ -412,6 +424,11 @@ def analyze_chain(
             margins=margins,
             structural=None,
             redundancy=redundancy_by_member[alarm_id],
+            failure_domains=tuple(
+                domain
+                for domain in domain_evidence
+                if alarm_id in domain.member_alarm_ids
+            ),
         )
 
     analysis.phase_durations.update(

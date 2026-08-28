@@ -16,7 +16,12 @@ from audit import (
     generate_candidates,
     run_structural_audit,
 )
-from channels import EMPTY_TAXONOMY, AlarmTaxonomy, evaluate_chain_channels
+from channels import (
+    EMPTY_TAXONOMY,
+    AlarmTaxonomy,
+    evaluate_chain_channels,
+    failure_domains_for_chain,
+)
 from descriptor import (
     DescriptorKind,
     MiningConfig,
@@ -107,10 +112,18 @@ def analyze_structural_audit(
             kind=DescriptorKind.IDENTITY,
         )
     )
+    resolved_failure_domains = (
+        failure_domains
+        if failure_domains is not None
+        else [
+            (domain.failure_domain_id, domain.member_alarm_ids)
+            for domain in failure_domains_for_chain(package, chain_id)
+        ]
+    )
     candidates = generate_candidates(
         alarms=package.alarms_of(chain_id),
         dependency_edges=dependency_edges or [],
-        failure_domains=failure_domains or [],
+        failure_domains=resolved_failure_domains,
         descriptors=descriptors,
         predicate_index=predicate_index,
     )

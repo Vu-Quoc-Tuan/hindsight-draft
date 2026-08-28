@@ -43,6 +43,11 @@ from .evaluator import (
 from .indexed_evaluator import IndexedChainEvidence, evaluate_chain_indexed
 from .indexed_statistics import build_indexed_statistics
 from .rival_index import RivalFitIndex
+from .failure_domain import (
+    FailureDomainEvidence,
+    failure_domains_for_chain,
+    failure_domains_for_member,
+)
 from .pair_detail import PairChannelMatrix
 from .semantic import (
     EMPTY_TAXONOMY,
@@ -102,6 +107,9 @@ __all__ = [
     "evaluate_pair_channels",
     "IndexedChainEvidence",
     "RivalFitIndex",
+    "FailureDomainEvidence",
+    "failure_domains_for_chain",
+    "failure_domains_for_member",
     "build_indexed_statistics",
     "evaluate_delay_channel",
     "evaluate_dep_hop_channel",
