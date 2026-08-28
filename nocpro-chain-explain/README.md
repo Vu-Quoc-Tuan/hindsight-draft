@@ -31,8 +31,10 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | Multi-evidence over-merge verdict | P1-Core | done |
 | STRUCTURAL role (CONNECTOR/NON_CONNECTOR), REDUNDANCY role | P0/§4B | done |
 | CommonDependency: SHARED_ANCESTOR + SHARED_ACTIVE_PATH (`channels/common_dependency.py`) | P1-Core | done |
+| Similar Chains: fingerprint + cosine baseline (`similar_chains/`) | P1-Core | done |
+| **P1-Core (3+1) complete** | | **4/4** |
 | Contrastive top-3 UI, benchmarks, incremental indexing | P0 | not started |
-| Similar Chains, UNAVOIDABLE_DEPENDENCY (dominator) | P1-Core / P2 | not started |
+| UNAVOIDABLE_DEPENDENCY (dominator), graph motif upgrade | P2 | not started |
 | HTTP API, web UI, persistence/migrations | infra | not started |
 
 ## Layout
@@ -50,6 +52,7 @@ services/analysis-worker/tier1a/     snapshot precompute + Tier-1 cache
 services/analysis-worker/tier1b/     per-chain analysis orchestration
 services/analysis-worker/audit/      audit graph, candidate cuts, conductance, over-merge
 services/analysis-worker/channels/common_dependency.py  SHARED_ANCESTOR, SHARED_ACTIVE_PATH
+services/analysis-worker/similar_chains/  fingerprint, TF-IDF, cosine similarity baseline
 tests/spec_sanity/                   methodology firewall (ADR-0027)
 ```
 
@@ -166,3 +169,10 @@ skip when the sibling repo or the 680 MB exports are absent.
   distinct traversing resources within the same path-observation universe for
   SHARED_ACTIVE_PATH. ECMP paths of one resource count once, and `N` is scoped
   to the path universe, never the whole topology inventory.
+- Similar Chains baseline is cosine similarity over a TF-IDF(family) +
+  TF-IDF(device_type) + descriptor + size/duration-bin fingerprint. Family
+  backs off to `alarm_type_name` when no taxonomy is supplied; `device_type_name`
+  is used verbatim, never guessed from a device-code prefix.
+- The nearest "different incident" result excludes the same
+  `lineage_component_id`; a separate "previous states of this chain" mode
+  returns exactly those matches instead.
