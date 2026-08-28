@@ -1,0 +1,14 @@
+scenario_id: synthetic_operational_context_v1
+source_kind: SYNTHETIC_TEST
+seed: 42
+
+context:
+  - context_id: MAINT-SYN-001
+    type: MAINTENANCE
+    affected_resources: [SYN-DEA-A, SYN-DEA-B]
+  - context_id: TICKET-SYN-001
+    type: TICKET
+    affected_resources: [SYN-DEA-A]
+
+validation:
+  eligible_as_real_operational_validation: false

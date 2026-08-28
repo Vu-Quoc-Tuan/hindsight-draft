@@ -1,0 +1,14 @@
+scenario_id: synthetic_failure_domain_v1
+source_kind: SYNTHETIC_TEST
+seed: 42
+
+failure_domains:
+  - failure_domain_id: SRLG-SYN-001
+    domain_type: SRLG
+    members: [SYN-DEA-A, SYN-DEA-B, SYN-DEA-C]
+  - failure_domain_id: POWER-SYN-01
+    domain_type: POWER
+    members: [SYN-DEA-B, SYN-DEA-D]
+
+rules:
+  clique_project: false

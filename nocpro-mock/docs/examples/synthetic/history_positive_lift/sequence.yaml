@@ -1,0 +1,17 @@
+scenario_id: history_positive_lift_v1
+sequence_type: HISTORY_BOOTSTRAP
+seed: 42
+
+snapshots:
+  - snapshot_000.json
+  - snapshot_001.json
+  - snapshot_002.json
+  - snapshot_003.json
+
+target_snapshot: snapshot_003.json
+
+delivery:
+  # History is strictly before the target: snapshots 000-002 only.
+  # snapshot_003 is the target and must not enter history before it is
+  # emitted/evaluated (ADR-MOCK-0006).
+  history_until_exclusive: snapshot_003.json

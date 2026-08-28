@@ -1,0 +1,17 @@
+scenario_id: split_then_merge_v1
+sequence_type: EVOLUTION
+seed: 42
+
+snapshots:
+  - snapshot_000.json
+  - snapshot_001.json
+  - snapshot_002.json
+
+expected_transitions:
+  - from: snapshot_000.json
+    to: snapshot_001.json
+    expected_event: SPLIT
+
+  - from: snapshot_001.json
+    to: snapshot_002.json
+    expected_event: MERGE

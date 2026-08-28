@@ -1,0 +1,31 @@
+{
+  "fixture_id": "golden_2214039",
+  "chain_id": "2214039",
+  "member_count": 58,
+  "event_span_seconds": 22,
+  "merge_strategy": "OR",
+  "source_kind": "REAL_EXPORT_REPLAY",
+  "provenance_class": "SYSTEM_FACT",
+  "rules": [
+    {
+      "rule_name": "CORE_CHAINING_REMOTE_NODE",
+      "connector_count": 34,
+      "member_count": 58,
+      "extender_count": 6
+    },
+    {
+      "rule_name": "CORE_CHAINING_REFERENCE_NODE",
+      "connector_count": 58,
+      "member_count": 58
+    },
+    {
+      "rule_name": "CORE_CHAINING_DEFAULT",
+      "connector_count": 18,
+      "member_count": 58
+    }
+  ],
+  "notes": [
+    "Connector/extender labels are replayed as system metadata; semantics are not inferred.",
+    "Exact Attribute config/simiDict/A_ij are not claimed."
+  ]
+}

@@ -1,0 +1,19 @@
+fixture_id: golden_2214039
+
+assertions:
+  - chain_member_count: 58
+  - rule_count: 3
+  - merge_strategy: OR
+  - time_lt_600_pair_count: 1653
+  - time_lt_600_coverage_scope: FULL_PAIR_SPACE
+  - reference_dehl01_pair_count: 435
+  - reference_deht01_pair_count: 378
+  - topology_mapping_status: UNMAPPED
+
+must_not_assert:
+  - overmerge_true
+  - nocpro_wrong
+  - exact_simiDict
+  - exact_Aij
+  - exact_deltaQ
+  - exact_connector_semantics

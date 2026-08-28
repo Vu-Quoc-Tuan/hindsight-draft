@@ -1,0 +1,58 @@
+scenario_id: system_pair_metadata_semantics_v1
+source_kind: SYNTHETIC_TEST
+seed: 42
+
+# Correctness fixture: pairs are listed explicitly so each typing case is
+# reviewable. coverage_scope is declared once at batch level, not per pair.
+system_pair_metadata:
+  attribute_ref: SYN-ATTR-TIMEWINDOW-01
+  coverage_scope: BOUNDED_COMPARISON
+
+  attribute_config:
+    attribute_type: 3
+    content: TimeWindow
+    algorithm_type: TIME_WINDOW
+    weight: 1.0
+
+  pairs:
+    # EVALUATED with an in-range supporting score.
+    - alarm_id_a: SYN-A-001
+      alarm_id_b: SYN-A-002
+      system_pair_status: EVALUATED
+      raw_score: 1.0
+      system_semantic: SUPPORT
+
+    # TimeWindow veto: the raw sentinel is preserved, not nulled.
+    - alarm_id_a: SYN-A-001
+      alarm_id_b: SYN-A-003
+      system_pair_status: EVALUATED
+      raw_score: -999999999
+      system_semantic: VETO
+
+    # Raw score outside [0,1]; kept raw as a SYSTEM_FACT.
+    - alarm_id_a: SYN-A-002
+      alarm_id_b: SYN-A-003
+      system_pair_status: EVALUATED
+      raw_score: 2.0
+      system_semantic: SUPPORT
+
+    # Not compared by the system: no score, no semantic.
+    - alarm_id_a: SYN-A-001
+      alarm_id_b: SYN-A-004
+      system_pair_status: NOT_EVALUATED
+      raw_score: null
+      system_semantic: null
+
+    # No record available: UNKNOWN, never NEUTRAL.
+    - alarm_id_a: SYN-A-001
+      alarm_id_b: SYN-A-005
+      system_pair_status: UNKNOWN
+      raw_score: null
+      system_semantic: null
+
+expected_capability:
+  system_pair_typing: true
+  raw_score_preserved: true
+
+validation:
+  eligible_as_real_operational_validation: false

@@ -1,0 +1,156 @@
+{
+  "snapshot": {
+    "snapshot_id": "split_then_merge_v1:snapshot_001",
+    "snapshot_time": "2026-01-01T00:01:00",
+    "status": "COMPLETE",
+    "source": "nocpro-mock",
+    "source_kind": "SYNTHETIC_TEST",
+    "produced_at": "2026-01-01T00:01:00",
+    "schema_version": "v1"
+  },
+  "alarms": [
+    {
+      "alarm_id": "SYN-ALARM-01",
+      "snapshot_id": "split_then_merge_v1:snapshot_001",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-ALARM-01",
+        "chaining_id": "SYN-CHAIN-B",
+        "cah.start_time": "2026-01-01T00:01:00",
+        "device_code": "SYN-ALARM-01"
+      },
+      "raw_start_time": "2026-01-01T00:01:00",
+      "canonical_start_time": "2026-01-01T00:01:00",
+      "device_code": "SYN-ALARM-01",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-ALARM-02",
+      "snapshot_id": "split_then_merge_v1:snapshot_001",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-ALARM-02",
+        "chaining_id": "SYN-CHAIN-B",
+        "cah.start_time": "2026-01-01T00:01:01",
+        "device_code": "SYN-ALARM-02"
+      },
+      "raw_start_time": "2026-01-01T00:01:01",
+      "canonical_start_time": "2026-01-01T00:01:01",
+      "device_code": "SYN-ALARM-02",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-ALARM-03",
+      "snapshot_id": "split_then_merge_v1:snapshot_001",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-ALARM-03",
+        "chaining_id": "SYN-CHAIN-C",
+        "cah.start_time": "2026-01-01T00:01:00",
+        "device_code": "SYN-ALARM-03"
+      },
+      "raw_start_time": "2026-01-01T00:01:00",
+      "canonical_start_time": "2026-01-01T00:01:00",
+      "device_code": "SYN-ALARM-03",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-ALARM-04",
+      "snapshot_id": "split_then_merge_v1:snapshot_001",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-ALARM-04",
+        "chaining_id": "SYN-CHAIN-C",
+        "cah.start_time": "2026-01-01T00:01:01",
+        "device_code": "SYN-ALARM-04"
+      },
+      "raw_start_time": "2026-01-01T00:01:01",
+      "canonical_start_time": "2026-01-01T00:01:01",
+      "device_code": "SYN-ALARM-04",
+      "quality_flags": []
+    }
+  ],
+  "chains": [
+    {
+      "chain_id": "SYN-CHAIN-B",
+      "snapshot_id": "split_then_merge_v1:snapshot_001",
+      "member_count": 2,
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "event_span_seconds": 1
+    },
+    {
+      "chain_id": "SYN-CHAIN-C",
+      "snapshot_id": "split_then_merge_v1:snapshot_001",
+      "member_count": 2,
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "event_span_seconds": 1
+    }
+  ],
+  "memberships": [
+    {
+      "chain_id": "SYN-CHAIN-B",
+      "alarm_id": "SYN-ALARM-01",
+      "snapshot_id": "split_then_merge_v1:snapshot_001",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-B",
+      "alarm_id": "SYN-ALARM-02",
+      "snapshot_id": "split_then_merge_v1:snapshot_001",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-C",
+      "alarm_id": "SYN-ALARM-03",
+      "snapshot_id": "split_then_merge_v1:snapshot_001",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-C",
+      "alarm_id": "SYN-ALARM-04",
+      "snapshot_id": "split_then_merge_v1:snapshot_001",
+      "source_kind": "SYNTHETIC_TEST"
+    }
+  ],
+  "system_metadata": {
+    "chain_rules": [],
+    "chain_characteristics": [],
+    "attribute_configs": [],
+    "pair_metadata": [],
+    "pair_metadata_batches": []
+  },
+  "topology": {
+    "nodes": [],
+    "edges": [],
+    "failure_domains": [],
+    "active_paths": [],
+    "mappings": []
+  },
+  "operational_context": [],
+  "provenance_manifest": {
+    "sources": [
+      {
+        "source_id": "split_then_merge_v1",
+        "source_kind": "SYNTHETIC_TEST",
+        "record_count": 4,
+        "notes": [
+          "EVOLUTION sequence member 1"
+        ]
+      }
+    ],
+    "generator_version": "nocpro-mock-0.1.0",
+    "unavailable_capabilities": [],
+    "notes": [
+      "scenario_id=split_then_merge_v1",
+      "seed=42",
+      "Synthetic snapshot; cannot be used as real validation."
+    ]
+  },
+  "schema_version": "v1"
+}

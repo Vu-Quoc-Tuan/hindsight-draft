@@ -1,0 +1,15 @@
+scenario_id: synthetic_active_path_v1
+source_kind: SYNTHETIC_TEST
+seed: 42
+
+paths:
+  - path_id: SYN-PATH-A
+    resource_id: SYN-DEA-A
+    nodes: [SYN-DEA-A, SYN-R1, SYN-R2, SYN-CORE-X]
+  - path_id: SYN-PATH-B
+    resource_id: SYN-DEA-B
+    nodes: [SYN-DEA-B, SYN-R3, SYN-R2, SYN-CORE-X]
+
+expected_capability:
+  shared_active_path: true
+  shared_node: SYN-R2

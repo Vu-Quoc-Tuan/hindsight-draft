@@ -1,0 +1,23 @@
+scenario_id: history_positive_lift_v1
+
+# Known support/lift live here only. The mock generates snapshots such that
+# downstream computes these numbers itself; the mock never emits H.support or
+# H.lift as if they were source truth (docs 08).
+expected:
+  relation:
+    alarm_family_a: SYN-FAMILY-A
+    alarm_family_b: SYN-FAMILY-B
+  support: 3
+  lift_greater_than: 1.0
+
+  downstream_expectation:
+    positive_history_evidence: true
+
+must_not_emit:
+  - H.support
+  - H.lift
+  - H.reliability
+
+notes:
+  - "Support 3 = the three history snapshots that group FAMILY-A with FAMILY-B."
+  - "The target snapshot is excluded from history, so it cannot support itself."

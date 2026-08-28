@@ -1,0 +1,25 @@
+scenario_id: split_then_merge_v1
+
+# Membership per snapshot. Downstream derives the transition events itself;
+# the mock only declares what it generated.
+expected:
+  snapshot_000:
+    chains:
+      SYN-CHAIN-A: [SYN-ALARM-01, SYN-ALARM-02, SYN-ALARM-03, SYN-ALARM-04]
+
+  snapshot_001:
+    chains:
+      SYN-CHAIN-B: [SYN-ALARM-01, SYN-ALARM-02]
+      SYN-CHAIN-C: [SYN-ALARM-03, SYN-ALARM-04]
+
+  snapshot_002:
+    chains:
+      SYN-CHAIN-D: [SYN-ALARM-01, SYN-ALARM-02, SYN-ALARM-03, SYN-ALARM-04]
+
+  downstream_expectation:
+    lineage_tracked_by_membership: true
+    chain_id_is_not_incident_identity: true
+
+notes:
+  - "Chain IDs change at every step; lineage must follow membership, not raw IDs."
+  - "snapshot_002 restores the original membership under a new chain ID."

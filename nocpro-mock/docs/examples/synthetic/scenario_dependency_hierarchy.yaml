@@ -1,0 +1,20 @@
+scenario_id: synthetic_dependency_hierarchy_v1
+source_kind: SYNTHETIC_TEST
+seed: 42
+
+topology:
+  relation_type: LOGICAL_DEPENDENCY
+  directed: true
+  edges:
+    - [SYN-CORE-01, SYN-AGG-HN-01]
+    - [SYN-CORE-01, SYN-AGG-HCM-01]
+    - [SYN-AGG-HN-01, SYN-DEA-HN-01]
+    - [SYN-AGG-HN-01, SYN-DEA-HN-02]
+    - [SYN-AGG-HCM-01, SYN-DEA-HCM-01]
+    - [SYN-AGG-HCM-01, SYN-DEA-HCM-02]
+
+expected_capability:
+  dep_hop: true
+  shared_ancestor: true
+  shared_active_path: false
+  unavoidable_dependency: false

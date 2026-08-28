@@ -1,0 +1,50 @@
+[
+  {
+    "name": "TIME_LT_SECONDS",
+    "threshold_seconds": 600,
+    "pair_count": 1653,
+    "coverage_scope": "FULL_PAIR_SPACE",
+    "provenance_class": "SYSTEM_FACT"
+  },
+  {
+    "name": "NODE_REFERENCE_EQUAL",
+    "value": "DEHL01",
+    "pair_count": 435,
+    "coverage_scope": "UNKNOWN",
+    "provenance_class": "SYSTEM_FACT"
+  },
+  {
+    "name": "NODE_REFERENCE_EQUAL",
+    "value": "DEHT01",
+    "pair_count": 378,
+    "coverage_scope": "UNKNOWN",
+    "provenance_class": "SYSTEM_FACT"
+  },
+  {
+    "name": "ALARM_NAME_EQUAL",
+    "value": "DIAMETER SIGNALING CONTROLLER, PEER UNAVAILABLE",
+    "pair_count": 153,
+    "coverage_scope": "UNKNOWN",
+    "provenance_class": "SYSTEM_FACT"
+  },
+  {
+    "name": "HISTORICAL_GROUPING",
+    "pair_count": 72,
+    "coverage_scope": "UNKNOWN",
+    "provenance_class": "SYSTEM_FACT"
+  },
+  {
+    "name": "DEVICE_CODE_EQUAL",
+    "value": "DEHL01",
+    "pair_count": 36,
+    "coverage_scope": "UNKNOWN",
+    "provenance_class": "SYSTEM_FACT"
+  },
+  {
+    "name": "DEVICE_CODE_EQUAL",
+    "value": "DEHT01",
+    "pair_count": 36,
+    "coverage_scope": "UNKNOWN",
+    "provenance_class": "SYSTEM_FACT"
+  }
+]

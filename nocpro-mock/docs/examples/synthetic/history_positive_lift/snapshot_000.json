@@ -1,0 +1,108 @@
+{
+  "snapshot": {
+    "snapshot_id": "history_positive_lift_v1:snapshot_000",
+    "snapshot_time": "2026-01-01T00:00:00",
+    "status": "COMPLETE",
+    "source": "nocpro-mock",
+    "source_kind": "SYNTHETIC_TEST",
+    "produced_at": "2026-01-01T00:00:00",
+    "schema_version": "v1"
+  },
+  "alarms": [
+    {
+      "alarm_id": "SYN-ALARM-A1",
+      "snapshot_id": "history_positive_lift_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-ALARM-A1",
+        "chaining_id": "SYN-CHAIN-H0",
+        "cah.start_time": "2026-01-01T00:00:00",
+        "device_code": "SYN-ALARM-A1",
+        "alarm_name": "SYN-FAMILY-A"
+      },
+      "raw_start_time": "2026-01-01T00:00:00",
+      "canonical_start_time": "2026-01-01T00:00:00",
+      "alarm_name": "SYN-FAMILY-A",
+      "device_code": "SYN-ALARM-A1",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-ALARM-B1",
+      "snapshot_id": "history_positive_lift_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-ALARM-B1",
+        "chaining_id": "SYN-CHAIN-H0",
+        "cah.start_time": "2026-01-01T00:00:01",
+        "device_code": "SYN-ALARM-B1",
+        "alarm_name": "SYN-FAMILY-B"
+      },
+      "raw_start_time": "2026-01-01T00:00:01",
+      "canonical_start_time": "2026-01-01T00:00:01",
+      "alarm_name": "SYN-FAMILY-B",
+      "device_code": "SYN-ALARM-B1",
+      "quality_flags": []
+    }
+  ],
+  "chains": [
+    {
+      "chain_id": "SYN-CHAIN-H0",
+      "snapshot_id": "history_positive_lift_v1:snapshot_000",
+      "member_count": 2,
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "event_span_seconds": 1
+    }
+  ],
+  "memberships": [
+    {
+      "chain_id": "SYN-CHAIN-H0",
+      "alarm_id": "SYN-ALARM-A1",
+      "snapshot_id": "history_positive_lift_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-H0",
+      "alarm_id": "SYN-ALARM-B1",
+      "snapshot_id": "history_positive_lift_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    }
+  ],
+  "system_metadata": {
+    "chain_rules": [],
+    "chain_characteristics": [],
+    "attribute_configs": [],
+    "pair_metadata": [],
+    "pair_metadata_batches": []
+  },
+  "topology": {
+    "nodes": [],
+    "edges": [],
+    "failure_domains": [],
+    "active_paths": [],
+    "mappings": []
+  },
+  "operational_context": [],
+  "provenance_manifest": {
+    "sources": [
+      {
+        "source_id": "history_positive_lift_v1",
+        "source_kind": "SYNTHETIC_TEST",
+        "record_count": 2,
+        "notes": [
+          "HISTORY_BOOTSTRAP sequence member 0"
+        ]
+      }
+    ],
+    "generator_version": "nocpro-mock-0.1.0",
+    "unavailable_capabilities": [],
+    "notes": [
+      "scenario_id=history_positive_lift_v1",
+      "seed=42",
+      "Synthetic snapshot; cannot be used as real validation."
+    ]
+  },
+  "schema_version": "v1"
+}
