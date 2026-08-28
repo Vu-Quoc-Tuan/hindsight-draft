@@ -1,0 +1,35 @@
+{
+  "metadata": {
+    "timestamp": "2026-08-28T17:22:08",
+    "workload": "8714 alarms, 2824 chains, max=1072"
+  },
+  "results": [
+    {
+      "operation": "tier_1a_snapshot_background",
+      "workload": "full_export",
+      "n": 3,
+      "p50_s": 47.5578,
+      "p95_s": 47.5578,
+      "mean_s": 51.0071,
+      "peak_memory_mb": 2.64
+    },
+    {
+      "operation": "tier_1b_on_chain_open_p95",
+      "workload": "chain_6907125_1072",
+      "n": 3,
+      "p50_s": 177.0812,
+      "p95_s": 177.0812,
+      "mean_s": 176.6016,
+      "peak_memory_mb": 50.94
+    },
+    {
+      "operation": "tier_1b_singleton",
+      "workload": "singleton",
+      "n": 3,
+      "p50_s": 0.3073,
+      "p95_s": 0.3073,
+      "mean_s": 0.3052,
+      "peak_memory_mb": 1.04
+    }
+  ]
+}
