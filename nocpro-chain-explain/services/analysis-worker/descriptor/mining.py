@@ -182,16 +182,20 @@ def mine_descriptors(
         else _contrastive_sort_key
     )
 
-    all_predicates = index.predicates()
+    # Every predicate in a conjunction must cover at least one target member;
+    # otherwise the conjunction's target intersection is necessarily empty.
+    # Filter once before deepening so Tier-1A does not rescan the snapshot-wide
+    # predicate vocabulary for every beam node of every chain.
+    target_predicates: list[tuple[Predicate, int]] = []
+    for predicate in index.predicates():
+        extent = index.bitmap(predicate)
+        if extent & target:
+            target_predicates.append((predicate, extent))
     accepted: list[Descriptor] = []
 
     # Depth 1 seeds.
     beam: list[Descriptor] = []
-    for predicate in all_predicates:
-        extent = index.bitmap(predicate)
-        if not extent & target:
-            # A predicate covering no member cannot describe the chain.
-            continue
+    for predicate, extent in target_predicates:
         descriptor = build((predicate,), extent)
         beam.append(descriptor)
         if admissible(descriptor):
@@ -205,7 +209,7 @@ def mine_descriptors(
         next_beam: list[Descriptor] = []
         seen: set[tuple[Predicate, ...]] = set()
         for base in beam:
-            for predicate in all_predicates:
+            for predicate, predicate_extent in target_predicates:
                 if predicate in base.predicates:
                     continue
                 # One field per rule: field=A AND field=B is unsatisfiable.
@@ -217,7 +221,7 @@ def mine_descriptors(
                 if predicates in seen:
                     continue
                 seen.add(predicates)
-                extent = base.extent & index.bitmap(predicate)
+                extent = base.extent & predicate_extent
                 if not extent & target:
                     continue
                 descriptor = build(predicates, extent)

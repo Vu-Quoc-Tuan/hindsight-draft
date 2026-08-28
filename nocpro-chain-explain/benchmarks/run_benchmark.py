@@ -159,6 +159,23 @@ def run() -> BenchmarkReport:
                 ),
             ),
             repetitions=tier1a_repetitions,
+            track_memory=False,
+        )
+    )
+    report.results.append(
+        measure(
+            "tier_1a_peak_memory",
+            "full_export",
+            lambda: precompute_snapshot(
+                package,
+                mining_config=MINING,
+                cache=Tier1Cache(),
+                max_values_per_field=int(
+                    ANALYSIS_CONFIG.value("descriptor.max_values_per_field")
+                ),
+            ),
+            repetitions=1,
+            track_memory=True,
         )
     )
 

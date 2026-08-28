@@ -242,6 +242,29 @@ def test_mining_is_deterministic():
     assert [d.label for d in first] == [d.label for d in second]
 
 
+def test_beam_does_not_revisit_predicates_disjoint_from_target():
+    """A conjunction cannot cover the target if one operand is disjoint."""
+    universe = [
+        alarm("t", device_code="D1", alarm_name="X", severity_name="Major"),
+        alarm("o", device_code="D2", alarm_name="Y", severity_name="Minor"),
+    ]
+    index = build_predicate_index(universe)
+    target = bitmap_of_members(index, {"t"})
+    disjoint = Predicate(field="device_code", value="D2", derivation_tag="device")
+    calls: dict[Predicate, int] = {}
+    original_bitmap = index.bitmap
+
+    def counted_bitmap(predicate: Predicate) -> int:
+        calls[predicate] = calls.get(predicate, 0) + 1
+        return original_bitmap(predicate)
+
+    index.bitmap = counted_bitmap  # type: ignore[method-assign]
+    mine_descriptors(index, target, config=CONFIG)
+
+    # Read once while filtering depth-1 seeds, never again during deepening.
+    assert calls[disjoint] == 1
+
+
 # --------------------------------------------------------------------------
 # CONTRASTIVE mining
 # --------------------------------------------------------------------------
