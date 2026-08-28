@@ -42,15 +42,14 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | Production delta-default policy/threshold | P0 | pending; `incremental_snapshot.mode=disabled` until 1–4 week consecutive production snapshots exist |
 | UNAVOIDABLE_DEPENDENCY (dominator), graph motif upgrade | P2 | not started |
 | FastAPI adapter: snapshot ingest, Tier-1B, pair WHY, Tier-2 polling | infra | done |
-| React/Vite/TypeScript operator UI | infra | in progress |
+| React/Vite/TypeScript operator UI | infra | done |
 | Persistence/migrations | infra | not started |
 
 Per ADR-0029, MVP + P0-complete must stand as a usable project **before** P1.
 The P1-Core feature set above is implemented, but the **P1 milestone is not
-closed**: contrastive UI and the production-data decision for delta indexing
-are still outstanding. Next steps are closing those P0 items, then
-integration/evaluation/UI — not
-further P1-optional or P2 work.
+closed**: the production-data decision for delta indexing and the Similar
+Chains temporal-corpus policy are still outstanding. Do not expand into
+P1-optional or P2 work until those evidence/policy gaps are resolved.
 
 ### Open questions (unresolved, see ADR-0022)
 
@@ -84,6 +83,7 @@ services/analysis-worker/audit/      audit graph, candidate cuts, conductance, o
 services/analysis-worker/channels/common_dependency.py  SHARED_ANCESTOR, SHARED_ACTIVE_PATH
 services/analysis-worker/similar_chains/  fingerprint, TF-IDF, cosine similarity baseline
 services/api/nocpro_api/             FastAPI transport and in-process repository boundary
+services/web/                        React/Vite/TypeScript operator workspace
 tests/spec_sanity/                   methodology firewall (ADR-0027)
 ```
 
@@ -235,7 +235,8 @@ The HTTP layer is an adapter over the existing analysis services; it does not
 reimplement channel or audit semantics. Start it from this directory with:
 
 ```bash
-.venv/bin/uvicorn nocpro_api.app:app \
+PYTHONPATH=.:services/analysis-worker:services/api \
+  .venv/bin/uvicorn nocpro_api.app:app \
   --app-dir services/api \
   --host 127.0.0.1 \
   --port 8000
@@ -246,3 +247,15 @@ then use `/api/v1/chains`, `/api/v1/chains/{chain_id}`, pair WHY, and the
 Tier-2 submit/poll endpoints under `/api/v1`. Snapshot replacement performs a
 full exact precompute because `incremental_snapshot.mode` is deliberately
 disabled until consecutive production snapshots are available.
+
+Run the frontend in another terminal:
+
+```bash
+cd services/web
+pnpm install
+pnpm dev
+```
+
+Vite proxies `/api` to `127.0.0.1:8000`. The Evolution view intentionally
+reports `UNAVAILABLE` until a verified sequential snapshot source is connected;
+it does not infer lineage from unrelated exports.
