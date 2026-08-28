@@ -33,7 +33,8 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | CommonDependency: SHARED_ANCESTOR + SHARED_ACTIVE_PATH (`channels/common_dependency.py`) | P1-Core | done |
 | Similar Chains: fingerprint + cosine baseline (`similar_chains/`) | P1-Core | done |
 | **P1-Core (3+1) feature set implemented** | | **4/4** |
-| Contrastive top-3 UI, benchmarks, incremental indexing | P0 | not started |
+| Contrastive top-3: per-candidate `Margin_common` (§5, §11) | P0 | done |
+| Benchmarks, incremental indexing | P0 | not started |
 | UNAVOIDABLE_DEPENDENCY (dominator), graph motif upgrade | P2 | not started |
 | HTTP API, web UI, persistence/migrations | infra | not started |
 
@@ -210,3 +211,7 @@ skip when the sibling repo or the 680 MB exports are absent.
   `lineage_component_id`; a separate "previous states of this chain" mode
   returns exactly those matches instead. Equal-similarity ties break
   deterministically by `chain_id`.
+- WHY-4 contrastive is bounded to top-3 blocking candidates (§5, §11), not the
+  whole `U_local`. Each member gets one `Margin_common` per candidate
+  (`MemberAnalysis.margins`); `.margin` is kept as a backward-compatible alias
+  for the closest candidate only.
