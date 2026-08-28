@@ -23,8 +23,13 @@ from libs.contracts import IngestedPackage
 from groups.fit import GroupFit
 from groups.statistics import ChannelStatistics
 
-#: Default number of competing chains in U_local.
+#: Default number of competing chains in U_local (descriptor mining universe).
 DEFAULT_U_LOCAL_K = 5
+
+#: WHY-4 contrastive panel bound (§5, §11): exactly top-3 candidates, not the
+#: whole U_local. This is a VISUALIZATION-facing bound, distinct from
+#: DEFAULT_U_LOCAL_K which sizes the STATISTICAL/mining universe.
+DEFAULT_CONTRASTIVE_TOP_K = 3
 
 #: Minimum shared groups for a contrastive verdict.
 DEFAULT_G_MIN = 2
@@ -96,6 +101,20 @@ def blocking_candidates(
         best.values(), key=lambda c: (-c.overlap, c.chain_id)
     )
     return ranked[:k]
+
+
+def top_contrastive_candidates(
+    candidates: tuple[BlockingCandidate, ...] | list[BlockingCandidate],
+    *,
+    top_k: int = DEFAULT_CONTRASTIVE_TOP_K,
+) -> tuple[BlockingCandidate, ...]:
+    """Bound the WHY-4 panel to exactly top-3 (§5, §11), never the whole U_local.
+
+    ``candidates`` is already ranked by blocking overlap (see
+    :func:`blocking_candidates`), so this takes a prefix rather than re-sorting
+    -- ranking logic has exactly one place to live.
+    """
+    return tuple(candidates[:top_k])
 
 
 def local_universe_bitmap(

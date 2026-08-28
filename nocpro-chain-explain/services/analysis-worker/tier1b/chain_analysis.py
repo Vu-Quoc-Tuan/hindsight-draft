@@ -40,6 +40,7 @@ from descriptor import (
     representativeness,
 )
 from descriptor.contrastive import (
+    DEFAULT_CONTRASTIVE_TOP_K,
     DEFAULT_G_MIN,
     DEFAULT_U_LOCAL_K,
     BlockingCandidate,
@@ -47,6 +48,7 @@ from descriptor.contrastive import (
     blocking_candidates,
     local_universe_bitmap,
     margin_common,
+    top_contrastive_candidates,
 )
 from graybox import GrayBoxMetadata, adapt_graybox_metadata
 from graybox.singleton import MembershipVerdict, build_singleton_report
@@ -72,11 +74,25 @@ class MemberAnalysis:
     #: MEMBERSHIP axis: CORE / PERIPHERAL / WEAK / INSUFFICIENT_DATA.
     role: MembershipRole
     representativeness: float | None
-    margin: MarginResult | None
+    #: WHY-4: Margin_common against each of the top-3 blocking candidates
+    #: (§5, §11 "contrastive top-3"). One rival alone is not the contract;
+    #: each candidate gets its own margin so the operator can see how a
+    #: member reads against every plausible alternative chain, not just the
+    #: single closest one.
+    margins: tuple[MarginResult, ...] = ()
     #: STRUCTURAL axis: CONNECTOR / NON_CONNECTOR.
     structural: StructuralRoleResult | None = None
     #: REDUNDANCY axis: NEAR_DUPLICATE_CANDIDATE / UNIQUE.
     redundancy: RedundancyResult | None = None
+
+    @property
+    def margin(self) -> MarginResult | None:
+        """The single closest candidate's margin, for callers that only need one.
+
+        Kept for backward compatibility with call sites written against the
+        old one-rival model; new code should read ``margins`` directly.
+        """
+        return self.margins[0] if self.margins else None
 
 
 @dataclass
@@ -147,6 +163,7 @@ def analyze_chain(
     predicate_index: PredicateIndex | None = None,
     u_local_k: int = DEFAULT_U_LOCAL_K,
     g_min: int = DEFAULT_G_MIN,
+    contrastive_top_k: int = DEFAULT_CONTRASTIVE_TOP_K,
     enable_contrastive: bool = True,
 ) -> ChainAnalysis:
     """Run Tier-1B analysis for one chain."""
@@ -239,7 +256,7 @@ def analyze_chain(
                     reason="singleton chain",
                 ),
                 representativeness=representativeness(alarm_id, identity, index),
-                margin=None,
+                margins=(),
                 structural=StructuralRoleResult(
                     alarm_id=alarm_id,
                     role=StructuralRole.NOT_APPLICABLE,
@@ -265,7 +282,10 @@ def analyze_chain(
         for position, (alarm_id, _) in enumerate(ranked)
     }
 
-    rival = candidates[0].chain_id if candidates else None
+    # WHY-4 contrastive rivals: top-3 candidates from the blocking index
+    # (§5, §11), not just the single closest one. ``candidates`` is already
+    # ranked by blocking overlap, so this is a prefix, not a re-sort.
+    rivals = top_contrastive_candidates(candidates, top_k=contrastive_top_k)
 
     # STRUCTURAL axis: built once from the same audit graph the Audit Engine
     # uses (never the top-K visualization graph), per the three-graph rule.
@@ -275,18 +295,25 @@ def analyze_chain(
     for alarm_id, support in supports.items():
         member_representativeness = representativeness(alarm_id, identity, index)
 
-        margin: MarginResult | None = None
-        if rival is not None:
+        margins: list[MarginResult] = []
+        for rival in rivals:
             rival_stats = _rival_statistics(
-                package, alarm_id, rival, taxonomy=taxonomy
+                package, alarm_id, rival.chain_id, taxonomy=taxonomy
             )
-            margin = margin_common(
-                alarm_id,
-                support.group_fits,
-                tuple(group_fits(alarm_id, rival_stats)),
-                compared_chain_id=rival,
-                g_min=g_min,
+            margins.append(
+                margin_common(
+                    alarm_id,
+                    support.group_fits,
+                    tuple(group_fits(alarm_id, rival_stats)),
+                    compared_chain_id=rival.chain_id,
+                    g_min=g_min,
+                )
             )
+
+        # Role classification uses the closest candidate's margin: it is the
+        # "nearest miss" contrast that decides CORE vs WEAK (§4B), while the
+        # full top-3 stays available for the WHY-4 panel.
+        primary_margin = margins[0] if margins else None
 
         role = classify_membership(
             support,
@@ -294,7 +321,7 @@ def analyze_chain(
             chain_size=len(evidence.members),
             support_rank_quantile=quantiles[alarm_id],
             representativeness=member_representativeness,
-            margin_common=margin.margin if margin else None,
+            margin_common=primary_margin.margin if primary_margin else None,
         )
         structural = classify_structural_role(alarm_id, audit_graph)
         redundancy = classify_redundancy(
@@ -305,7 +332,7 @@ def analyze_chain(
             support=support,
             role=role,
             representativeness=member_representativeness,
-            margin=margin,
+            margins=tuple(margins),
             structural=structural,
             redundancy=redundancy,
         )
