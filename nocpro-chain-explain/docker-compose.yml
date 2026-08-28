@@ -1,0 +1,26 @@
+version: "3.9"
+
+services:
+  api:
+    build: ./services/api
+    container_name: nocpro-chain-explain-api
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    # TODO: add database/broker dependencies
+
+  analysis-worker:
+    build: ./services/analysis-worker
+    container_name: nocpro-chain-explain-analysis-worker
+    environment:
+      - PYTHONUNBUFFERED=1
+    # TODO: add database/broker dependencies
+
+  web:
+    build: ./services/web
+    container_name: nocpro-chain-explain-web
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api

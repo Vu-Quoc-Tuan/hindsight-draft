@@ -1,0 +1,53 @@
+config_version: v1
+status: baseline_example_requires_calibration
+
+temporal:
+  burst:
+    gap_seconds:
+      value: 30
+      source: DOCUMENTED_DEFAULT
+  delay:
+    bandwidth_seconds:
+      value: 5
+      source: DOCUMENTED_DEFAULT
+
+dependency:
+  max_hop:
+    value: 3
+    source: DOCUMENTED_DEFAULT
+  lambda_dep:
+    value: 2.0
+    source: DOCUMENTED_DEFAULT
+
+history:
+  min_support:
+    value: 5
+    source: DOCUMENTED_DEFAULT
+  lambda_h:
+    value: 10.0
+    source: DOCUMENTED_DEFAULT
+
+role:
+  c_min:
+    value: 0.5
+    source: DOCUMENTED_DEFAULT
+  min_computable_groups:
+    value: 2
+    source: FROZEN_SPEC
+  membership_floor:
+    value: 0.5
+    source: DOCUMENTED_DEFAULT
+
+contrastive:
+  g_min:
+    value: 2
+    source: DOCUMENTED_DEFAULT
+
+audit:
+  rho:
+    value: 0.1
+    source: DOCUMENTED_DEFAULT
+
+notes:
+  - "Numeric defaults above are implementation placeholders, not benchmark-calibrated production thresholds."
+  - "Replace DATA_DRIVEN parameters after calibration; preserve version/source history."

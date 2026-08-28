@@ -1,0 +1,47 @@
+# ADR-0016: Keep statistical, visualization and audit graphs distinct
+
+- **Status:** Accepted — frozen by V2.3.1
+- **Date:** 2026-08-28
+- **Scope:** Graph semantics
+
+## Context
+
+Top-K pruning is useful for UI but can fabricate bridges/weak cuts. Statistical counts and structural audit have different correctness requirements.
+
+## Decision
+
+Maintain three graph purposes:
+
+- `STATISTICAL`: full indexed counts/statistics, not a display graph.
+- `VISUALIZATION`: bounded/top-K for UI only.
+- `AUDIT`: full eligible graph under a size threshold; otherwise supernode/sparsifier policy with explicit guarantees.
+
+Structural verdicts SHALL NOT run on the visualization graph.
+
+## Rationale
+
+This prevents UI sparsification artifacts from becoming methodology claims.
+
+## Consequences
+
+**Positive:** structural audit remains defensible.
+
+**Trade-offs:** multiple representations/caches may coexist.
+
+## Alternatives considered
+
+1. One graph for everything — rejected.
+2. Always full graph — rejected for very large chains.
+
+## Implementation implications
+
+Graph objects/DTOs should carry purpose/type explicitly.
+
+## Invariants / required tests
+
+- Changing visualization top-K does not change audit verdict on the same canonical inputs.
+- Audit never reads a `VISUALIZATION` graph instance.
+
+## References
+
+V2.3.1 sections 6 and 11.
