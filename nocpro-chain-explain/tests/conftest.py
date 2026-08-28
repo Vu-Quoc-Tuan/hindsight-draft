@@ -11,8 +11,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 #: ``services/analysis-worker`` contains a hyphen, so it cannot be imported as a
 #: package path. Adding it to sys.path lets its subpackages import normally.
 ANALYSIS_WORKER = REPO_ROOT / "services" / "analysis-worker"
+API_SERVICE = REPO_ROOT / "services" / "api"
 
-for path in (REPO_ROOT, ANALYSIS_WORKER):
+for path in (REPO_ROOT, ANALYSIS_WORKER, API_SERVICE):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 

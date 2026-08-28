@@ -1,0 +1,23 @@
+[project]
+name = "nocpro-chain-explain"
+version = "0.1.0"
+description = "Interactive explanation and audit API for NocPro alarm chains"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi==0.141.1",
+  "pydantic==2.13.5",
+  "PyYAML==6.0.2",
+  "uvicorn==0.52.4",
+]
+
+[dependency-groups]
+dev = [
+  "httpx2==2.12.0",
+  "pytest==8.3.5",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "realdata: requires the real exports in nocpro-mock/datasets/raw",
+]

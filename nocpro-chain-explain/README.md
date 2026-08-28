@@ -41,7 +41,9 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | Benchmark matrix + overlap measurement tooling | P0 | implemented; Tier-1 real run recorded |
 | Production delta-default policy/threshold | P0 | pending; `incremental_snapshot.mode=disabled` until 1–4 week consecutive production snapshots exist |
 | UNAVOIDABLE_DEPENDENCY (dominator), graph motif upgrade | P2 | not started |
-| HTTP API, web UI, persistence/migrations | infra | not started |
+| FastAPI adapter: snapshot ingest, Tier-1B, pair WHY, Tier-2 polling | infra | done |
+| React/Vite/TypeScript operator UI | infra | in progress |
+| Persistence/migrations | infra | not started |
 
 Per ADR-0029, MVP + P0-complete must stand as a usable project **before** P1.
 The P1-Core feature set above is implemented, but the **P1 milestone is not
@@ -81,6 +83,7 @@ services/analysis-worker/tier1b/     per-chain analysis orchestration
 services/analysis-worker/audit/      audit graph, candidate cuts, conductance, over-merge
 services/analysis-worker/channels/common_dependency.py  SHARED_ANCESTOR, SHARED_ACTIVE_PATH
 services/analysis-worker/similar_chains/  fingerprint, TF-IDF, cosine similarity baseline
+services/api/nocpro_api/             FastAPI transport and in-process repository boundary
 tests/spec_sanity/                   methodology firewall (ADR-0027)
 ```
 
@@ -95,9 +98,10 @@ import `from channels import ...` rather than a dotted service path.
 ## Tests
 
 ```bash
-../nocpro-mock/.venv/bin/python -m pytest tests            # all
-../nocpro-mock/.venv/bin/python -m pytest tests/spec_sanity  # methodology firewall
-../nocpro-mock/.venv/bin/python -m pytest tests -m "not realdata"
+uv sync
+.venv/bin/python -m pytest tests              # all
+.venv/bin/python -m pytest tests/spec_sanity  # methodology firewall
+.venv/bin/python -m pytest tests -m "not realdata"
 ```
 
 `tests/spec_sanity/` is not an ordinary suite: a failure means the code
@@ -137,7 +141,7 @@ skip when the sibling repo or the 680 MB exports are absent.
 - Statistical truth and pair detail are separate. `Fit_k`/`Fit_g`/
   `MembershipSupport`/role read exact counts accumulated over the **full** pair
   space; `pair_detail_limit` bounds only the stored pair listing used for WHY
-  drill-down and visualization. A verdict is never a function of a display
+drill-down and visualization. A verdict is never a function of a display
   budget, and `tests/test_cap_isolation.py` pins that.
 - Exact statistics are streaming, so memory is O(members x channels) rather than
   O(pairs). Above `EXACT_STATISTICS_MAX_MEMBERS` the result is flagged
@@ -224,3 +228,21 @@ skip when the sibling repo or the 680 MB exports are absent.
   whole `U_local`. Each member gets one `Margin_common` per candidate
   (`MemberAnalysis.margins`); `.margin` is kept as a backward-compatible alias
   for the closest candidate only.
+
+## API
+
+The HTTP layer is an adapter over the existing analysis services; it does not
+reimplement channel or audit semantics. Start it from this directory with:
+
+```bash
+.venv/bin/uvicorn nocpro_api.app:app \
+  --app-dir services/api \
+  --host 127.0.0.1 \
+  --port 8000
+```
+
+Load one canonical Input Contract v1 package with `POST /api/v1/snapshots`,
+then use `/api/v1/chains`, `/api/v1/chains/{chain_id}`, pair WHY, and the
+Tier-2 submit/poll endpoints under `/api/v1`. Snapshot replacement performs a
+full exact precompute because `incremental_snapshot.mode` is deliberately
+disabled until consecutive production snapshots are available.
