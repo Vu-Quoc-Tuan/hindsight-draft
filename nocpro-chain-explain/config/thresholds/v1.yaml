@@ -62,6 +62,7 @@ lineage:
 
 similar_chains:
   top_descriptor_predicates: {value: 5, source: DOCUMENTED_DEFAULT}
+  result_top_k: {value: 5, source: DOCUMENTED_DEFAULT}
 
 notes:
   - Numeric defaults are baseline hypotheses, not benchmark-calibrated production thresholds.

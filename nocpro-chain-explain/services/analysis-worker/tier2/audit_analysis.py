@@ -31,10 +31,30 @@ from descriptor import (
 )
 from groups import AuditGraphMode
 from libs.contracts import IngestedPackage
+from similar_chains import (
+    ChainFingerprint,
+    FingerprintModel,
+    SimilarChainResult,
+    build_fingerprint,
+    find_similar_chains,
+)
 
 
 class AuditPolicyRequired(RuntimeError):
     """Raised when exact audit is disallowed and no compressed policy exists."""
+
+
+@dataclass(frozen=True)
+class SimilarityQueryContext:
+    """Caller-supplied, versioned historical corpus policy result.
+
+    The core intentionally does not decide whether the corpus is ``history<t``
+    or one frozen training corpus; ADR-0022 leaves that evaluation choice open.
+    """
+
+    model: FingerprintModel
+    corpus: tuple[ChainFingerprint, ...]
+    target_lineage_component_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -65,6 +85,9 @@ class Tier2AuditAnalysis:
     config_version: str | None = None
     epsilon: float | None = None
     parameter_provenance: dict[str, str] | None = None
+    similar_chains: tuple[SimilarChainResult, ...] = ()
+    similarity_model_version: str | None = None
+    similarity_unavailable_reason: str | None = None
 
 
 def analyze_structural_audit(
@@ -78,6 +101,8 @@ def analyze_structural_audit(
     dependency_edges: list[tuple[str, str, float]] | None = None,
     failure_domains: list[tuple[str, frozenset[str]]] | None = None,
     cross_block_negative_evidence: bool = False,
+    similarity_context: SimilarityQueryContext | None = None,
+    similarity_top_k: int = 5,
 ) -> Tier2AuditAnalysis:
     """Run an exact audit only when the caller's configured policy permits it."""
     chain = package.chains.get(chain_id)
@@ -137,6 +162,37 @@ def analyze_structural_audit(
         mining_config=mining_config,
         cross_block_negative_evidence=cross_block_negative_evidence,
     )
+    similar_results: tuple[SimilarChainResult, ...] = ()
+    similarity_model_version: str | None = None
+    similarity_unavailable_reason: str | None = None
+    if similarity_context is None:
+        similarity_unavailable_reason = (
+            "no caller-supplied versioned similarity corpus; temporal corpus "
+            "policy remains unresolved by ADR-0022"
+        )
+    else:
+        model = similarity_context.model
+        target_fingerprint = build_fingerprint(
+            chain_id,
+            package.alarms_of(chain_id),
+            lineage_component_id=similarity_context.target_lineage_component_id,
+            taxonomy=taxonomy,
+            identity_descriptors=descriptors,
+            duration_seconds=chain.event_span_seconds,
+            top_descriptor_predicates=model.top_descriptor_predicates,
+            size_bin_edges=model.size_bin_edges,
+            duration_bin_edges=model.duration_bin_edges,
+        )
+        similar_results = tuple(
+            find_similar_chains(
+                target_fingerprint,
+                list(similarity_context.corpus),
+                model=model,
+                top_k=similarity_top_k,
+                exclude_same_lineage=True,
+            )
+        )
+        similarity_model_version = model.model_version
     return Tier2AuditAnalysis(
         chain_id=chain_id,
         audit_graph_mode=AuditGraphMode.EXACT_FULL,
@@ -146,4 +202,7 @@ def analyze_structural_audit(
         over_merge=over_merge,
         config_version=mining_config.config_version,
         epsilon=epsilon,
+        similar_chains=similar_results,
+        similarity_model_version=similarity_model_version,
+        similarity_unavailable_reason=similarity_unavailable_reason,
     )

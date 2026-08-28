@@ -20,6 +20,7 @@ from tier1a import CacheKey, CacheTier, Tier1Cache
 
 from .audit_analysis import (
     AuditExecutionPolicy,
+    SimilarityQueryContext,
     analyze_structural_audit,
 )
 
@@ -106,15 +107,22 @@ class Tier2JobManager:
         dependency_edges: list[tuple[str, str, float]] | None = None,
         failure_domains: list[tuple[str, frozenset[str]]] | None = None,
         cross_block_negative_evidence: bool = False,
+        similarity_context: SimilarityQueryContext | None = None,
     ) -> Tier2Submission:
         if chain_id not in package.chains:
             raise KeyError(f"unknown chain_id {chain_id!r}")
         members = set(package.members_of(chain_id))
+        run_config_version = analysis_config.config_version
+        if similarity_context is not None:
+            run_config_version = (
+                f"{run_config_version}|similarity:"
+                f"{similarity_context.model.model_version}"
+            )
         key = self.cache.key_for(
             CacheTier.TIER_2,
             member_ids=members,
             snapshot_id=package.snapshot.snapshot_id,
-            config_version=analysis_config.config_version,
+            config_version=run_config_version,
         )
         cached = self.cache.get(key)
         if cached is not None:
@@ -159,6 +167,7 @@ class Tier2JobManager:
                 dependency_edges,
                 failure_domains,
                 cross_block_negative_evidence,
+                similarity_context,
             )
             self._futures[job_id] = future
         return Tier2Submission(job_id, cache_hit=False, deduplicated=False)
@@ -173,6 +182,7 @@ class Tier2JobManager:
         dependency_edges: list[tuple[str, str, float]] | None,
         failure_domains: list[tuple[str, frozenset[str]]] | None,
         cross_block_negative_evidence: bool,
+        similarity_context: SimilarityQueryContext | None,
     ) -> None:
         with self._lock:
             job = self._jobs[job_id]
@@ -195,6 +205,10 @@ class Tier2JobManager:
                 dependency_edges=dependency_edges,
                 failure_domains=failure_domains,
                 cross_block_negative_evidence=cross_block_negative_evidence,
+                similarity_context=similarity_context,
+                similarity_top_k=int(
+                    analysis_config.value("similar_chains.result_top_k")
+                ),
             )
         except Exception as exc:  # job boundary: failures become observable state
             with self._lock:

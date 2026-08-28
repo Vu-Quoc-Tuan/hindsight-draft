@@ -3,6 +3,7 @@
 from .audit_analysis import (
     AuditExecutionPolicy,
     AuditPolicyRequired,
+    SimilarityQueryContext,
     Tier2AuditAnalysis,
     analyze_structural_audit,
 )
@@ -16,6 +17,7 @@ from .jobs import (
 __all__ = [
     "AuditExecutionPolicy",
     "AuditPolicyRequired",
+    "SimilarityQueryContext",
     "Tier2AuditAnalysis",
     "analyze_structural_audit",
     "JobStatus",

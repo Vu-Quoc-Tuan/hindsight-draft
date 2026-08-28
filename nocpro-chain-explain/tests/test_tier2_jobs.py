@@ -8,8 +8,9 @@ import pytest
 
 from configuration import load_analysis_config
 from tier1a import CacheTier, Tier1Cache
-from tier2 import JobStatus, Tier2JobManager
+from tier2 import JobStatus, SimilarityQueryContext, Tier2JobManager
 from groups import AuditGraphMode
+from similar_chains import build_fingerprint, fit_fingerprint_model
 from tests.test_tier1b_analysis import _alarm, _snapshot
 
 
@@ -155,3 +156,37 @@ def test_default_worker_runs_real_per_chain_audit(analysis_config):
     assert completed.result.audit_graph_mode is AuditGraphMode.EXACT_FULL
     assert completed.result.config_version == "v1"
     assert completed.result.parameter_provenance["audit.rho"] == "DOCUMENTED_DEFAULT"
+    assert completed.result.similar_chains == ()
+    assert "caller-supplied" in completed.result.similarity_unavailable_reason
+
+
+def test_versioned_similarity_context_is_used_and_part_of_cache_key(analysis_config):
+    package = _package()
+    alarms = package.alarms_of("C1")
+    same_lineage = build_fingerprint(
+        "OLD-C1", alarms, lineage_component_id="L1", duration_seconds=10
+    )
+    different_incident = build_fingerprint(
+        "C2", alarms, lineage_component_id="L2", duration_seconds=10
+    )
+    model = fit_fingerprint_model(
+        [same_lineage, different_incident], model_version="sim-test-v1"
+    )
+    context = SimilarityQueryContext(
+        model=model,
+        corpus=(same_lineage, different_incident),
+        target_lineage_component_id="L1",
+    )
+
+    with Tier2JobManager(max_workers=1) as manager:
+        submission = manager.submit(
+            package,
+            "C1",
+            analysis_config=analysis_config,
+            similarity_context=context,
+        )
+        completed = manager.wait(submission.job_id, timeout=5)
+
+    assert [item.chain_id for item in completed.result.similar_chains] == ["C2"]
+    assert completed.result.similarity_model_version == "sim-test-v1"
+    assert completed.cache_key.config_version == "v1|similarity:sim-test-v1"

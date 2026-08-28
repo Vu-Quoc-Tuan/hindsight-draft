@@ -123,6 +123,7 @@ PARAMETER_RULES: dict[str, _ParameterRule] = {
     "lineage.stable_threshold": _PROBABILITY,
     "lineage.boundary_threshold": _PROBABILITY,
     "similar_chains.top_descriptor_predicates": _POSITIVE_INT,
+    "similar_chains.result_top_k": _POSITIVE_INT,
 }
 
 

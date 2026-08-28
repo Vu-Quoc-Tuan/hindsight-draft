@@ -33,6 +33,7 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | STRUCTURAL role (Tier-2), REDUNDANCY role (Tier-1B) | P0/§4B | done |
 | CommonDependency: SHARED_ANCESTOR + SHARED_ACTIVE_PATH (`channels/common_dependency.py`) | P1-Core | done |
 | Similar Chains: fingerprint + cosine baseline (`similar_chains/`) | P1-Core | done |
+| Similar Chains Tier-2 integration (caller-supplied versioned corpus) | P1-Core | done; corpus policy remains open |
 | **P1-Core (3+1) feature set implemented** | | **4/4** |
 | Contrastive top-3: per-candidate `Margin_common` (§5, §11) | P0 | done |
 | Hybrid indexed Tier-1B + pairwise oracle | P0 | done |
