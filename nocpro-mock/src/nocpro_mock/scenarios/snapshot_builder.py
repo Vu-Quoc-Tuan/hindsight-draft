@@ -117,6 +117,7 @@ def build_synthetic_snapshot(
     return MockSnapshotPackage(
         snapshot=Snapshot(
             snapshot_id=snapshot_id,
+            snapshot_version=f"{snapshot_index + 1}",
             snapshot_time=snapshot_time.isoformat(),
             status=SnapshotStatus.COMPLETE,
             source="nocpro-mock",

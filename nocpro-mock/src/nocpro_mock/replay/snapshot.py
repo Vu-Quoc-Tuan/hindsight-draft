@@ -60,6 +60,7 @@ def build_real_replay_snapshot(
     alarm_csv_path: str | Path,
     config: MockConfig,
     snapshot_id: str,
+    snapshot_version: str = "1",
     snapshot_time: datetime | None = None,
     topo_ip_path: str | Path | None = None,
     chain_ids: set[str] | None = None,
@@ -144,6 +145,7 @@ def build_real_replay_snapshot(
     return MockSnapshotPackage(
         snapshot=Snapshot(
             snapshot_id=snapshot_id,
+            snapshot_version=snapshot_version,
             snapshot_time=reference_time.isoformat(),
             status=SnapshotStatus.COMPLETE,
             source=SOURCE_NAME,
@@ -175,6 +177,7 @@ def build_golden_snapshot(
     *,
     config: MockConfig,
     snapshot_id: str = "snapshot_golden_2214039",
+    snapshot_version: str = "1",
     snapshot_time: datetime | None = None,
     fixture: GoldenFixture | None = None,
     topo_ip_device_codes: set[str] | None = None,
@@ -221,6 +224,7 @@ def build_golden_snapshot(
     return MockSnapshotPackage(
         snapshot=Snapshot(
             snapshot_id=snapshot_id,
+            snapshot_version=snapshot_version,
             snapshot_time=reference_time.isoformat(),
             status=SnapshotStatus.COMPLETE,
             source=SOURCE_NAME,

@@ -5,7 +5,11 @@ description = "Upstream replay, normalization and scenario simulator for nocpro-
 requires-python = ">=3.11"
 # PyYAML is required to read scenario definitions, which use list syntax the
 # stdlib cannot parse. Pinned deliberately.
-dependencies = ["PyYAML==6.0.2"]
+dependencies = [
+  "aiokafka==0.14.0",
+  "PyYAML==6.0.2",
+  "zstandard==0.25.0",
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]

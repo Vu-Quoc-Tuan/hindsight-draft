@@ -9,6 +9,7 @@ Subcommands:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import sys
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from .fixtures.golden import load_golden_fixture
 from .loaders.alarm_csv import AlarmCsvLoader
 from .loaders.topology_ip_csv import TopoIPLoader
 from .producer.direct_snapshot import DirectSnapshotProducer
+from .producer.kafka_snapshot import KafkaSnapshotConfig, publish_snapshot
 from .replay.snapshot import build_golden_snapshot, build_real_replay_snapshot
 
 DEFAULT_ALARM_CSV = "datasets/raw/alarm_data.csv"
@@ -58,7 +60,23 @@ def _emit(package, args: argparse.Namespace) -> int:
         if args.out:
             target = producer.write(package, args.out)
             print(f"wrote {target}")
-        else:
+        if args.kafka_bootstrap:
+            batch = asyncio.run(
+                publish_snapshot(
+                    package,
+                    bootstrap_servers=args.kafka_bootstrap,
+                    config=KafkaSnapshotConfig(
+                        topic=args.kafka_topic,
+                        chunk_target_bytes=args.chunk_target_bytes,
+                    ),
+                )
+            )
+            print(
+                f"published snapshot={package.snapshot.snapshot_id} "
+                f"version={package.snapshot.snapshot_version} "
+                f"chunks={len(batch.chunks)} topic={args.kafka_topic}"
+            )
+        elif not args.out:
             print(producer.render(package))
     except ContractViolation as exc:
         print(f"contract validation failed:\n{exc}", file=sys.stderr)
@@ -72,6 +90,7 @@ def _cmd_replay(args: argparse.Namespace) -> int:
         alarm_csv_path=args.alarm_csv,
         config=config,
         snapshot_id=args.snapshot_id,
+        snapshot_version=args.snapshot_version,
         topo_ip_path=args.topo_ip if args.with_topology else None,
         chain_ids=set(args.chain_id) if args.chain_id else None,
         limit=args.limit,
@@ -88,6 +107,7 @@ def _cmd_golden(args: argparse.Namespace) -> int:
         config=config,
         fixture=load_golden_fixture(args.fixture_dir),
         topo_ip_device_codes=device_codes,
+        snapshot_version=args.snapshot_version,
     )
     return _emit(package, args)
 
@@ -185,16 +205,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_replay.add_argument("--topo-ip", default=DEFAULT_TOPO_IP_CSV)
     p_replay.add_argument("--with-topology", action="store_true")
     p_replay.add_argument("--snapshot-id", default="snapshot_replay_001")
+    p_replay.add_argument(
+        "--snapshot-version",
+        default="1",
+        help="explicit logical version used for transport and persistence identity",
+    )
     p_replay.add_argument("--chain-id", action="append", default=[])
     p_replay.add_argument("--limit", type=int, default=None)
     p_replay.add_argument("--out", default=None)
+    _add_kafka_options(p_replay)
     p_replay.set_defaults(func=_cmd_replay)
 
     p_golden = sub.add_parser("golden", help="emit the Golden 2214039 package")
     p_golden.add_argument("--fixture-dir", default=None)
     p_golden.add_argument("--topo-ip", default=DEFAULT_TOPO_IP_CSV)
     p_golden.add_argument("--with-topology", action="store_true")
+    p_golden.add_argument("--snapshot-version", default="1")
     p_golden.add_argument("--out", default=None)
+    _add_kafka_options(p_golden)
     p_golden.set_defaults(func=_cmd_golden)
 
     p_build = sub.add_parser(
@@ -208,6 +236,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.set_defaults(func=_cmd_run_sequence)
 
     return parser
+
+
+def _add_kafka_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--kafka-bootstrap",
+        default=None,
+        help="publish chunked snapshot events instead of printing JSON",
+    )
+    parser.add_argument("--kafka-topic", default="nocpro.snapshot.v1")
+    parser.add_argument("--chunk-target-bytes", type=int, default=2 * 1024 * 1024)
 
 
 def main(argv: list[str] | None = None) -> int:

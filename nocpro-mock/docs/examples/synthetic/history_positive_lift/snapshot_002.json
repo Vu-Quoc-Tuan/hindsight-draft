@@ -1,6 +1,7 @@
 {
   "snapshot": {
     "snapshot_id": "history_positive_lift_v1:snapshot_002",
+    "snapshot_version": "3",
     "snapshot_time": "2026-01-01T00:02:00",
     "status": "COMPLETE",
     "source": "nocpro-mock",

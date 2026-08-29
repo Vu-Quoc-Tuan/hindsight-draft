@@ -1,6 +1,7 @@
 {
   "snapshot": {
     "snapshot_id": "split_then_merge_v1:snapshot_000",
+    "snapshot_version": "1",
     "snapshot_time": "2026-01-01T00:00:00",
     "status": "COMPLETE",
     "source": "nocpro-mock",
