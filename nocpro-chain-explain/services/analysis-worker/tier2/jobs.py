@@ -95,7 +95,7 @@ class Tier2JobManager:
         self._lock = RLock()
         self._jobs: dict[str, _MutableJob] = {}
         self._futures: dict[str, Future[Any]] = {}
-        self._inflight_by_key: dict[tuple[str, str, str, str], str] = {}
+        self._inflight_by_key: dict[tuple[str, str, str, str, str], str] = {}
 
     def submit(
         self,
@@ -122,6 +122,7 @@ class Tier2JobManager:
             CacheTier.TIER_2,
             member_ids=members,
             snapshot_id=package.snapshot.snapshot_id,
+            snapshot_version=package.snapshot.snapshot_version,
             config_version=run_config_version,
         )
         cached = self.cache.get(key)

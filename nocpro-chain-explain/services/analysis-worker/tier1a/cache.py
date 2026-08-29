@@ -44,10 +44,17 @@ class CacheKey:
     tier: CacheTier
     fingerprint: str
     snapshot_id: str
+    snapshot_version: str
     config_version: str
 
-    def as_tuple(self) -> tuple[str, str, str, str]:
-        return (self.tier.value, self.fingerprint, self.snapshot_id, self.config_version)
+    def as_tuple(self) -> tuple[str, str, str, str, str]:
+        return (
+            self.tier.value,
+            self.fingerprint,
+            self.snapshot_id,
+            self.snapshot_version,
+            self.config_version,
+        )
 
 
 T = TypeVar("T")
@@ -72,7 +79,7 @@ class Tier1Cache:
     composition and the tier separation.
     """
 
-    entries: dict[tuple[str, str, str, str], CacheEntry[Any]] = field(
+    entries: dict[tuple[str, str, str, str, str], CacheEntry[Any]] = field(
         default_factory=dict
     )
     hits: int = 0
@@ -84,12 +91,14 @@ class Tier1Cache:
         *,
         member_ids: set[str] | frozenset[str],
         snapshot_id: str,
+        snapshot_version: str,
         config_version: str,
     ) -> CacheKey:
         return CacheKey(
             tier=tier,
             fingerprint=chain_fingerprint(member_ids),
             snapshot_id=snapshot_id,
+            snapshot_version=snapshot_version,
             config_version=config_version,
         )
 
@@ -115,7 +124,7 @@ class Tier1Cache:
     def invalidate_config(self, config_version: str) -> int:
         """Drop every entry produced under a given config version."""
         doomed = [
-            k for k in self.entries if k[3] == config_version
+            k for k in self.entries if k[4] == config_version
         ]
         for key in doomed:
             del self.entries[key]

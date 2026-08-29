@@ -36,6 +36,8 @@ def _payload() -> dict:
         {
             "alarm_id": f"a{index}",
             "snapshot_id": "s1",
+            "source_kind": "SYNTHETIC_TEST",
+            "provenance_class": "SYSTEM_FACT",
             "raw": {"location_code": "SITE-A"},
             "alarm_name": "LINK DOWN",
             "device_code": "D1",
@@ -48,6 +50,7 @@ def _payload() -> dict:
         "schema_version": "v1",
         "snapshot": {
             "snapshot_id": "s1",
+            "snapshot_version": "1",
             "snapshot_time": "2026-01-01T00:00:00",
             "status": "COMPLETE",
             "source": "api-test",
@@ -56,10 +59,21 @@ def _payload() -> dict:
         },
         "alarms": alarms,
         "chains": [
-            {"chain_id": "C1", "snapshot_id": "s1", "member_count": 3}
+            {
+                "chain_id": "C1",
+                "snapshot_id": "s1",
+                "member_count": 3,
+                "source_kind": "SYNTHETIC_TEST",
+                "provenance_class": "SYSTEM_FACT",
+            }
         ],
         "memberships": [
-            {"chain_id": "C1", "alarm_id": alarm["alarm_id"], "snapshot_id": "s1"}
+            {
+                "chain_id": "C1",
+                "alarm_id": alarm["alarm_id"],
+                "snapshot_id": "s1",
+                "source_kind": "SYNTHETIC_TEST",
+            }
             for alarm in alarms
         ],
     }
@@ -86,6 +100,7 @@ def test_snapshot_ingest_lists_and_explains_chains():
     assert ingested.status_code == 201
     assert ingested.json() == {
         "snapshot_id": "s1",
+        "snapshot_version": "1",
         "alarm_count": 3,
         "chain_count": 1,
         "incremental_snapshot": {
@@ -114,30 +129,42 @@ def test_pair_why_serializes_channel_family_and_dependency_semantic():
     payload = _payload()
     payload["snapshot"]["topology_version"] = "v17"
     payload["topology"] = {
-        "edges": [
-            {
-                "source_resource_id": "ROOT",
-                "target_resource_id": resource,
-                "relation_type": "LOGICAL_DEPENDENCY",
-                "directed": True,
-                "source_id": "inventory",
-                "source_version": "v17",
-            }
+            "edges": [
+                {
+                    "edge_id": f"edge-{resource}",
+                    "source_resource_id": "ROOT",
+                    "target_resource_id": resource,
+                    "relation_type": "LOGICAL_DEPENDENCY",
+                    "directed": True,
+                    "source_id": "inventory",
+                    "source_kind": "REAL_EXPORT_REPLAY",
+                    "source_version": "v17",
+                }
             for resource in ("RA", "RB")
         ],
         "active_paths": [
             {
                 "path_id": f"p-{resource}",
                 "resource_id": resource,
-                "nodes": [resource, "ROOT"],
-                "source_id": "inventory",
-                "source_version": "v17",
+                    "nodes": [resource, "ROOT"],
+                    "source_id": "inventory",
+                    "source_kind": "REAL_EXPORT_REPLAY",
             }
             for resource in ("RA", "RB")
         ],
         "mappings": [
-            {"alarm_id": "a1", "resource_id": "RA", "mapping_status": "EXACT"},
-            {"alarm_id": "a2", "resource_id": "RB", "mapping_status": "EXACT"},
+                {
+                    "alarm_id": "a1",
+                    "resource_id": "RA",
+                    "mapping_status": "EXACT",
+                    "mapping_method": "EXACT_IDENTITY",
+                },
+                {
+                    "alarm_id": "a2",
+                    "resource_id": "RB",
+                    "mapping_status": "EXACT",
+                    "mapping_method": "EXACT_IDENTITY",
+                },
         ],
     }
 

@@ -55,6 +55,7 @@ def _package(snapshot_id: str, chains: dict[str, list[str]], *, status: str = "C
             "schema_version": "v1",
             "snapshot": {
                 "snapshot_id": snapshot_id,
+                "snapshot_version": "1",
                 "snapshot_time": "2026-01-01T00:00:00",
                 "status": status,
                 "source": "test",
@@ -120,7 +121,7 @@ def test_same_membership_new_chain_id_reuses_the_cache():
     first = cache.key_for(
         CacheTier.TIER_1A,
         member_ids=members,
-        snapshot_id="s1",
+        snapshot_id="s1", snapshot_version="1",
         config_version="v1",
     )
     cache.put(first, "computed", snapshot_chain_id="123")
@@ -129,7 +130,7 @@ def test_same_membership_new_chain_id_reuses_the_cache():
     second = cache.key_for(
         CacheTier.TIER_1A,
         member_ids=members,
-        snapshot_id="s1",
+        snapshot_id="s1", snapshot_version="1",
         config_version="v1",
     )
     assert cache.get(second) == "computed"
@@ -144,7 +145,7 @@ def test_config_version_change_invalidates():
         cache.key_for(
             CacheTier.TIER_1A,
             member_ids=members,
-            snapshot_id="s1",
+            snapshot_id="s1", snapshot_version="1",
             config_version="v17",
         ),
         "old",
@@ -152,7 +153,7 @@ def test_config_version_change_invalidates():
     miss = cache.key_for(
         CacheTier.TIER_1A,
         member_ids=members,
-        snapshot_id="s1",
+        snapshot_id="s1", snapshot_version="1",
         config_version="v18",
     )
     assert cache.get(miss) is None
@@ -163,12 +164,12 @@ def test_snapshot_change_invalidates():
     members = {"a1", "a2"}
     cache.put(
         cache.key_for(
-            CacheTier.TIER_1A, member_ids=members, snapshot_id="s1", config_version="v1"
+            CacheTier.TIER_1A, member_ids=members, snapshot_id="s1", snapshot_version="1", config_version="v1"
         ),
         "old",
     )
     other = cache.key_for(
-        CacheTier.TIER_1A, member_ids=members, snapshot_id="s2", config_version="v1"
+        CacheTier.TIER_1A, member_ids=members, snapshot_id="s2", snapshot_version="1", config_version="v1"
     )
     assert cache.get(other) is None
 
@@ -179,7 +180,7 @@ def test_membership_change_invalidates():
         cache.key_for(
             CacheTier.TIER_1A,
             member_ids={"a1", "a2"},
-            snapshot_id="s1",
+            snapshot_id="s1", snapshot_version="1",
             config_version="v1",
         ),
         "old",
@@ -187,7 +188,7 @@ def test_membership_change_invalidates():
     grown = cache.key_for(
         CacheTier.TIER_1A,
         member_ids={"a1", "a2", "a3"},
-        snapshot_id="s1",
+        snapshot_id="s1", snapshot_version="1",
         config_version="v1",
     )
     assert cache.get(grown) is None
@@ -198,10 +199,10 @@ def test_tiers_are_separate_keys():
     cache = Tier1Cache()
     members = {"a1", "a2"}
     tier1b = cache.key_for(
-        CacheTier.TIER_1B, member_ids=members, snapshot_id="s1", config_version="v1"
+        CacheTier.TIER_1B, member_ids=members, snapshot_id="s1", snapshot_version="1", config_version="v1"
     )
     tier2 = cache.key_for(
-        CacheTier.TIER_2, member_ids=members, snapshot_id="s1", config_version="v1"
+        CacheTier.TIER_2, member_ids=members, snapshot_id="s1", snapshot_version="1", config_version="v1"
     )
     cache.put(tier1b, "local analysis")
 
@@ -213,7 +214,7 @@ def test_tiers_are_separate_keys():
 def test_has_does_not_count_as_a_hit():
     cache = Tier1Cache()
     key = cache.key_for(
-        CacheTier.TIER_1A, member_ids={"a1"}, snapshot_id="s1", config_version="v1"
+        CacheTier.TIER_1A, member_ids={"a1"}, snapshot_id="s1", snapshot_version="1", config_version="v1"
     )
     cache.has(key)
     assert cache.hits == 0
@@ -227,7 +228,7 @@ def test_invalidate_by_config_version():
             cache.key_for(
                 CacheTier.TIER_1A,
                 member_ids={f"a{version}{len(cache)}"},
-                snapshot_id="s1",
+                snapshot_id="s1", snapshot_version="1",
                 config_version=version,
             ),
             version,
@@ -318,6 +319,7 @@ def test_precompute_on_real_snapshot():
         CacheTier.TIER_1A,
         member_ids=members,
         snapshot_id=package.snapshot.snapshot_id,
+        snapshot_version=package.snapshot.snapshot_version,
         config_version=MINING.config_version,
     )
     assert cache.get(key) is not None

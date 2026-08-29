@@ -68,6 +68,8 @@ def _check_snapshot(pkg: MockSnapshotPackage, errors: list[str]) -> None:
     snap = pkg.snapshot
     if not snap.snapshot_id:
         errors.append("snapshot.snapshot_id is required")
+    if not snap.snapshot_version:
+        errors.append("snapshot.snapshot_version is required")
     if not snap.snapshot_time:
         errors.append("snapshot.snapshot_time is required")
     if not snap.produced_at:

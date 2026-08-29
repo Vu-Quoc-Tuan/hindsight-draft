@@ -290,6 +290,7 @@ def test_resolver_ignores_unmapped_and_ambiguous_status():
             "schema_version": "v1",
             "snapshot": {
                 "snapshot_id": "s1",
+                "snapshot_version": "1",
                 "snapshot_time": "2026-01-01T00:00:00",
                 "status": "COMPLETE",
                 "source": "m",
@@ -331,6 +332,7 @@ def test_relation_families_are_not_mixed():
             "schema_version": "v1",
             "snapshot": {
                 "snapshot_id": "s1",
+                "snapshot_version": "1",
                 "snapshot_time": "2026-01-01T00:00:00",
                 "status": "COMPLETE",
                 "source": "m",
@@ -376,6 +378,7 @@ def test_mixed_topology_provenance_fails_closed_instead_of_one_group():
             "schema_version": "v1",
             "snapshot": {
                 "snapshot_id": "s1",
+                "snapshot_version": "1",
                 "snapshot_time": "2026-01-01T00:00:00",
                 "status": "COMPLETE",
                 "source": "m",

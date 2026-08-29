@@ -137,6 +137,7 @@ def precompute_snapshot(
                 CacheTier.TIER_1A,
                 member_ids=member_ids,
                 snapshot_id=package.snapshot.snapshot_id,
+                snapshot_version=package.snapshot.snapshot_version,
                 config_version=mining_config.config_version,
             )
             cache.put(key, summary, snapshot_chain_id=chain_id)

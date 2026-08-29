@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from contracts.v1 import ContractViolation, parse_package
+
 SUPPORTED_MAJOR_VERSION = "v1"
 
 
@@ -55,6 +57,7 @@ class IngestedChain:
 @dataclass(frozen=True)
 class IngestedSnapshot:
     snapshot_id: str
+    snapshot_version: str
     snapshot_time: str
     status: str
     source: str
@@ -118,6 +121,7 @@ def load_package(payload: dict[str, Any]) -> IngestedPackage:
     raw_snapshot = _require(payload, "snapshot", "package")
     snapshot = IngestedSnapshot(
         snapshot_id=_require(raw_snapshot, "snapshot_id", "snapshot"),
+        snapshot_version=_require(raw_snapshot, "snapshot_version", "snapshot"),
         snapshot_time=_require(raw_snapshot, "snapshot_time", "snapshot"),
         status=_require(raw_snapshot, "status", "snapshot"),
         source=raw_snapshot.get("source", "unknown"),
@@ -126,6 +130,10 @@ def load_package(payload: dict[str, Any]) -> IngestedPackage:
         config_version=raw_snapshot.get("config_version"),
         topology_version=raw_snapshot.get("topology_version"),
     )
+    if not snapshot.snapshot_id or not snapshot.snapshot_version:
+        raise ContractIngestError(
+            "snapshot_id and snapshot_version must be non-empty strings"
+        )
 
     package = IngestedPackage(snapshot=snapshot)
 
@@ -170,6 +178,15 @@ def load_package(payload: dict[str, Any]) -> IngestedPackage:
 
     _validate_consistency(package)
     return package
+
+
+def load_validated_package(payload: dict[str, Any]) -> IngestedPackage:
+    """Validate the canonical contract before building the analysis runtime view."""
+    try:
+        parse_package(payload)
+    except ContractViolation as exc:
+        raise ContractIngestError(str(exc)) from exc
+    return load_package(payload)
 
 
 def _validate_consistency(package: IngestedPackage) -> None:

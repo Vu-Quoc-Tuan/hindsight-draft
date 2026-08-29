@@ -8,7 +8,7 @@ from typing import Any
 
 from channels import evaluate_pair_channels
 from configuration import AnalysisConfig, load_analysis_config
-from libs.contracts import IngestedPackage, load_package
+from libs.contracts import IngestedPackage, load_validated_package
 from tier1a import SnapshotPrecompute, Tier1Cache, precompute_snapshot
 from tier1b import analyze_chain_configured
 from tier2 import Tier2JobManager
@@ -32,9 +32,35 @@ class Workspace:
         self.package: IngestedPackage | None = None
         self.precompute: SnapshotPrecompute | None = None
         self._lock = RLock()
+        self.repository = None
+        self.coordinator = None
 
     def close(self) -> None:
         self.jobs.shutdown()
+
+    def attach_persistence(self, repository, coordinator) -> None:
+        self.repository = repository
+        self.coordinator = coordinator
+
+    async def ingest_snapshot(self, payload: dict[str, Any]) -> SnapshotPrecompute:
+        if self.repository is None or self.coordinator is None:
+            return self.replace_snapshot(payload)
+        result = await self.repository.ingest_direct(payload)
+        if result.completed_now:
+            precompute = await self.coordinator.run(
+                result.snapshot_id, result.snapshot_version
+            )
+            if precompute is None:
+                raise RuntimeError("Tier-1A snapshot claim was not acquired")
+            return precompute
+        if (
+            self.precompute is not None
+            and self.package is not None
+            and self.package.snapshot.snapshot_id == result.snapshot_id
+            and self.package.snapshot.snapshot_version == result.snapshot_version
+        ):
+            return self.precompute
+        raise RuntimeError("snapshot already persisted but is not active in this process")
 
     def require_package(self) -> IngestedPackage:
         if self.package is None:
@@ -42,7 +68,7 @@ class Workspace:
         return self.package
 
     def replace_snapshot(self, payload: dict[str, Any]) -> SnapshotPrecompute:
-        package = load_package(payload)
+        package = load_validated_package(payload)
         # Production execution stays on the exact full path while the versioned
         # incremental policy is explicitly disabled.
         result = precompute_snapshot(

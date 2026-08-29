@@ -56,11 +56,12 @@ async def load_snapshot(
 ) -> SnapshotLoadedView:
     service = workspace(request)
     try:
-        result = service.replace_snapshot(payload)
+        result = await service.ingest_snapshot(payload)
     except Exception as exc:
         raise translate_error(exc) from exc
     return SnapshotLoadedView(
         snapshot_id=result.snapshot_id,
+        snapshot_version=service.require_package().snapshot.snapshot_version,
         alarm_count=result.alarm_count,
         chain_count=result.chain_count,
         incremental_snapshot={
@@ -78,6 +79,7 @@ async def list_chains(request: Request) -> ChainListView:
         raise translate_error(exc) from exc
     return ChainListView(
         snapshot_id=result.snapshot_id,
+        snapshot_version=workspace(request).require_package().snapshot.snapshot_version,
         chains=[
             ChainSummaryView(
                 chain_id=item.chain_id,

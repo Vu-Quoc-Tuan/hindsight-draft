@@ -50,6 +50,7 @@ from .models import (
     TopologyNode,
 )
 from .serialization import package_to_dict, package_to_json, to_jsonable
+from .parsing import parse_package
 from .validation import (
     SUPPORTED_SCHEMA_VERSION,
     ContractViolation,
@@ -105,6 +106,7 @@ __all__ = [
     "is_validation_eligible",
     "package_to_dict",
     "package_to_json",
+    "parse_package",
     "to_jsonable",
     "validate_package",
 ]

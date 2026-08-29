@@ -58,6 +58,7 @@ class Snapshot:
     """Primary processing boundary (ADR-0005)."""
 
     snapshot_id: str
+    snapshot_version: str
     snapshot_time: str
     status: SnapshotStatus
     source: str

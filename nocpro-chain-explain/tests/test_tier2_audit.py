@@ -38,6 +38,7 @@ def _package(member_count: int):
             "schema_version": "v1",
             "snapshot": {
                 "snapshot_id": "s1",
+                "snapshot_version": "1",
                 "snapshot_time": "2026-01-01T00:00:00",
                 "status": "COMPLETE",
                 "source": "test",

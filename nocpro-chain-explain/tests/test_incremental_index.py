@@ -41,6 +41,7 @@ def _package(snapshot_id: str, records: list[tuple[str, str, str]], *, complete=
             "schema_version": "v1",
             "snapshot": {
                 "snapshot_id": snapshot_id,
+                "snapshot_version": "1",
                 "snapshot_time": "2026-01-01T00:00:00",
                 "status": "COMPLETE" if complete else "INCOMPLETE",
                 "source": "test",

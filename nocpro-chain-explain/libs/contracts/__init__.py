@@ -9,6 +9,7 @@ from .loader import (
     IngestedSnapshot,
     load_package,
     load_package_file,
+    load_validated_package,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "IngestedSnapshot",
     "load_package",
     "load_package_file",
+    "load_validated_package",
 ]

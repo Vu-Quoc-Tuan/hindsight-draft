@@ -18,6 +18,7 @@ class IncrementalPolicyView(ApiModel):
 
 class SnapshotLoadedView(ApiModel):
     snapshot_id: str
+    snapshot_version: str
     alarm_count: int
     chain_count: int
     incremental_snapshot: IncrementalPolicyView
@@ -32,6 +33,7 @@ class ChainSummaryView(ApiModel):
 
 class ChainListView(ApiModel):
     snapshot_id: str
+    snapshot_version: str
     chains: list[ChainSummaryView]
 
 
