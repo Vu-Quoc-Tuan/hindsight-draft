@@ -2,6 +2,7 @@
   "name": "nocpro-chain-explain-web",
   "private": true,
   "version": "0.0.0",
+  "packageManager": "pnpm@10.30.3",
   "type": "module",
   "scripts": {
     "dev": "vite",

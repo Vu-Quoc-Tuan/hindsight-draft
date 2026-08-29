@@ -31,6 +31,7 @@ export const api = {
   loadSnapshot: (payload: unknown) =>
     request<{
       snapshot_id: string
+      snapshot_version: string
       alarm_count: number
       chain_count: number
     }>('/api/v1/snapshots', {

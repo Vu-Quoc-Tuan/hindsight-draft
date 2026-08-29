@@ -1,0 +1,5 @@
+**
+!nocpro-mock/pyproject.toml
+!nocpro-mock/uv.lock
+!nocpro-mock/src/**
+!nocpro-chain-explain/contracts/**
