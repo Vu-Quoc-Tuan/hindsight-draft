@@ -40,19 +40,22 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | Hybrid indexed Tier-1B + pairwise oracle | P0 | done |
 | Exact incremental predicate index + reconciliation triggers | P0 | done |
 | Benchmark matrix + overlap measurement tooling | P0 | implemented; Tier-1 real run recorded |
-| Production delta-default policy/threshold | P0 | pending; `incremental_snapshot.mode=disabled` until 1–4 week consecutive production snapshots exist |
+| Production delta-default policy/threshold | P0 | `BLOCKED_BY_DATA_AVAILABILITY`; implementation ready, empirical threshold not established, mode disabled |
 | UNAVOIDABLE_DEPENDENCY (dominator), graph motif upgrade | P2 | not started |
 | FastAPI adapter: snapshot ingest, Tier-1B, pair WHY, Tier-2 polling | infra | done |
 | React/Vite/TypeScript operator UI | infra | done |
 | PostgreSQL persistence + Alembic migrations | infra | done |
 | Kafka chunk/barrier ingest (`nocpro-mock` -> Explain) | infra | done |
 | Docker Compose: PostgreSQL, Kafka, API, Web, replay producer | infra | done |
+| Docker + Chromium operator-flow and recovery acceptance | infra | done |
 
 Per ADR-0029, MVP + P0-complete must stand as a usable project **before** P1.
 The P1-Core feature set above is implemented, but the **P1 milestone is not
-closed**: the production-data decision for delta indexing is still
-outstanding. Do not expand into
-P1-optional or P2 work until those evidence/policy gaps are resolved.
+closed**: production-delta validation is externally blocked because consecutive
+production snapshots do not exist. The incremental implementation is ready,
+but its empirical policy threshold is not established and production remains
+full-rebuild by default. Do not expand into P1-optional or P2 work until the
+scope gate is formally amended; P2 remains `NOT STARTED`.
 
 ### Alarm taxonomy source capability
 
@@ -106,6 +109,10 @@ uv sync
 .venv/bin/python -m pytest tests -m "not realdata"
 TEST_DATABASE_URL=postgresql+asyncpg://nocpro:nocpro@localhost:5432/nocpro \
   .venv/bin/python -m pytest tests/test_postgres_snapshot_ingest.py
+pnpm --dir services/web lint
+pnpm --dir services/web build
+pnpm --dir services/web e2e:install              # one-time Chromium install
+./tests/e2e/run_acceptance.sh                 # isolated Docker + Chromium E2E
 ```
 
 `tests/spec_sanity/` is not an ordinary suite: a failure means the code
@@ -115,6 +122,13 @@ spec/ADR first and deliberately.
 End-to-end tests shell out to the sibling `nocpro-mock` CLI, so the adapter is
 exercised against real emitted packages rather than hand-written payloads. They
 skip when the sibling repo or the 680 MB exports are absent.
+
+`run_acceptance.sh` uses an isolated Compose project, host ports and PostgreSQL
+volume, then cleans them up on exit. It proves the real replay path through
+Kafka and PostgreSQL, browser WHY/role/descriptor/deep-dive behavior, and the
+missing-chunk, consumer-restart, duplicate-snapshot and expired-lease recovery
+cases. Docker failure tests require the explicit `NOCPRO_RUN_DOCKER_E2E=1`
+opt-in and therefore cannot control Docker during an ordinary pytest run.
 
 ## Behavior worth knowing
 
@@ -328,3 +342,17 @@ The producer and consumer use `snapshot_id` as the Kafka key. Identical chunk
 replays are idempotent; a conflicting duplicate invalidates the snapshot. HTTP
 snapshot ingest remains available for development and writes through the same
 canonical PostgreSQL repository.
+
+The 2026-08-30 isolated acceptance run passed both Chromium operator tests and
+all four Docker recovery tests. The cold API request for the 1,072-member real
+chain completed in 0.734 seconds, below the Tier-1B 5-second design objective.
+This is local-run evidence, not a production SLO. The unresolved external gate
+is recorded explicitly:
+
+```text
+PRODUCTION_DELTA_VALIDATION = BLOCKED_BY_DATA_AVAILABILITY
+implementation              = READY
+empirical_threshold          = NOT_ESTABLISHED
+incremental_snapshot.mode    = disabled
+P2                           = NOT_STARTED
+```
