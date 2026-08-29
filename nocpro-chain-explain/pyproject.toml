@@ -26,4 +26,5 @@ testpaths = ["tests"]
 markers = [
   "realdata: requires the real exports in nocpro-mock/datasets/raw",
   "postgres: requires a migrated PostgreSQL test database",
+  "docker: requires the isolated Docker acceptance stack",
 ]
