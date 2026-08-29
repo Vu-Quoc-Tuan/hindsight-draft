@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import zstandard
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from libs.contracts import IngestedPackage, load_validated_package
@@ -34,11 +36,33 @@ class IngestResult:
     canonical_payload: dict[str, Any] | None = None
 
 
+@dataclass(frozen=True)
+class Tier1AClaim:
+    snapshot_id: str
+    snapshot_version: str
+    payload: dict[str, Any]
+    worker_id: str
+    attempt_count: int
+
+
+def _logical_time(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 class SnapshotRepository:
     """Transactional chunk assembly and relational snapshot persistence."""
 
-    def __init__(self, sessions: async_sessionmaker) -> None:
+    def __init__(
+        self,
+        sessions: async_sessionmaker,
+        *,
+        max_compressed_snapshot_bytes: int = 256 * 1024 * 1024,
+    ) -> None:
         self.sessions = sessions
+        self.max_compressed_snapshot_bytes = max_compressed_snapshot_bytes
 
     async def record_kafka_event(
         self,
@@ -159,6 +183,23 @@ class SnapshotRepository:
             self._invalidate(row, f"conflicting duplicate chunk {event.chunk_index}")
             return False
 
+        retained_bytes = int(
+            await session.scalar(
+                select(
+                    func.coalesce(
+                        func.sum(func.octet_length(SnapshotChunk.payload_bytes)), 0
+                    )
+                ).where(
+                    SnapshotChunk.snapshot_id == event.snapshot_id,
+                    SnapshotChunk.snapshot_version == event.snapshot_version,
+                )
+            )
+            or 0
+        )
+        if retained_bytes + len(event.payload) > self.max_compressed_snapshot_bytes:
+            self._invalidate(row, "compressed snapshot exceeds configured limit")
+            return False
+
         session.add(
             SnapshotChunk(
                 snapshot_id=event.snapshot_id,
@@ -227,13 +268,13 @@ class SnapshotRepository:
             range(row.expected_chunk_count)
         ):
             return None
-        compressed = b"".join(chunk.payload_bytes for chunk in chunks)
         try:
-            canonical = zstandard.ZstdDecompressor().decompress(
-                compressed,
-                max_output_size=row.total_uncompressed_bytes or 0,
+            compressed_stream = io.BytesIO(
+                b"".join(chunk.payload_bytes for chunk in chunks)
             )
-        except zstandard.ZstdError as exc:
+            with zstandard.ZstdDecompressor().stream_reader(compressed_stream) as reader:
+                canonical = reader.read((row.total_uncompressed_bytes or 0) + 1)
+        except (zstandard.ZstdError, OSError) as exc:
             self._invalidate(row, f"zstd decompression failed: {exc}")
             return None
         if len(canonical) != row.total_uncompressed_bytes:
@@ -261,6 +302,7 @@ class SnapshotRepository:
 
         await self._persist_canonical(session, package, payload, checksum)
         row.canonical_payload = payload
+        row.logical_snapshot_time = _logical_time(package.snapshot.snapshot_time)
         row.status = "COMPLETE"
         row.tier1a_status = "PENDING"
         row.completed_at = func.now()
@@ -293,6 +335,7 @@ class SnapshotRepository:
                 source=package.snapshot.source,
                 source_kind=package.snapshot.source_kind,
                 canonical_payload=payload,
+                logical_snapshot_time=_logical_time(package.snapshot.snapshot_time),
                 tier1a_status="PENDING",
                 completed_at=func.now(),
             )
@@ -371,22 +414,112 @@ class SnapshotRepository:
             for alarm_id in alarms
         )
 
-    async def claim_tier1a(
-        self, snapshot_id: str, snapshot_version: str
-    ) -> dict[str, Any] | None:
+    async def claim_next_tier1a(
+        self,
+        *,
+        worker_id: str,
+        lease_seconds: int,
+        max_attempts: int = 5,
+        now: datetime | None = None,
+    ) -> Tier1AClaim | None:
+        """Claim the oldest logical pending/stale job without blocking peers."""
+        current = now or datetime.now(timezone.utc)
+        lease_until = current + timedelta(seconds=lease_seconds)
         async with self.sessions.begin() as session:
-            payload = await session.scalar(
+            while True:
+                row = await session.scalar(
+                    select(SnapshotIngest)
+                    .where(
+                        SnapshotIngest.status == "COMPLETE",
+                        or_(
+                            SnapshotIngest.tier1a_status == "PENDING",
+                            (
+                                (SnapshotIngest.tier1a_status == "RUNNING")
+                                & or_(
+                                    SnapshotIngest.lease_expires_at.is_(None),
+                                    SnapshotIngest.lease_expires_at <= current,
+                                )
+                            ),
+                        ),
+                    )
+                    .order_by(
+                        SnapshotIngest.logical_snapshot_time.asc().nulls_last(),
+                        SnapshotIngest.completed_at.asc().nulls_last(),
+                        SnapshotIngest.snapshot_id.asc(),
+                    )
+                    .limit(1)
+                    .with_for_update(skip_locked=True)
+                )
+                if row is None or row.canonical_payload is None:
+                    return None
+                if row.next_attempt_at is not None and row.next_attempt_at > current:
+                    return None
+                if row.attempt_count >= max_attempts:
+                    row.tier1a_status = "FAILED"
+                    row.worker_id = None
+                    row.lease_expires_at = None
+                    row.heartbeat_at = None
+                    row.next_attempt_at = None
+                    await session.flush()
+                    continue
+                break
+            row.tier1a_status = "RUNNING"
+            row.worker_id = worker_id
+            row.lease_expires_at = lease_until
+            row.started_at = current
+            row.heartbeat_at = current
+            row.next_attempt_at = None
+            row.attempt_count += 1
+            await session.flush()
+            return Tier1AClaim(
+                snapshot_id=row.snapshot_id,
+                snapshot_version=row.snapshot_version,
+                payload=row.canonical_payload,
+                worker_id=worker_id,
+                attempt_count=row.attempt_count,
+            )
+
+    async def heartbeat_tier1a(
+        self,
+        snapshot_id: str,
+        snapshot_version: str,
+        *,
+        worker_id: str,
+        lease_seconds: int,
+        now: datetime | None = None,
+    ) -> bool:
+        current = now or datetime.now(timezone.utc)
+        async with self.sessions.begin() as session:
+            result = await session.execute(
                 update(SnapshotIngest)
                 .where(
                     SnapshotIngest.snapshot_id == snapshot_id,
                     SnapshotIngest.snapshot_version == snapshot_version,
-                    SnapshotIngest.status == "COMPLETE",
-                    SnapshotIngest.tier1a_status == "PENDING",
+                    SnapshotIngest.tier1a_status == "RUNNING",
+                    SnapshotIngest.worker_id == worker_id,
                 )
-                .values(tier1a_status="RUNNING")
-                .returning(SnapshotIngest.canonical_payload)
+                .values(
+                    heartbeat_at=current,
+                    lease_expires_at=current + timedelta(seconds=lease_seconds),
+                )
             )
-            return payload
+            return bool(result.rowcount)
+
+    async def latest_ready_payload(self) -> dict[str, Any] | None:
+        async with self.sessions() as session:
+            return await session.scalar(
+                select(SnapshotIngest.canonical_payload)
+                .where(
+                    SnapshotIngest.status == "COMPLETE",
+                    SnapshotIngest.tier1a_status == "READY",
+                )
+                .order_by(
+                    SnapshotIngest.logical_snapshot_time.desc().nulls_last(),
+                    SnapshotIngest.completed_at.desc().nulls_last(),
+                    SnapshotIngest.snapshot_id.desc(),
+                )
+                .limit(1)
+            )
 
     async def finish_tier1a(
         self,
@@ -395,39 +528,71 @@ class SnapshotRepository:
         *,
         result: dict[str, Any] | None = None,
         error: str | None = None,
+        worker_id: str | None = None,
     ) -> None:
         async with self.sessions.begin() as session:
-            await session.execute(
-                update(SnapshotIngest)
-                .where(
+            statement = update(SnapshotIngest).where(
                     SnapshotIngest.snapshot_id == snapshot_id,
                     SnapshotIngest.snapshot_version == snapshot_version,
                     SnapshotIngest.tier1a_status == "RUNNING",
                 )
-                .values(
+            if worker_id is not None:
+                statement = statement.where(SnapshotIngest.worker_id == worker_id)
+            await session.execute(
+                statement.values(
                     tier1a_status="FAILED" if error else "READY",
                     tier1a_result=result if error is None else {"error": error},
+                    worker_id=None,
+                    lease_expires_at=None,
+                    heartbeat_at=None,
+                    next_attempt_at=None,
                 )
             )
 
-    async def release_tier1a(
+    async def record_tier1a_failure(
         self,
         snapshot_id: str,
         snapshot_version: str,
         *,
         error: str,
-    ) -> None:
-        """Return a failed in-process claim to PENDING for ordered redelivery."""
+        worker_id: str,
+        max_attempts: int,
+        backoff_base_seconds: int,
+        now: datetime | None = None,
+    ) -> str | None:
+        """Back off a failed claim or make it terminal after max attempts."""
+        current = now or datetime.now(timezone.utc)
         async with self.sessions.begin() as session:
-            await session.execute(
-                update(SnapshotIngest)
+            row = await session.scalar(
+                select(SnapshotIngest)
                 .where(
                     SnapshotIngest.snapshot_id == snapshot_id,
                     SnapshotIngest.snapshot_version == snapshot_version,
                     SnapshotIngest.tier1a_status == "RUNNING",
+                    SnapshotIngest.worker_id == worker_id,
                 )
-                .values(tier1a_status="PENDING", tier1a_result={"last_error": error})
+                .with_for_update()
             )
+            if row is None:
+                return None
+            terminal = row.attempt_count >= max_attempts
+            row.tier1a_status = "FAILED" if terminal else "PENDING"
+            row.tier1a_result = {
+                "last_error": error,
+                "attempt_count": row.attempt_count,
+            }
+            row.worker_id = None
+            row.lease_expires_at = None
+            row.heartbeat_at = None
+            row.next_attempt_at = (
+                None
+                if terminal
+                else current
+                + timedelta(
+                    seconds=backoff_base_seconds * (2 ** (row.attempt_count - 1))
+                )
+            )
+            return row.tier1a_status
 
     async def invalidate(
         self, snapshot_id: str, snapshot_version: str, reason: str
@@ -458,6 +623,41 @@ class SnapshotRepository:
                 )
             )
             return int(result.rowcount or 0)
+
+    async def expire_receiving(
+        self,
+        *,
+        ttl_seconds: int,
+        now: datetime | None = None,
+    ) -> int:
+        """Expire incomplete assemblies and release their retained payload bytes."""
+        current = now or datetime.now(timezone.utc)
+        cutoff = current - timedelta(seconds=ttl_seconds)
+        async with self.sessions.begin() as session:
+            rows = list(
+                (
+                    await session.scalars(
+                        select(SnapshotIngest)
+                        .where(
+                            SnapshotIngest.status == "RECEIVING",
+                            SnapshotIngest.updated_at < cutoff,
+                        )
+                        .with_for_update(skip_locked=True)
+                    )
+                ).all()
+            )
+            for row in rows:
+                row.status = "EXPIRED"
+                row.invalid_reason = "snapshot assembly exceeded receiving TTL"
+                row.tier1a_status = None
+                await session.execute(
+                    delete(SnapshotChunk).where(
+                        SnapshotChunk.snapshot_id == row.snapshot_id,
+                        SnapshotChunk.snapshot_version == row.snapshot_version,
+                    )
+                )
+                row.received_chunk_count = 0
+            return len(rows)
 
     @staticmethod
     def _invalidate(row: SnapshotIngest, reason: str) -> None:

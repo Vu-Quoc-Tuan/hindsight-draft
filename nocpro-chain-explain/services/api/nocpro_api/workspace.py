@@ -67,7 +67,24 @@ class Workspace:
             raise SnapshotNotLoaded("no snapshot loaded")
         return self.package
 
+    def active_identity(self) -> tuple[str, str] | None:
+        with self._lock:
+            if self.package is None:
+                return None
+            return (
+                self.package.snapshot.snapshot_id,
+                self.package.snapshot.snapshot_version,
+            )
+
     def replace_snapshot(self, payload: dict[str, Any]) -> SnapshotPrecompute:
+        package, result = self.compute_snapshot(payload)
+        self.activate_snapshot(package, result)
+        return result
+
+    def compute_snapshot(
+        self, payload: dict[str, Any]
+    ) -> tuple[IngestedPackage, SnapshotPrecompute]:
+        """Build Tier-1A state without changing the currently served snapshot."""
         package = load_validated_package(payload)
         # Production execution stays on the exact full path while the versioned
         # incremental policy is explicitly disabled.
@@ -79,10 +96,15 @@ class Workspace:
                 self.config.value("descriptor.max_values_per_field")
             ),
         )
+        return package, result
+
+    def activate_snapshot(
+        self, package: IngestedPackage, result: SnapshotPrecompute
+    ) -> None:
+        """Promote a fully computed READY snapshot for API reads."""
         with self._lock:
             self.package = package
             self.precompute = result
-        return result
 
     def list_chains(self):
         self.require_package()

@@ -36,9 +36,16 @@ class SnapshotIngest(Base):
     source_kind: Mapped[str | None] = mapped_column(String(64))
     invalid_reason: Mapped[str | None] = mapped_column(Text)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    logical_snapshot_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     canonical_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     tier1a_status: Mapped[str | None] = mapped_column(String(32))
     tier1a_result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    worker_id: Mapped[str | None] = mapped_column(String(255))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempt_count: Mapped[int] = mapped_column(nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -16,13 +16,13 @@ from nocpro_api.persistence import Database, SnapshotRepository
 pytestmark = pytest.mark.postgres
 
 
-def _payload(snapshot_id: str) -> dict:
+def _payload(snapshot_id: str, *, snapshot_time: str = "2026-08-29T00:00:00Z") -> dict:
     return {
         "schema_version": "v1",
         "snapshot": {
             "snapshot_id": snapshot_id,
             "snapshot_version": "1",
-            "snapshot_time": "2026-08-29T00:00:00Z",
+            "snapshot_time": snapshot_time,
             "status": "COMPLETE",
             "source": "postgres-test",
             "source_kind": "SYNTHETIC_TEST",
@@ -149,12 +149,20 @@ def test_postgres_barrier_assembly_is_idempotent_and_claims_tier1a_once():
             direct = await repository.ingest_direct(payload)
             assert direct.duplicate is True
 
-            first_claim = await repository.claim_tier1a(snapshot_id, "1")
-            second_claim = await repository.claim_tier1a(snapshot_id, "1")
-            assert first_claim == payload
+            first_claim = await repository.claim_next_tier1a(
+                worker_id="test-worker", lease_seconds=120
+            )
+            second_claim = await repository.claim_next_tier1a(
+                worker_id="test-worker-2", lease_seconds=120
+            )
+            assert first_claim is not None
+            assert first_claim.payload == payload
             assert second_claim is None
             await repository.finish_tier1a(
-                snapshot_id, "1", result={"chain_count": 1}
+                snapshot_id,
+                "1",
+                result={"chain_count": 1},
+                worker_id="test-worker",
             )
         finally:
             await database.close()
@@ -193,7 +201,159 @@ def test_conflicting_duplicate_chunk_marks_snapshot_invalid():
             )
             assert result.status == "INVALID"
             assert "conflicting duplicate chunk" in (result.invalid_reason or "")
-            assert await repository.claim_tier1a(snapshot_id, "1") is None
+            assert (
+                await repository.claim_next_tier1a(
+                    worker_id="test-worker", lease_seconds=120
+                )
+                is None
+            )
+        finally:
+            await database.close()
+
+    import asyncio
+
+    asyncio.run(exercise())
+
+
+def test_tier1a_claim_and_active_selection_follow_logical_snapshot_time():
+    database_url = os.environ.get("TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("TEST_DATABASE_URL is not configured")
+
+    async def exercise():
+        from datetime import datetime, timedelta, timezone
+
+        database = Database(database_url)
+        repository = SnapshotRepository(database.sessions)
+        suffix = uuid4().hex
+        newer_id = f"logical-new-{suffix}"
+        older_id = f"logical-old-{suffix}"
+        replay_id = f"logical-replay-{suffix}"
+        try:
+            # Deliberately ingest the newer snapshot first; claim order remains logical.
+            await repository.ingest_direct(
+                _payload(newer_id, snapshot_time="2026-08-29T10:00:00Z")
+            )
+            await repository.ingest_direct(
+                _payload(older_id, snapshot_time="2026-08-29T09:55:00Z")
+            )
+
+            base = datetime(2026, 8, 29, 11, 0, tzinfo=timezone.utc)
+            first = await repository.claim_next_tier1a(
+                worker_id="worker-a", lease_seconds=60, now=base
+            )
+            assert first is not None and first.snapshot_id == older_id
+
+            # A live lease cannot be stolen; it becomes claimable only after expiry.
+            assert (
+                await repository.claim_next_tier1a(
+                    worker_id="worker-b", lease_seconds=60, now=base + timedelta(seconds=30)
+                )
+            ).snapshot_id == newer_id
+            reclaimed = await repository.claim_next_tier1a(
+                worker_id="worker-c", lease_seconds=60, now=base + timedelta(seconds=61)
+            )
+            assert reclaimed is not None and reclaimed.snapshot_id == older_id
+            await repository.finish_tier1a(
+                older_id, "1", result={}, worker_id="worker-c"
+            )
+
+            # Finish the already claimed newer job and verify it becomes derived ACTIVE.
+            await repository.finish_tier1a(
+                newer_id, "1", result={}, worker_id="worker-b"
+            )
+            active = await repository.latest_ready_payload()
+            assert active is not None
+            assert active["snapshot"]["snapshot_id"] == newer_id
+
+            # A logically older replay completed later must not replace ACTIVE.
+            await repository.ingest_direct(
+                _payload(replay_id, snapshot_time="2026-08-29T09:58:00Z")
+            )
+            replay = await repository.claim_next_tier1a(
+                worker_id="worker-r", lease_seconds=60, now=base + timedelta(minutes=2)
+            )
+            assert replay is not None and replay.snapshot_id == replay_id
+            await repository.finish_tier1a(
+                replay_id, "1", result={}, worker_id="worker-r"
+            )
+            active = await repository.latest_ready_payload()
+            assert active is not None
+            assert active["snapshot"]["snapshot_id"] == newer_id
+        finally:
+            await database.close()
+
+    import asyncio
+
+    asyncio.run(exercise())
+
+
+def test_tier1a_failure_backoff_becomes_terminal_on_fifth_attempt():
+    database_url = os.environ.get("TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("TEST_DATABASE_URL is not configured")
+
+    async def exercise():
+        from datetime import datetime, timedelta, timezone
+
+        database = Database(database_url)
+        repository = SnapshotRepository(database.sessions)
+        snapshot_id = f"retry-{uuid4().hex}"
+        base = datetime(2026, 8, 29, 12, 0, tzinfo=timezone.utc)
+        try:
+            await repository.ingest_direct(_payload(snapshot_id))
+            elapsed = 0
+            for attempt, delay in enumerate((2, 4, 8, 16), start=1):
+                claim = await repository.claim_next_tier1a(
+                    worker_id=f"worker-{attempt}",
+                    lease_seconds=60,
+                    now=base + timedelta(seconds=elapsed),
+                )
+                assert claim is not None and claim.attempt_count == attempt
+                status = await repository.record_tier1a_failure(
+                    snapshot_id,
+                    "1",
+                    error=f"failure-{attempt}",
+                    worker_id=f"worker-{attempt}",
+                    max_attempts=5,
+                    backoff_base_seconds=2,
+                    now=base + timedelta(seconds=elapsed),
+                )
+                assert status == "PENDING"
+                assert (
+                    await repository.claim_next_tier1a(
+                        worker_id="too-early",
+                        lease_seconds=60,
+                        now=base + timedelta(seconds=elapsed + delay - 1),
+                    )
+                    is None
+                )
+                elapsed += delay
+
+            fifth = await repository.claim_next_tier1a(
+                worker_id="worker-5",
+                lease_seconds=60,
+                now=base + timedelta(seconds=elapsed),
+            )
+            assert fifth is not None and fifth.attempt_count == 5
+            status = await repository.record_tier1a_failure(
+                snapshot_id,
+                "1",
+                error="failure-5",
+                worker_id="worker-5",
+                max_attempts=5,
+                backoff_base_seconds=2,
+                now=base + timedelta(seconds=elapsed),
+            )
+            assert status == "FAILED"
+            assert (
+                await repository.claim_next_tier1a(
+                    worker_id="worker-6",
+                    lease_seconds=60,
+                    now=base + timedelta(days=1),
+                )
+                is None
+            )
         finally:
             await database.close()
 

@@ -15,6 +15,7 @@ Covers:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from .enums import (
     TIMEWINDOW_VETO_SENTINEL,
@@ -74,6 +75,15 @@ def _check_snapshot(pkg: MockSnapshotPackage, errors: list[str]) -> None:
         errors.append("snapshot.snapshot_time is required")
     if not snap.produced_at:
         errors.append("snapshot.produced_at is required")
+    for field_name, value in (
+        ("snapshot_time", snap.snapshot_time),
+        ("produced_at", snap.produced_at),
+    ):
+        if value:
+            try:
+                datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                errors.append(f"snapshot.{field_name} must be an ISO-8601 timestamp")
     if not isinstance(snap.status, SnapshotStatus):
         errors.append("snapshot.status must be a SnapshotStatus")
     if not isinstance(snap.source_kind, SourceKind):
