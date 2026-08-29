@@ -275,6 +275,39 @@ def test_conflicting_duplicate_chunk_marks_snapshot_invalid():
     asyncio.run(exercise())
 
 
+def test_reused_kafka_offset_after_broker_reset_processes_new_snapshot():
+    database_url = os.environ.get("TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("TEST_DATABASE_URL is not configured")
+
+    async def exercise():
+        database = Database(database_url)
+        repository = SnapshotRepository(database.sessions)
+        first_id = f"before-reset-{uuid4().hex}"
+        second_id = f"after-reset-{uuid4().hex}"
+        topic = f"test-reset-{uuid4().hex}"
+        first = parse_snapshot_event(_events(_payload(first_id))[0])
+        second = parse_snapshot_event(_events(_payload(second_id))[0])
+        try:
+            initial = await repository.record_kafka_event(
+                first, topic=topic, partition=2, offset=0
+            )
+            replayed_coordinate = await repository.record_kafka_event(
+                second, topic=topic, partition=2, offset=0
+            )
+
+            assert initial.snapshot_id == first_id
+            assert replayed_coordinate.snapshot_id == second_id
+            assert replayed_coordinate.status == "RECEIVING"
+            assert replayed_coordinate.duplicate is False
+        finally:
+            await database.close()
+
+    import asyncio
+
+    asyncio.run(exercise())
+
+
 def test_tier1a_claim_and_active_selection_follow_logical_snapshot_time():
     database_url = os.environ.get("TEST_DATABASE_URL")
     if not database_url:

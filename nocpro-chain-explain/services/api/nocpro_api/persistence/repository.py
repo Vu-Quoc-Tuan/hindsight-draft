@@ -115,17 +115,28 @@ class SnapshotRepository:
     ) -> IngestResult:
         async with self.sessions.begin() as session:
             seen = await session.scalar(
-                select(KafkaInbox.id).where(
+                select(KafkaInbox).where(
                     KafkaInbox.topic == topic,
                     KafkaInbox.partition == partition,
                     KafkaInbox.offset == offset,
                 )
             )
             if seen is not None:
-                row = await session.get(
-                    SnapshotIngest, (event.snapshot_id, event.snapshot_version)
-                )
-                return self._result(row, duplicate=True)
+                # Kafka offsets are unique only for the lifetime of one log.
+                # The Docker broker is intentionally ephemeral, while the
+                # PostgreSQL inbox is durable, so a recreated broker can reuse
+                # topic/partition/offset for a different snapshot.  Do not
+                # short-circuit here: the snapshot/chunk natural keys below
+                # provide the payload-aware idempotence check.  Retarget a
+                # reused coordinate to the event currently present in Kafka.
+                if (
+                    seen.snapshot_id != event.snapshot_id
+                    or seen.snapshot_version != event.snapshot_version
+                    or seen.event_type != event.event_type
+                ):
+                    seen.snapshot_id = event.snapshot_id
+                    seen.snapshot_version = event.snapshot_version
+                    seen.event_type = event.event_type
 
             row = await session.get(
                 SnapshotIngest,
@@ -141,16 +152,17 @@ class SnapshotRepository:
                 session.add(row)
                 await session.flush()
 
-            session.add(
-                KafkaInbox(
-                    topic=topic,
-                    partition=partition,
-                    offset=offset,
-                    snapshot_id=event.snapshot_id,
-                    snapshot_version=event.snapshot_version,
-                    event_type=event.event_type,
+            if seen is None:
+                session.add(
+                    KafkaInbox(
+                        topic=topic,
+                        partition=partition,
+                        offset=offset,
+                        snapshot_id=event.snapshot_id,
+                        snapshot_version=event.snapshot_version,
+                        event_type=event.event_type,
+                    )
                 )
-            )
             if row.status in {"INVALID", "EXPIRED"}:
                 return self._result(row)
             if row.status == "COMPLETE":
