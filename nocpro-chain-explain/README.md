@@ -3,7 +3,7 @@
 Explanation, audit and validation for NocPro alarm chains.
 
 Methodology is frozen in `docs/NocPro5_Alarm_Chain_Explanation_V2.3.1_FINAL_D1_CAMERA_READY.md`
-plus 32 ADRs in `docs/adr/`. Where code and a frozen ADR disagree, the code is
+plus 33 ADRs in `docs/adr/`. Where code and a frozen ADR disagree, the code is
 wrong (see `docs/adr/README.md`).
 
 ## Status

@@ -46,6 +46,7 @@ Status meaning:
 - [0030 — Use a Direct Snapshot Adapter as the accepted prototype reference path](./0030-use-a-direct-snapshot-adapter-as-the-accepted-prototype-reference-path.md) — Accepted — implementation sequencing decision
 - [0031 — Freeze Evidence Coverage Attribution as a group-level closed-form coverage allocation](./0031-freeze-evidence-coverage-attribution-as-a-group-level-closed-form-coverage-allocation.md) — Accepted — frozen by V2.3.1
 - [0032 — Freeze dependency evidence semantics, anti-hub specificity and failure-domain role](./0032-freeze-dependency-evidence-semantics-anti-hub-specificity-and-failure-domain-role.md) — Accepted — frozen by V2.3.1 P1-Core
+- [0033 — Open the P2 topology foundation as fail-closed Tier-2 semantics](./0033-open-p2-topology-foundation-as-fail-closed-tier-2-semantics.md) — Accepted — explicit scope amendment
 
 ## Governance rule
 
