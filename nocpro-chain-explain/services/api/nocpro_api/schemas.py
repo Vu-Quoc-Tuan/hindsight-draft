@@ -155,6 +155,9 @@ class DeepDiveView(ApiModel):
     similar_chains: list[dict[str, Any]]
     similarity_status: str
     similarity_unavailable_reason: str | None
+    taxonomy_status: str | None
+    taxonomy_reason: str | None
+    active_fingerprint_blocks: list[str]
 
 
 class JobView(ApiModel):

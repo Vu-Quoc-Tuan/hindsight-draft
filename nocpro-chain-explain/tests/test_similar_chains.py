@@ -28,6 +28,7 @@ from similar_chains import (
     ModelVersionMismatch,
     ModelUpdatePolicy,
     TaxonomyLevel,
+    TaxonomyStatus,
     TermVector,
     TimedChainFingerprint,
     build_fingerprint,
@@ -347,6 +348,51 @@ def test_offline_frozen_model_never_uses_test_period():
 
     assert [fingerprint.chain_id for fingerprint in index.corpus] == ["train"]
     assert "family:F2" not in index.model.vocabulary
+
+
+def test_unavailable_taxonomy_keeps_other_fingerprint_blocks_usable():
+    target = build_fingerprint(
+        "T",
+        [alarm("a1", alarm_name="Diameter Peer unavailable", device_type_name="STP")],
+        identity_descriptors=(descriptor("D1"),),
+        duration_seconds=20,
+    )
+    candidate = build_fingerprint(
+        "C",
+        [alarm("a2", alarm_name="Diameter Peer unavailable", device_type_name="STP")],
+        identity_descriptors=(descriptor("D1"),),
+        duration_seconds=20,
+    )
+    assert target.family_terms.counts == {}
+    model = fit_fingerprint_model(
+        [target, candidate],
+        model_version="sim-degraded",
+        taxonomy_policy="NO_REAL_TAXONOMY_SOURCE",
+        taxonomy_status=TaxonomyStatus.UNAVAILABLE,
+        taxonomy_reason="ALARM_TAXONOMY_NOT_USED_BY_SOURCE",
+    )
+
+    results = find_similar_chains(target, [candidate], model=model)
+
+    assert results
+    assert model.taxonomy_status is TaxonomyStatus.UNAVAILABLE
+    assert "alarm_taxonomy" not in target.active_blocks()
+    assert set(target.active_blocks()) == {
+        "device_type",
+        "identity_descriptors",
+        "size_bin",
+        "duration_bin",
+    }
+
+
+def test_unavailable_taxonomy_rejects_fake_or_contradictory_terms():
+    with pytest.raises(ValueError, match="taxonomy terms are present"):
+        fit_fingerprint_model(
+            [_fp("T", ["guessed-from-alarm-name"], ["D1"])],
+            model_version="invalid",
+            taxonomy_status=TaxonomyStatus.UNAVAILABLE,
+            taxonomy_reason="ALARM_TAXONOMY_NOT_USED_BY_SOURCE",
+        )
 
 
 # --------------------------------------------------------------------------

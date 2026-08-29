@@ -111,6 +111,9 @@ class Tier2AuditAnalysis:
     similarity_model_version: str | None = None
     similarity_status: str = "UNAVAILABLE"
     similarity_unavailable_reason: str | None = None
+    taxonomy_status: str | None = None
+    taxonomy_reason: str | None = None
+    active_fingerprint_blocks: tuple[str, ...] = ()
 
 
 def analyze_structural_audit(
@@ -197,6 +200,9 @@ def analyze_structural_audit(
     similar_results: tuple[SimilarChainResult, ...] = ()
     similarity_model_version: str | None = None
     similarity_unavailable_reason: str | None = None
+    taxonomy_status: str | None = None
+    taxonomy_reason: str | None = None
+    active_fingerprint_blocks: tuple[str, ...] = ()
     if similarity_context is None:
         similarity_unavailable_reason = "LINEAGE_NOT_READY"
     else:
@@ -213,6 +219,9 @@ def analyze_structural_audit(
             size_bin_edges=model.size_bin_edges,
             duration_bin_edges=model.duration_bin_edges,
         )
+        taxonomy_status = model.taxonomy_status.value
+        taxonomy_reason = model.taxonomy_reason
+        active_fingerprint_blocks = target_fingerprint.active_blocks()
         similar_results = tuple(
             find_similar_chains(
                 target_fingerprint,
@@ -236,4 +245,7 @@ def analyze_structural_audit(
         similarity_model_version=similarity_model_version,
         similarity_status="AVAILABLE" if similarity_context is not None else "UNAVAILABLE",
         similarity_unavailable_reason=similarity_unavailable_reason,
+        taxonomy_status=taxonomy_status,
+        taxonomy_reason=taxonomy_reason,
+        active_fingerprint_blocks=active_fingerprint_blocks,
     )

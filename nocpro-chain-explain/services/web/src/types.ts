@@ -114,6 +114,9 @@ export type DeepDive = {
   similar_chains: Array<Record<string, unknown>>
   similarity_status: string
   similarity_unavailable_reason: string | null
+  taxonomy_status: string | null
+  taxonomy_reason: string | null
+  active_fingerprint_blocks: string[]
 }
 
 export type Job = {

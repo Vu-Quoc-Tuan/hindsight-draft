@@ -14,6 +14,7 @@ from .fingerprint import (
     FingerprintModel,
     TermVector,
     TfIdfModel,
+    TaxonomyStatus,
     fit_fingerprint_model,
 )
 
@@ -79,6 +80,8 @@ def materialize_similarity_index(
     corpus_policy: CorpusPolicy,
     model_update_policy: ModelUpdatePolicy,
     taxonomy_policy: str,
+    taxonomy_status: TaxonomyStatus = TaxonomyStatus.AVAILABLE,
+    taxonomy_reason: str | None = None,
     size_bin_edges: tuple[int, ...] = DEFAULT_SIZE_BINS,
     duration_bin_edges: tuple[int, ...] = DEFAULT_DURATION_BINS,
     top_descriptor_predicates: int = DEFAULT_TOP_DESCRIPTOR_PREDICATES,
@@ -98,6 +101,8 @@ def materialize_similarity_index(
         corpus_policy=corpus_policy.value,
         model_update_policy=model_update_policy.value,
         taxonomy_policy=taxonomy_policy,
+        taxonomy_status=taxonomy_status,
+        taxonomy_reason=taxonomy_reason,
         size_bin_edges=size_bin_edges,
         duration_bin_edges=duration_bin_edges,
         top_descriptor_predicates=top_descriptor_predicates,
@@ -148,6 +153,8 @@ def model_to_dict(value: FingerprintModel) -> dict:
         "corpus_policy": value.corpus_policy,
         "model_update_policy": value.model_update_policy,
         "taxonomy_policy": value.taxonomy_policy,
+        "taxonomy_status": value.taxonomy_status.value,
+        "taxonomy_reason": value.taxonomy_reason,
         "vocabulary": list(value.vocabulary),
         "idf_weights": value.idf_weights,
         "family_document_count": value.family_model.document_count,
@@ -161,12 +168,23 @@ def model_to_dict(value: FingerprintModel) -> dict:
 
 
 def model_from_dict(value: dict) -> FingerprintModel:
+    legacy_policy = value.get("taxonomy_policy", "CALLER_SUPPLIED")
+    legacy_unavailable = legacy_policy == "NO_REAL_TAXONOMY_SOURCE"
     return FingerprintModel(
         model_version=value["model_version"],
         trained_until_exclusive=value["trained_until_exclusive"],
         corpus_policy=value["corpus_policy"],
         model_update_policy=value["model_update_policy"],
-        taxonomy_policy=value["taxonomy_policy"],
+        taxonomy_policy=legacy_policy,
+        taxonomy_status=TaxonomyStatus(
+            value.get(
+                "taxonomy_status",
+                "UNAVAILABLE" if legacy_unavailable else "AVAILABLE",
+            )
+        ),
+        taxonomy_reason=value.get("taxonomy_reason") or (
+            "ALARM_TAXONOMY_NOT_USED_BY_SOURCE" if legacy_unavailable else None
+        ),
         vocabulary=tuple(value["vocabulary"]),
         idf_weights=dict(value["idf_weights"]),
         family_model=TfIdfModel(

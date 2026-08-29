@@ -54,15 +54,16 @@ closed**: the production-data decision for delta indexing is still
 outstanding. Do not expand into
 P1-optional or P2 work until those evidence/policy gaps are resolved.
 
-### Open data question (unresolved, see ADR-0022)
+### Alarm taxonomy source capability
 
-Not decided yet — do not implement against these until confirmed:
-
-1. **Real alarm-family taxonomy source.** `alarm_type_name` is empty for
-   100% of rows in the current real export, so the Similar Chains
-   `TYPE_FALLBACK` path never actually fires on real data today. Need: where a
-   real family/type taxonomy would come from, its format, and its join key to
-   `alarm_name`.
+The current production source does not operationally use `alarm_type_name`, so
+its null values are expected rather than a data-quality defect. No canonical
+`alarm_family` source exists and the system never infers one from `alarm_name`.
+Similar Chains therefore labels the taxonomy block `UNAVAILABLE` with reason
+`ALARM_TAXONOMY_NOT_USED_BY_SOURCE`, while continuing in degraded mode with
+device type, IDENTITY descriptors, size bin and duration bin. A future real,
+versioned taxonomy adapter can enable the block without changing cosine or the
+fingerprint algorithm.
 
 ## Layout
 

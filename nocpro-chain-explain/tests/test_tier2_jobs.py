@@ -14,6 +14,7 @@ from similar_chains import (
     CorpusPolicy,
     ModelUpdatePolicy,
     TimedChainFingerprint,
+    TaxonomyStatus,
     build_fingerprint,
     materialize_similarity_index,
 )
@@ -205,6 +206,8 @@ def test_versioned_similarity_context_is_used_and_part_of_cache_key(analysis_con
         corpus_policy=CorpusPolicy.HISTORY_BEFORE_SNAPSHOT,
         model_update_policy=ModelUpdatePolicy.SNAPSHOT_VERSIONED,
         taxonomy_policy="TEST_EMPTY",
+        taxonomy_status=TaxonomyStatus.UNAVAILABLE,
+        taxonomy_reason="ALARM_TAXONOMY_NOT_USED_BY_SOURCE",
     )
     context = SimilarityQueryContext(
         index=index,
@@ -223,4 +226,12 @@ def test_versioned_similarity_context_is_used_and_part_of_cache_key(analysis_con
     assert [item.chain_id for item in completed.result.similar_chains] == ["C2"]
     assert completed.result.similarity_model_version == "sim-test-v1"
     assert completed.result.similarity_status == "AVAILABLE"
+    assert completed.result.taxonomy_status == "UNAVAILABLE"
+    assert (
+        completed.result.taxonomy_reason
+        == "ALARM_TAXONOMY_NOT_USED_BY_SOURCE"
+    )
+    assert "alarm_taxonomy" not in completed.result.active_fingerprint_blocks
+    assert "size_bin" in completed.result.active_fingerprint_blocks
+    assert "duration_bin" in completed.result.active_fingerprint_blocks
     assert completed.cache_key.config_version == "v1|similarity:sim-test-v1"

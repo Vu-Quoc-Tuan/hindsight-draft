@@ -53,6 +53,11 @@ class TaxonomyLevel(str, Enum):
     TYPE_FALLBACK = "TYPE_FALLBACK"
 
 
+class TaxonomyStatus(str, Enum):
+    AVAILABLE = "AVAILABLE"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
 def _bin_index(value: int, edges: tuple[int, ...]) -> int:
     """First bin edge the value does not exceed; the last bin catches overflow."""
     for index, edge in enumerate(edges):
@@ -277,6 +282,8 @@ class FingerprintModel:
     corpus_policy: str
     model_update_policy: str
     taxonomy_policy: str
+    taxonomy_status: TaxonomyStatus
+    taxonomy_reason: str | None
     vocabulary: tuple[str, ...]
     idf_weights: dict[str, float]
     family_model: TfIdfModel
@@ -294,6 +301,8 @@ def fit_fingerprint_model(
     corpus_policy: str = "FROZEN_TRAINING",
     model_update_policy: str = "FROZEN",
     taxonomy_policy: str = "CALLER_SUPPLIED",
+    taxonomy_status: TaxonomyStatus = TaxonomyStatus.AVAILABLE,
+    taxonomy_reason: str | None = None,
     size_bin_edges: tuple[int, ...] = DEFAULT_SIZE_BINS,
     duration_bin_edges: tuple[int, ...] = DEFAULT_DURATION_BINS,
     top_descriptor_predicates: int = DEFAULT_TOP_DESCRIPTOR_PREDICATES,
@@ -305,6 +314,13 @@ def fit_fingerprint_model(
     with the already-fit model instead of fitting a new one from it.
     """
     family_model = TfIdfModel.fit([fp.family_terms for fp in fingerprints])
+    if taxonomy_status is TaxonomyStatus.UNAVAILABLE:
+        if taxonomy_reason is None or not taxonomy_reason.strip():
+            raise ValueError("unavailable taxonomy requires a reason")
+        if family_model.document_frequency:
+            raise ValueError(
+                "taxonomy cannot be UNAVAILABLE when taxonomy terms are present"
+            )
     device_model = TfIdfModel.fit([fp.device_type_terms for fp in fingerprints])
     vocabulary = tuple(
         sorted(
@@ -338,6 +354,8 @@ def fit_fingerprint_model(
         corpus_policy=corpus_policy,
         model_update_policy=model_update_policy,
         taxonomy_policy=taxonomy_policy,
+        taxonomy_status=taxonomy_status,
+        taxonomy_reason=taxonomy_reason,
         vocabulary=vocabulary,
         idf_weights=idf_weights,
         family_model=family_model,

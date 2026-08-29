@@ -12,6 +12,7 @@ from similar_chains import (
     CorpusPolicy,
     ModelUpdatePolicy,
     TimedChainFingerprint,
+    TaxonomyStatus,
     build_fingerprint,
     materialize_similarity_index,
 )
@@ -240,6 +241,8 @@ class Tier1ACoordinator:
                 corpus_policy=CorpusPolicy.HISTORY_BEFORE_SNAPSHOT,
                 model_update_policy=ModelUpdatePolicy.SNAPSHOT_VERSIONED,
                 taxonomy_policy="NO_REAL_TAXONOMY_SOURCE",
+                taxonomy_status=TaxonomyStatus.UNAVAILABLE,
+                taxonomy_reason="ALARM_TAXONOMY_NOT_USED_BY_SOURCE",
                 top_descriptor_predicates=int(
                     self.workspace.config.value(
                         "similar_chains.top_descriptor_predicates"
