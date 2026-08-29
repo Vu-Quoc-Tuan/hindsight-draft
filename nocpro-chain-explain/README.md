@@ -43,7 +43,9 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | UNAVOIDABLE_DEPENDENCY (dominator), graph motif upgrade | P2 | not started |
 | FastAPI adapter: snapshot ingest, Tier-1B, pair WHY, Tier-2 polling | infra | done |
 | React/Vite/TypeScript operator UI | infra | done |
-| Persistence/migrations | infra | not started |
+| PostgreSQL persistence + Alembic migrations | infra | done |
+| Kafka chunk/barrier ingest (`nocpro-mock` -> Explain) | infra | done |
+| Docker Compose: PostgreSQL, Kafka, API, Web, replay producer | infra | done |
 
 Per ADR-0029, MVP + P0-complete must stand as a usable project **before** P1.
 The P1-Core feature set above is implemented, but the **P1 milestone is not
@@ -83,7 +85,10 @@ services/analysis-worker/audit/      audit graph, candidate cuts, conductance, o
 services/analysis-worker/channels/common_dependency.py  SHARED_ANCESTOR, SHARED_ACTIVE_PATH
 services/analysis-worker/similar_chains/  fingerprint, TF-IDF, cosine similarity baseline
 services/api/nocpro_api/             FastAPI transport and in-process repository boundary
+services/api/nocpro_api/ingest/      Kafka v1 wire parser + consumer/coordinator
+services/api/nocpro_api/persistence/ PostgreSQL models and snapshot repository
 services/web/                        React/Vite/TypeScript operator workspace
+migrations/                          Alembic schema history
 tests/spec_sanity/                   methodology firewall (ADR-0027)
 ```
 
@@ -102,6 +107,8 @@ uv sync
 .venv/bin/python -m pytest tests              # all
 .venv/bin/python -m pytest tests/spec_sanity  # methodology firewall
 .venv/bin/python -m pytest tests -m "not realdata"
+TEST_DATABASE_URL=postgresql+asyncpg://nocpro:nocpro@localhost:5432/nocpro \
+  .venv/bin/python -m pytest tests/test_postgres_snapshot_ingest.py
 ```
 
 `tests/spec_sanity/` is not an ordinary suite: a failure means the code
@@ -168,7 +175,7 @@ drill-down and visualization. A verdict is never a function of a display
   ("analysis configuration changed"), never DATA_DRIFT. When both changed it is
   MIXED. Tier-1B/Tier-2 drift requires a cache on **both** snapshots, otherwise
   it reports unavailable rather than "no drift".
-- Cache key is `(chain fingerprint, snapshot, config version)`. The fingerprint
+- Cache key is `(chain fingerprint, snapshot id, snapshot version, config version)`. The fingerprint
   comes from membership, so identity churn reuses cached work while a threshold
   change invalidates it.
 - Tier-1A refuses an incomplete snapshot and computes IDENTITY descriptors only;
@@ -259,3 +266,34 @@ pnpm dev
 Vite proxies `/api` to `127.0.0.1:8000`. The Evolution view intentionally
 reports `UNAVAILABLE` until a verified sequential snapshot source is connected;
 it does not infer lineage from unrelated exports.
+
+## Docker Kafka integration
+
+The Docker path uses PostgreSQL as the durable source of truth and Kafka as the
+transport from the sibling `nocpro-mock` producer. A snapshot is compressed,
+split into `SNAPSHOT_CHUNK` events, and closed by a `SNAPSHOT_COMPLETE` barrier.
+Explain marks it complete only after all unique chunks, per-chunk checksums,
+the whole-snapshot checksum, and the canonical Input Contract pass validation.
+Completion triggers Tier-1A exactly once through the persisted claim; Tier-1B
+remains lazy and runs only when a chain is requested.
+
+Start the main stack:
+
+```bash
+docker compose up -d api web
+curl http://localhost:8000/api/v1/health
+```
+
+The UI is then available at `http://localhost:3000`. To replay the real export
+from `nocpro-mock` through Kafka:
+
+```bash
+MOCK_SNAPSHOT_ID=docker-replay-001 \
+MOCK_SNAPSHOT_VERSION=1 \
+docker compose --profile replay run --rm mock-producer
+```
+
+The producer and consumer use `snapshot_id` as the Kafka key. Identical chunk
+replays are idempotent; a conflicting duplicate invalidates the snapshot. HTTP
+snapshot ingest remains available for development and writes through the same
+canonical PostgreSQL repository.

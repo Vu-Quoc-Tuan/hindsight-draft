@@ -23,7 +23,8 @@ Design docs live in `docs/`. Start with `docs/README.md` and
 | Synthetic operational context | done |
 | System pair metadata (explicit + deterministic generator) | done |
 | History / evolution sequences via manifest + step mode | done |
-| `fast` / `realtime` replay, Kafka, alias-table file (P1) | not started |
+| Kafka chunk + completion-barrier producer | done |
+| `fast` / `realtime` replay, alias-table file (P1) | not started |
 
 The canonical contract lives in `../nocpro-chain-explain/contracts/v1` per
 ADR-0002 and is imported read-only through `nocpro_mock.contract`.
@@ -51,11 +52,24 @@ nocpro-mock replay --chain-id 6907125 --with-topology --out datasets/generated/c
 # Replay the Golden Gray-box fixture
 nocpro-mock golden --with-topology --out datasets/generated/golden.json
 
+# Publish the canonical snapshot to Explain through Kafka
+nocpro-mock replay \
+  --snapshot-id replay-001 \
+  --snapshot-version 1 \
+  --kafka-bootstrap localhost:9092 \
+  --chunk-target-bytes 2097152
+
 # Materialize the history/evolution sequence fixtures, then step through one
 nocpro-mock build-sequences
 nocpro-mock run-sequence docs/examples/synthetic/history_positive_lift
 nocpro-mock run-sequence docs/examples/synthetic/evolution_split_merge
 ```
+
+Kafka publication serializes canonical JSON, calculates the whole-snapshot
+SHA-256 checksum, compresses it once with zstd, then emits idempotent
+`SNAPSHOT_CHUNK` events followed by `SNAPSHOT_COMPLETE`. Every event uses
+`snapshot_id` as its Kafka key. Explain remains responsible for assembly,
+contract validation, persistence, and analysis.
 
 ## Sequences (history / evolution)
 
