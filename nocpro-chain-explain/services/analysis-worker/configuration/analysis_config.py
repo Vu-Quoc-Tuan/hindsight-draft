@@ -17,6 +17,7 @@ import yaml
 
 from descriptor import MiningConfig
 from groups import RoleThresholds
+from similar_chains import CorpusPolicy, ModelUpdatePolicy
 
 
 class AnalysisConfigError(ValueError):
@@ -42,6 +43,14 @@ class IncrementalSnapshotPolicy:
     @property
     def enabled(self) -> bool:
         return False
+
+
+@dataclass(frozen=True)
+class SimilarChainsPolicy:
+    corpus_policy: CorpusPolicy
+    model_update_policy: ModelUpdatePolicy
+    temporal_cutoff: str
+    exclude_same_lineage: bool
 
 
 @dataclass(frozen=True)
@@ -148,6 +157,7 @@ class AnalysisConfig:
     status: str
     parameters: dict[str, ConfiguredValue]
     incremental_snapshot: IncrementalSnapshotPolicy
+    similar_chains: SimilarChainsPolicy
 
     REQUIRED_PARAMETERS = tuple(PARAMETER_RULES)
 
@@ -261,11 +271,52 @@ def load_analysis_config(
         reason=reason.strip(),
     )
 
+    raw_similar = document.get("similar_chains")
+    if not isinstance(raw_similar, dict):
+        raise AnalysisConfigError("similar_chains must be a YAML mapping")
+    try:
+        corpus_policy = CorpusPolicy(raw_similar.get("corpus_policy"))
+    except (TypeError, ValueError) as exc:
+        raise AnalysisConfigError(
+            "similar_chains.corpus_policy must be HISTORY_BEFORE_SNAPSHOT"
+        ) from exc
+    try:
+        model_update_policy = ModelUpdatePolicy(
+            raw_similar.get("model_update_policy")
+        )
+    except (TypeError, ValueError) as exc:
+        raise AnalysisConfigError(
+            "similar_chains.model_update_policy must be SNAPSHOT_VERSIONED"
+        ) from exc
+    if corpus_policy is not CorpusPolicy.HISTORY_BEFORE_SNAPSHOT:
+        raise AnalysisConfigError(
+            "production similar_chains.corpus_policy must be HISTORY_BEFORE_SNAPSHOT"
+        )
+    if model_update_policy is not ModelUpdatePolicy.SNAPSHOT_VERSIONED:
+        raise AnalysisConfigError(
+            "production similar_chains.model_update_policy must be SNAPSHOT_VERSIONED"
+        )
+    if raw_similar.get("temporal_cutoff") != "snapshot_time":
+        raise AnalysisConfigError(
+            "similar_chains.temporal_cutoff must be snapshot_time"
+        )
+    if raw_similar.get("exclude_same_lineage") is not True:
+        raise AnalysisConfigError(
+            "similar_chains.exclude_same_lineage must be true"
+        )
+    similar_chains = SimilarChainsPolicy(
+        corpus_policy=corpus_policy,
+        model_update_policy=model_update_policy,
+        temporal_cutoff="snapshot_time",
+        exclude_same_lineage=True,
+    )
+
     config = AnalysisConfig(
         config_version=version.strip(),
         status=status.strip(),
         parameters=parameters,
         incremental_snapshot=incremental_snapshot,
+        similar_chains=similar_chains,
     )
     if "role.s_weak" in parameters and "role.s_min" in parameters:
         if config.value("role.s_weak") > config.value("role.s_min"):

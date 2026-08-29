@@ -11,6 +11,7 @@ from configuration import (
     ParameterSource,
     load_analysis_config,
 )
+from similar_chains import CorpusPolicy, ModelUpdatePolicy
 from tier1b import analyze_chain_configured
 from tests.test_tier1b_analysis import _alarm, _snapshot
 
@@ -40,6 +41,42 @@ def test_shipped_v1_config_constructs_engine_configs_with_one_version():
     assert config.incremental_snapshot.reason == (
         "sequential_production_snapshots_not_available"
     )
+    assert config.similar_chains.corpus_policy is CorpusPolicy.HISTORY_BEFORE_SNAPSHOT
+    assert (
+        config.similar_chains.model_update_policy
+        is ModelUpdatePolicy.SNAPSHOT_VERSIONED
+    )
+    assert config.similar_chains.temporal_cutoff == "snapshot_time"
+    assert config.similar_chains.exclude_same_lineage is True
+
+
+@pytest.mark.parametrize(
+    ("field", "old", "new", "message"),
+    [
+        (
+            "corpus_policy",
+            "HISTORY_BEFORE_SNAPSHOT",
+            "FROZEN_TRAINING",
+            "production similar_chains.corpus_policy",
+        ),
+        (
+            "model_update_policy",
+            "SNAPSHOT_VERSIONED",
+            "FROZEN",
+            "production similar_chains.model_update_policy",
+        ),
+        ("temporal_cutoff", "snapshot_time", "produced_at", "temporal_cutoff"),
+        ("exclude_same_lineage", "true", "false", "exclude_same_lineage"),
+    ],
+)
+def test_production_similarity_policy_fails_closed(
+    tmp_path: Path, field: str, old: str, new: str, message: str
+):
+    text = SHIPPED_CONFIG.read_text(encoding="utf-8").replace(
+        f"  {field}: {old}\n", f"  {field}: {new}\n"
+    )
+    with pytest.raises(AnalysisConfigError, match=message):
+        load_analysis_config(_write(tmp_path, text))
 
 
 def test_incremental_policy_requires_reason_when_explicitly_disabled(tmp_path: Path):

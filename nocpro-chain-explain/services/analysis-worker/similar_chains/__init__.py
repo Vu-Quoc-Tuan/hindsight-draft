@@ -22,6 +22,13 @@ from .similarity import (
     find_similar_chains,
     previous_states_of_chain,
 )
+from .temporal import (
+    CorpusPolicy,
+    ModelUpdatePolicy,
+    TimedChainFingerprint,
+    VersionedSimilarityIndex,
+    materialize_similarity_index,
+)
 
 __all__ = [
     "DEFAULT_DURATION_BINS",
@@ -29,17 +36,22 @@ __all__ = [
     "DEFAULT_TOP_DESCRIPTOR_PREDICATES",
     "AlarmTaxonomyTerm",
     "ChainFingerprint",
+    "CorpusPolicy",
     "FingerprintModel",
     "ModelVersionMismatch",
+    "ModelUpdatePolicy",
     "SimilarChainResult",
     "TaxonomyLevel",
     "TermVector",
+    "TimedChainFingerprint",
     "TfIdfModel",
+    "VersionedSimilarityIndex",
     "build_fingerprint",
     "cosine_similarity",
     "duration_bin",
     "find_similar_chains",
     "fit_fingerprint_model",
+    "materialize_similarity_index",
     "previous_states_of_chain",
     "size_bin",
 ]

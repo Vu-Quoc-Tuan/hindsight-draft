@@ -273,6 +273,12 @@ class FingerprintModel:
     """
 
     model_version: str
+    trained_until_exclusive: str
+    corpus_policy: str
+    model_update_policy: str
+    taxonomy_policy: str
+    vocabulary: tuple[str, ...]
+    idf_weights: dict[str, float]
     family_model: TfIdfModel
     device_model: TfIdfModel
     size_bin_edges: tuple[int, ...]
@@ -284,6 +290,10 @@ def fit_fingerprint_model(
     fingerprints: list[ChainFingerprint],
     *,
     model_version: str,
+    trained_until_exclusive: str = "9999-12-31T23:59:59Z",
+    corpus_policy: str = "FROZEN_TRAINING",
+    model_update_policy: str = "FROZEN",
+    taxonomy_policy: str = "CALLER_SUPPLIED",
     size_bin_edges: tuple[int, ...] = DEFAULT_SIZE_BINS,
     duration_bin_edges: tuple[int, ...] = DEFAULT_DURATION_BINS,
     top_descriptor_predicates: int = DEFAULT_TOP_DESCRIPTOR_PREDICATES,
@@ -296,8 +306,40 @@ def fit_fingerprint_model(
     """
     family_model = TfIdfModel.fit([fp.family_terms for fp in fingerprints])
     device_model = TfIdfModel.fit([fp.device_type_terms for fp in fingerprints])
+    vocabulary = tuple(
+        sorted(
+            {f"family:{term}" for term in family_model.document_frequency}
+            | {f"device:{term}" for term in device_model.document_frequency}
+            | {
+                f"descriptor:{term}"
+                for fingerprint in fingerprints
+                for term in fingerprint.descriptor_terms
+            }
+            | {f"size:{fingerprint.size_bin}" for fingerprint in fingerprints}
+            | {
+                f"duration:{fingerprint.duration_bin}"
+                for fingerprint in fingerprints
+            }
+        )
+    )
+    idf_weights = {
+        **{
+            f"family:{term}": family_model.idf(term)
+            for term in family_model.document_frequency
+        },
+        **{
+            f"device:{term}": device_model.idf(term)
+            for term in device_model.document_frequency
+        },
+    }
     return FingerprintModel(
         model_version=model_version,
+        trained_until_exclusive=trained_until_exclusive,
+        corpus_policy=corpus_policy,
+        model_update_policy=model_update_policy,
+        taxonomy_policy=taxonomy_policy,
+        vocabulary=vocabulary,
+        idf_weights=idf_weights,
         family_model=family_model,
         device_model=device_model,
         size_bin_edges=size_bin_edges,

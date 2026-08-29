@@ -24,14 +24,18 @@ from descriptor.predicates import Predicate
 from libs.contracts import IngestedAlarm
 from similar_chains import (
     ChainFingerprint,
+    CorpusPolicy,
     ModelVersionMismatch,
+    ModelUpdatePolicy,
     TaxonomyLevel,
     TermVector,
+    TimedChainFingerprint,
     build_fingerprint,
     cosine_similarity,
     duration_bin,
     find_similar_chains,
     fit_fingerprint_model,
+    materialize_similarity_index,
     previous_states_of_chain,
     size_bin,
 )
@@ -296,6 +300,53 @@ def test_find_similar_chains_rejects_mismatched_corpus_entry():
     stamped_other = other.scored_with(model_v1.model_version)
     with pytest.raises(ModelVersionMismatch):
         find_similar_chains(target, [stamped_other], model=model_v2)
+
+
+def test_snapshot_versioned_index_uses_history_strictly_before_cutoff():
+    before = _fp("before", ["F1"], ["D1"])
+    at_cutoff = _fp("at", ["F2"], ["D2"])
+    future = _fp("future", ["F3"], ["D3"])
+
+    index = materialize_similarity_index(
+        [
+            TimedChainFingerprint(future, "2026-08-29T10:01:00Z"),
+            TimedChainFingerprint(at_cutoff, "2026-08-29T10:00:00Z"),
+            TimedChainFingerprint(before, "2026-08-29T09:59:00Z"),
+        ],
+        model_version="sim-20260829-1000",
+        trained_until_exclusive="2026-08-29T10:00:00Z",
+        corpus_policy=CorpusPolicy.HISTORY_BEFORE_SNAPSHOT,
+        model_update_policy=ModelUpdatePolicy.SNAPSHOT_VERSIONED,
+        taxonomy_policy="TEST_EMPTY",
+    )
+
+    assert [entry.fingerprint.chain_id for entry in index.entries] == ["before"]
+    assert index.model.trained_until_exclusive == "2026-08-29T10:00:00Z"
+    assert index.model.corpus_policy == "HISTORY_BEFORE_SNAPSHOT"
+    assert index.model.model_update_policy == "SNAPSHOT_VERSIONED"
+    assert index.model.taxonomy_policy == "TEST_EMPTY"
+    assert index.corpus[0].scored_with_model_version == "sim-20260829-1000"
+    assert "family:F1" in index.model.vocabulary
+    assert "family:F1" in index.model.idf_weights
+
+
+def test_offline_frozen_model_never_uses_test_period():
+    train = _fp("train", ["F1"], ["D1"])
+    test = _fp("test", ["F2"], ["D2"])
+    index = materialize_similarity_index(
+        [
+            TimedChainFingerprint(train, "2026-07-31T23:59:59Z"),
+            TimedChainFingerprint(test, "2026-08-01T00:00:00Z"),
+        ],
+        model_version="benchmark-v1",
+        trained_until_exclusive="2026-08-01T00:00:00Z",
+        corpus_policy=CorpusPolicy.FROZEN_TRAINING,
+        model_update_policy=ModelUpdatePolicy.FROZEN,
+        taxonomy_policy="TEST_EMPTY",
+    )
+
+    assert [fingerprint.chain_id for fingerprint in index.corpus] == ["train"]
+    assert "family:F2" not in index.model.vocabulary
 
 
 # --------------------------------------------------------------------------

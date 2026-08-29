@@ -7,6 +7,7 @@ from .analysis_config import (
     IncrementalSnapshotMode,
     IncrementalSnapshotPolicy,
     ParameterSource,
+    SimilarChainsPolicy,
     load_analysis_config,
 )
 
@@ -17,5 +18,6 @@ __all__ = [
     "IncrementalSnapshotMode",
     "IncrementalSnapshotPolicy",
     "ParameterSource",
+    "SimilarChainsPolicy",
     "load_analysis_config",
 ]

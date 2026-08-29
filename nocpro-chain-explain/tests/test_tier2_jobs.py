@@ -10,7 +10,13 @@ from configuration import load_analysis_config
 from tier1a import CacheTier, Tier1Cache
 from tier2 import JobStatus, SimilarityQueryContext, Tier2JobManager
 from groups import AuditGraphMode
-from similar_chains import build_fingerprint, fit_fingerprint_model
+from similar_chains import (
+    CorpusPolicy,
+    ModelUpdatePolicy,
+    TimedChainFingerprint,
+    build_fingerprint,
+    materialize_similarity_index,
+)
 from tests.test_tier1b_analysis import _alarm, _snapshot
 
 
@@ -188,12 +194,19 @@ def test_versioned_similarity_context_is_used_and_part_of_cache_key(analysis_con
     different_incident = build_fingerprint(
         "C2", alarms, lineage_component_id="L2", duration_seconds=10
     )
-    model = fit_fingerprint_model(
-        [same_lineage, different_incident], model_version="sim-test-v1"
+    index = materialize_similarity_index(
+        [
+            TimedChainFingerprint(same_lineage, "2025-12-31T23:58:00Z"),
+            TimedChainFingerprint(different_incident, "2025-12-31T23:59:00Z"),
+        ],
+        model_version="sim-test-v1",
+        trained_until_exclusive=package.snapshot.snapshot_time,
+        corpus_policy=CorpusPolicy.HISTORY_BEFORE_SNAPSHOT,
+        model_update_policy=ModelUpdatePolicy.SNAPSHOT_VERSIONED,
+        taxonomy_policy="TEST_EMPTY",
     )
     context = SimilarityQueryContext(
-        model=model,
-        corpus=(same_lineage, different_incident),
+        index=index,
         target_lineage_component_id="L1",
     )
 

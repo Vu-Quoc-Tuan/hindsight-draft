@@ -36,11 +36,12 @@ from groups import AuditGraphMode
 from libs.contracts import IngestedPackage
 from similar_chains import (
     ChainFingerprint,
-    FingerprintModel,
     SimilarChainResult,
+    VersionedSimilarityIndex,
     build_fingerprint,
     find_similar_chains,
 )
+from similar_chains.temporal import CorpusPolicy, parse_time
 
 
 class AuditPolicyRequired(RuntimeError):
@@ -49,15 +50,33 @@ class AuditPolicyRequired(RuntimeError):
 
 @dataclass(frozen=True)
 class SimilarityQueryContext:
-    """Caller-supplied, versioned historical corpus policy result.
+    """Immutable historical index selected for one query snapshot."""
 
-    The core intentionally does not decide whether the corpus is ``history<t``
-    or one frozen training corpus; ADR-0022 leaves that evaluation choice open.
-    """
-
-    model: FingerprintModel
-    corpus: tuple[ChainFingerprint, ...]
+    index: VersionedSimilarityIndex
     target_lineage_component_id: str | None = None
+
+    @property
+    def model(self):
+        return self.index.model
+
+    @property
+    def corpus(self) -> tuple[ChainFingerprint, ...]:
+        return self.index.corpus
+
+    def validate_query_time(self, snapshot_time: str) -> None:
+        model = self.model
+        query_time = parse_time(snapshot_time)
+        cutoff = parse_time(model.trained_until_exclusive)
+        if model.corpus_policy == CorpusPolicy.HISTORY_BEFORE_SNAPSHOT.value:
+            if query_time != cutoff:
+                raise ValueError(
+                    "snapshot-versioned SimilarityModel cutoff must equal the "
+                    "query snapshot_time"
+                )
+        elif query_time < cutoff:
+            raise ValueError(
+                "offline query precedes the frozen model training cutoff"
+            )
 
 
 @dataclass(frozen=True)
@@ -183,6 +202,7 @@ def analyze_structural_audit(
             "policy remains unresolved by ADR-0022"
         )
     else:
+        similarity_context.validate_query_time(package.snapshot.snapshot_time)
         model = similarity_context.model
         target_fingerprint = build_fingerprint(
             chain_id,

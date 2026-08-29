@@ -65,6 +65,10 @@ lineage:
   boundary_threshold: {value: 0.3, source: DOCUMENTED_DEFAULT}
 
 similar_chains:
+  corpus_policy: HISTORY_BEFORE_SNAPSHOT
+  model_update_policy: SNAPSHOT_VERSIONED
+  temporal_cutoff: snapshot_time
+  exclude_same_lineage: true
   top_descriptor_predicates: {value: 5, source: DOCUMENTED_DEFAULT}
   result_top_k: {value: 5, source: DOCUMENTED_DEFAULT}
 
