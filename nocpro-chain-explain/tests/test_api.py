@@ -209,3 +209,8 @@ def test_deep_dive_is_submitted_and_polled_as_a_job():
     assert polled.json()["status"] == "SUCCEEDED"
     assert polled.json()["result"]["chain_id"] == "C1"
     assert polled.json()["result"]["audit_graph_mode"] == "EXACT_FULL"
+    assert polled.json()["result"]["similarity_status"] == "UNAVAILABLE"
+    assert polled.json()["result"]["similarity_model_version"] is None
+    assert polled.json()["result"]["similarity_trained_until_exclusive"] is None
+    assert polled.json()["result"]["similarity_corpus_policy"] is None
+    assert polled.json()["result"]["similarity_model_update_policy"] is None

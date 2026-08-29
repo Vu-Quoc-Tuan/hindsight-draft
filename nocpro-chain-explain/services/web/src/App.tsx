@@ -195,7 +195,37 @@ function StructurePanel({ job, onRun, submitting }: { job: Job | null; onRun: ()
       <div className="audit-result">
         {!job && <div className="audit-empty"><span>G*</span><p>Audit graph not computed</p></div>}
         {job && !result && <div className="audit-empty"><span>{job.progress_percent}%</span><p>{job.status}</p>{job.error && <small>{job.error}</small>}</div>}
-        {result && <><div className="audit-verdict"><Pill tone={statusTone(result.structural_audit.verdict)}>{result.structural_audit.verdict}</Pill><strong>{result.audit_graph_mode}</strong></div><p>{result.structural_audit.reason}</p><dl className="metric-row"><div><dt>best cut</dt><dd>{result.structural_audit.best_cut_label ?? 'none'}</dd></div><div><dt>conductance</dt><dd>{result.structural_audit.best_cut_phi?.toFixed(3) ?? '⊥'}</dd></div><div><dt>over-merge</dt><dd>{humanize(result.over_merge_strength)}</dd></div></dl><p className="audit-narrative">{result.over_merge_narrative}</p></>}
+        {result && <>
+          <div className="audit-verdict"><Pill tone={statusTone(result.structural_audit.verdict)}>{result.structural_audit.verdict}</Pill><strong>{result.audit_graph_mode}</strong></div>
+          <p>{result.structural_audit.reason}</p>
+          <dl className="metric-row"><div><dt>best cut</dt><dd>{result.structural_audit.best_cut_label ?? 'none'}</dd></div><div><dt>conductance</dt><dd>{result.structural_audit.best_cut_phi?.toFixed(3) ?? '⊥'}</dd></div><div><dt>over-merge</dt><dd>{humanize(result.over_merge_strength)}</dd></div></dl>
+          <p className="audit-narrative">{result.over_merge_narrative}</p>
+          <section className="similar-results" aria-label="Similar chains">
+            <header><div><p className="kicker">Different incidents</p><h3>Similar chains</h3></div><Pill tone={statusTone(result.similarity_status)}>{result.similarity_status}</Pill></header>
+            {result.similarity_status === 'UNAVAILABLE' ? (
+              <p className="similar-empty">{humanize(result.similarity_unavailable_reason ?? 'LINEAGE_NOT_READY')}</p>
+            ) : <>
+              <dl className="similar-model">
+                <div><dt>model</dt><dd>{result.similarity_model_version ?? '⊥'}</dd></div>
+                <div><dt>history cutoff</dt><dd>{result.similarity_trained_until_exclusive ?? '⊥'}</dd></div>
+                <div><dt>corpus</dt><dd>{result.similarity_corpus_policy ?? '⊥'}</dd></div>
+                <div><dt>updates</dt><dd>{result.similarity_model_update_policy ?? '⊥'}</dd></div>
+              </dl>
+              <div className="taxonomy-capability">
+                <span>Alarm taxonomy</span><Pill tone={statusTone(result.taxonomy_status ?? 'UNAVAILABLE')}>{result.taxonomy_status ?? 'UNAVAILABLE'}</Pill>
+                {result.taxonomy_reason && <small>{humanize(result.taxonomy_reason)}</small>}
+                <small>Active basis: {result.active_fingerprint_blocks.map(humanize).join(', ') || 'none'}</small>
+              </div>
+              <div className="similar-list">
+                {result.similar_chains.map((item, index) => <article key={`${item.chain_id}-${index}`}>
+                  <div><strong>{item.chain_id}</strong><span>{percent(item.similarity)}</span></div>
+                  <small>Basis {item.compared_blocks.length}/5: {item.compared_blocks.map(humanize).join(', ') || 'none'}</small>
+                </article>)}
+                {result.similar_chains.length === 0 && <p className="similar-empty">No eligible different incident exists before this snapshot.</p>}
+              </div>
+            </>}
+          </section>
+        </>}
       </div>
     </section>
   )

@@ -225,6 +225,12 @@ def test_versioned_similarity_context_is_used_and_part_of_cache_key(analysis_con
 
     assert [item.chain_id for item in completed.result.similar_chains] == ["C2"]
     assert completed.result.similarity_model_version == "sim-test-v1"
+    assert (
+        completed.result.similarity_trained_until_exclusive
+        == package.snapshot.snapshot_time
+    )
+    assert completed.result.similarity_corpus_policy == "HISTORY_BEFORE_SNAPSHOT"
+    assert completed.result.similarity_model_update_policy == "SNAPSHOT_VERSIONED"
     assert completed.result.similarity_status == "AVAILABLE"
     assert completed.result.taxonomy_status == "UNAVAILABLE"
     assert (

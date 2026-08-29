@@ -155,6 +155,10 @@ class DeepDiveView(ApiModel):
     similar_chains: list[dict[str, Any]]
     similarity_status: str
     similarity_unavailable_reason: str | None
+    similarity_model_version: str | None
+    similarity_trained_until_exclusive: str | None
+    similarity_corpus_policy: str | None
+    similarity_model_update_policy: str | None
     taxonomy_status: str | None
     taxonomy_reason: str | None
     active_fingerprint_blocks: list[str]

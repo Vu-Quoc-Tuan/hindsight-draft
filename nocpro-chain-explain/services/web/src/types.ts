@@ -111,9 +111,18 @@ export type DeepDive = {
   }
   over_merge_strength: string
   over_merge_narrative: string
-  similar_chains: Array<Record<string, unknown>>
+  similar_chains: Array<{
+    chain_id: string
+    similarity: number
+    lineage_component_id: string | null
+    compared_blocks: string[]
+  }>
   similarity_status: string
   similarity_unavailable_reason: string | null
+  similarity_model_version: string | null
+  similarity_trained_until_exclusive: string | null
+  similarity_corpus_policy: string | null
+  similarity_model_update_policy: string | null
   taxonomy_status: string | null
   taxonomy_reason: string | null
   active_fingerprint_blocks: string[]

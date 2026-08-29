@@ -154,6 +154,24 @@ button.table-row:hover, button.table-row.is-selected { background: #eff6cf; }
 .audit-verdict { display: flex; align-items: center; justify-content: space-between; }
 .audit-result > p { color: var(--ink-soft); font-size: .8rem; line-height: 1.6; }
 .audit-narrative { padding: .8rem; border-left: 4px solid var(--signal-dark); background: var(--paper); }
+.similar-results { margin-top: 1rem; border-top: 1px solid var(--ink); }
+.similar-results > header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 0 .8rem; }
+.similar-results h3 { margin: 0; font-size: 1rem; }
+.similar-model { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; border: 1px solid var(--line); }
+.similar-model div { min-width: 0; padding: .55rem .65rem; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.similar-model div:nth-child(2n) { border-right: 0; }
+.similar-model div:nth-last-child(-n + 2) { border-bottom: 0; }
+.similar-model dt, .similar-model dd { margin: 0; font: .57rem var(--mono); overflow-wrap: anywhere; }
+.similar-model dt { margin-bottom: .22rem; color: #788388; text-transform: uppercase; }
+.similar-model dd { font-weight: 700; }
+.taxonomy-capability { display: grid; grid-template-columns: 1fr auto; gap: .4rem 1rem; align-items: center; padding: .7rem; border: 1px solid var(--line); border-top: 0; background: var(--paper); }
+.taxonomy-capability > span { font: 700 .62rem var(--mono); text-transform: uppercase; }
+.taxonomy-capability small { color: #68777c; font: .56rem/1.4 var(--mono); }
+.taxonomy-capability small:last-child { text-align: right; }
+.similar-list { display: grid; gap: .45rem; margin-top: .7rem; }
+.similar-list article { padding: .65rem .75rem; border-left: 3px solid var(--signal-dark); background: var(--paper); }
+.similar-list article > div { display: flex; justify-content: space-between; gap: 1rem; font: 700 .68rem var(--mono); }
+.similar-list article small, .similar-empty { color: #68777c; font: .58rem/1.5 var(--mono); }
 .unavailable-card { min-height: 330px; padding: 3rem; background-image: repeating-linear-gradient(-45deg, transparent, transparent 12px, rgba(16,38,46,.025) 12px, rgba(16,38,46,.025) 24px); }
 .unavailable-card > span { padding: .25rem .45rem; color: var(--white); background: var(--ink); font: .6rem var(--mono); }
 .unavailable-card h2 { max-width: 700px; margin: 1.5rem 0 .7rem; font-size: 2.2rem; letter-spacing: -.05em; }

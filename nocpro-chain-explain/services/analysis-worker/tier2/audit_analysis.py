@@ -109,6 +109,9 @@ class Tier2AuditAnalysis:
     parameter_provenance: dict[str, str] | None = None
     similar_chains: tuple[SimilarChainResult, ...] = ()
     similarity_model_version: str | None = None
+    similarity_trained_until_exclusive: str | None = None
+    similarity_corpus_policy: str | None = None
+    similarity_model_update_policy: str | None = None
     similarity_status: str = "UNAVAILABLE"
     similarity_unavailable_reason: str | None = None
     taxonomy_status: str | None = None
@@ -199,6 +202,9 @@ def analyze_structural_audit(
     )
     similar_results: tuple[SimilarChainResult, ...] = ()
     similarity_model_version: str | None = None
+    similarity_trained_until_exclusive: str | None = None
+    similarity_corpus_policy: str | None = None
+    similarity_model_update_policy: str | None = None
     similarity_unavailable_reason: str | None = None
     taxonomy_status: str | None = None
     taxonomy_reason: str | None = None
@@ -232,6 +238,9 @@ def analyze_structural_audit(
             )
         )
         similarity_model_version = model.model_version
+        similarity_trained_until_exclusive = model.trained_until_exclusive
+        similarity_corpus_policy = model.corpus_policy
+        similarity_model_update_policy = model.model_update_policy
     return Tier2AuditAnalysis(
         chain_id=chain_id,
         audit_graph_mode=AuditGraphMode.EXACT_FULL,
@@ -243,6 +252,9 @@ def analyze_structural_audit(
         epsilon=epsilon,
         similar_chains=similar_results,
         similarity_model_version=similarity_model_version,
+        similarity_trained_until_exclusive=similarity_trained_until_exclusive,
+        similarity_corpus_policy=similarity_corpus_policy,
+        similarity_model_update_policy=similarity_model_update_policy,
         similarity_status="AVAILABLE" if similarity_context is not None else "UNAVAILABLE",
         similarity_unavailable_reason=similarity_unavailable_reason,
         taxonomy_status=taxonomy_status,

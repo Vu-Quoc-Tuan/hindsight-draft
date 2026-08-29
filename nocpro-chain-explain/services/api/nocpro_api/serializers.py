@@ -147,6 +147,12 @@ def deep_dive_view(result) -> DeepDiveView:
         similar_chains=[asdict(item) for item in result.similar_chains],
         similarity_status=result.similarity_status,
         similarity_unavailable_reason=result.similarity_unavailable_reason,
+        similarity_model_version=result.similarity_model_version,
+        similarity_trained_until_exclusive=(
+            result.similarity_trained_until_exclusive
+        ),
+        similarity_corpus_policy=result.similarity_corpus_policy,
+        similarity_model_update_policy=result.similarity_model_update_policy,
         taxonomy_status=result.taxonomy_status,
         taxonomy_reason=result.taxonomy_reason,
         active_fingerprint_blocks=list(result.active_fingerprint_blocks),
