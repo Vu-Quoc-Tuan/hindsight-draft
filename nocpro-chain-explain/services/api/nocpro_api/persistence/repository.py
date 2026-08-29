@@ -3,25 +3,48 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+from dataclasses import replace
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import zstandard
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import delete, func, or_, select, tuple_, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from libs.contracts import IngestedPackage, load_validated_package
+from evolution import (
+    GlobalEpisodeDag,
+    GlobalLineageComponent as DomainLineageComponent,
+    GlobalLineageEdge as DomainLineageEdge,
+    GlobalLineageNode as DomainLineageNode,
+    LineageNodeKey,
+)
+from similar_chains import (
+    TimedChainFingerprint,
+    VersionedSimilarityIndex,
+    fingerprint_from_dict,
+    fingerprint_to_dict,
+    model_from_dict,
+    model_to_dict,
+)
 
 from ..ingest.wire import SnapshotChunkEvent, SnapshotCompleteEvent, SnapshotWireEvent
 from .models import (
     Alarm,
     Chain,
     KafkaInbox,
+    LineageComponent,
+    LineageEdge,
+    LineageNode,
     Membership,
     Snapshot,
     SnapshotChunk,
     SnapshotIngest,
+    SimilarityFingerprint,
+    SimilarityIndexEntry,
+    SimilarityModelRecord,
 )
 
 
@@ -43,6 +66,24 @@ class Tier1AClaim:
     payload: dict[str, Any]
     worker_id: str
     attempt_count: int
+
+
+@dataclass(frozen=True)
+class LineageClaim:
+    snapshot_id: str
+    snapshot_version: str
+    payload: dict[str, Any]
+    previous_payload: dict[str, Any] | None
+    previous_lineage_status: str | None
+    worker_id: str
+
+
+@dataclass(frozen=True)
+class SimilarityClaim:
+    snapshot_id: str
+    snapshot_version: str
+    payload: dict[str, Any]
+    worker_id: str
 
 
 def _logical_time(value: str) -> datetime:
@@ -546,6 +587,410 @@ class SnapshotRepository:
                     lease_expires_at=None,
                     heartbeat_at=None,
                     next_attempt_at=None,
+                    lineage_status="PENDING" if error is None else None,
+                )
+            )
+
+    async def claim_next_lineage(
+        self,
+        *,
+        worker_id: str,
+        lease_seconds: int,
+        now: datetime | None = None,
+    ) -> LineageClaim | None:
+        current = now or datetime.now(timezone.utc)
+        async with self.sessions.begin() as session:
+            row = await session.scalar(
+                select(SnapshotIngest)
+                .where(
+                    SnapshotIngest.tier1a_status == "READY",
+                    or_(
+                        SnapshotIngest.lineage_status == "PENDING",
+                        (
+                            (SnapshotIngest.lineage_status == "RUNNING")
+                            & or_(
+                                SnapshotIngest.lease_expires_at.is_(None),
+                                SnapshotIngest.lease_expires_at <= current,
+                            )
+                        ),
+                    ),
+                )
+                .order_by(
+                    SnapshotIngest.logical_snapshot_time.asc().nulls_last(),
+                    SnapshotIngest.completed_at.asc().nulls_last(),
+                    SnapshotIngest.snapshot_id.asc(),
+                )
+                .limit(1)
+                .with_for_update(skip_locked=True)
+            )
+            if row is None or row.canonical_payload is None:
+                return None
+            previous = await session.scalar(
+                select(SnapshotIngest)
+                .where(
+                    SnapshotIngest.tier1a_status == "READY",
+                    tuple_(
+                        SnapshotIngest.logical_snapshot_time,
+                        SnapshotIngest.completed_at,
+                        SnapshotIngest.snapshot_id,
+                    )
+                    < tuple_(
+                        row.logical_snapshot_time,
+                        row.completed_at,
+                        row.snapshot_id,
+                    ),
+                )
+                .order_by(
+                    SnapshotIngest.logical_snapshot_time.desc(),
+                    SnapshotIngest.completed_at.desc(),
+                    SnapshotIngest.snapshot_id.desc(),
+                )
+                .limit(1)
+            )
+            row.lineage_status = "RUNNING"
+            row.worker_id = worker_id
+            row.heartbeat_at = current
+            row.lease_expires_at = current + timedelta(seconds=lease_seconds)
+            return LineageClaim(
+                snapshot_id=row.snapshot_id,
+                snapshot_version=row.snapshot_version,
+                payload=row.canonical_payload,
+                previous_payload=previous.canonical_payload if previous else None,
+                previous_lineage_status=previous.lineage_status if previous else None,
+                worker_id=worker_id,
+            )
+
+    async def load_episode_dag(self) -> GlobalEpisodeDag:
+        async with self.sessions() as session:
+            component_rows = list((await session.scalars(select(LineageComponent))).all())
+            node_rows = list((await session.scalars(select(LineageNode))).all())
+            edge_rows = list((await session.scalars(select(LineageEdge))).all())
+        components = {
+            row.component_id: DomainLineageComponent(
+                component_id=row.component_id,
+                canonical_component_id=row.canonical_component_id,
+                first_snapshot_time=row.first_snapshot_time.isoformat(),
+                last_snapshot_time=row.last_snapshot_time.isoformat(),
+                status=row.status,
+            )
+            for row in component_rows
+        }
+        nodes = {}
+        for row in node_rows:
+            key = LineageNodeKey(row.snapshot_id, row.snapshot_chain_id)
+            nodes[key] = DomainLineageNode(
+                key=key,
+                snapshot_time=row.snapshot_time.isoformat(),
+                component_id=row.component_id,
+                branch_id=row.branch_id,
+            )
+        edges = {}
+        for row in edge_rows:
+            parent = LineageNodeKey(row.parent_snapshot_id, row.parent_chain_id)
+            child = LineageNodeKey(row.child_snapshot_id, row.child_chain_id)
+            edges[(parent, child)] = DomainLineageEdge(
+                parent=parent,
+                child=child,
+                edge_type=row.edge_type,
+                overlap_count=row.overlap_count,
+                contain_parent=row.contain_parent,
+                contain_child=row.contain_child,
+            )
+        return GlobalEpisodeDag(nodes=nodes, edges=edges, components=components)
+
+    async def finish_lineage(
+        self,
+        claim: LineageClaim,
+        dag: GlobalEpisodeDag,
+    ) -> None:
+        async with self.sessions.begin() as session:
+            for component in dag.components.values():
+                statement = pg_insert(LineageComponent).values(
+                    component_id=component.component_id,
+                    canonical_component_id=component.canonical_component_id,
+                    first_snapshot_time=_logical_time(component.first_snapshot_time),
+                    last_snapshot_time=_logical_time(component.last_snapshot_time),
+                    status=component.status,
+                )
+                await session.execute(
+                    statement.on_conflict_do_update(
+                        index_elements=[LineageComponent.component_id],
+                        set_={
+                            "canonical_component_id": statement.excluded.canonical_component_id,
+                            "first_snapshot_time": statement.excluded.first_snapshot_time,
+                            "last_snapshot_time": statement.excluded.last_snapshot_time,
+                            "status": statement.excluded.status,
+                        },
+                    )
+                )
+            for node in dag.nodes.values():
+                statement = pg_insert(LineageNode).values(
+                    snapshot_id=node.key.snapshot_id,
+                    snapshot_chain_id=node.key.snapshot_chain_id,
+                    snapshot_time=_logical_time(node.snapshot_time),
+                    component_id=node.component_id,
+                    branch_id=node.branch_id,
+                )
+                await session.execute(statement.on_conflict_do_nothing())
+            for edge in dag.edges.values():
+                statement = pg_insert(LineageEdge).values(
+                    parent_snapshot_id=edge.parent.snapshot_id,
+                    parent_chain_id=edge.parent.snapshot_chain_id,
+                    child_snapshot_id=edge.child.snapshot_id,
+                    child_chain_id=edge.child.snapshot_chain_id,
+                    edge_type=edge.edge_type,
+                    overlap_count=edge.overlap_count,
+                    contain_parent=edge.contain_parent,
+                    contain_child=edge.contain_child,
+                )
+                await session.execute(statement.on_conflict_do_nothing())
+            result = await session.execute(
+                update(SnapshotIngest)
+                .where(
+                    SnapshotIngest.snapshot_id == claim.snapshot_id,
+                    SnapshotIngest.snapshot_version == claim.snapshot_version,
+                    SnapshotIngest.lineage_status == "RUNNING",
+                    SnapshotIngest.worker_id == claim.worker_id,
+                )
+                .values(
+                    lineage_status="READY",
+                    lineage_result={"node_count": len(dag.nodes), "edge_count": len(dag.edges)},
+                    similarity_status="PENDING",
+                    worker_id=None,
+                    heartbeat_at=None,
+                    lease_expires_at=None,
+                )
+            )
+            if not result.rowcount:
+                raise RuntimeError("lineage lease ownership was lost")
+
+    async def mark_lineage_unavailable(self, claim: LineageClaim, reason: str) -> None:
+        async with self.sessions.begin() as session:
+            await session.execute(
+                update(SnapshotIngest)
+                .where(
+                    SnapshotIngest.snapshot_id == claim.snapshot_id,
+                    SnapshotIngest.snapshot_version == claim.snapshot_version,
+                    SnapshotIngest.worker_id == claim.worker_id,
+                )
+                .values(
+                    lineage_status="UNAVAILABLE",
+                    lineage_result={"reason": reason},
+                    similarity_status="UNAVAILABLE",
+                    worker_id=None,
+                    heartbeat_at=None,
+                    lease_expires_at=None,
+                )
+            )
+
+    async def release_lineage(self, claim: LineageClaim, reason: str) -> None:
+        async with self.sessions.begin() as session:
+            await session.execute(
+                update(SnapshotIngest)
+                .where(
+                    SnapshotIngest.snapshot_id == claim.snapshot_id,
+                    SnapshotIngest.snapshot_version == claim.snapshot_version,
+                    SnapshotIngest.lineage_status == "RUNNING",
+                    SnapshotIngest.worker_id == claim.worker_id,
+                )
+                .values(
+                    lineage_status="PENDING",
+                    lineage_result={"last_error": reason},
+                    worker_id=None,
+                    heartbeat_at=None,
+                    lease_expires_at=None,
+                )
+            )
+
+    async def claim_next_similarity(
+        self, *, worker_id: str, lease_seconds: int, now: datetime | None = None
+    ) -> SimilarityClaim | None:
+        current = now or datetime.now(timezone.utc)
+        async with self.sessions.begin() as session:
+            row = await session.scalar(
+                select(SnapshotIngest)
+                .where(
+                    SnapshotIngest.lineage_status == "READY",
+                    or_(
+                        SnapshotIngest.similarity_status == "PENDING",
+                        (
+                            (SnapshotIngest.similarity_status == "RUNNING")
+                            & or_(
+                                SnapshotIngest.lease_expires_at.is_(None),
+                                SnapshotIngest.lease_expires_at <= current,
+                            )
+                        ),
+                    ),
+                )
+                .order_by(
+                    SnapshotIngest.logical_snapshot_time.asc(),
+                    SnapshotIngest.completed_at.asc(),
+                    SnapshotIngest.snapshot_id.asc(),
+                )
+                .limit(1)
+                .with_for_update(skip_locked=True)
+            )
+            if row is None or row.canonical_payload is None:
+                return None
+            row.similarity_status = "RUNNING"
+            row.worker_id = worker_id
+            row.heartbeat_at = current
+            row.lease_expires_at = current + timedelta(seconds=lease_seconds)
+            return SimilarityClaim(
+                row.snapshot_id, row.snapshot_version, row.canonical_payload, worker_id
+            )
+
+    async def load_similarity_history(
+        self, *, cutoff: datetime, dag: GlobalEpisodeDag
+    ) -> list[TimedChainFingerprint]:
+        async with self.sessions() as session:
+            rows = list(
+                (
+                    await session.scalars(
+                        select(SimilarityFingerprint)
+                        .where(SimilarityFingerprint.event_time < cutoff)
+                        .order_by(
+                            SimilarityFingerprint.event_time,
+                            SimilarityFingerprint.snapshot_id,
+                            SimilarityFingerprint.snapshot_chain_id,
+                        )
+                    )
+                ).all()
+            )
+        history = []
+        for row in rows:
+            canonical = dag.canonical_lineage(
+                LineageNodeKey(row.snapshot_id, row.snapshot_chain_id)
+            )
+            if canonical is None:
+                raise RuntimeError("historical fingerprint has no canonical lineage")
+            fingerprint = replace(
+                fingerprint_from_dict(row.fingerprint_payload),
+                lineage_component_id=canonical,
+                scored_with_model_version=None,
+            )
+            history.append(
+                TimedChainFingerprint(
+                    fingerprint, row.event_time.isoformat(), row.snapshot_id
+                )
+            )
+        return history
+
+    async def finish_similarity(
+        self,
+        claim: SimilarityClaim,
+        index: VersionedSimilarityIndex,
+        current_fingerprints: list[TimedChainFingerprint],
+    ) -> None:
+        async with self.sessions.begin() as session:
+            model_statement = pg_insert(SimilarityModelRecord).values(
+                model_version=index.model.model_version,
+                snapshot_id=claim.snapshot_id,
+                trained_until_exclusive=_logical_time(
+                    index.model.trained_until_exclusive
+                ),
+                model_payload=model_to_dict(index.model),
+            )
+            await session.execute(model_statement.on_conflict_do_nothing())
+            for entry in current_fingerprints:
+                statement = pg_insert(SimilarityFingerprint).values(
+                    snapshot_id=claim.snapshot_id,
+                    snapshot_chain_id=entry.fingerprint.chain_id.split("::", 1)[-1],
+                    event_time=_logical_time(entry.event_time),
+                    component_id=entry.fingerprint.lineage_component_id,
+                    fingerprint_payload=fingerprint_to_dict(entry.fingerprint),
+                )
+                await session.execute(statement.on_conflict_do_nothing())
+            for entry in index.entries:
+                statement = pg_insert(SimilarityIndexEntry).values(
+                    model_version=index.model.model_version,
+                    snapshot_id=entry.snapshot_id,
+                    snapshot_chain_id=entry.fingerprint.chain_id.split("::", 1)[-1],
+                    event_time=_logical_time(entry.event_time),
+                    fingerprint_payload=fingerprint_to_dict(entry.fingerprint),
+                )
+                await session.execute(statement.on_conflict_do_nothing())
+            result = await session.execute(
+                update(SnapshotIngest)
+                .where(
+                    SnapshotIngest.snapshot_id == claim.snapshot_id,
+                    SnapshotIngest.snapshot_version == claim.snapshot_version,
+                    SnapshotIngest.similarity_status == "RUNNING",
+                    SnapshotIngest.worker_id == claim.worker_id,
+                )
+                .values(
+                    similarity_status="READY",
+                    worker_id=None,
+                    heartbeat_at=None,
+                    lease_expires_at=None,
+                )
+            )
+            if not result.rowcount:
+                raise RuntimeError("similarity lease ownership was lost")
+
+    async def load_similarity_index(
+        self, snapshot_id: str
+    ) -> VersionedSimilarityIndex | None:
+        async with self.sessions() as session:
+            model_row = await session.scalar(
+                select(SimilarityModelRecord).where(
+                    SimilarityModelRecord.snapshot_id == snapshot_id
+                )
+            )
+            if model_row is None:
+                return None
+            entry_rows = list(
+                (
+                    await session.scalars(
+                        select(SimilarityIndexEntry)
+                        .where(
+                            SimilarityIndexEntry.model_version
+                            == model_row.model_version
+                        )
+                        .order_by(
+                            SimilarityIndexEntry.event_time,
+                            SimilarityIndexEntry.snapshot_id,
+                            SimilarityIndexEntry.snapshot_chain_id,
+                        )
+                    )
+                ).all()
+            )
+        model = model_from_dict(model_row.model_payload)
+        entries = tuple(
+            TimedChainFingerprint(
+                fingerprint_from_dict(row.fingerprint_payload),
+                row.event_time.isoformat(),
+                row.snapshot_id,
+            )
+            for row in entry_rows
+        )
+        return VersionedSimilarityIndex(model=model, entries=entries)
+
+    async def canonical_lineages(self, snapshot_id: str) -> dict[str, str]:
+        dag = await self.load_episode_dag()
+        return {
+            key.snapshot_chain_id: canonical
+            for key in dag.nodes
+            if key.snapshot_id == snapshot_id
+            and (canonical := dag.canonical_lineage(key)) is not None
+        }
+
+    async def release_similarity(self, claim: SimilarityClaim, reason: str) -> None:
+        async with self.sessions.begin() as session:
+            await session.execute(
+                update(SnapshotIngest)
+                .where(
+                    SnapshotIngest.snapshot_id == claim.snapshot_id,
+                    SnapshotIngest.snapshot_version == claim.snapshot_version,
+                    SnapshotIngest.similarity_status == "RUNNING",
+                    SnapshotIngest.worker_id == claim.worker_id,
+                )
+                .values(
+                    similarity_status="PENDING",
+                    lineage_result={"similarity_last_error": reason},
+                    worker_id=None,
+                    heartbeat_at=None,
+                    lease_expires_at=None,
                 )
             )
 

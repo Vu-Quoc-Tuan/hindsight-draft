@@ -24,6 +24,7 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | Auto chain title from top IDENTITY descriptor | MVP | done |
 | Tier-1B chain analysis orchestration | MVP | done |
 | Evolution: lifecycle, lineage, events, joined/left decomposition | MVP | done |
+| Global persisted episode-DAG lineage + canonical merge aliases | infra/P1 | done |
 | Tier-1A precompute + Tier-1 cache | MVP | done |
 | Explanation Drift (Tier-1A basic) | P1-Core | done |
 | **MVP complete** | | **8/8** |
@@ -33,7 +34,7 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | STRUCTURAL role (Tier-2), REDUNDANCY role (Tier-1B) | P0/§4B | done |
 | CommonDependency: SHARED_ANCESTOR + SHARED_ACTIVE_PATH (`channels/common_dependency.py`) | P1-Core | done |
 | Similar Chains: fingerprint + cosine baseline (`similar_chains/`) | P1-Core | done |
-| Similar Chains Tier-2 integration (caller-supplied versioned corpus) | P1-Core | done; corpus policy remains open |
+| Similar Chains production index (`history<t`, snapshot-versioned model) | P1-Core | done |
 | **P1-Core (3+1) feature set implemented** | | **4/4** |
 | Contrastive top-3: per-candidate `Margin_common` (§5, §11) | P0 | done |
 | Hybrid indexed Tier-1B + pairwise oracle | P0 | done |
@@ -49,11 +50,11 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 
 Per ADR-0029, MVP + P0-complete must stand as a usable project **before** P1.
 The P1-Core feature set above is implemented, but the **P1 milestone is not
-closed**: the production-data decision for delta indexing and the Similar
-Chains temporal-corpus policy are still outstanding. Do not expand into
+closed**: the production-data decision for delta indexing is still
+outstanding. Do not expand into
 P1-optional or P2 work until those evidence/policy gaps are resolved.
 
-### Open questions (unresolved, see ADR-0022)
+### Open data question (unresolved, see ADR-0022)
 
 Not decided yet — do not implement against these until confirmed:
 
@@ -62,11 +63,6 @@ Not decided yet — do not implement against these until confirmed:
    `TYPE_FALLBACK` path never actually fires on real data today. Need: where a
    real family/type taxonomy would come from, its format, and its join key to
    `alarm_name`.
-2. **Temporal leakage in the Similar Chains TF-IDF fit corpus.** Not decided
-   whether the index corpus for `FingerprintModel` should be windowed to
-   `history < t` per query, or use one frozen training corpus regardless of
-   query time. This is a benchmark/evaluation design question, not a change
-   to the fingerprint/cosine math.
 
 ## Layout
 
@@ -276,6 +272,14 @@ Explain marks it complete only after all unique chunks, per-chunk checksums,
 the whole-snapshot checksum, and the canonical Input Contract pass validation.
 Completion triggers Tier-1A exactly once through the persisted claim; Tier-1B
 remains lazy and runs only when a chain is requested.
+
+After Tier-1A, recovery processes global lineage and Similar Chains strictly in
+logical snapshot order: `READY -> LINEAGE_PENDING -> LINEAGE_READY ->
+SIMILAR_READY`. The persisted episode DAG uses `(snapshot_id,
+snapshot_chain_id)` nodes, deterministic component IDs, and canonical aliases
+when previously separate episodes merge. Similarity remains `UNAVAILABLE` with
+reason `LINEAGE_NOT_READY` until that pipeline completes; it never drops the
+same-lineage filter as a fallback.
 
 Tier-1A recovery uses logical snapshot order, not arrival order:
 

@@ -12,6 +12,7 @@ from libs.contracts import IngestedPackage, load_validated_package
 from tier1a import SnapshotPrecompute, Tier1Cache, precompute_snapshot
 from tier1b import analyze_chain_configured
 from tier2 import Tier2JobManager
+from tier2 import SimilarityQueryContext
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -34,6 +35,8 @@ class Workspace:
         self._lock = RLock()
         self.repository = None
         self.coordinator = None
+        self.similarity_index = None
+        self.lineage_by_chain: dict[str, str] = {}
 
     def close(self) -> None:
         self.jobs.shutdown()
@@ -105,6 +108,13 @@ class Workspace:
         with self._lock:
             self.package = package
             self.precompute = result
+            self.similarity_index = None
+            self.lineage_by_chain = {}
+
+    def attach_similarity(self, index, lineage_by_chain: dict[str, str]) -> None:
+        with self._lock:
+            self.similarity_index = index
+            self.lineage_by_chain = dict(lineage_by_chain)
 
     def list_chains(self):
         self.require_package()
@@ -144,8 +154,18 @@ class Workspace:
         )
 
     def submit_deep_dive(self, chain_id: str):
+        similarity_context = None
+        if (
+            self.similarity_index is not None
+            and chain_id in self.lineage_by_chain
+        ):
+            similarity_context = SimilarityQueryContext(
+                index=self.similarity_index,
+                target_lineage_component_id=self.lineage_by_chain[chain_id],
+            )
         return self.jobs.submit(
             self.require_package(),
             chain_id,
             analysis_config=self.config,
+            similarity_context=similarity_context,
         )

@@ -153,6 +153,7 @@ class DeepDiveView(ApiModel):
     over_merge_strength: str
     over_merge_narrative: str
     similar_chains: list[dict[str, Any]]
+    similarity_status: str
     similarity_unavailable_reason: str | None
 
 

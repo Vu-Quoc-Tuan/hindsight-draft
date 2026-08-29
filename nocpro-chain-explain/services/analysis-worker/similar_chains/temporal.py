@@ -12,6 +12,8 @@ from .fingerprint import (
     DEFAULT_TOP_DESCRIPTOR_PREDICATES,
     ChainFingerprint,
     FingerprintModel,
+    TermVector,
+    TfIdfModel,
     fit_fingerprint_model,
 )
 
@@ -37,6 +39,7 @@ def parse_time(value: str) -> datetime:
 class TimedChainFingerprint:
     fingerprint: ChainFingerprint
     event_time: str
+    snapshot_id: str | None = None
 
     def __post_init__(self) -> None:
         parse_time(self.event_time)
@@ -103,7 +106,78 @@ def materialize_similarity_index(
         TimedChainFingerprint(
             fingerprint=entry.fingerprint.scored_with(model.model_version),
             event_time=entry.event_time,
+            snapshot_id=entry.snapshot_id,
         )
         for entry in eligible
     )
     return VersionedSimilarityIndex(model=model, entries=encoded)
+
+
+def fingerprint_to_dict(value: ChainFingerprint) -> dict:
+    return {
+        "chain_id": value.chain_id,
+        "lineage_component_id": value.lineage_component_id,
+        "family_terms": value.family_terms.counts,
+        "device_type_terms": value.device_type_terms.counts,
+        "descriptor_terms": list(value.descriptor_terms),
+        "size_bin": value.size_bin,
+        "duration_bin": value.duration_bin,
+        "member_count": value.member_count,
+        "scored_with_model_version": value.scored_with_model_version,
+    }
+
+
+def fingerprint_from_dict(value: dict) -> ChainFingerprint:
+    return ChainFingerprint(
+        chain_id=value["chain_id"],
+        lineage_component_id=value.get("lineage_component_id"),
+        family_terms=TermVector(dict(value["family_terms"])),
+        device_type_terms=TermVector(dict(value["device_type_terms"])),
+        descriptor_terms=tuple(value["descriptor_terms"]),
+        size_bin=value["size_bin"],
+        duration_bin=value["duration_bin"],
+        member_count=int(value["member_count"]),
+        scored_with_model_version=value.get("scored_with_model_version"),
+    )
+
+
+def model_to_dict(value: FingerprintModel) -> dict:
+    return {
+        "model_version": value.model_version,
+        "trained_until_exclusive": value.trained_until_exclusive,
+        "corpus_policy": value.corpus_policy,
+        "model_update_policy": value.model_update_policy,
+        "taxonomy_policy": value.taxonomy_policy,
+        "vocabulary": list(value.vocabulary),
+        "idf_weights": value.idf_weights,
+        "family_document_count": value.family_model.document_count,
+        "family_document_frequency": value.family_model.document_frequency,
+        "device_document_count": value.device_model.document_count,
+        "device_document_frequency": value.device_model.document_frequency,
+        "size_bin_edges": list(value.size_bin_edges),
+        "duration_bin_edges": list(value.duration_bin_edges),
+        "top_descriptor_predicates": value.top_descriptor_predicates,
+    }
+
+
+def model_from_dict(value: dict) -> FingerprintModel:
+    return FingerprintModel(
+        model_version=value["model_version"],
+        trained_until_exclusive=value["trained_until_exclusive"],
+        corpus_policy=value["corpus_policy"],
+        model_update_policy=value["model_update_policy"],
+        taxonomy_policy=value["taxonomy_policy"],
+        vocabulary=tuple(value["vocabulary"]),
+        idf_weights=dict(value["idf_weights"]),
+        family_model=TfIdfModel(
+            int(value["family_document_count"]),
+            dict(value["family_document_frequency"]),
+        ),
+        device_model=TfIdfModel(
+            int(value["device_document_count"]),
+            dict(value["device_document_frequency"]),
+        ),
+        size_bin_edges=tuple(value["size_bin_edges"]),
+        duration_bin_edges=tuple(value["duration_bin_edges"]),
+        top_descriptor_predicates=int(value["top_descriptor_predicates"]),
+    )

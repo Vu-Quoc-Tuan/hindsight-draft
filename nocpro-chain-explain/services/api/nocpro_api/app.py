@@ -33,6 +33,10 @@ async def _recovery_loop(
             )
             while await coordinator.run_pending_once() is not None:
                 pass
+            while await coordinator.run_lineage_pending_once() is not None:
+                pass
+            while await coordinator.run_similarity_pending_once() is not None:
+                pass
             await coordinator.hydrate_active()
         except asyncio.CancelledError:
             raise

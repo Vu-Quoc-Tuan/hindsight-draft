@@ -145,6 +145,7 @@ def deep_dive_view(result) -> DeepDiveView:
         over_merge_strength=result.over_merge.strength.value,
         over_merge_narrative=result.over_merge.narrative,
         similar_chains=[asdict(item) for item in result.similar_chains],
+        similarity_status=result.similarity_status,
         similarity_unavailable_reason=result.similarity_unavailable_reason,
     )
 

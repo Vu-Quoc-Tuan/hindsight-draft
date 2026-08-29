@@ -112,6 +112,7 @@ export type DeepDive = {
   over_merge_strength: string
   over_merge_narrative: string
   similar_chains: Array<Record<string, unknown>>
+  similarity_status: string
   similarity_unavailable_reason: string | null
 }
 

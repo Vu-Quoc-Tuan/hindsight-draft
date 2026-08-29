@@ -1,8 +1,20 @@
 from __future__ import annotations
 
 import os
+import hashlib
+from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
+
+from evolution import LineageConfig, LineageNodeKey, OutOfOrderLineageError
+from libs.contracts import ContractIngestError, load_validated_package
+from similar_chains import (
+    CorpusPolicy,
+    ModelUpdatePolicy,
+    TimedChainFingerprint,
+    build_fingerprint,
+    materialize_similarity_index,
+)
 
 from .persistence import SnapshotRepository
 
@@ -105,7 +117,144 @@ class Tier1ACoordinator:
             payload["snapshot"]["snapshot_version"],
         )
         if self.workspace.active_identity() == identity:
-            return self.workspace.precompute
-        package, precompute = self.workspace.compute_snapshot(payload)
-        self.workspace.activate_snapshot(package, precompute)
+            precompute = self.workspace.precompute
+        else:
+            package, precompute = self.workspace.compute_snapshot(payload)
+            self.workspace.activate_snapshot(package, precompute)
+        if self.workspace.similarity_index is None:
+            index = await self.repository.load_similarity_index(identity[0])
+            if index is not None:
+                lineages = await self.repository.canonical_lineages(identity[0])
+                self.workspace.attach_similarity(index, lineages)
         return precompute
+
+    async def run_lineage_pending_once(self):
+        claim = await self.repository.claim_next_lineage(
+            worker_id=self.worker_id,
+            lease_seconds=self.lease_seconds,
+        )
+        if claim is None:
+            return None
+        try:
+            if (
+                claim.previous_payload is not None
+                and claim.previous_lineage_status != "READY"
+            ):
+                await self.repository.mark_lineage_unavailable(
+                    claim,
+                    "PREVIOUS_LOGICAL_SNAPSHOT_LINEAGE_NOT_READY",
+                )
+                return claim.snapshot_id, claim.snapshot_version
+            current = load_validated_package(claim.payload)
+            previous = (
+                load_validated_package(claim.previous_payload)
+                if claim.previous_payload is not None
+                else None
+            )
+            dag = await self.repository.load_episode_dag()
+            dag.apply_snapshot(
+                current,
+                previous=previous,
+                config=LineageConfig(
+                    config_version=self.workspace.config.config_version,
+                    m_min=int(self.workspace.config.value("lineage.min_intersection")),
+                    beta_parent=float(self.workspace.config.value("lineage.beta_parent")),
+                    beta_child=float(self.workspace.config.value("lineage.beta_child")),
+                    small_chain_jaccard=float(
+                        self.workspace.config.value("lineage.small_chain_jaccard")
+                    ),
+                ),
+            )
+            await self.repository.finish_lineage(claim, dag)
+            return claim.snapshot_id, claim.snapshot_version
+        except OutOfOrderLineageError as exc:
+            await self.repository.mark_lineage_unavailable(claim, str(exc))
+            return claim.snapshot_id, claim.snapshot_version
+        except ContractIngestError as exc:
+            await self.repository.mark_lineage_unavailable(
+                claim, f"LEGACY_CONTRACT_INVALID: {exc}"
+            )
+            return claim.snapshot_id, claim.snapshot_version
+        except Exception as exc:
+            await self.repository.release_lineage(claim, str(exc))
+            raise
+
+    async def run_similarity_pending_once(self):
+        claim = await self.repository.claim_next_similarity(
+            worker_id=self.worker_id,
+            lease_seconds=self.lease_seconds,
+        )
+        if claim is None:
+            return None
+        try:
+            package, precompute = self.workspace.compute_snapshot(claim.payload)
+            dag = await self.repository.load_episode_dag()
+            cutoff = package.snapshot.snapshot_time
+            cutoff_time = datetime.fromisoformat(cutoff.replace("Z", "+00:00"))
+            if cutoff_time.tzinfo is None:
+                cutoff_time = cutoff_time.replace(tzinfo=timezone.utc)
+            history = await self.repository.load_similarity_history(
+                cutoff=cutoff_time,
+                dag=dag,
+            )
+            lineage_by_chain: dict[str, str] = {}
+            current_fingerprints: list[TimedChainFingerprint] = []
+            for chain_id in sorted(package.chains):
+                canonical = dag.canonical_lineage(
+                    LineageNodeKey(package.snapshot.snapshot_id, chain_id)
+                )
+                if canonical is None:
+                    raise RuntimeError("LINEAGE_NOT_READY")
+                lineage_by_chain[chain_id] = canonical
+                summary = precompute.chains[chain_id]
+                fingerprint = build_fingerprint(
+                    f"{package.snapshot.snapshot_id}::{chain_id}",
+                    package.alarms_of(chain_id),
+                    lineage_component_id=canonical,
+                    identity_descriptors=summary.descriptors.identity,
+                    duration_seconds=package.chains[chain_id].event_span_seconds,
+                    top_descriptor_predicates=int(
+                        self.workspace.config.value(
+                            "similar_chains.top_descriptor_predicates"
+                        )
+                    ),
+                )
+                current_fingerprints.append(
+                    TimedChainFingerprint(
+                        fingerprint,
+                        cutoff,
+                        package.snapshot.snapshot_id,
+                    )
+                )
+            version_material = (
+                f"{package.snapshot.snapshot_id}\0"
+                f"{package.snapshot.snapshot_version}\0{cutoff}"
+            ).encode("utf-8")
+            model_version = (
+                f"sim_{hashlib.sha256(version_material).hexdigest()[:24]}"
+            )
+            index = materialize_similarity_index(
+                history,
+                model_version=model_version,
+                trained_until_exclusive=cutoff,
+                corpus_policy=CorpusPolicy.HISTORY_BEFORE_SNAPSHOT,
+                model_update_policy=ModelUpdatePolicy.SNAPSHOT_VERSIONED,
+                taxonomy_policy="NO_REAL_TAXONOMY_SOURCE",
+                top_descriptor_predicates=int(
+                    self.workspace.config.value(
+                        "similar_chains.top_descriptor_predicates"
+                    )
+                ),
+            )
+            await self.repository.finish_similarity(
+                claim, index, current_fingerprints
+            )
+            if self.workspace.active_identity() == (
+                claim.snapshot_id,
+                claim.snapshot_version,
+            ):
+                self.workspace.attach_similarity(index, lineage_by_chain)
+            return claim.snapshot_id, claim.snapshot_version
+        except Exception as exc:
+            await self.repository.release_similarity(claim, str(exc))
+            raise

@@ -109,6 +109,7 @@ class Tier2AuditAnalysis:
     parameter_provenance: dict[str, str] | None = None
     similar_chains: tuple[SimilarChainResult, ...] = ()
     similarity_model_version: str | None = None
+    similarity_status: str = "UNAVAILABLE"
     similarity_unavailable_reason: str | None = None
 
 
@@ -197,10 +198,7 @@ def analyze_structural_audit(
     similarity_model_version: str | None = None
     similarity_unavailable_reason: str | None = None
     if similarity_context is None:
-        similarity_unavailable_reason = (
-            "no caller-supplied versioned similarity corpus; temporal corpus "
-            "policy remains unresolved by ADR-0022"
-        )
+        similarity_unavailable_reason = "LINEAGE_NOT_READY"
     else:
         similarity_context.validate_query_time(package.snapshot.snapshot_time)
         model = similarity_context.model
@@ -236,5 +234,6 @@ def analyze_structural_audit(
         epsilon=epsilon,
         similar_chains=similar_results,
         similarity_model_version=similarity_model_version,
+        similarity_status="AVAILABLE" if similarity_context is not None else "UNAVAILABLE",
         similarity_unavailable_reason=similarity_unavailable_reason,
     )

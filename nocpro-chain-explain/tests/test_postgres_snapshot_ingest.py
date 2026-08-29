@@ -11,6 +11,12 @@ import zstandard
 
 from nocpro_api.ingest import parse_snapshot_event
 from nocpro_api.persistence import Database, SnapshotRepository
+from nocpro_api.tier1a_coordinator import Tier1ACoordinator
+from nocpro_api.workspace import Workspace
+from evolution import LineageNodeKey
+from similar_chains import build_fingerprint, find_similar_chains
+from sqlalchemy import func, select
+from nocpro_api.persistence.models import SnapshotIngest
 
 
 pytestmark = pytest.mark.postgres
@@ -62,6 +68,60 @@ def _payload(snapshot_id: str, *, snapshot_time: str = "2026-08-29T00:00:00Z") -
             }
             for alarm_id in ("a1", "a2")
         ],
+    }
+
+
+def _lineage_payload(
+    snapshot_id: str, snapshot_time: str, chains: dict[str, list[str]]
+) -> dict:
+    alarms = []
+    memberships = []
+    seen = set()
+    for chain_id, members in chains.items():
+        for alarm_id in members:
+            if alarm_id not in seen:
+                alarms.append(
+                    {
+                        "alarm_id": alarm_id,
+                        "snapshot_id": snapshot_id,
+                        "source_kind": "SYNTHETIC_TEST",
+                        "provenance_class": "SYSTEM_FACT",
+                        "device_code": chain_id,
+                        "raw": {"device_type_name": chain_id},
+                    }
+                )
+                seen.add(alarm_id)
+            memberships.append(
+                {
+                    "snapshot_id": snapshot_id,
+                    "chain_id": chain_id,
+                    "alarm_id": alarm_id,
+                    "source_kind": "SYNTHETIC_TEST",
+                }
+            )
+    return {
+        "schema_version": "v1",
+        "snapshot": {
+            "snapshot_id": snapshot_id,
+            "snapshot_version": "1",
+            "snapshot_time": snapshot_time,
+            "status": "COMPLETE",
+            "source": "lineage-test",
+            "source_kind": "SYNTHETIC_TEST",
+            "produced_at": snapshot_time,
+        },
+        "alarms": alarms,
+        "chains": [
+            {
+                "snapshot_id": snapshot_id,
+                "chain_id": chain_id,
+                "member_count": len(members),
+                "source_kind": "SYNTHETIC_TEST",
+                "provenance_class": "SYSTEM_FACT",
+            }
+            for chain_id, members in chains.items()
+        ],
+        "memberships": memberships,
     }
 
 
@@ -230,15 +290,24 @@ def test_tier1a_claim_and_active_selection_follow_logical_snapshot_time():
         older_id = f"logical-old-{suffix}"
         replay_id = f"logical-replay-{suffix}"
         try:
+            async with database.sessions() as session:
+                latest_time = await session.scalar(
+                    select(func.max(SnapshotIngest.logical_snapshot_time))
+                )
+            oldest_time = (latest_time or datetime.now(timezone.utc)) + timedelta(
+                minutes=1
+            )
+            replay_time = oldest_time + timedelta(minutes=1)
+            newest_time = oldest_time + timedelta(minutes=2)
             # Deliberately ingest the newer snapshot first; claim order remains logical.
             await repository.ingest_direct(
-                _payload(newer_id, snapshot_time="2026-08-29T10:00:00Z")
+                _payload(newer_id, snapshot_time=newest_time.isoformat())
             )
             await repository.ingest_direct(
-                _payload(older_id, snapshot_time="2026-08-29T09:55:00Z")
+                _payload(older_id, snapshot_time=oldest_time.isoformat())
             )
 
-            base = datetime(2026, 8, 29, 11, 0, tzinfo=timezone.utc)
+            base = datetime.now(timezone.utc)
             first = await repository.claim_next_tier1a(
                 worker_id="worker-a", lease_seconds=60, now=base
             )
@@ -268,7 +337,7 @@ def test_tier1a_claim_and_active_selection_follow_logical_snapshot_time():
 
             # A logically older replay completed later must not replace ACTIVE.
             await repository.ingest_direct(
-                _payload(replay_id, snapshot_time="2026-08-29T09:58:00Z")
+                _payload(replay_id, snapshot_time=replay_time.isoformat())
             )
             replay = await repository.claim_next_tier1a(
                 worker_id="worker-r", lease_seconds=60, now=base + timedelta(minutes=2)
@@ -355,6 +424,116 @@ def test_tier1a_failure_backoff_becomes_terminal_on_fifth_attempt():
                 is None
             )
         finally:
+            await database.close()
+
+    import asyncio
+
+    asyncio.run(exercise())
+
+
+def test_global_lineage_and_similarity_survive_restart_and_exclude_same_episode():
+    database_url = os.environ.get("TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("TEST_DATABASE_URL is not configured")
+
+    async def exercise():
+        from datetime import datetime, timedelta, timezone
+
+        database = Database(database_url)
+        repository = SnapshotRepository(database.sessions)
+        suffix = uuid4().hex
+        s1, s2 = f"episode-1-{suffix}", f"episode-2-{suffix}"
+        async with database.sessions() as session:
+            latest_time = await session.scalar(
+                select(func.max(SnapshotIngest.logical_snapshot_time))
+            )
+        base_time = (latest_time or datetime.now(timezone.utc)) + timedelta(minutes=1)
+        first = _lineage_payload(
+            s1,
+            base_time.isoformat(),
+            {
+                "A": ["a1", "a2", "a3", "a4"],
+                "X": ["x1", "x2", "x3", "x4"],
+            },
+        )
+        second = _lineage_payload(
+            s2,
+            (base_time + timedelta(minutes=1)).isoformat(),
+            {
+                "B": ["a1", "a2", "a3", "a4"],
+                "Y": ["x1", "x2", "x3", "x4"],
+            },
+        )
+        workspace = Workspace()
+        coordinator = Tier1ACoordinator(repository, workspace, worker_id="lineage-test")
+        workspace.attach_persistence(repository, coordinator)
+        try:
+            for payload in (first, second):
+                result = await repository.ingest_direct(payload)
+                await coordinator.run(result.snapshot_id, result.snapshot_version)
+                while True:
+                    completed_lineage = await coordinator.run_lineage_pending_once()
+                    assert completed_lineage is not None
+                    if completed_lineage == (
+                        result.snapshot_id,
+                        result.snapshot_version,
+                    ):
+                        break
+                while True:
+                    completed_similarity = await coordinator.run_similarity_pending_once()
+                    assert completed_similarity is not None
+                    if completed_similarity == (
+                        result.snapshot_id,
+                        result.snapshot_version,
+                    ):
+                        break
+
+            dag = await repository.load_episode_dag()
+            assert dag.canonical_lineage(LineageNodeKey(s1, "A")) == dag.canonical_lineage(
+                LineageNodeKey(s2, "B")
+            )
+            assert dag.canonical_lineage(LineageNodeKey(s1, "X")) != dag.canonical_lineage(
+                LineageNodeKey(s2, "B")
+            )
+            counts = (len(dag.nodes), len(dag.edges), len(dag.components))
+            assert await coordinator.run_lineage_pending_once() is None
+            restarted_dag = await repository.load_episode_dag()
+            assert (len(restarted_dag.nodes), len(restarted_dag.edges), len(restarted_dag.components)) == counts
+
+            restarted_workspace = Workspace()
+            restarted = Tier1ACoordinator(
+                repository, restarted_workspace, worker_id="restart-test"
+            )
+            restarted_workspace.attach_persistence(repository, restarted)
+            await restarted.hydrate_active()
+            assert restarted_workspace.similarity_index is not None
+            submission = restarted_workspace.submit_deep_dive("B")
+            completed = restarted_workspace.jobs.wait(submission.job_id, timeout=5)
+            assert completed.result.similarity_status == "AVAILABLE"
+            package = restarted_workspace.require_package()
+            summary = restarted_workspace.precompute.chains["B"]
+            target = build_fingerprint(
+                "B",
+                package.alarms_of("B"),
+                lineage_component_id=restarted_workspace.lineage_by_chain["B"],
+                identity_descriptors=summary.descriptors.identity,
+                duration_seconds=package.chains["B"].event_span_seconds,
+            )
+            result_ids = {
+                item.chain_id
+                for item in find_similar_chains(
+                    target,
+                    list(restarted_workspace.similarity_index.corpus),
+                    model=restarted_workspace.similarity_index.model,
+                    top_k=len(restarted_workspace.similarity_index.corpus),
+                    exclude_same_lineage=True,
+                )
+            }
+            assert f"{s1}::A" not in result_ids
+            assert f"{s1}::X" in result_ids
+            restarted_workspace.close()
+        finally:
+            workspace.close()
             await database.close()
 
     import asyncio

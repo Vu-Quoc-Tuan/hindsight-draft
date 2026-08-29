@@ -182,7 +182,8 @@ def test_default_worker_runs_real_per_chain_audit(analysis_config):
     assert completed.result.config_version == "v1"
     assert completed.result.parameter_provenance["audit.rho"] == "DOCUMENTED_DEFAULT"
     assert completed.result.similar_chains == ()
-    assert "caller-supplied" in completed.result.similarity_unavailable_reason
+    assert completed.result.similarity_status == "UNAVAILABLE"
+    assert completed.result.similarity_unavailable_reason == "LINEAGE_NOT_READY"
 
 
 def test_versioned_similarity_context_is_used_and_part_of_cache_key(analysis_config):
@@ -221,4 +222,5 @@ def test_versioned_similarity_context_is_used_and_part_of_cache_key(analysis_con
 
     assert [item.chain_id for item in completed.result.similar_chains] == ["C2"]
     assert completed.result.similarity_model_version == "sim-test-v1"
+    assert completed.result.similarity_status == "AVAILABLE"
     assert completed.cache_key.config_version == "v1|similarity:sim-test-v1"

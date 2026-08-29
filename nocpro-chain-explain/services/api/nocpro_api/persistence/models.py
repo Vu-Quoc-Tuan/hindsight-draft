@@ -46,6 +46,9 @@ class SnapshotIngest(Base):
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     attempt_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    lineage_status: Mapped[str | None] = mapped_column(String(32))
+    lineage_result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    similarity_status: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -168,3 +171,73 @@ class KafkaInbox(Base):
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class LineageNode(Base):
+    __tablename__ = "lineage_node"
+
+    snapshot_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    snapshot_chain_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    snapshot_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    component_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    branch_id: Mapped[str] = mapped_column(String(96), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class LineageEdge(Base):
+    __tablename__ = "lineage_edge"
+
+    parent_snapshot_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    parent_chain_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    child_snapshot_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    child_chain_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    edge_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    overlap_count: Mapped[int] = mapped_column(nullable=False)
+    contain_parent: Mapped[float] = mapped_column(nullable=False)
+    contain_child: Mapped[float] = mapped_column(nullable=False)
+
+
+class LineageComponent(Base):
+    __tablename__ = "lineage_component"
+
+    component_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    canonical_component_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    first_snapshot_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_snapshot_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class SimilarityFingerprint(Base):
+    __tablename__ = "similarity_fingerprint"
+
+    snapshot_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    snapshot_chain_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    event_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    component_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    fingerprint_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class SimilarityModelRecord(Base):
+    __tablename__ = "similarity_model"
+
+    model_version: Mapped[str] = mapped_column(String(64), primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    trained_until_exclusive: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    model_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class SimilarityIndexEntry(Base):
+    __tablename__ = "similarity_index_entry"
+
+    model_version: Mapped[str] = mapped_column(String(64), primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    snapshot_chain_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    event_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    fingerprint_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

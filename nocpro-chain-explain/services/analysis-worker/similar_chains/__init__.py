@@ -28,6 +28,10 @@ from .temporal import (
     TimedChainFingerprint,
     VersionedSimilarityIndex,
     materialize_similarity_index,
+    fingerprint_from_dict,
+    fingerprint_to_dict,
+    model_from_dict,
+    model_to_dict,
 )
 
 __all__ = [
@@ -52,6 +56,10 @@ __all__ = [
     "find_similar_chains",
     "fit_fingerprint_model",
     "materialize_similarity_index",
+    "fingerprint_from_dict",
+    "fingerprint_to_dict",
+    "model_from_dict",
+    "model_to_dict",
     "previous_states_of_chain",
     "size_bin",
 ]
