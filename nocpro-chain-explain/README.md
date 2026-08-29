@@ -277,6 +277,32 @@ the whole-snapshot checksum, and the canonical Input Contract pass validation.
 Completion triggers Tier-1A exactly once through the persisted claim; Tier-1B
 remains lazy and runs only when a chain is requested.
 
+Tier-1A recovery uses logical snapshot order, not arrival order:
+
+```text
+ACTIVE  = latest READY by snapshot_time, completed_at, snapshot_id
+PENDING = claimed oldest-first by snapshot_time, completed_at, snapshot_id
+RUNNING = reclaimable only after lease_expires_at
+FAILED  = terminal after 5 total Tier-1A attempts
+```
+
+`completed_at` is only a tie-break/fallback; a delayed replay with an older
+`snapshot_time` cannot replace a newer active snapshot. Startup hydrates the
+latest logical READY snapshot first, then a background worker resumes PENDING
+and expired-lease jobs with `FOR UPDATE SKIP LOCKED`. A newer PENDING/RUNNING
+snapshot never blocks the UI from serving the current READY snapshot.
+Tier-1A failures preserve logical order and retry after 2, 4, 8, then 16
+seconds. A fifth failed attempt becomes terminal `FAILED`; recovery then moves
+to the next logical snapshot. The attempt ceiling and base delay are configured
+by `TIER1A_MAX_ATTEMPTS` and `TIER1A_BACKOFF_BASE_SECONDS`.
+
+The Kafka envelope is bounded before persistence: at most 1,024 chunks, 4 MiB
+per decoded chunk, 256 MiB compressed in retained chunks, and 256 MiB
+uncompressed per snapshot. RECEIVING assemblies expire after 24 hours and
+their retained chunk bytes are deleted. All five ceilings are configurable
+through the corresponding `KAFKA_*` environment variables in
+`docker-compose.yml`.
+
 Start the main stack:
 
 ```bash

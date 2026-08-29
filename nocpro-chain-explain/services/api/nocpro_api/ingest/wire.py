@@ -9,6 +9,11 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 
+DEFAULT_MAX_CHUNKS = 1024
+DEFAULT_MAX_CHUNK_BYTES = 4 * 1024 * 1024
+DEFAULT_MAX_UNCOMPRESSED_BYTES = 256 * 1024 * 1024
+
+
 class SnapshotEventError(ValueError):
     pass
 
@@ -63,7 +68,13 @@ class SnapshotCompleteEvent:
 SnapshotWireEvent = SnapshotChunkEvent | SnapshotCompleteEvent
 
 
-def parse_snapshot_event(event: dict[str, Any]) -> SnapshotWireEvent:
+def parse_snapshot_event(
+    event: dict[str, Any],
+    *,
+    max_chunks: int = DEFAULT_MAX_CHUNKS,
+    max_chunk_bytes: int = DEFAULT_MAX_CHUNK_BYTES,
+    max_uncompressed_bytes: int = DEFAULT_MAX_UNCOMPRESSED_BYTES,
+) -> SnapshotWireEvent:
     if not isinstance(event, dict):
         raise SnapshotEventError("Kafka event must be a JSON object")
     if event.get("schema_version") != "v1":
@@ -83,13 +94,24 @@ def parse_snapshot_event(event: dict[str, Any]) -> SnapshotWireEvent:
         chunk_index = _required_nonnegative_int(event, "chunk_index")
         if chunk_count == 0 or chunk_index >= chunk_count:
             raise SnapshotEventError("chunk index/count are inconsistent")
+        if chunk_count > max_chunks:
+            raise SnapshotEventError(f"chunk_count exceeds configured limit {max_chunks}")
+        encoded_payload = _required_text(event, "payload")
+        if len(encoded_payload) > ((max_chunk_bytes + 2) // 3) * 4:
+            raise SnapshotEventError(
+                f"chunk payload exceeds configured limit {max_chunk_bytes} bytes"
+            )
         try:
             payload = base64.b64decode(
-                _required_text(event, "payload"), validate=True
+                encoded_payload, validate=True
             )
         except (binascii.Error, ValueError) as exc:
             raise SnapshotEventError("payload is not valid base64") from exc
         checksum = _required_text(event, "chunk_checksum")
+        if len(payload) > max_chunk_bytes:
+            raise SnapshotEventError(
+                f"chunk payload exceeds configured limit {max_chunk_bytes} bytes"
+            )
         if sha256_hex(payload) != checksum:
             raise SnapshotEventError("chunk checksum mismatch")
         return SnapshotChunkEvent(
@@ -105,13 +127,21 @@ def parse_snapshot_event(event: dict[str, Any]) -> SnapshotWireEvent:
         expected = _required_nonnegative_int(event, "expected_chunk_count")
         if expected == 0:
             raise SnapshotEventError("expected_chunk_count must be positive")
+        if expected > max_chunks:
+            raise SnapshotEventError(
+                f"expected_chunk_count exceeds configured limit {max_chunks}"
+            )
+        total = _required_nonnegative_int(event, "total_uncompressed_bytes")
+        if total > max_uncompressed_bytes:
+            raise SnapshotEventError(
+                "total_uncompressed_bytes exceeds configured limit "
+                f"{max_uncompressed_bytes}"
+            )
         return SnapshotCompleteEvent(
             event_type="SNAPSHOT_COMPLETE",
             **common,
             expected_chunk_count=expected,
-            total_uncompressed_bytes=_required_nonnegative_int(
-                event, "total_uncompressed_bytes"
-            ),
+            total_uncompressed_bytes=total,
             snapshot_checksum=_required_text(event, "snapshot_checksum"),
             produced_at=_required_text(event, "produced_at"),
             source=_required_text(event, "source"),

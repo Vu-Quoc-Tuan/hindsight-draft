@@ -23,6 +23,9 @@ class KafkaConsumerConfig:
     dlq_topic: str = "nocpro.snapshot.v1.dlq"
     group_id: str = "nocpro-chain-explain"
     retry_backoff_seconds: float = 1.0
+    max_chunks: int = 1024
+    max_chunk_bytes: int = 4 * 1024 * 1024
+    max_uncompressed_bytes: int = 256 * 1024 * 1024
 
 
 class KafkaSnapshotConsumer:
@@ -41,13 +44,13 @@ class KafkaSnapshotConsumer:
             group_id=config.group_id,
             enable_auto_commit=False,
             auto_offset_reset="earliest",
-            max_partition_fetch_bytes=4 * 1024 * 1024,
-            fetch_max_bytes=16 * 1024 * 1024,
+            max_partition_fetch_bytes=8 * 1024 * 1024,
+            fetch_max_bytes=32 * 1024 * 1024,
         )
         self.dlq = AIOKafkaProducer(
             bootstrap_servers=config.bootstrap_servers,
             enable_idempotence=True,
-            max_request_size=4 * 1024 * 1024,
+            max_request_size=8 * 1024 * 1024,
         )
         self.task: asyncio.Task | None = None
 
@@ -87,7 +90,12 @@ class KafkaSnapshotConsumer:
         raw: dict[str, Any] | None = None
         try:
             raw = json.loads(message.value)
-            event = parse_snapshot_event(raw)
+            event = parse_snapshot_event(
+                raw,
+                max_chunks=self.config.max_chunks,
+                max_chunk_bytes=self.config.max_chunk_bytes,
+                max_uncompressed_bytes=self.config.max_uncompressed_bytes,
+            )
             expected_key = event.snapshot_id.encode("utf-8")
             if message.key != expected_key:
                 raise SnapshotEventError("Kafka key must equal snapshot_id")
@@ -111,10 +119,8 @@ class KafkaSnapshotConsumer:
         )
         if result.status == "INVALID":
             await self._publish_dlq(message, result.invalid_reason or "invalid")
-        elif result.status == "COMPLETE":
-            # The durable claim makes completed-event replays harmless and also
-            # lets an uncommitted completion retry Tier-1A after a worker error.
-            await self.coordinator.run(result.snapshot_id, result.snapshot_version)
+        # COMPLETE leaves a durable PENDING claim.  The recovery worker owns
+        # logical-oldest scheduling; the consumer must not bypass that order.
         await self._commit(message)
 
     async def _commit(self, message) -> None:

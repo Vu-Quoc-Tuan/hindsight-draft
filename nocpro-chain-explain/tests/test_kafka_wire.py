@@ -75,3 +75,28 @@ def test_unknown_wire_schema_fails_closed():
     raw["schema_version"] = "v2"
     with pytest.raises(SnapshotEventError, match="unsupported"):
         parse_snapshot_event(raw)
+
+
+def test_resource_limits_are_rejected_before_persistence():
+    raw = _chunk()
+    raw["chunk_count"] = 2
+    with pytest.raises(SnapshotEventError, match="chunk_count exceeds"):
+        parse_snapshot_event(raw, max_chunks=1)
+
+    with pytest.raises(SnapshotEventError, match="chunk payload exceeds"):
+        parse_snapshot_event(_chunk(), max_chunk_bytes=3)
+
+    barrier = {
+        "schema_version": "v1",
+        "event_type": "SNAPSHOT_COMPLETE",
+        "snapshot_id": "s1",
+        "snapshot_version": "7",
+        "expected_chunk_count": 1,
+        "total_uncompressed_bytes": 101,
+        "snapshot_checksum": "a" * 64,
+        "produced_at": "2026-08-29T00:00:00Z",
+        "source": "nocpro-mock",
+        "source_kind": "REAL_EXPORT_REPLAY",
+    }
+    with pytest.raises(SnapshotEventError, match="total_uncompressed_bytes exceeds"):
+        parse_snapshot_event(barrier, max_uncompressed_bytes=100)

@@ -87,7 +87,12 @@ def _service(repository, coordinator=None) -> KafkaSnapshotConsumer:
     service.coordinator = coordinator or FakeCoordinator()
     service.consumer = FakeConsumer()
     service.dlq = FakeDlq()
-    service.config = SimpleNamespace(dlq_topic="nocpro.snapshot.v1.dlq")
+    service.config = SimpleNamespace(
+        dlq_topic="nocpro.snapshot.v1.dlq",
+        max_chunks=1024,
+        max_chunk_bytes=4 * 1024 * 1024,
+        max_uncompressed_bytes=256 * 1024 * 1024,
+    )
     return service
 
 
@@ -113,13 +118,12 @@ def test_transient_repository_error_is_not_invalidated_dlqed_or_committed():
     assert service.consumer.commits == []
 
 
-def test_complete_snapshot_attempts_tier1a_before_committing():
+def test_complete_snapshot_commits_for_logical_ordered_recovery_worker():
     result = IngestResult("s1", "1", "COMPLETE", duplicate=True)
     coordinator = FakeCoordinator(ConnectionError("worker unavailable"))
     service = _service(FakeRepository(result), coordinator)
 
-    with pytest.raises(ConnectionError, match="worker unavailable"):
-        asyncio.run(service.process_message(_message(_chunk())))
+    asyncio.run(service.process_message(_message(_chunk())))
 
-    assert coordinator.calls == [("s1", "1")]
-    assert service.consumer.commits == []
+    assert coordinator.calls == []
+    assert len(service.consumer.commits) == 1
