@@ -37,6 +37,15 @@ from .lineage import (
     build_lineage_edges,
 )
 from .pipeline import EvolutionResult, analyze_evolution
+from .global_lineage import (
+    GlobalEpisodeDag,
+    GlobalLineageComponent,
+    GlobalLineageEdge,
+    GlobalLineageNode,
+    LineageNodeKey,
+    OutOfOrderLineageError,
+    deterministic_component_id,
+)
 
 __all__ = [
     "BOUNDARY_THRESHOLD",
@@ -54,14 +63,21 @@ __all__ = [
     "DriftTier",
     "EvolutionEvent",
     "EvolutionResult",
+    "GlobalEpisodeDag",
+    "GlobalLineageComponent",
+    "GlobalLineageEdge",
+    "GlobalLineageNode",
     "LineageAssignment",
     "LineageComponent",
     "LineageConfig",
     "LineageEdge",
+    "LineageNodeKey",
+    "OutOfOrderLineageError",
     "MembershipStability",
     "Tier1ADrift",
     "alarm_lifecycle",
     "analyze_evolution",
+    "deterministic_component_id",
     "assign_identifiers",
     "build_lineage_components",
     "build_lineage_edges",

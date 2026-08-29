@@ -18,7 +18,9 @@ from evolution import (
     DEFAULT_M_MIN,
     AlarmLifecycle,
     EvolutionEvent,
+    GlobalEpisodeDag,
     LineageConfig,
+    LineageNodeKey,
     MembershipStability,
     alarm_lifecycle,
     analyze_evolution,
@@ -33,7 +35,12 @@ from tests.conftest import MOCK_ROOT
 CONFIG = LineageConfig(config_version="evo-v1")
 
 
-def _package(snapshot_id: str, chains: dict[str, list[str]]):
+def _package(
+    snapshot_id: str,
+    chains: dict[str, list[str]],
+    *,
+    snapshot_time: str = "2026-01-01T00:00:00",
+):
     alarms = []
     memberships = []
     seen: set[str] = set()
@@ -57,7 +64,7 @@ def _package(snapshot_id: str, chains: dict[str, list[str]]):
             "snapshot": {
                 "snapshot_id": snapshot_id,
                 "snapshot_version": "1",
-                "snapshot_time": "2026-01-01T00:00:00",
+                "snapshot_time": snapshot_time,
                 "status": "COMPLETE",
                 "source": "test",
                 "source_kind": "REAL_EXPORT_REPLAY",
@@ -76,6 +83,93 @@ def _package(snapshot_id: str, chains: dict[str, list[str]]):
             "memberships": memberships,
         }
     )
+
+
+def test_global_episode_dag_is_stable_across_three_snapshots_and_restart():
+    snapshots = [
+        _package("s1", {"A": ["a1", "a2", "a3", "a4"]}, snapshot_time="2026-01-01T00:00:00Z"),
+        _package("s2", {"B": ["a1", "a2", "a3", "a4"]}, snapshot_time="2026-01-01T00:01:00Z"),
+        _package("s3", {"C": ["a1", "a2", "a3", "a4"]}, snapshot_time="2026-01-01T00:02:00Z"),
+    ]
+    dag = GlobalEpisodeDag()
+    dag.apply_snapshot(snapshots[0], previous=None, config=CONFIG)
+    dag.apply_snapshot(snapshots[1], previous=snapshots[0], config=CONFIG)
+    dag.apply_snapshot(snapshots[2], previous=snapshots[1], config=CONFIG)
+
+    identities = {
+        dag.canonical_lineage(LineageNodeKey(snapshot.snapshot.snapshot_id, chain))
+        for snapshot, chain in zip(snapshots, ("A", "B", "C"), strict=True)
+    }
+    assert len(identities) == 1
+
+    restarted = GlobalEpisodeDag(
+        nodes=dict(dag.nodes), edges=dict(dag.edges), components=dict(dag.components)
+    )
+    assert restarted.canonical_lineage(LineageNodeKey("s3", "C")) == identities.pop()
+    before = (len(restarted.nodes), len(restarted.edges), len(restarted.components))
+    restarted.apply_snapshot(snapshots[2], previous=snapshots[1], config=CONFIG)
+    assert (len(restarted.nodes), len(restarted.edges), len(restarted.components)) == before
+
+
+def test_global_episode_dag_keeps_unrelated_episodes_distinct_and_unifies_merge():
+    s1 = _package(
+        "s1",
+        {"A": ["a1", "a2", "a3", "a4"], "B": ["b1", "b2", "b3", "b4"]},
+        snapshot_time="2026-01-01T00:00:00Z",
+    )
+    s2 = _package(
+        "s2",
+        {"A2": ["a1", "a2", "a3", "a4"], "B2": ["b1", "b2", "b3", "b4"]},
+        snapshot_time="2026-01-01T00:01:00Z",
+    )
+    s3 = _package(
+        "s3",
+        {"C": ["a1", "a2", "a3", "a4", "b1", "b2", "b3", "b4"]},
+        snapshot_time="2026-01-01T00:02:00Z",
+    )
+    dag = GlobalEpisodeDag()
+    dag.apply_snapshot(s1, previous=None, config=CONFIG)
+    dag.apply_snapshot(s2, previous=s1, config=CONFIG)
+    a_id = dag.canonical_lineage(LineageNodeKey("s2", "A2"))
+    b_id = dag.canonical_lineage(LineageNodeKey("s2", "B2"))
+    assert a_id != b_id
+
+    dag.apply_snapshot(s3, previous=s2, config=CONFIG)
+    merged = dag.canonical_lineage(LineageNodeKey("s3", "C"))
+    assert dag.canonical_lineage(LineageNodeKey("s1", "A")) == merged
+    assert dag.canonical_lineage(LineageNodeKey("s1", "B")) == merged
+
+
+def test_global_episode_dag_split_children_share_parent_component():
+    s1 = _package(
+        "s1",
+        {"A": ["a1", "a2", "a3", "a4", "a5", "a6"]},
+        snapshot_time="2026-01-01T00:00:00Z",
+    )
+    s2 = _package(
+        "s2",
+        {"B": ["a1", "a2", "a3"], "C": ["a4", "a5", "a6"]},
+        snapshot_time="2026-01-01T00:01:00Z",
+    )
+    dag = GlobalEpisodeDag()
+    dag.apply_snapshot(s1, previous=None, config=CONFIG)
+    dag.apply_snapshot(s2, previous=s1, config=CONFIG)
+    assert dag.canonical_lineage(LineageNodeKey("s1", "A")) == dag.canonical_lineage(
+        LineageNodeKey("s2", "B")
+    )
+    assert dag.canonical_lineage(LineageNodeKey("s2", "B")) == dag.canonical_lineage(
+        LineageNodeKey("s2", "C")
+    )
+
+
+def test_global_episode_dag_rejects_late_snapshot_without_mutation():
+    s2 = _package("s2", {"A": ["a1"]}, snapshot_time="2026-01-01T00:02:00Z")
+    late = _package("late", {"B": ["b1"]}, snapshot_time="2026-01-01T00:01:00Z")
+    dag = GlobalEpisodeDag()
+    dag.apply_snapshot(s2, previous=None, config=CONFIG)
+    with pytest.raises(ValueError, match="out-of-order"):
+        dag.apply_snapshot(late, previous=None, config=CONFIG)
+    assert LineageNodeKey("late", "B") not in dag.nodes
 
 
 # --------------------------------------------------------------------------
