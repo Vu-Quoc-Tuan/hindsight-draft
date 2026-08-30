@@ -6,6 +6,7 @@ venv/
 *.egg-info/
 playwright-report/
 test-results/
+.worktrees/
 
 # Generated snapshot output is reproducible from the sources.
 nocpro-mock/datasets/generated/*
