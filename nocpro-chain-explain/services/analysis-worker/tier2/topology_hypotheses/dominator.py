@@ -201,14 +201,14 @@ def _unavailable(reason: TopologyHypothesisReason) -> DominatorResult:
 def analyze_common_dominator(package: IngestedPackage, chain_id: str) -> DominatorResult:
     """Return an exact common strict dominator or a structured unavailable result."""
     member_alarm_ids = tuple(package.members_of(chain_id))
+    universes = build_directed_universes(package)
+    if not universes:
+        return _unavailable(TopologyHypothesisReason.DIRECTED_TOPOLOGY_UNAVAILABLE)
+
     mappings = resolve_p2_mappings(package, member_alarm_ids)
     if mappings is None:
         return _unavailable(TopologyHypothesisReason.RESOURCE_MAPPING_UNAVAILABLE)
     mapped_resources = tuple(sorted(set(mappings.values())))
-
-    universes = build_directed_universes(package)
-    if not universes:
-        return _unavailable(TopologyHypothesisReason.DIRECTED_TOPOLOGY_UNAVAILABLE)
 
     candidates: list[tuple[DirectedUniverse, str]] = []
     ambiguous_within_universe = False

@@ -424,3 +424,35 @@ def test_ip_adjacency_cannot_enable_dominator(package: IngestedPackage):
 
     assert result.status is HypothesisStatus.UNAVAILABLE
     assert result.reason is TopologyHypothesisReason.DIRECTED_TOPOLOGY_UNAVAILABLE
+
+
+def test_directed_topology_reason_wins_when_mapping_is_also_unavailable(
+    package: IngestedPackage,
+):
+    production_style_package = replace(
+        package,
+        topology={
+            "edges": [
+                _edge(
+                    "ROOT",
+                    "LEAF_A",
+                    relation_type="IP_ADJACENCY",
+                    directed=False,
+                    source_kind="REAL_EXPORT_REPLAY",
+                ),
+                _edge(
+                    "ROOT",
+                    "LEAF_B",
+                    relation_type="IP_ADJACENCY",
+                    directed=False,
+                    source_kind="REAL_EXPORT_REPLAY",
+                ),
+            ],
+            "mappings": [_mapping("A", None, "UNMAPPED"), _mapping("B", None, "UNMAPPED")],
+        },
+    )
+
+    result = analyze_common_dominator(production_style_package, "C1")
+
+    assert result.status is HypothesisStatus.UNAVAILABLE
+    assert result.reason is TopologyHypothesisReason.DIRECTED_TOPOLOGY_UNAVAILABLE
