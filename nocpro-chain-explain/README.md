@@ -41,7 +41,8 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | Exact incremental predicate index + reconciliation triggers | P0 | done |
 | Benchmark matrix + overlap measurement tooling | P0 | implemented; Tier-1 real run recorded |
 | Production delta-default policy/threshold | P0 | `BLOCKED_BY_DATA_AVAILABILITY`; implementation ready, empirical threshold not established, mode disabled |
-| UNAVOIDABLE_DEPENDENCY (dominator), graph motif upgrade | P2 | not started |
+| P2 topology foundation: UNAVOIDABLE_DEPENDENCY annotation, PROPAGATION_HYPOTHESIS, DEPENDENCY_SCOPE_OVERLAP_SIGNAL | P2 | implemented; production capability fail-closed |
+| Graph motif upgrade and remaining P2 extensions | P2 | not started; data/capability gated |
 | FastAPI adapter: snapshot ingest, Tier-1B, pair WHY, Tier-2 polling | infra | done |
 | React/Vite/TypeScript operator UI | infra | done |
 | PostgreSQL persistence + Alembic migrations | infra | done |
@@ -54,8 +55,12 @@ The P1-Core feature set above is implemented, but the **P1 milestone is not
 closed**: production-delta validation is externally blocked because consecutive
 production snapshots do not exist. The incremental implementation is ready,
 but its empirical policy threshold is not established and production remains
-full-rebuild by default. Do not expand into P1-optional or P2 work until the
-scope gate is formally amended; P2 remains `NOT STARTED`.
+full-rebuild by default. The P2 topology foundation was explicitly opened by
+ADR-0033 after the scope amendment. Its implementation is present and tested
+on directed synthetic fixtures, while the current production topology remains
+unable to provide the required directed semantics, so production results stay
+`UNAVAILABLE`. Remaining P2 extensions are still `NOT_STARTED` and data/
+capability gated.
 
 ### Alarm taxonomy source capability
 
@@ -84,6 +89,7 @@ services/analysis-worker/tier1b/     per-chain analysis orchestration
 services/analysis-worker/audit/      audit graph, candidate cuts, conductance, over-merge
 services/analysis-worker/channels/common_dependency.py  SHARED_ANCESTOR, SHARED_ACTIVE_PATH
 services/analysis-worker/similar_chains/  fingerprint, TF-IDF, cosine similarity baseline
+services/analysis-worker/tier2/topology_hypotheses/  fail-closed P2 topology foundation
 services/api/nocpro_api/             FastAPI transport and in-process repository boundary
 services/api/nocpro_api/ingest/      Kafka v1 wire parser + consumer/coordinator
 services/api/nocpro_api/persistence/ PostgreSQL models and snapshot repository
@@ -247,6 +253,30 @@ drill-down and visualization. A verdict is never a function of a display
   (`MemberAnalysis.margins`); `.margin` is kept as a backward-compatible alias
   for the closest candidate only.
 
+### P2 topology foundation
+
+ADR-0033 opens three independent Tier-2 topology semantics:
+
+- `UNAVOIDABLE_DEPENDENCY`: an exact common strict-dominator annotation with a
+  witness and provenance, without a normalized score, audit vote, membership
+  contribution or validation vote.
+- `PROPAGATION_HYPOTHESIS`: a directed, temporally ordered candidate DAG
+  ranked by the fully versioned configured RWR contract. It is a hypothesis
+  ranking, not causal proof or a root-cause claim; missing direction, mapping,
+  timestamps or required configuration fails closed.
+- `DEPENDENCY_SCOPE_OVERLAP_SIGNAL`: exact coverage, precision, Jaccard and
+  missing/extra counts anchored to the selected dominator witness. Computation
+  and detail-materialization ceilings are separate, and no partial resource
+  list is emitted.
+
+The current production export exposes undirected `IP_ADJACENCY` only and has no
+verified directed topology/path, alarm-resource mapping or propagation config.
+Consequently the production API/UI reports these capabilities as
+`UNAVAILABLE`; synthetic directed fixtures verify the implementation contract
+but are not production validation. Graph motifs, `UNAVOIDABLE_DEPENDENCY` as a
+normalized evidence channel, and other P2 extensions remain not started until
+their documented data/capability gates are met.
+
 ## API
 
 The HTTP layer is an adapter over the existing analysis services; it does not
@@ -343,16 +373,22 @@ replays are idempotent; a conflicting duplicate invalidates the snapshot. HTTP
 snapshot ingest remains available for development and writes through the same
 canonical PostgreSQL repository.
 
-The 2026-08-30 isolated acceptance run passed both Chromium operator tests and
-all four Docker recovery tests. The cold API request for the 1,072-member real
-chain completed in 0.734 seconds, below the Tier-1B 5-second design objective.
-This is local-run evidence, not a production SLO. The unresolved external gate
-is recorded explicitly:
+The isolated acceptance script was run on 2026-08-30. Docker successfully
+built the API/web images, created the isolated PostgreSQL/Kafka stack, ran
+migrations and started the services. The real replay then stopped because the
+sibling `nocpro-mock` checkout did not contain its required external export:
+`datasets/raw/alarm_data.csv` (`FileNotFoundError`). Therefore this run did not
+reach Chromium, Docker recovery cases or the 1,072-member benchmark, and no
+end-to-end pass or performance claim is made here. Once the documented export
+is supplied, rerun `./tests/e2e/run_acceptance.sh` to obtain that evidence.
+
+The unresolved external gates are recorded explicitly:
 
 ```text
 PRODUCTION_DELTA_VALIDATION = BLOCKED_BY_DATA_AVAILABILITY
 implementation              = READY
 empirical_threshold          = NOT_ESTABLISHED
 incremental_snapshot.mode    = disabled
-P2                           = NOT_STARTED
+P2 topology foundation      = IMPLEMENTED / PRODUCTION_UNAVAILABLE
+remaining P2 extensions     = NOT_STARTED / DATA_AND_CAPABILITY_GATED
 ```
