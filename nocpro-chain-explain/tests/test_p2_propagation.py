@@ -142,7 +142,7 @@ def test_candidate_edge_requires_direction_and_strict_time(config: PropagationCo
     assert result.candidate_edge_count == 1
 
 
-def test_timezone_normalization_treats_naive_timestamp_as_utc(
+def test_naive_timestamp_fails_closed_without_inferring_utc(
     config: PropagationConfig,
 ):
     package = _package(
@@ -152,8 +152,9 @@ def test_timezone_normalization_treats_naive_timestamp_as_utc(
 
     result = analyze_propagation(package, "C1", config)
 
-    assert result.status is HypothesisStatus.AVAILABLE
-    assert result.hypotheses[0].temporal_delta_seconds == pytest.approx(1.0)
+    assert result.status is HypothesisStatus.UNAVAILABLE
+    assert result.reason is TopologyHypothesisReason.TEMPORAL_ORDERING_UNAVAILABLE
+    assert result.hypotheses == ()
 
 
 @pytest.mark.parametrize("missing_time", [None, "not-a-time"])
@@ -185,6 +186,47 @@ def test_every_member_requires_exact_or_verified_mapping(
 
     result = analyze_propagation(package, "C1", config)
 
+    assert result.status is HypothesisStatus.UNAVAILABLE
+    assert result.reason is TopologyHypothesisReason.RESOURCE_MAPPING_UNAVAILABLE
+
+
+@pytest.mark.parametrize(
+    "mapping_rows",
+    [
+        [
+            _mapping("A", "R_A"),
+            _mapping("A", "R_OTHER"),
+            _mapping("B", "R_B"),
+        ],
+        [
+            _mapping("A", "R_A"),
+            _mapping("A", None, "AMBIGUOUS"),
+            _mapping("B", "R_B"),
+        ],
+        [
+            {**_mapping("A", "R_A"), "topology_layer": "core"},
+            {**_mapping("A", "R_A"), "topology_layer": "edge"},
+            _mapping("B", "R_B"),
+        ],
+    ],
+)
+def test_conflicting_relevant_mapping_rows_fail_closed_and_ignore_row_order(
+    config: PropagationConfig, mapping_rows: list[dict]
+):
+    package = _package(
+        {"A": "2026-08-30T00:00:00Z", "B": "2026-08-30T00:00:01Z"},
+        [_edge("R_A", "R_B")],
+        mappings=mapping_rows,
+    )
+
+    result = analyze_propagation(package, "C1", config)
+    reversed_result = analyze_propagation(
+        replace(package, topology={**package.topology, "mappings": list(reversed(mapping_rows))}),
+        "C1",
+        config,
+    )
+
+    assert result == reversed_result
     assert result.status is HypothesisStatus.UNAVAILABLE
     assert result.reason is TopologyHypothesisReason.RESOURCE_MAPPING_UNAVAILABLE
 

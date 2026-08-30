@@ -334,6 +334,42 @@ def test_unmapped_or_ambiguous_chain_member_is_unavailable(
     assert result.reason is TopologyHypothesisReason.RESOURCE_MAPPING_UNAVAILABLE
 
 
+@pytest.mark.parametrize(
+    "mapping_rows",
+    [
+        [
+            _mapping("A", "LEAF_A"),
+            _mapping("A", "OTHER"),
+            _mapping("B", "LEAF_B"),
+        ],
+        [
+            _mapping("A", "LEAF_A"),
+            _mapping("A", None, "UNMAPPED"),
+            _mapping("B", "LEAF_B"),
+        ],
+        [
+            {**_mapping("A", "LEAF_A"), "source_version": "v1"},
+            {**_mapping("A", "LEAF_A"), "source_version": "v2"},
+            _mapping("B", "LEAF_B"),
+        ],
+    ],
+)
+def test_conflicting_relevant_mapping_rows_fail_closed_and_ignore_row_order(
+    package: IngestedPackage, mapping_rows: list[dict]
+):
+    package = replace(package, topology={**package.topology, "mappings": mapping_rows})
+
+    result = analyze_common_dominator(package, "C1")
+    reversed_result = analyze_common_dominator(
+        replace(package, topology={**package.topology, "mappings": list(reversed(mapping_rows))}),
+        "C1",
+    )
+
+    assert result == reversed_result
+    assert result.status is HypothesisStatus.UNAVAILABLE
+    assert result.reason is TopologyHypothesisReason.RESOURCE_MAPPING_UNAVAILABLE
+
+
 def test_two_eligible_universes_with_different_witnesses_are_ambiguous():
     package = _package(
         [

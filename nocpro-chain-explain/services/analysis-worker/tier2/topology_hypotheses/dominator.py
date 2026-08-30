@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Iterable
 
-from channels.dependency import ResourceResolver
 from libs.contracts import IngestedPackage
 from libs.provenance import ProvenanceClass, ProvenanceSubtype
 
@@ -15,6 +14,7 @@ from .models import (
     HypothesisStatus,
     TopologyHypothesisReason,
 )
+from .mapping import resolve_p2_mappings
 
 
 ELIGIBLE_RELATION_TYPES = frozenset({"LOGICAL_DEPENDENCY", "SERVICE_DEPENDS_ON"})
@@ -200,14 +200,11 @@ def _unavailable(reason: TopologyHypothesisReason) -> DominatorResult:
 
 def analyze_common_dominator(package: IngestedPackage, chain_id: str) -> DominatorResult:
     """Return an exact common strict dominator or a structured unavailable result."""
-    resolver = ResourceResolver.from_package(package)
     member_alarm_ids = tuple(package.members_of(chain_id))
-    resolved_resources = [
-        resolver.resource_of(alarm_id) for alarm_id in member_alarm_ids
-    ]
-    if not member_alarm_ids or any(resource is None for resource in resolved_resources):
+    mappings = resolve_p2_mappings(package, member_alarm_ids)
+    if mappings is None:
         return _unavailable(TopologyHypothesisReason.RESOURCE_MAPPING_UNAVAILABLE)
-    mapped_resources = tuple(sorted(set(resolved_resources)))
+    mapped_resources = tuple(sorted(set(mappings.values())))
 
     universes = build_directed_universes(package)
     if not universes:

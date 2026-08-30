@@ -8,7 +8,6 @@ from math import exp, fsum, isfinite
 from types import MappingProxyType
 from typing import Mapping
 
-from channels.dependency import ResourceResolver
 from configuration import ConfiguredValue, PropagationConfig
 from libs.contracts import IngestedPackage
 
@@ -21,6 +20,7 @@ from .models import (
     PropagationResult,
     TopologyHypothesisReason,
 )
+from .mapping import resolve_p2_mappings
 
 
 SEED_POLICY = "ALL_SOURCE_NODES_UNIFORM"
@@ -127,7 +127,7 @@ def _configured_values(config: PropagationConfig | None) -> _NumericConfig | Non
 
 
 def _parse_timestamp(value: str | None) -> datetime | None:
-    """Parse one canonical timestamp and normalize naïve/aware values to UTC."""
+    """Parse an explicitly timezone-qualified canonical timestamp as UTC."""
     if not isinstance(value, str) or not value:
         return None
     try:
@@ -135,7 +135,7 @@ def _parse_timestamp(value: str | None) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
+        return None
     try:
         return parsed.astimezone(timezone.utc)
     except (OverflowError, ValueError):
@@ -383,19 +383,14 @@ def analyze_propagation(
             numeric=numeric,
         )
 
-    resolver = ResourceResolver.from_package(package)
-    resources = {alarm_id: resolver.resource_of(alarm_id) for alarm_id in alarm_ids}
-    if any(resource is None for resource in resources.values()):
+    mappings = resolve_p2_mappings(package, alarm_ids)
+    if mappings is None:
         return _empty_result(
             TopologyHypothesisReason.RESOURCE_MAPPING_UNAVAILABLE,
             numeric=numeric,
             candidate_node_count=len(alarm_ids),
         )
-    mapped_resources: dict[str, str] = {
-        alarm_id: resource
-        for alarm_id, resource in resources.items()
-        if resource is not None
-    }
+    mapped_resources = mappings
 
     times: dict[str, datetime] = {}
     for alarm_id in alarm_ids:
