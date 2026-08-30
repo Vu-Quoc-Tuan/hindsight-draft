@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { api, ApiError } from './api'
 import { compactTime, duration, humanize, percent } from './format'
+import { TopologyHypotheses } from './TopologyHypotheses'
 import type { ChainAnalysis, ChainList, Job, Member, PairEvidence, PairWhy } from './types'
 import './App.css'
 
@@ -390,7 +391,10 @@ function App() {
               <Timeline members={analysis.members} selected={selectedMembers} onSelect={selectMember} />
               {tab === 'why' && <WhyPanel analysis={analysis} />}
               {tab === 'members' && <MemberTable members={analysis.members} selected={selectedMembers} onSelect={selectMember} />}
-              {tab === 'structure' && <StructurePanel job={visibleJob} onRun={() => void runDeepDive()} submitting={submitting} />}
+              {tab === 'structure' && <>
+                <StructurePanel job={visibleJob} onRun={() => void runDeepDive()} submitting={submitting} />
+                {visibleJob?.result && <TopologyHypotheses topology_hypotheses={visibleJob.result.topology_hypotheses} />}
+              </>}
               {tab === 'evolution' && <section className="unavailable-card"><span>UNAVAILABLE</span><h2>Sequential production snapshots are not loaded.</h2><p>Evolution remains off rather than inferring lineage from unrelated alarm exports. Load a verified sequence before enabling overlap, NEW/CLEARED and cache-consistency analysis.</p></section>}
             </div>
             <PairEvidenceRail analysis={analysis} selected={selectedMembers} pair={visiblePair} loading={selectedMembers.length === 2 && !pairMatchesSelection} layer={layer} />

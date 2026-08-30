@@ -126,6 +126,7 @@ export type DeepDive = {
   taxonomy_status: string | null
   taxonomy_reason: string | null
   active_fingerprint_blocks: string[]
+  topology_hypotheses: TopologyHypothesesResult
 }
 
 export type Job = {
@@ -136,4 +137,111 @@ export type Job = {
   cache_hit: boolean
   result: DeepDive | null
   error: string | null
+}
+
+export type TopologyHypothesisStatus = 'AVAILABLE' | 'UNAVAILABLE'
+
+type TopologyProvenance = {
+  source_ref: string | null
+  relation_type: string | null
+  provenance_class: string | null
+  provenance_subtype: string | null
+  source_kind: string | null
+}
+
+export type DominatorResult = TopologyProvenance & {
+  status: 'AVAILABLE'
+  reason: null
+  semantic: string
+  witness_resource_id: string | null
+  covered_resource_ids: string[]
+} | TopologyProvenance & {
+  status: 'UNAVAILABLE'
+  reason: string
+  semantic: string | null
+  witness_resource_id: string | null
+  covered_resource_ids: string[]
+}
+
+export type PropagationNodeScore = {
+  alarm_id: string
+  score: number
+}
+
+export type PropagationEdgeHypothesis = {
+  source_alarm_id: string
+  target_alarm_id: string
+  score: number
+  transition_probability: number
+  temporal_delta_seconds: number
+}
+
+type PropagationResultBase = TopologyProvenance & {
+  config_version: string | null
+  parameter_provenance: Record<string, string>
+  candidate_node_count: number
+  candidate_edge_count: number
+  iterations: number
+  final_l1_distance: number | null
+  convergence_tolerance: number | null
+  restart_probability: number | null
+  seed_policy: string | null
+  dangling_policy: string | null
+  node_scores: PropagationNodeScore[]
+  hypotheses: PropagationEdgeHypothesis[]
+}
+
+export type PropagationResult = PropagationResultBase & {
+  status: 'AVAILABLE'
+  reason: null
+  semantic: string
+} | PropagationResultBase & {
+  status: 'UNAVAILABLE'
+  reason: string
+  semantic: string | null
+}
+
+export type ResourceDetails = {
+  status: 'AVAILABLE'
+  reason: null
+  missing_resources: string[]
+  extra_resources: string[]
+} | {
+  status: 'UNAVAILABLE'
+  reason: string
+  missing_resources: null
+  extra_resources: null
+}
+
+type DependencyScopeResultBase = TopologyProvenance & {
+  witness_resource_id: string | null
+  observed_resource_count: number | null
+  scope_resource_count: number | null
+  intersection_count: number | null
+  union_count: number | null
+  observed_coverage: number | null
+  scope_precision: number | null
+  jaccard: number | null
+  missing_resource_count: number | null
+  extra_resource_count: number | null
+  max_scope_resources: number | null
+  max_materialized_resources: number | null
+  parameter_provenance: Record<string, string>
+  resource_details: ResourceDetails
+}
+
+export type DependencyScopeResult = DependencyScopeResultBase & {
+  status: 'AVAILABLE'
+  reason: null
+  semantic: string
+} | DependencyScopeResultBase & {
+  status: 'UNAVAILABLE'
+  reason: string
+  semantic: string | null
+}
+
+export type TopologyHypothesesResult = {
+  dominator: DominatorResult
+  propagation: PropagationResult
+  dependency_scope: DependencyScopeResult
 }
