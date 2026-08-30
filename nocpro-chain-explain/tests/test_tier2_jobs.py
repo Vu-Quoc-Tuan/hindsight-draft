@@ -284,21 +284,33 @@ def test_p2_config_versions_and_scope_values_are_part_of_cache_stamp(analysis_co
             ),
         ),
     )
+    config_f = replace(
+        config_a,
+        p2_topology=replace(
+            config_a.p2_topology,
+            dependency_scope=replace(
+                scope,
+                max_scope_resources=cv(
+                    "dependency_scope.limits.max_scope_resources.alias", 20
+                ),
+            ),
+        ),
+    )
 
     cache = Tier1Cache()
     with Tier2JobManager(cache=cache, analyzer=analyzer, max_workers=1) as manager:
         submissions = [
             manager.submit(_package(), "C1", analysis_config=config)
-            for config in (config_a, config_b, config_c, config_d, config_e)
+            for config in (config_a, config_b, config_c, config_d, config_e, config_f)
         ]
         for submission in submissions:
             assert manager.wait(submission.job_id, timeout=2).status is JobStatus.SUCCEEDED
 
     keys = [
         cache.tier_entries(CacheTier.TIER_2)[index].key.config_version
-        for index in range(5)
+        for index in range(6)
     ]
-    assert calls == 5
+    assert calls == 6
     assert all(key != "v1" for key in keys)
     assert "version='propagation-test-v1'" in keys[0]
     assert "version='propagation-test-v2'" in keys[1]
@@ -306,6 +318,10 @@ def test_p2_config_versions_and_scope_values_are_part_of_cache_stamp(analysis_co
     assert "restart_probability" in keys[3]
     assert "value=0.3" in keys[3]
     assert "source='DATA_DRIVEN'" in keys[4]
+    assert "path='dependency_scope.limits.max_scope_resources'" in keys[0]
+    assert "source='FROZEN_SPEC'" in keys[0]
+    assert "path='dependency_scope.limits.max_scope_resources.alias'" in keys[5]
+    assert keys[0] != keys[5]
 
 
 def test_incomplete_or_unsupported_p2_cannot_reuse_available_cache(analysis_config):

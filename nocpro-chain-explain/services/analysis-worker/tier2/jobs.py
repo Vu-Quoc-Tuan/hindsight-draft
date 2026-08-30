@@ -88,8 +88,9 @@ def _p2_cache_stamp(analysis_config: Any) -> str | None:
                 continue
             source = getattr(getattr(configured, "source", None), "value", None)
             values.append(
-                f"{name}={getattr(configured, 'value', None)}"
-                f"@{source or getattr(configured, 'source', None)}"
+                f"{name}={getattr(configured, 'value', None)!r}"
+                f"[path={getattr(configured, 'path', None)!r},"
+                f"source={source or getattr(configured, 'source', None)!r}]"
             )
         if values:
             parts.append("scope:" + ",".join(values))

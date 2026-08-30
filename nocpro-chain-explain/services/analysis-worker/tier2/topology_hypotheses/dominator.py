@@ -68,7 +68,7 @@ def build_directed_universes(package: IngestedPackage) -> tuple[DirectedUniverse
     grouped: dict[tuple[str, str, str | None], list[dict]] = {}
     for edge in package.topology.get("edges") or ():
         relation_type = edge.get("relation_type")
-        if relation_type not in ELIGIBLE_RELATION_TYPES or not edge.get("directed"):
+        if relation_type not in ELIGIBLE_RELATION_TYPES or edge.get("directed") is not True:
             continue
         source = edge.get("source_resource_id")
         target = edge.get("target_resource_id")

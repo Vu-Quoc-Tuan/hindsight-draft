@@ -426,6 +426,26 @@ def test_ip_adjacency_cannot_enable_dominator(package: IngestedPackage):
     assert result.reason is TopologyHypothesisReason.DIRECTED_TOPOLOGY_UNAVAILABLE
 
 
+@pytest.mark.parametrize("directed_value", ["false", "yes", 1, 1.0])
+def test_dominator_requires_exact_boolean_true_for_directed_edges(
+    package: IngestedPackage, directed_value: object
+):
+    edges = [
+        {**edge, "directed": directed_value}
+        for edge in package.topology["edges"]
+    ]
+    altered_package = replace(
+        package, topology={**package.topology, "edges": edges}
+    )
+
+    universes = build_directed_universes(altered_package)
+    result = analyze_common_dominator(altered_package, "C1")
+
+    assert universes == ()
+    assert result.status is HypothesisStatus.UNAVAILABLE
+    assert result.reason is TopologyHypothesisReason.DIRECTED_TOPOLOGY_UNAVAILABLE
+
+
 def test_directed_topology_reason_wins_when_mapping_is_also_unavailable(
     package: IngestedPackage,
 ):

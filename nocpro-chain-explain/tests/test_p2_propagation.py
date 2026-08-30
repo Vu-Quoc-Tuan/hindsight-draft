@@ -174,6 +174,26 @@ def test_every_member_requires_parseable_canonical_time(
     assert result.hypotheses == ()
 
 
+@pytest.mark.parametrize("directed_value", ["false", "yes", 1, 1.0])
+def test_propagation_requires_exact_boolean_true_for_directed_edges(
+    config: PropagationConfig, directed_value: object
+):
+    package = _package(
+        {
+            "A": "2026-08-30T00:00:00Z",
+            "B": "2026-08-30T00:00:01Z",
+        },
+        [{**_edge("R_A", "R_B"), "directed": directed_value}],
+    )
+
+    result = analyze_propagation(package, "C1", config)
+
+    assert result.status is HypothesisStatus.UNAVAILABLE
+    assert result.reason is TopologyHypothesisReason.DIRECTED_TOPOLOGY_UNAVAILABLE
+    assert result.hypotheses == ()
+    assert result.node_scores == ()
+
+
 @pytest.mark.parametrize("status", ["UNMAPPED", "AMBIGUOUS"])
 def test_every_member_requires_exact_or_verified_mapping(
     config: PropagationConfig, status: str
