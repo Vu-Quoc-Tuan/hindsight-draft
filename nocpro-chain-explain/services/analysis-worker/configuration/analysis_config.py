@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from math import isfinite
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -61,6 +62,32 @@ class ConfiguredValue:
 
 
 @dataclass(frozen=True)
+class PropagationConfig:
+    config_version: str
+    restart_probability: ConfiguredValue
+    convergence_tolerance: ConfiguredValue
+    max_iterations: ConfiguredValue
+    decay_type: str
+    decay_parameter: ConfiguredValue
+    score_threshold: ConfiguredValue
+    max_candidate_edges: ConfiguredValue
+
+
+@dataclass(frozen=True)
+class DependencyScopeConfig:
+    max_scope_resources: ConfiguredValue
+    max_materialized_resources: ConfiguredValue
+
+
+@dataclass(frozen=True)
+class P2TopologyConfig:
+    propagation: PropagationConfig | None
+    propagation_reason: str | None
+    dependency_scope: DependencyScopeConfig | None
+    dependency_scope_reason: str | None
+
+
+@dataclass(frozen=True)
 class _ParameterRule:
     numeric_type: type[int] | type[float]
     minimum: float | None = None
@@ -100,10 +127,27 @@ class _ParameterRule:
 
 
 _PROBABILITY = _ParameterRule(float, 0.0, 1.0)
+_STRICT_PROBABILITY = _ParameterRule(
+    float, 0.0, 1.0, inclusive_minimum=False, inclusive_maximum=False
+)
 _BALANCE_RATIO = _ParameterRule(float, 0.0, 0.5)
 _POSITIVE_FLOAT = _ParameterRule(float, 0.0, inclusive_minimum=False)
 _POSITIVE_INT = _ParameterRule(int, 0, inclusive_minimum=False)
 _NONNEGATIVE_INT = _ParameterRule(int, 0)
+
+_P2_PROPAGATION_RULES: dict[str, _ParameterRule] = {
+    "rwr.restart_probability": _STRICT_PROBABILITY,
+    "rwr.convergence_tolerance": _POSITIVE_FLOAT,
+    "rwr.max_iterations": _POSITIVE_INT,
+    "temporal.decay_parameter": _POSITIVE_FLOAT,
+    "acceptance.score_threshold": _PROBABILITY,
+    "limits.max_candidate_edges": _POSITIVE_INT,
+}
+
+_P2_DEPENDENCY_SCOPE_RULES: dict[str, _ParameterRule] = {
+    "limits.max_scope_resources": _POSITIVE_INT,
+    "limits.max_materialized_resources": _POSITIVE_INT,
+}
 
 
 PARAMETER_RULES: dict[str, _ParameterRule] = {
@@ -158,6 +202,7 @@ class AnalysisConfig:
     parameters: dict[str, ConfiguredValue]
     incremental_snapshot: IncrementalSnapshotPolicy
     similar_chains: SimilarChainsPolicy
+    p2_topology: P2TopologyConfig
 
     REQUIRED_PARAMETERS = tuple(PARAMETER_RULES)
 
@@ -201,6 +246,114 @@ def _lookup(document: dict[str, Any], path: str) -> Any:
             raise AnalysisConfigError(f"missing required parameter {path!r}")
         current = current[segment]
     return current
+
+
+def _load_p2_configured_value(
+    document: dict[str, Any],
+    path: str,
+    rule: _ParameterRule,
+    *,
+    configured_path: str,
+) -> ConfiguredValue:
+    raw = _lookup(document, path)
+    if not isinstance(raw, dict):
+        raise AnalysisConfigError(f"{path}: expected mapping with value and source")
+    if "value" not in raw:
+        raise AnalysisConfigError(f"{path}: missing value")
+    if "source" not in raw:
+        raise AnalysisConfigError(f"{path}: missing source")
+    try:
+        source = ParameterSource(raw["source"])
+    except (TypeError, ValueError) as exc:
+        raise AnalysisConfigError(
+            f"{path}: unknown parameter source {raw['source']!r}"
+        ) from exc
+    value = rule.validate(path, raw["value"])
+    if isinstance(value, float) and not isfinite(value):
+        raise AnalysisConfigError(f"{path}: value must be finite")
+    return ConfiguredValue(
+        path=configured_path,
+        value=value,
+        source=source,
+    )
+
+
+def _load_propagation_config(document: dict[str, Any]) -> PropagationConfig:
+    raw_config_version = _lookup(document, "config_version")
+    if not isinstance(raw_config_version, str) or not raw_config_version.strip():
+        raise AnalysisConfigError(
+            "propagation.config_version must be a non-empty string"
+        )
+    raw_decay_type = _lookup(document, "temporal.decay_type")
+    if raw_decay_type != "exponential":
+        raise AnalysisConfigError(
+            "propagation.temporal.decay_type must be exponential"
+        )
+    values = {
+        path: _load_p2_configured_value(
+            document, path, rule, configured_path=f"propagation.{path}"
+        )
+        for path, rule in _P2_PROPAGATION_RULES.items()
+    }
+    return PropagationConfig(
+        config_version=raw_config_version.strip(),
+        restart_probability=values["rwr.restart_probability"],
+        convergence_tolerance=values["rwr.convergence_tolerance"],
+        max_iterations=values["rwr.max_iterations"],
+        decay_type="exponential",
+        decay_parameter=values["temporal.decay_parameter"],
+        score_threshold=values["acceptance.score_threshold"],
+        max_candidate_edges=values["limits.max_candidate_edges"],
+    )
+
+
+def _load_dependency_scope_config(document: dict[str, Any]) -> DependencyScopeConfig:
+    values = {
+        path: _load_p2_configured_value(
+            document, path, rule, configured_path=f"dependency_scope.{path}"
+        )
+        for path, rule in _P2_DEPENDENCY_SCOPE_RULES.items()
+    }
+    max_scope_resources = values["limits.max_scope_resources"]
+    max_materialized_resources = values["limits.max_materialized_resources"]
+    if max_materialized_resources.value > max_scope_resources.value:
+        raise AnalysisConfigError(
+            "dependency_scope.limits.max_materialized_resources must be <= "
+            "max_scope_resources"
+        )
+    return DependencyScopeConfig(
+        max_scope_resources=max_scope_resources,
+        max_materialized_resources=max_materialized_resources,
+    )
+
+
+def _load_optional_p2_topology(document: dict[str, Any]) -> P2TopologyConfig:
+    raw_propagation = document.get("propagation")
+    try:
+        if not isinstance(raw_propagation, dict):
+            raise AnalysisConfigError("propagation must be a YAML mapping")
+        propagation = _load_propagation_config(raw_propagation)
+        propagation_reason = None
+    except AnalysisConfigError:
+        propagation = None
+        propagation_reason = "PROPAGATION_CONFIG_INCOMPLETE"
+
+    raw_dependency_scope = document.get("dependency_scope")
+    try:
+        if not isinstance(raw_dependency_scope, dict):
+            raise AnalysisConfigError("dependency_scope must be a YAML mapping")
+        dependency_scope = _load_dependency_scope_config(raw_dependency_scope)
+        dependency_scope_reason = None
+    except AnalysisConfigError:
+        dependency_scope = None
+        dependency_scope_reason = "DEPENDENCY_SCOPE_CONFIG_INCOMPLETE"
+
+    return P2TopologyConfig(
+        propagation=propagation,
+        propagation_reason=propagation_reason,
+        dependency_scope=dependency_scope,
+        dependency_scope_reason=dependency_scope_reason,
+    )
 
 
 def load_analysis_config(
@@ -310,6 +463,7 @@ def load_analysis_config(
         temporal_cutoff="snapshot_time",
         exclude_same_lineage=True,
     )
+    p2_topology = _load_optional_p2_topology(document)
 
     config = AnalysisConfig(
         config_version=version.strip(),
@@ -317,6 +471,7 @@ def load_analysis_config(
         parameters=parameters,
         incremental_snapshot=incremental_snapshot,
         similar_chains=similar_chains,
+        p2_topology=p2_topology,
     )
     if "role.s_weak" in parameters and "role.s_min" in parameters:
         if config.value("role.s_weak") > config.value("role.s_min"):
