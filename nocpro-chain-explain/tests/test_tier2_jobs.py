@@ -258,22 +258,124 @@ def test_p2_config_versions_and_scope_values_are_part_of_cache_stamp(analysis_co
             ),
         ),
     )
+    config_d = replace(
+        config_a,
+        p2_topology=replace(
+            config_a.p2_topology,
+            propagation=replace(
+                propagation,
+                restart_probability=cv(
+                    "propagation.rwr.restart_probability", 0.3
+                ),
+            ),
+        ),
+    )
+    config_e = replace(
+        config_a,
+        p2_topology=replace(
+            config_a.p2_topology,
+            propagation=replace(
+                propagation,
+                restart_probability=ConfiguredValue(
+                    path="propagation.rwr.restart_probability",
+                    value=0.2,
+                    source=ParameterSource.DATA_DRIVEN,
+                ),
+            ),
+        ),
+    )
 
     cache = Tier1Cache()
     with Tier2JobManager(cache=cache, analyzer=analyzer, max_workers=1) as manager:
         submissions = [
             manager.submit(_package(), "C1", analysis_config=config)
-            for config in (config_a, config_b, config_c)
+            for config in (config_a, config_b, config_c, config_d, config_e)
         ]
         for submission in submissions:
             assert manager.wait(submission.job_id, timeout=2).status is JobStatus.SUCCEEDED
 
-    keys = [cache.tier_entries(CacheTier.TIER_2)[index].key.config_version for index in range(3)]
-    assert calls == 3
+    keys = [
+        cache.tier_entries(CacheTier.TIER_2)[index].key.config_version
+        for index in range(5)
+    ]
+    assert calls == 5
     assert all(key != "v1" for key in keys)
-    assert "propagation:propagation-test-v1" in keys[0]
-    assert "propagation:propagation-test-v2" in keys[1]
+    assert "version='propagation-test-v1'" in keys[0]
+    assert "version='propagation-test-v2'" in keys[1]
     assert "max_scope_resources=21" in keys[2]
+    assert "restart_probability" in keys[3]
+    assert "value=0.3" in keys[3]
+    assert "source='DATA_DRIVEN'" in keys[4]
+
+
+def test_incomplete_or_unsupported_p2_cannot_reuse_available_cache(analysis_config):
+    calls = 0
+
+    def analyzer(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return {"run": calls}
+
+    def cv(path, value, source=ParameterSource.FROZEN_SPEC):
+        return ConfiguredValue(path=path, value=value, source=source)
+
+    propagation = PropagationConfig(
+        config_version="propagation-test-v1",
+        restart_probability=cv("propagation.rwr.restart_probability", 0.2),
+        convergence_tolerance=cv("propagation.rwr.convergence_tolerance", 0.001),
+        max_iterations=cv("propagation.rwr.max_iterations", 10),
+        decay_type="exponential",
+        decay_parameter=cv("propagation.temporal.decay_parameter", 30.0),
+        score_threshold=cv("propagation.acceptance.score_threshold", 0.5),
+        max_candidate_edges=cv("propagation.limits.max_candidate_edges", 20),
+    )
+    scope = DependencyScopeConfig(
+        max_scope_resources=cv("dependency_scope.limits.max_scope_resources", 20),
+        max_materialized_resources=cv(
+            "dependency_scope.limits.max_materialized_resources", 10
+        ),
+    )
+    available = replace(
+        analysis_config,
+        p2_topology=P2TopologyConfig(propagation, None, scope, None),
+    )
+    unsupported = replace(
+        available,
+        p2_topology=replace(
+            available.p2_topology,
+            propagation=replace(propagation, decay_type="linear"),
+        ),
+    )
+    incomplete = replace(
+        available,
+        p2_topology=replace(
+            available.p2_topology,
+            propagation=None,
+            propagation_reason="PROPAGATION_CONFIG_INCOMPLETE",
+        ),
+    )
+
+    for variant in (unsupported, incomplete):
+        cache = Tier1Cache()
+        with Tier2JobManager(cache=cache, analyzer=analyzer, max_workers=1) as manager:
+            available_submission = manager.submit(
+                _package(), "C1", analysis_config=available
+            )
+            variant_submission = manager.submit(
+                _package(), "C1", analysis_config=variant
+            )
+            assert available_submission.cache_hit is False
+            assert variant_submission.cache_hit is False
+            assert (
+                manager.wait(available_submission.job_id, timeout=2).status
+                is JobStatus.SUCCEEDED
+            )
+            assert (
+                manager.wait(variant_submission.job_id, timeout=2).status
+                is JobStatus.SUCCEEDED
+            )
+
+    assert calls == 4
 
 
 def test_topology_results_are_not_inputs_to_audit_graph(monkeypatch, analysis_config):

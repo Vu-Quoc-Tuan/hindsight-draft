@@ -28,7 +28,9 @@ from .audit_analysis import (
 def _p2_cache_stamp(analysis_config: Any) -> str | None:
     """Return a deterministic stamp for every available P2 sub-config.
 
-    Propagation has an explicit version.  Scope currently has no independent
+    Propagation has an explicit version, but the version alone is not enough:
+    an operator can construct two envelopes with the same version while
+    changing a value or its provenance.  Scope currently has no independent
     version field, so its configured values and provenance are included to
     prevent changing either ceiling from reusing an old Tier-2 result.  An
     absent/incomplete production P2 envelope contributes no suffix; this keeps
@@ -42,8 +44,41 @@ def _p2_cache_stamp(analysis_config: Any) -> str | None:
     propagation = getattr(p2, "propagation", None)
     if propagation is not None:
         version = getattr(propagation, "config_version", None)
-        if isinstance(version, str) and version.strip():
-            parts.append(f"propagation:{version.strip()}")
+        decay_type = getattr(propagation, "decay_type", None)
+        propagation_fields = (
+            ("restart_probability", getattr(propagation, "restart_probability", None)),
+            ("convergence_tolerance", getattr(propagation, "convergence_tolerance", None)),
+            ("max_iterations", getattr(propagation, "max_iterations", None)),
+            ("decay_parameter", getattr(propagation, "decay_parameter", None)),
+            ("score_threshold", getattr(propagation, "score_threshold", None)),
+            ("max_candidate_edges", getattr(propagation, "max_candidate_edges", None)),
+        )
+        # Incomplete/unsupported envelopes deliberately produce no
+        # propagation suffix.  That makes them unable to collide with a
+        # complete available envelope, even when config_version is reused.
+        if (
+            isinstance(version, str)
+            and version.strip()
+            and decay_type == "exponential"
+            and all(
+                isinstance(getattr(configured, "path", None), str)
+                and bool(getattr(configured, "path", "").strip())
+                and getattr(configured, "value", None) is not None
+                and getattr(configured, "source", None) is not None
+                for _, configured in propagation_fields
+            )
+        ):
+            identities = [
+                f"{name}[path={getattr(configured, 'path')!r},"
+                f"value={getattr(configured, 'value')!r},"
+                f"source={getattr(getattr(configured, 'source'), 'value', getattr(configured, 'source'))!r}]"
+                for name, configured in propagation_fields
+            ]
+            parts.append(
+                "propagation:"
+                f"version={version.strip()!r},decay_type={decay_type!r},"
+                + ",".join(identities)
+            )
     scope = getattr(p2, "dependency_scope", None)
     if scope is not None:
         values = []
