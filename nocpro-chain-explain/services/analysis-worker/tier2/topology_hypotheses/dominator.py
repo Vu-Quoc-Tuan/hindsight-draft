@@ -21,10 +21,15 @@ ELIGIBLE_RELATION_TYPES = frozenset({"LOGICAL_DEPENDENCY", "SERVICE_DEPENDS_ON"}
 
 
 def _source_ref(edge: dict) -> tuple[str, str] | None:
-    """Return a proven edge-source identity; never invent one from snapshot data."""
-    source_id = str(edge.get("source_id") or "").strip()
-    source_version = str(edge.get("source_version") or "").strip()
-    if not source_id or not source_version:
+    """Return an exact source identity; never normalize or invent one."""
+    source_id = edge.get("source_id")
+    source_version = edge.get("source_version")
+    if (
+        not isinstance(source_id, str)
+        or not isinstance(source_version, str)
+        or not source_id.strip()
+        or not source_version.strip()
+    ):
         return None
     return f"{source_id}@{source_version}", source_version
 
@@ -39,7 +44,11 @@ def _provenance_signature(
             provenance_class = ProvenanceClass(
                 edge.get("provenance_class", ProvenanceClass.EXTERNAL_OPERATIONAL.value)
             )
-            raw_subtype = edge.get("provenance_subtype")
+            raw_subtype = (
+                edge["provenance_subtype"]
+                if "provenance_subtype" in edge
+                else ProvenanceSubtype.TOPOLOGY_EXTERNAL.value
+            )
             provenance_subtype = (
                 ProvenanceSubtype(raw_subtype) if raw_subtype is not None else None
             )

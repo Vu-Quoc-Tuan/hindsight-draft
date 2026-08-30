@@ -11,6 +11,7 @@ from libs.contracts import (
     IngestedChain,
     IngestedPackage,
     IngestedSnapshot,
+    load_validated_package,
 )
 from libs.provenance import ProvenanceClass, ProvenanceSubtype
 from tier2.topology_hypotheses import (
@@ -182,6 +183,94 @@ def test_missing_topology_source_identity_cannot_create_a_dominator_universe(
 
     assert result.status is HypothesisStatus.UNAVAILABLE
     assert result.reason is TopologyHypothesisReason.DIRECTED_TOPOLOGY_UNAVAILABLE
+
+
+def test_whitespace_distinct_source_identities_cannot_be_merged_into_a_witness():
+    package = _package(
+        [
+            _edge("ROOT", "CORE", source_id="source"),
+            _edge("CORE", "LEAF_A", source_id="source"),
+            _edge("CORE", "LEAF_B", source_id=" source"),
+        ],
+        [_mapping("A", "LEAF_A"), _mapping("B", "LEAF_B")],
+    )
+
+    result = analyze_common_dominator(package, "C1")
+
+    assert result.status is HypothesisStatus.UNAVAILABLE
+    assert result.reason is TopologyHypothesisReason.COMMON_DOMINATOR_UNAVAILABLE
+
+
+def test_validated_omitted_topology_subtype_uses_the_contract_default():
+    payload = {
+        "schema_version": "v1",
+        "snapshot": {
+            "snapshot_id": "S2",
+            "snapshot_version": "snapshot-v2",
+            "snapshot_time": "2026-08-30T00:00:00Z",
+            "status": "COMPLETE",
+            "source": "real-export-fixture",
+            "source_kind": "REAL_EXPORT_REPLAY",
+            "produced_at": "2026-08-30T00:00:00Z",
+            "topology_version": "topology-v2",
+        },
+        "alarms": [
+            {
+                "alarm_id": alarm_id,
+                "snapshot_id": "S2",
+                "source_kind": "REAL_EXPORT_REPLAY",
+                "provenance_class": "SYSTEM_FACT",
+                "raw": {},
+            }
+            for alarm_id in ("A", "B")
+        ],
+        "chains": [
+            {
+                "chain_id": "C1",
+                "snapshot_id": "S2",
+                "member_count": 2,
+                "source_kind": "REAL_EXPORT_REPLAY",
+                "provenance_class": "SYSTEM_FACT",
+            }
+        ],
+        "memberships": [
+            {
+                "chain_id": "C1",
+                "alarm_id": alarm_id,
+                "snapshot_id": "S2",
+                "source_kind": "REAL_EXPORT_REPLAY",
+            }
+            for alarm_id in ("A", "B")
+        ],
+        "topology": {
+            "edges": [
+                {
+                    "edge_id": edge_id,
+                    "source_resource_id": source,
+                    "target_resource_id": target,
+                    "relation_type": "LOGICAL_DEPENDENCY",
+                    "directed": True,
+                    "source_id": "topology-source",
+                    "source_version": "v2",
+                    "source_kind": "REAL_EXPORT_REPLAY",
+                }
+                for edge_id, source, target in (
+                    ("E1", "ROOT", "CORE"),
+                    ("E2", "CORE", "LEAF_A"),
+                    ("E3", "CORE", "LEAF_B"),
+                )
+            ],
+            "mappings": [
+                _mapping("A", "LEAF_A"),
+                _mapping("B", "LEAF_B"),
+            ],
+        },
+    }
+
+    result = analyze_common_dominator(load_validated_package(payload), "C1")
+
+    assert result.status is HypothesisStatus.AVAILABLE
+    assert result.provenance_subtype is ProvenanceSubtype.TOPOLOGY_EXTERNAL
 
 
 def test_cycle_reachable_from_a_root_has_an_exact_common_dominator():
