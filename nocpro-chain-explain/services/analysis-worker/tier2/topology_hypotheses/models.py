@@ -101,3 +101,71 @@ class DominatorResult:
         object.__setattr__(
             self, "covered_resource_ids", tuple(sorted(set(self.covered_resource_ids)))
         )
+
+
+@dataclass(frozen=True)
+class PropagationNodeScore:
+    """One alarm's converged stationary mass in the configured RWR."""
+
+    alarm_id: str
+    score: float
+
+
+@dataclass(frozen=True)
+class PropagationEdgeHypothesis:
+    """Accepted graph-following flow on one direct admissible alarm edge."""
+
+    source_alarm_id: str
+    target_alarm_id: str
+    score: float
+    transition_probability: float
+    temporal_delta_seconds: float
+
+
+@dataclass(frozen=True)
+class PropagationResult:
+    """Configured RWR result with explicit capability and convergence state."""
+
+    status: HypothesisStatus
+    reason: TopologyHypothesisReason | None
+    semantic: str | None
+    source_ref: str | None
+    relation_type: str | None
+    provenance_class: ProvenanceClass | None
+    provenance_subtype: ProvenanceSubtype | None
+    source_kind: str | None
+    config_version: str | None
+    parameter_provenance: Mapping[str, str]
+    candidate_node_count: int
+    candidate_edge_count: int
+    iterations: int
+    final_l1_distance: float | None
+    convergence_tolerance: float | None
+    restart_probability: float | None
+    seed_policy: str | None
+    dangling_policy: str | None
+    node_scores: tuple[PropagationNodeScore, ...]
+    hypotheses: tuple[PropagationEdgeHypothesis, ...]
+
+    def __post_init__(self) -> None:
+        """Freeze mappings and sort all public numerical output by alarm ID."""
+        object.__setattr__(
+            self,
+            "parameter_provenance",
+            MappingProxyType(dict(sorted(self.parameter_provenance.items()))),
+        )
+        object.__setattr__(
+            self,
+            "node_scores",
+            tuple(sorted(self.node_scores, key=lambda node: node.alarm_id)),
+        )
+        object.__setattr__(
+            self,
+            "hypotheses",
+            tuple(
+                sorted(
+                    self.hypotheses,
+                    key=lambda edge: (edge.source_alarm_id, edge.target_alarm_id),
+                )
+            ),
+        )
