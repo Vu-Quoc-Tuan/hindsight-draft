@@ -169,3 +169,91 @@ class PropagationResult:
                 )
             ),
         )
+
+
+@dataclass(frozen=True)
+class ResourceDetails:
+    """Optional complete resource lists for a dependency-scope result.
+
+    Detail materialization is deliberately independent from aggregate
+    computation.  ``None`` means that no list was emitted, never an empty
+    (and potentially misleading) partial list.
+    """
+
+    status: HypothesisStatus
+    reason: TopologyHypothesisReason | None
+    missing_resources: tuple[str, ...] | None
+    extra_resources: tuple[str, ...] | None
+
+    def __post_init__(self) -> None:
+        for field_name in ("missing_resources", "extra_resources"):
+            value = getattr(self, field_name)
+            if value is not None:
+                object.__setattr__(self, field_name, tuple(sorted(set(value))))
+
+
+@dataclass(frozen=True)
+class DependencyScopeResult:
+    """Exact overlap statistics anchored to the selected dominator witness."""
+
+    status: HypothesisStatus
+    reason: TopologyHypothesisReason | None
+    semantic: str | None
+    witness_resource_id: str | None
+    source_ref: str | None
+    relation_type: str | None
+    provenance_class: ProvenanceClass | None
+    provenance_subtype: ProvenanceSubtype | None
+    source_kind: str | None
+    observed_resource_count: int | None
+    scope_resource_count: int | None
+    intersection_count: int | None
+    union_count: int | None
+    observed_coverage: float | None
+    scope_precision: float | None
+    jaccard: float | None
+    missing_resource_count: int | None
+    extra_resource_count: int | None
+    max_scope_resources: int | None
+    max_materialized_resources: int | None
+    parameter_provenance: Mapping[str, str]
+    resource_details: ResourceDetails
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "parameter_provenance",
+            MappingProxyType(dict(sorted(self.parameter_provenance.items()))),
+        )
+
+    @property
+    def observed_count(self) -> int | None:
+        """Compact alias for clients using count terminology."""
+        return self.observed_resource_count
+
+    @property
+    def scope_count(self) -> int | None:
+        """Compact alias for clients using count terminology."""
+        return self.scope_resource_count
+
+    @property
+    def missing_count(self) -> int | None:
+        return self.missing_resource_count
+
+    @property
+    def extra_count(self) -> int | None:
+        return self.extra_resource_count
+
+
+@dataclass(frozen=True)
+class TopologyHypothesesResult:
+    """Independent Tier-2 topology capability results."""
+
+    dominator: DominatorResult
+    propagation: PropagationResult
+    dependency_scope: DependencyScopeResult
+
+    @property
+    def scope(self) -> DependencyScopeResult:
+        """Short alias retained for callers that refer to scope directly."""
+        return self.dependency_scope
