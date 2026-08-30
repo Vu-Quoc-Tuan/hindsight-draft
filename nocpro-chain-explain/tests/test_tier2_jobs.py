@@ -354,8 +354,41 @@ def test_incomplete_or_unsupported_p2_cannot_reuse_available_cache(analysis_conf
             propagation_reason="PROPAGATION_CONFIG_INCOMPLETE",
         ),
     )
+    malformed_propagation = replace(
+        available,
+        p2_topology=replace(
+            available.p2_topology,
+            propagation=replace(
+                propagation,
+                restart_probability=ConfiguredValue(
+                    path="propagation.rwr.restart_probability",
+                    value=0.2,
+                    source="FROZEN_SPEC",
+                ),
+            ),
+        ),
+    )
+    malformed_scope = replace(
+        available,
+        p2_topology=replace(
+            available.p2_topology,
+            dependency_scope=replace(
+                scope,
+                max_scope_resources=ConfiguredValue(
+                    path="dependency_scope.limits.max_scope_resources",
+                    value=20,
+                    source="FROZEN_SPEC",
+                ),
+            ),
+        ),
+    )
 
-    for variant in (unsupported, incomplete):
+    for variant in (
+        unsupported,
+        incomplete,
+        malformed_propagation,
+        malformed_scope,
+    ):
         cache = Tier1Cache()
         with Tier2JobManager(cache=cache, analyzer=analyzer, max_workers=1) as manager:
             available_submission = manager.submit(
@@ -375,7 +408,7 @@ def test_incomplete_or_unsupported_p2_cannot_reuse_available_cache(analysis_conf
                 is JobStatus.SUCCEEDED
             )
 
-    assert calls == 4
+    assert calls == 8
 
 
 def test_topology_results_are_not_inputs_to_audit_graph(monkeypatch, analysis_config):

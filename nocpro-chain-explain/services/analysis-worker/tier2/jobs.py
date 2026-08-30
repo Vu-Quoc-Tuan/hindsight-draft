@@ -15,6 +15,7 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from channels import EMPTY_TAXONOMY, AlarmTaxonomy
+from configuration import DependencyScopeConfig, PropagationConfig
 from libs.contracts import IngestedPackage
 from tier1a import CacheKey, CacheTier, Tier1Cache
 
@@ -23,6 +24,8 @@ from .audit_analysis import (
     SimilarityQueryContext,
     analyze_structural_audit,
 )
+from .topology_hypotheses.propagation import _configured_values
+from .topology_hypotheses.scope_overlap import _limits
 
 
 def _p2_cache_stamp(analysis_config: Any) -> str | None:
@@ -42,32 +45,26 @@ def _p2_cache_stamp(analysis_config: Any) -> str | None:
         return None
     parts: list[str] = []
     propagation = getattr(p2, "propagation", None)
-    if propagation is not None:
-        version = getattr(propagation, "config_version", None)
-        decay_type = getattr(propagation, "decay_type", None)
+    if isinstance(propagation, PropagationConfig):
+        numeric = _configured_values(propagation)
         propagation_fields = (
-            ("restart_probability", getattr(propagation, "restart_probability", None)),
-            ("convergence_tolerance", getattr(propagation, "convergence_tolerance", None)),
-            ("max_iterations", getattr(propagation, "max_iterations", None)),
-            ("decay_parameter", getattr(propagation, "decay_parameter", None)),
-            ("score_threshold", getattr(propagation, "score_threshold", None)),
-            ("max_candidate_edges", getattr(propagation, "max_candidate_edges", None)),
+            (
+                "restart_probability",
+                propagation.restart_probability,
+            ),
+            (
+                "convergence_tolerance",
+                propagation.convergence_tolerance,
+            ),
+            ("max_iterations", propagation.max_iterations),
+            ("decay_parameter", propagation.decay_parameter),
+            ("score_threshold", propagation.score_threshold),
+            ("max_candidate_edges", propagation.max_candidate_edges),
         )
         # Incomplete/unsupported envelopes deliberately produce no
         # propagation suffix.  That makes them unable to collide with a
         # complete available envelope, even when config_version is reused.
-        if (
-            isinstance(version, str)
-            and version.strip()
-            and decay_type == "exponential"
-            and all(
-                isinstance(getattr(configured, "path", None), str)
-                and bool(getattr(configured, "path", "").strip())
-                and getattr(configured, "value", None) is not None
-                and getattr(configured, "source", None) is not None
-                for _, configured in propagation_fields
-            )
-        ):
+        if numeric is not None:
             identities = [
                 f"{name}[path={getattr(configured, 'path')!r},"
                 f"value={getattr(configured, 'value')!r},"
@@ -76,11 +73,12 @@ def _p2_cache_stamp(analysis_config: Any) -> str | None:
             ]
             parts.append(
                 "propagation:"
-                f"version={version.strip()!r},decay_type={decay_type!r},"
+                f"version={propagation.config_version.strip()!r},"
+                f"decay_type={propagation.decay_type!r},"
                 + ",".join(identities)
             )
     scope = getattr(p2, "dependency_scope", None)
-    if scope is not None:
+    if isinstance(scope, DependencyScopeConfig) and _limits(scope) is not None:
         values = []
         for name in ("max_scope_resources", "max_materialized_resources"):
             configured = getattr(scope, name, None)
