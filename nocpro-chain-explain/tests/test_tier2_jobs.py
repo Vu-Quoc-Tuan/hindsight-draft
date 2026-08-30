@@ -411,6 +411,69 @@ def test_incomplete_or_unsupported_p2_cannot_reuse_available_cache(analysis_conf
     assert calls == 8
 
 
+def test_invalid_present_scope_cannot_collide_with_absent_scope(analysis_config):
+    def cv(path, value, source=ParameterSource.FROZEN_SPEC):
+        return ConfiguredValue(path=path, value=value, source=source)
+
+    propagation = PropagationConfig(
+        config_version="propagation-test-v1",
+        restart_probability=cv("propagation.rwr.restart_probability", 0.2),
+        convergence_tolerance=cv("propagation.rwr.convergence_tolerance", 0.001),
+        max_iterations=cv("propagation.rwr.max_iterations", 10),
+        decay_type="exponential",
+        decay_parameter=cv("propagation.temporal.decay_parameter", 30.0),
+        score_threshold=cv("propagation.acceptance.score_threshold", 0.5),
+        max_candidate_edges=cv("propagation.limits.max_candidate_edges", 20),
+    )
+    malformed_scope = DependencyScopeConfig(
+        max_scope_resources=ConfiguredValue(
+            path="dependency_scope.limits.max_scope_resources",
+            value=20,
+            source="FROZEN_SPEC",
+        ),
+        max_materialized_resources=cv(
+            "dependency_scope.limits.max_materialized_resources", 10
+        ),
+    )
+    propagation_only = replace(
+        analysis_config,
+        p2_topology=P2TopologyConfig(
+            propagation=propagation,
+            propagation_reason=None,
+            dependency_scope=None,
+            dependency_scope_reason="DEPENDENCY_SCOPE_CONFIG_INCOMPLETE",
+        ),
+    )
+    invalid_scope = replace(
+        propagation_only,
+        p2_topology=replace(
+            propagation_only.p2_topology,
+            dependency_scope=malformed_scope,
+            dependency_scope_reason=None,
+        ),
+    )
+
+    with Tier2JobManager(max_workers=1) as manager:
+        first = manager.submit(_package(), "C1", analysis_config=propagation_only)
+        first_view = manager.wait(first.job_id, timeout=5)
+        second = manager.submit(_package(), "C1", analysis_config=invalid_scope)
+        second_view = manager.wait(second.job_id, timeout=5)
+
+    assert first.cache_hit is False
+    assert second.cache_hit is False
+    assert first_view.status is JobStatus.SUCCEEDED
+    assert second_view.status is JobStatus.SUCCEEDED
+    assert first_view.cache_key.config_version != second_view.cache_key.config_version
+    assert (
+        first_view.result.topology_hypotheses.dependency_scope.reason.value
+        == "DEPENDENCY_SCOPE_UNAVAILABLE"
+    )
+    assert (
+        second_view.result.topology_hypotheses.dependency_scope.reason.value
+        == "DEPENDENCY_SCOPE_UNAVAILABLE"
+    )
+
+
 def test_topology_results_are_not_inputs_to_audit_graph(monkeypatch, analysis_config):
     import tier2.audit_analysis as audit_module
 

@@ -78,7 +78,9 @@ def _p2_cache_stamp(analysis_config: Any) -> str | None:
                 + ",".join(identities)
             )
     scope = getattr(p2, "dependency_scope", None)
-    if isinstance(scope, DependencyScopeConfig) and _limits(scope) is not None:
+    if scope is None:
+        pass
+    elif isinstance(scope, DependencyScopeConfig) and _limits(scope) is not None:
         values = []
         for name in ("max_scope_resources", "max_materialized_resources"):
             configured = getattr(scope, name, None)
@@ -91,6 +93,10 @@ def _p2_cache_stamp(analysis_config: Any) -> str | None:
             )
         if values:
             parts.append("scope:" + ",".join(values))
+    else:
+        # Keep absent scope unsuffixed, but distinguish a concrete malformed
+        # scope object from a valid propagation-only envelope.
+        parts.append("scope:INVALID")
     return ";".join(parts) or None
 
 
