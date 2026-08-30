@@ -7,6 +7,13 @@ from dataclasses import asdict
 from channels import ChannelValue
 from tier1b import ChainAnalysis
 from tier2 import Tier2JobView
+from tier2.topology_hypotheses import (
+    DependencyScopeResult,
+    DominatorResult,
+    PropagationResult,
+    ResourceDetails,
+    TopologyHypothesesResult,
+)
 
 from .schemas import (
     ChainAnalysisView,
@@ -19,6 +26,14 @@ from .schemas import (
     MemberView,
     PairEvidenceView,
     StructuralAuditView,
+    DependencyScopeView,
+    DominatorView,
+    PropagationDiagnosticsView,
+    PropagationEdgeHypothesisView,
+    PropagationNodeScoreView,
+    PropagationView,
+    ResourceDetailsView,
+    TopologyHypothesesView,
 )
 
 
@@ -156,6 +171,127 @@ def deep_dive_view(result) -> DeepDiveView:
         taxonomy_status=result.taxonomy_status,
         taxonomy_reason=result.taxonomy_reason,
         active_fingerprint_blocks=list(result.active_fingerprint_blocks),
+        topology_hypotheses=topology_hypotheses_view(result.topology_hypotheses),
+    )
+
+
+def _status(value) -> str:
+    return value.value if hasattr(value, "value") else value
+
+
+def _reason(value) -> str | None:
+    return value.value if hasattr(value, "value") else value
+
+
+def dominator_view(result: DominatorResult) -> DominatorView:
+    """Project the annotation without introducing an evidence score."""
+    return DominatorView(
+        status=_status(result.status),
+        reason=_reason(result.reason),
+        semantic=result.semantic,
+        witness_resource_id=result.witness_resource_id,
+        covered_resource_ids=list(result.covered_resource_ids),
+        source_ref=result.source_ref,
+        relation_type=result.relation_type,
+        provenance_class=_status(result.provenance_class),
+        provenance_subtype=_status(result.provenance_subtype),
+        source_kind=result.source_kind,
+    )
+
+
+def propagation_view(result: PropagationResult) -> PropagationView:
+    return PropagationView(
+        status=_status(result.status),
+        reason=_reason(result.reason),
+        semantic=result.semantic,
+        source_ref=result.source_ref,
+        relation_type=result.relation_type,
+        provenance_class=_status(result.provenance_class),
+        provenance_subtype=_status(result.provenance_subtype),
+        source_kind=result.source_kind,
+        config_version=result.config_version,
+        parameter_provenance=dict(result.parameter_provenance),
+        diagnostics=PropagationDiagnosticsView(
+            candidate_node_count=result.candidate_node_count,
+            candidate_edge_count=result.candidate_edge_count,
+            iterations=result.iterations,
+            final_l1_distance=result.final_l1_distance,
+            convergence_tolerance=result.convergence_tolerance,
+            restart_probability=result.restart_probability,
+            seed_policy=result.seed_policy,
+            dangling_policy=result.dangling_policy,
+            config_version=result.config_version,
+            parameter_provenance=dict(result.parameter_provenance),
+        ),
+        node_scores=[
+            PropagationNodeScoreView(alarm_id=item.alarm_id, score=item.score)
+            for item in result.node_scores
+        ],
+        hypotheses=[
+            PropagationEdgeHypothesisView(
+                source_alarm_id=item.source_alarm_id,
+                target_alarm_id=item.target_alarm_id,
+                score=item.score,
+                transition_probability=item.transition_probability,
+                temporal_delta_seconds=item.temporal_delta_seconds,
+            )
+            for item in result.hypotheses
+        ],
+    )
+
+
+def resource_details_view(result: ResourceDetails) -> ResourceDetailsView:
+    details_available = _status(result.status) == "AVAILABLE"
+    return ResourceDetailsView(
+        status=_status(result.status),
+        reason=_reason(result.reason),
+        missing_resources=(
+            list(result.missing_resources)
+            if details_available and result.missing_resources is not None
+            else None
+        ),
+        extra_resources=(
+            list(result.extra_resources)
+            if details_available and result.extra_resources is not None
+            else None
+        ),
+    )
+
+
+def dependency_scope_view(result: DependencyScopeResult) -> DependencyScopeView:
+    return DependencyScopeView(
+        status=_status(result.status),
+        reason=_reason(result.reason),
+        semantic=result.semantic,
+        witness_resource_id=result.witness_resource_id,
+        source_ref=result.source_ref,
+        relation_type=result.relation_type,
+        provenance_class=_status(result.provenance_class),
+        provenance_subtype=_status(result.provenance_subtype),
+        source_kind=result.source_kind,
+        observed_resource_count=result.observed_resource_count,
+        scope_resource_count=result.scope_resource_count,
+        intersection_count=result.intersection_count,
+        union_count=result.union_count,
+        observed_coverage=result.observed_coverage,
+        scope_precision=result.scope_precision,
+        jaccard=result.jaccard,
+        missing_resource_count=result.missing_resource_count,
+        extra_resource_count=result.extra_resource_count,
+        max_scope_resources=result.max_scope_resources,
+        max_materialized_resources=result.max_materialized_resources,
+        parameter_provenance=dict(result.parameter_provenance),
+        resource_details=resource_details_view(result.resource_details),
+    )
+
+
+def topology_hypotheses_view(
+    result: TopologyHypothesesResult,
+) -> TopologyHypothesesView:
+    return TopologyHypothesesView(
+        dominator=dominator_view(result.dominator),
+        propagation=propagation_view(result.propagation),
+        dependency_scope=dependency_scope_view(result.dependency_scope),
     )
 
 

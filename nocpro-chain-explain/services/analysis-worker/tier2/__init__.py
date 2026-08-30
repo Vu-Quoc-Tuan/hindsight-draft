@@ -13,6 +13,10 @@ from .jobs import (
     Tier2JobView,
     Tier2Submission,
 )
+from .topology_hypotheses import (
+    TopologyHypothesesResult,
+    analyze_topology_hypotheses,
+)
 
 __all__ = [
     "AuditExecutionPolicy",
@@ -24,4 +28,6 @@ __all__ = [
     "Tier2JobManager",
     "Tier2JobView",
     "Tier2Submission",
+    "TopologyHypothesesResult",
+    "analyze_topology_hypotheses",
 ]

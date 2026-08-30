@@ -214,3 +214,12 @@ def test_deep_dive_is_submitted_and_polled_as_a_job():
     assert polled.json()["result"]["similarity_trained_until_exclusive"] is None
     assert polled.json()["result"]["similarity_corpus_policy"] is None
     assert polled.json()["result"]["similarity_model_update_policy"] is None
+    topology = polled.json()["result"]["topology_hypotheses"]
+    assert topology["dominator"]["status"] == "UNAVAILABLE"
+    assert topology["dominator"]["reason"] is not None
+    assert "positive_score" not in topology["dominator"]
+    assert topology["propagation"]["status"] == "UNAVAILABLE"
+    assert topology["propagation"]["reason"] == "PROPAGATION_CONFIG_INCOMPLETE"
+    assert topology["dependency_scope"]["status"] == "UNAVAILABLE"
+    assert topology["dependency_scope"]["resource_details"]["missing_resources"] is None
+    assert topology["dependency_scope"]["resource_details"]["extra_resources"] is None

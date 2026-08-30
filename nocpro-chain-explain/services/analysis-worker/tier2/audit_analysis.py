@@ -32,6 +32,7 @@ from descriptor import (
     build_predicate_index,
     mine_descriptors,
 )
+from configuration import P2TopologyConfig
 from groups import AuditGraphMode
 from libs.contracts import IngestedPackage
 from similar_chains import (
@@ -42,6 +43,8 @@ from similar_chains import (
     find_similar_chains,
 )
 from similar_chains.temporal import CorpusPolicy, parse_time
+
+from .topology_hypotheses import TopologyHypothesesResult, analyze_topology_hypotheses
 
 
 class AuditPolicyRequired(RuntimeError):
@@ -103,6 +106,7 @@ class Tier2AuditAnalysis:
     structural_roles: dict[str, StructuralRoleResult]
     structural_audit: StructuralAuditResult
     over_merge: OverMergeVerdict
+    topology_hypotheses: TopologyHypothesesResult
     reason: str | None = None
     config_version: str | None = None
     epsilon: float | None = None
@@ -135,6 +139,7 @@ def analyze_structural_audit(
     cross_block_negative_evidence: bool = False,
     similarity_context: SimilarityQueryContext | None = None,
     similarity_top_k: int = 5,
+    p2_topology_config: P2TopologyConfig | None = None,
 ) -> Tier2AuditAnalysis:
     """Run an exact audit only when the caller's configured policy permits it."""
     chain = package.chains.get(chain_id)
@@ -241,6 +246,14 @@ def analyze_structural_audit(
         similarity_trained_until_exclusive = model.trained_until_exclusive
         similarity_corpus_policy = model.corpus_policy
         similarity_model_update_policy = model.model_update_policy
+    # P2 is an independent semantic branch.  It receives the immutable input
+    # package and optional envelope, never the evidence/audit graph produced
+    # above, so hypotheses cannot influence G*_audit or structural roles.
+    topology_hypotheses = analyze_topology_hypotheses(
+        package,
+        chain_id,
+        p2_topology_config,
+    )
     return Tier2AuditAnalysis(
         chain_id=chain_id,
         audit_graph_mode=AuditGraphMode.EXACT_FULL,
@@ -248,6 +261,7 @@ def analyze_structural_audit(
         structural_roles=roles,
         structural_audit=structural_audit,
         over_merge=over_merge,
+        topology_hypotheses=topology_hypotheses,
         config_version=mining_config.config_version,
         epsilon=epsilon,
         similar_chains=similar_results,

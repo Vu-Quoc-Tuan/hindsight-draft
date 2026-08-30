@@ -25,6 +25,42 @@ from .audit_analysis import (
 )
 
 
+def _p2_cache_stamp(analysis_config: Any) -> str | None:
+    """Return a deterministic stamp for every available P2 sub-config.
+
+    Propagation has an explicit version.  Scope currently has no independent
+    version field, so its configured values and provenance are included to
+    prevent changing either ceiling from reusing an old Tier-2 result.  An
+    absent/incomplete production P2 envelope contributes no suffix; this keeps
+    the existing shipped ``v1`` cache identity while the result remains
+    structured ``UNAVAILABLE``.
+    """
+    p2 = getattr(analysis_config, "p2_topology", None)
+    if p2 is None:
+        return None
+    parts: list[str] = []
+    propagation = getattr(p2, "propagation", None)
+    if propagation is not None:
+        version = getattr(propagation, "config_version", None)
+        if isinstance(version, str) and version.strip():
+            parts.append(f"propagation:{version.strip()}")
+    scope = getattr(p2, "dependency_scope", None)
+    if scope is not None:
+        values = []
+        for name in ("max_scope_resources", "max_materialized_resources"):
+            configured = getattr(scope, name, None)
+            if configured is None:
+                continue
+            source = getattr(getattr(configured, "source", None), "value", None)
+            values.append(
+                f"{name}={getattr(configured, 'value', None)}"
+                f"@{source or getattr(configured, 'source', None)}"
+            )
+        if values:
+            parts.append("scope:" + ",".join(values))
+    return ";".join(parts) or None
+
+
 class JobStatus(str, Enum):
     QUEUED = "QUEUED"
     RUNNING = "RUNNING"
@@ -118,6 +154,9 @@ class Tier2JobManager:
                 f"{run_config_version}|similarity:"
                 f"{similarity_context.model.model_version}"
             )
+        p2_stamp = _p2_cache_stamp(analysis_config)
+        if p2_stamp is not None:
+            run_config_version = f"{run_config_version}|p2:{p2_stamp}"
         key = self.cache.key_for(
             CacheTier.TIER_2,
             member_ids=members,
@@ -217,6 +256,7 @@ class Tier2JobManager:
                 similarity_top_k=int(
                     analysis_config.value("similar_chains.result_top_k")
                 ),
+                p2_topology_config=getattr(analysis_config, "p2_topology", None),
             )
         except Exception as exc:  # job boundary: failures become observable state
             with self._lock:

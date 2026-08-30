@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 from threading import Event
+from dataclasses import replace
 
 import pytest
 
-from configuration import load_analysis_config
+from configuration import (
+    ConfiguredValue,
+    DependencyScopeConfig,
+    ParameterSource,
+    P2TopologyConfig,
+    PropagationConfig,
+    load_analysis_config,
+)
 from tier1a import CacheTier, Tier1Cache
 from tier2 import JobStatus, SimilarityQueryContext, Tier2JobManager
 from groups import AuditGraphMode
@@ -185,6 +193,111 @@ def test_default_worker_runs_real_per_chain_audit(analysis_config):
     assert completed.result.similar_chains == ()
     assert completed.result.similarity_status == "UNAVAILABLE"
     assert completed.result.similarity_unavailable_reason == "LINEAGE_NOT_READY"
+    assert completed.result.topology_hypotheses.dominator.status.value == "UNAVAILABLE"
+    assert completed.result.topology_hypotheses.dominator.reason is not None
+    assert completed.result.topology_hypotheses.propagation.status.value == "UNAVAILABLE"
+    assert (
+        completed.result.topology_hypotheses.propagation.reason.value
+        == "PROPAGATION_CONFIG_INCOMPLETE"
+    )
+    assert (
+        completed.result.topology_hypotheses.dependency_scope.status.value
+        == "UNAVAILABLE"
+    )
+
+
+def test_p2_config_versions_and_scope_values_are_part_of_cache_stamp(analysis_config):
+    calls = 0
+
+    def analyzer(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return {"run": calls}
+
+    def cv(path, value):
+        return ConfiguredValue(
+            path=path, value=value, source=ParameterSource.FROZEN_SPEC
+        )
+
+    propagation = PropagationConfig(
+        config_version="propagation-test-v1",
+        restart_probability=cv("propagation.rwr.restart_probability", 0.2),
+        convergence_tolerance=cv("propagation.rwr.convergence_tolerance", 0.001),
+        max_iterations=cv("propagation.rwr.max_iterations", 10),
+        decay_type="exponential",
+        decay_parameter=cv("propagation.temporal.decay_parameter", 30.0),
+        score_threshold=cv("propagation.acceptance.score_threshold", 0.5),
+        max_candidate_edges=cv("propagation.limits.max_candidate_edges", 20),
+    )
+    scope = DependencyScopeConfig(
+        max_scope_resources=cv("dependency_scope.limits.max_scope_resources", 20),
+        max_materialized_resources=cv(
+            "dependency_scope.limits.max_materialized_resources", 10
+        ),
+    )
+    config_a = replace(
+        analysis_config,
+        p2_topology=P2TopologyConfig(propagation, None, scope, None),
+    )
+    config_b = replace(
+        config_a,
+        p2_topology=replace(
+            config_a.p2_topology,
+            propagation=replace(propagation, config_version="propagation-test-v2"),
+        ),
+    )
+    config_c = replace(
+        config_a,
+        p2_topology=replace(
+            config_a.p2_topology,
+            dependency_scope=replace(
+                scope,
+                max_scope_resources=cv(
+                    "dependency_scope.limits.max_scope_resources", 21
+                ),
+            ),
+        ),
+    )
+
+    cache = Tier1Cache()
+    with Tier2JobManager(cache=cache, analyzer=analyzer, max_workers=1) as manager:
+        submissions = [
+            manager.submit(_package(), "C1", analysis_config=config)
+            for config in (config_a, config_b, config_c)
+        ]
+        for submission in submissions:
+            assert manager.wait(submission.job_id, timeout=2).status is JobStatus.SUCCEEDED
+
+    keys = [cache.tier_entries(CacheTier.TIER_2)[index].key.config_version for index in range(3)]
+    assert calls == 3
+    assert all(key != "v1" for key in keys)
+    assert "propagation:propagation-test-v1" in keys[0]
+    assert "propagation:propagation-test-v2" in keys[1]
+    assert "max_scope_resources=21" in keys[2]
+
+
+def test_topology_results_are_not_inputs_to_audit_graph(monkeypatch, analysis_config):
+    import tier2.audit_analysis as audit_module
+
+    original = audit_module.build_audit_graph
+    observed = {}
+
+    def recording_build_audit_graph(members, pair_values):
+        observed["members"] = members
+        observed["pair_values"] = pair_values
+        return original(members, pair_values)
+
+    monkeypatch.setattr(audit_module, "build_audit_graph", recording_build_audit_graph)
+    with Tier2JobManager(max_workers=1) as manager:
+        submission = manager.submit(_package(), "C1", analysis_config=analysis_config)
+        completed = manager.wait(submission.job_id, timeout=5)
+
+    assert completed.status is JobStatus.SUCCEEDED
+    assert observed["members"]
+    assert not any(
+        type(value).__name__ == "TopologyHypothesesResult"
+        for value in (*observed["members"], observed["pair_values"])
+    )
 
 
 def test_versioned_similarity_context_is_used_and_part_of_cache_key(analysis_config):

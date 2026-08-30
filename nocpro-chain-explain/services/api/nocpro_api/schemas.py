@@ -146,6 +146,99 @@ class StructuralAuditView(ApiModel):
     best_cut_phi: float | None
 
 
+class DominatorView(ApiModel):
+    status: str
+    reason: str | None
+    semantic: str | None
+    witness_resource_id: str | None
+    covered_resource_ids: list[str]
+    source_ref: str | None
+    relation_type: str | None
+    provenance_class: str | None
+    provenance_subtype: str | None
+    source_kind: str | None
+
+
+class PropagationDiagnosticsView(ApiModel):
+    candidate_node_count: int
+    candidate_edge_count: int
+    iterations: int
+    final_l1_distance: float | None
+    convergence_tolerance: float | None
+    restart_probability: float | None
+    seed_policy: str | None
+    dangling_policy: str | None
+    config_version: str | None
+    parameter_provenance: dict[str, str]
+
+
+class PropagationNodeScoreView(ApiModel):
+    alarm_id: str
+    score: float
+
+
+class PropagationEdgeHypothesisView(ApiModel):
+    source_alarm_id: str
+    target_alarm_id: str
+    score: float
+    transition_probability: float
+    temporal_delta_seconds: float
+
+
+class PropagationView(ApiModel):
+    status: str
+    reason: str | None
+    semantic: str | None
+    source_ref: str | None
+    relation_type: str | None
+    provenance_class: str | None
+    provenance_subtype: str | None
+    source_kind: str | None
+    config_version: str | None
+    parameter_provenance: dict[str, str]
+    diagnostics: PropagationDiagnosticsView
+    node_scores: list[PropagationNodeScoreView]
+    hypotheses: list[PropagationEdgeHypothesisView]
+
+
+class ResourceDetailsView(ApiModel):
+    status: str
+    reason: str | None
+    missing_resources: list[str] | None
+    extra_resources: list[str] | None
+
+
+class DependencyScopeView(ApiModel):
+    status: str
+    reason: str | None
+    semantic: str | None
+    witness_resource_id: str | None
+    source_ref: str | None
+    relation_type: str | None
+    provenance_class: str | None
+    provenance_subtype: str | None
+    source_kind: str | None
+    observed_resource_count: int | None
+    scope_resource_count: int | None
+    intersection_count: int | None
+    union_count: int | None
+    observed_coverage: float | None
+    scope_precision: float | None
+    jaccard: float | None
+    missing_resource_count: int | None
+    extra_resource_count: int | None
+    max_scope_resources: int | None
+    max_materialized_resources: int | None
+    parameter_provenance: dict[str, str]
+    resource_details: ResourceDetailsView
+
+
+class TopologyHypothesesView(ApiModel):
+    dominator: DominatorView
+    propagation: PropagationView
+    dependency_scope: DependencyScopeView
+
+
 class DeepDiveView(ApiModel):
     chain_id: str
     audit_graph_mode: str
@@ -162,6 +255,7 @@ class DeepDiveView(ApiModel):
     taxonomy_status: str | None
     taxonomy_reason: str | None
     active_fingerprint_blocks: list[str]
+    topology_hypotheses: TopologyHypothesesView
 
 
 class JobView(ApiModel):
