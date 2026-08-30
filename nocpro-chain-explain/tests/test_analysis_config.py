@@ -228,6 +228,21 @@ def test_invalid_complete_p2_config_fails_closed_without_blocking_p0_p1(
     assert config.value("role.c_min") == 0.5
 
 
+def test_oversized_p2_float_fails_closed_without_blocking_p0_p1(tmp_path: Path):
+    oversized_integer = "9" * 400
+    text = COMPLETE_P2_YAML.replace(
+        "    restart_probability: {value: 0.2, source: DATA_DRIVEN}",
+        "    restart_probability: "
+        f"{{value: {oversized_integer}, source: DATA_DRIVEN}}",
+    )
+
+    config = load_analysis_config(_write(tmp_path, text))
+
+    assert config.p2_topology.propagation is None
+    assert config.p2_topology.propagation_reason == "PROPAGATION_CONFIG_INCOMPLETE"
+    assert config.value("role.c_min") == 0.5
+
+
 def test_shipped_v1_config_constructs_engine_configs_with_one_version():
     config = load_analysis_config(SHIPPED_CONFIG)
 

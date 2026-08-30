@@ -100,7 +100,12 @@ class _ParameterRule:
             raise AnalysisConfigError(f"{path}: value must be numeric")
         if self.numeric_type is int and not isinstance(value, int):
             raise AnalysisConfigError(f"{path}: value must be an integer")
-        normalized: int | float = int(value) if self.numeric_type is int else float(value)
+        try:
+            normalized: int | float = (
+                int(value) if self.numeric_type is int else float(value)
+            )
+        except OverflowError as exc:
+            raise AnalysisConfigError(f"{path}: value is out of range") from exc
         if self.minimum is not None:
             invalid = (
                 normalized < self.minimum
