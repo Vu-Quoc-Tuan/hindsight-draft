@@ -373,14 +373,16 @@ replays are idempotent; a conflicting duplicate invalidates the snapshot. HTTP
 snapshot ingest remains available for development and writes through the same
 canonical PostgreSQL repository.
 
-The isolated acceptance script was run on 2026-08-30. Docker successfully
-built the API/web images, created the isolated PostgreSQL/Kafka stack, ran
-migrations and started the services. The real replay then stopped because the
-sibling `nocpro-mock` checkout did not contain its required external export:
-`datasets/raw/alarm_data.csv` (`FileNotFoundError`). Therefore this run did not
-reach Chromium, Docker recovery cases or the 1,072-member benchmark, and no
-end-to-end pass or performance claim is made here. Once the documented export
-is supplied, rerun `./tests/e2e/run_acceptance.sh` to obtain that evidence.
+The isolated acceptance was completed on 2026-08-30 with a read-only Compose
+override mounting the exact real exports from the sibling `nocpro-mock`
+checkout. Snapshot `acceptance-real-20260830T024315Z` passed the full replay
+path, both Chromium operator tests (`2/2`), all four Docker recovery tests
+(`4/4`), and the 1,072-member Tier-1B request in `1.217181s`. The complete
+acceptance run took `70.73s`, and the isolated containers, network and volume
+were cleaned up successfully. The export mount is an environment precondition
+for replay; a plain worktree run without that external mount cannot locate
+`datasets/raw/alarm_data.csv`. This is local-run evidence, not a production
+SLO or production-data validation.
 
 The unresolved external gates are recorded explicitly:
 
