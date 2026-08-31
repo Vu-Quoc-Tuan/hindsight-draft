@@ -113,6 +113,21 @@ def test_chain_common_strict_dominator_is_annotation_only(package: IngestedPacka
     assert not hasattr(result, "positive_score")
 
 
+def test_directed_topology_missing_source_version_fails_closed(package: IngestedPackage):
+    unversioned = [
+        {key: value for key, value in edge.items() if key != "source_version"}
+        for edge in package.topology["edges"]
+    ]
+
+    result = analyze_common_dominator(
+        replace(package, topology={**package.topology, "edges": unversioned}),
+        "C1",
+    )
+
+    assert result.status is HypothesisStatus.UNAVAILABLE
+    assert result.reason is TopologyHypothesisReason.TOPOLOGY_SOURCE_VERSION_MISSING
+
+
 def test_directed_universes_are_isolated_by_source_and_relation(
     package: IngestedPackage,
 ):
@@ -182,7 +197,7 @@ def test_missing_topology_source_identity_cannot_create_a_dominator_universe(
     )
 
     assert result.status is HypothesisStatus.UNAVAILABLE
-    assert result.reason is TopologyHypothesisReason.DIRECTED_TOPOLOGY_UNAVAILABLE
+    assert result.reason is TopologyHypothesisReason.TOPOLOGY_SOURCE_VERSION_MISSING
 
 
 def test_whitespace_distinct_source_identities_cannot_be_merged_into_a_witness():

@@ -177,9 +177,11 @@ def test_indexed_rival_dep_hop_matches_sparse_pairwise_oracle(two_chain_package)
             {
                 "source_resource_id": "R1",
                 "target_resource_id": "R2",
-                "relation_type": "IP_ADJACENCY",
-                "directed": False,
-            }
+                    "relation_type": "IP_ADJACENCY",
+                    "directed": False,
+                    "source_id": "inventory",
+                    "source_version": "topology-v1",
+                }
         ],
         "mappings": [
             {

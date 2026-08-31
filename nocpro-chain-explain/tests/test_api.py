@@ -149,7 +149,8 @@ def test_pair_why_serializes_channel_family_and_dependency_semantic():
                     "nodes": [resource, "ROOT"],
                     "source_id": "inventory",
                     "source_kind": "REAL_EXPORT_REPLAY",
-            }
+                    "source_version": "v17",
+                }
             for resource in ("RA", "RB")
         ],
         "mappings": [

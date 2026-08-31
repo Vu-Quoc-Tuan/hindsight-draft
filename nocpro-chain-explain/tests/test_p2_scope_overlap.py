@@ -221,3 +221,20 @@ def test_orchestration_keeps_independent_results_and_missing_configs(scope_confi
     assert result.scope.status is HypothesisStatus.AVAILABLE
     assert result.propagation.status is HypothesisStatus.UNAVAILABLE
     assert result.propagation.reason is TopologyHypothesisReason.PROPAGATION_CONFIG_INCOMPLETE
+
+
+def test_scope_inherits_missing_topology_source_version(scope_config):
+    edges = [_edge("ROOT", "WITNESS"), _edge("WITNESS", "OBSERVED_A")]
+    for edge in edges:
+        edge.pop("source_version")
+    package = _package(edges, {"A": "OBSERVED_A"})
+    from configuration import P2TopologyConfig
+
+    result = analyze_topology_hypotheses(
+        package,
+        "C1",
+        P2TopologyConfig(None, "missing", scope_config, None),
+    )
+
+    assert result.dominator.reason is TopologyHypothesisReason.TOPOLOGY_SOURCE_VERSION_MISSING
+    assert result.scope.reason is TopologyHypothesisReason.TOPOLOGY_SOURCE_VERSION_MISSING

@@ -10,8 +10,9 @@ from typing import Mapping
 
 from configuration import ConfiguredValue, PropagationConfig
 from libs.contracts import IngestedPackage
+from topology_source import has_missing_topology_source
 
-from .dominator import build_directed_universes
+from .dominator import _eligible_directed_edges, build_directed_universes
 from .models import (
     DirectedUniverse,
     HypothesisStatus,
@@ -360,6 +361,10 @@ def _empty_result(
         dangling_policy=DANGLING_POLICY if numeric else None,
         node_scores=(),
         hypotheses=(),
+        source_id=universe.source_id if universe else None,
+        source_version=universe.source_version if universe else None,
+        scenario_id=universe.scenario_id if universe else None,
+        generator_version=universe.generator_version if universe else None,
     )
 
 
@@ -374,6 +379,13 @@ def analyze_propagation(
         return _empty_result(
             TopologyHypothesisReason.PROPAGATION_CONFIG_INCOMPLETE,
             numeric=None,
+        )
+
+    eligible_edges = _eligible_directed_edges(package)
+    if eligible_edges and has_missing_topology_source(eligible_edges):
+        return _empty_result(
+            TopologyHypothesisReason.TOPOLOGY_SOURCE_VERSION_MISSING,
+            numeric=numeric,
         )
 
     alarm_ids = tuple(sorted(set(package.members_of(chain_id))))
@@ -495,4 +507,8 @@ def analyze_propagation(
         dangling_policy=DANGLING_POLICY,
         node_scores=node_scores,
         hypotheses=tuple(hypotheses),
+        source_id=universe.source_id,
+        source_version=universe.source_version,
+        scenario_id=universe.scenario_id,
+        generator_version=universe.generator_version,
     )

@@ -99,6 +99,10 @@ def _unavailable(
         max_materialized_resources=max_materialized_resources,
         parameter_provenance=parameter_provenance,
         resource_details=_details_unavailable(reason),
+        source_id=(dominator.source_id if dominator else None),
+        source_version=(dominator.source_version if dominator else None),
+        scenario_id=(dominator.scenario_id if dominator else None),
+        generator_version=(dominator.generator_version if dominator else None),
     )
 
 
@@ -145,8 +149,14 @@ def analyze_dependency_scope(
         or not dominator.witness_resource_id
         or dominator.universe is None
     ):
+        reason = (
+            TopologyHypothesisReason.TOPOLOGY_SOURCE_VERSION_MISSING
+            if dominator.reason
+            is TopologyHypothesisReason.TOPOLOGY_SOURCE_VERSION_MISSING
+            else TopologyHypothesisReason.DEPENDENCY_SCOPE_UNAVAILABLE
+        )
         return _unavailable(
-            TopologyHypothesisReason.DEPENDENCY_SCOPE_UNAVAILABLE,
+            reason,
             dominator=dominator,
             max_scope_resources=max_scope,
             max_materialized_resources=max_materialized,
@@ -263,6 +273,10 @@ def _analyze_dependency_scope_with_members(
         max_materialized_resources=max_materialized,
         parameter_provenance=provenance,
         resource_details=details,
+        source_id=dominator.source_id,
+        source_version=dominator.source_version,
+        scenario_id=dominator.scenario_id,
+        generator_version=dominator.generator_version,
     )
 
 
@@ -285,8 +299,14 @@ def analyze_dependency_scope_for_chain(
         or not dominator.witness_resource_id
         or dominator.universe is None
     ):
+        reason = (
+            TopologyHypothesisReason.TOPOLOGY_SOURCE_VERSION_MISSING
+            if dominator.reason
+            is TopologyHypothesisReason.TOPOLOGY_SOURCE_VERSION_MISSING
+            else TopologyHypothesisReason.DEPENDENCY_SCOPE_UNAVAILABLE
+        )
         return _unavailable(
-            TopologyHypothesisReason.DEPENDENCY_SCOPE_UNAVAILABLE,
+            reason,
             dominator=dominator,
             max_scope_resources=max_scope,
             max_materialized_resources=max_materialized,

@@ -25,6 +25,7 @@ from channels import (
     DirectedHierarchy,
     VerifiedPath,
     build_active_path_index,
+    build_dep_upstream_providers,
     build_directed_hierarchy,
     evaluate_shared_active_path,
     evaluate_shared_ancestor,
@@ -32,12 +33,28 @@ from channels import (
 )
 from channels.base import EvidenceState
 from channels.dependency import ResourceResolver
-from libs.contracts import IngestedAlarm
+from libs.contracts import IngestedAlarm, IngestedPackage, IngestedSnapshot
 from libs.provenance import NormalizedChannel, build_derivation_groups
 
 
 def alarm(alarm_id: str) -> IngestedAlarm:
     return IngestedAlarm(alarm_id=alarm_id, snapshot_id="s1", raw={})
+
+
+def package_with_topology(topology: dict) -> IngestedPackage:
+    return IngestedPackage(
+        snapshot=IngestedSnapshot(
+            snapshot_id="s1",
+            snapshot_version="1",
+            snapshot_time="2026-08-31T00:00:00Z",
+            status="COMPLETE",
+            source="foreign-producer",
+            source_kind="SYNTHETIC_TEST",
+            produced_at="2026-08-31T00:00:01Z",
+            topology_version="must-not-be-used-as-record-fallback",
+        ),
+        topology=topology,
+    )
 
 
 # --------------------------------------------------------------------------
@@ -229,6 +246,108 @@ def test_dep_upstream_contract_separates_provider_but_deduplicates_same_source()
         "DepUpstreamAncestor@topology-v17",
         "DepUpstreamActivePath@topology-v17",
     }
+
+
+def test_provider_builder_rejects_unversioned_hierarchy_without_snapshot_fallback():
+    package = package_with_topology(
+        {
+            "edges": [
+                {
+                    "source_resource_id": "ROOT",
+                    "target_resource_id": "R1",
+                    "relation_type": "LOGICAL_DEPENDENCY",
+                    "directed": True,
+                    "source_id": "synthetic-topology",
+                }
+            ]
+        }
+    )
+
+    provider = next(
+        item
+        for item in build_dep_upstream_providers(package)
+        if isinstance(item, DepUpstreamAncestor)
+    )
+    result = provider.evaluate(alarm("a1"), alarm("a2"))
+
+    assert result.state is EvidenceState.UNAVAILABLE
+    assert result.detail == "TOPOLOGY_SOURCE_VERSION_MISSING"
+    assert result.source_version is None
+    assert "must-not-be-used" not in result.derivation_tag
+
+
+def test_provider_builder_carries_exact_active_path_source_and_generation_trace():
+    package = package_with_topology(
+        {
+            "active_paths": [
+                {
+                    "path_id": "p1",
+                    "resource_id": "R1",
+                    "nodes": ["R1", "ROOT"],
+                    "source_id": "synthetic-topology",
+                    "source_version": "syn-topo-v3",
+                    "generation": {
+                        "scenario_id": "scenario-active-path-v1",
+                        "generator_version": "mockgen-9",
+                    },
+                },
+                {
+                    "path_id": "p2",
+                    "resource_id": "R2",
+                    "nodes": ["R2", "ROOT"],
+                    "source_id": "synthetic-topology",
+                    "source_version": "syn-topo-v3",
+                    "generation": {
+                        "scenario_id": "scenario-active-path-v1",
+                        "generator_version": "mockgen-9",
+                    },
+                },
+            ],
+            "mappings": [
+                {"alarm_id": "a1", "resource_id": "R1", "mapping_status": "EXACT"},
+                {"alarm_id": "a2", "resource_id": "R2", "mapping_status": "EXACT"},
+            ],
+        }
+    )
+
+    provider = next(
+        item
+        for item in build_dep_upstream_providers(package)
+        if isinstance(item, DepUpstreamActivePath) and item.path_index is not None
+    )
+    result = provider.evaluate(alarm("a1"), alarm("a2"))
+
+    assert result.availability is True
+    assert result.source_id == "synthetic-topology"
+    assert result.source_version == "syn-topo-v3"
+    assert result.scenario_id == "scenario-active-path-v1"
+    assert result.generator_version == "mockgen-9"
+    assert result.source_version != result.generator_version
+
+
+def test_provider_builder_rejects_unversioned_active_path():
+    package = package_with_topology(
+        {
+            "active_paths": [
+                {
+                    "path_id": "p1",
+                    "resource_id": "R1",
+                    "nodes": ["R1", "ROOT"],
+                    "source_id": "synthetic-topology",
+                }
+            ]
+        }
+    )
+
+    provider = next(
+        item
+        for item in build_dep_upstream_providers(package)
+        if isinstance(item, DepUpstreamActivePath)
+    )
+    result = provider.evaluate(alarm("a1"), alarm("a2"))
+
+    assert result.state is EvidenceState.UNAVAILABLE
+    assert result.detail == "TOPOLOGY_SOURCE_VERSION_MISSING"
 
 
 # --------------------------------------------------------------------------

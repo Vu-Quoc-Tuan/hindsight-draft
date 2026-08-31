@@ -7,6 +7,11 @@ from collections.abc import Iterable
 
 from libs.contracts import IngestedPackage
 from libs.provenance import ProvenanceClass, ProvenanceSubtype
+from topology_source import (
+    consistent_topology_trace,
+    has_missing_topology_source,
+    topology_source_trace,
+)
 
 from .models import (
     DirectedUniverse,
@@ -20,18 +25,16 @@ from .mapping import resolve_p2_mappings
 ELIGIBLE_RELATION_TYPES = frozenset({"LOGICAL_DEPENDENCY", "SERVICE_DEPENDS_ON"})
 
 
-def _source_ref(edge: dict) -> tuple[str, str] | None:
-    """Return an exact source identity; never normalize or invent one."""
-    source_id = edge.get("source_id")
-    source_version = edge.get("source_version")
-    if (
-        not isinstance(source_id, str)
-        or not isinstance(source_version, str)
-        or not source_id.strip()
-        or not source_version.strip()
-    ):
-        return None
-    return f"{source_id}@{source_version}", source_version
+def _eligible_directed_edges(package: IngestedPackage) -> tuple[dict, ...]:
+    """Return exact directed edges with a supported dependency semantic."""
+    return tuple(
+        edge
+        for edge in package.topology.get("edges") or ()
+        if edge.get("relation_type") in ELIGIBLE_RELATION_TYPES
+        and edge.get("directed") is True
+        and edge.get("source_resource_id")
+        and edge.get("target_resource_id")
+    )
 
 
 def _provenance_signature(
@@ -66,24 +69,22 @@ def build_directed_universes(package: IngestedPackage) -> tuple[DirectedUniverse
     never accepts ``IP_ADJACENCY``.
     """
     grouped: dict[tuple[str, str, str | None], list[dict]] = {}
-    for edge in package.topology.get("edges") or ():
-        relation_type = edge.get("relation_type")
-        if relation_type not in ELIGIBLE_RELATION_TYPES or edge.get("directed") is not True:
-            continue
-        source = edge.get("source_resource_id")
-        target = edge.get("target_resource_id")
-        if not source or not target:
-            continue
-        source_identity = _source_ref(edge)
-        if source_identity is None:
+    for edge in _eligible_directed_edges(package):
+        relation_type = edge["relation_type"]
+        trace = topology_source_trace(edge)
+        if trace is None:
             # A snapshot-wide version cannot establish that independently
             # supplied edges belong to one source/version universe.
             continue
-        source_ref, source_version = source_identity
-        grouped.setdefault((source_ref, relation_type, source_version), []).append(edge)
+        grouped.setdefault(
+            (trace.source_ref, relation_type, trace.source_version), []
+        ).append(edge)
 
     universes: list[DirectedUniverse] = []
     for (source_ref, relation_type, source_version), edges in sorted(grouped.items()):
+        trace = consistent_topology_trace(edges)
+        if trace is None:
+            continue
         provenance = _provenance_signature(edges)
         if provenance is None:
             # One universe cannot claim a provenance that its source did not
@@ -118,6 +119,9 @@ def build_directed_universes(package: IngestedPackage) -> tuple[DirectedUniverse
                 provenance_subtype=provenance_subtype,
                 source_kind=source_kind,
                 source_version=source_version,
+                source_id=trace.source_id,
+                scenario_id=trace.scenario_id,
+                generator_version=trace.generator_version,
             )
         )
     return tuple(universes)
@@ -201,6 +205,11 @@ def _unavailable(reason: TopologyHypothesisReason) -> DominatorResult:
 def analyze_common_dominator(package: IngestedPackage, chain_id: str) -> DominatorResult:
     """Return an exact common strict dominator or a structured unavailable result."""
     member_alarm_ids = tuple(package.members_of(chain_id))
+    eligible_edges = _eligible_directed_edges(package)
+    if eligible_edges and has_missing_topology_source(eligible_edges):
+        return _unavailable(
+            TopologyHypothesisReason.TOPOLOGY_SOURCE_VERSION_MISSING
+        )
     universes = build_directed_universes(package)
     if not universes:
         return _unavailable(TopologyHypothesisReason.DIRECTED_TOPOLOGY_UNAVAILABLE)
@@ -243,4 +252,8 @@ def analyze_common_dominator(package: IngestedPackage, chain_id: str) -> Dominat
         provenance_subtype=universe.provenance_subtype,
         source_kind=universe.source_kind,
         universe=universe,
+        source_id=universe.source_id,
+        source_version=universe.source_version,
+        scenario_id=universe.scenario_id,
+        generator_version=universe.generator_version,
     )

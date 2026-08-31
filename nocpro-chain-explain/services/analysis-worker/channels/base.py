@@ -49,6 +49,10 @@ class ChannelValue:
     dependency_semantic: DependencySemantic | None = None
     #: Versioned source/model identity used to derive the effective group tag.
     source_ref: str | None = None
+    source_id: str | None = None
+    source_version: str | None = None
+    scenario_id: str | None = None
+    generator_version: str | None = None
 
     def __post_init__(self) -> None:
         # Normalized channels are contractually bounded; raw SYSTEM_FACT values
@@ -91,6 +95,10 @@ def unavailable(
     channel_family: ChannelFamily | None = None,
     dependency_semantic: DependencySemantic | None = None,
     source_ref: str | None = None,
+    source_id: str | None = None,
+    source_version: str | None = None,
+    scenario_id: str | None = None,
+    generator_version: str | None = None,
 ) -> ChannelValue:
     """Build an explicit ⊥ value.
 
@@ -109,4 +117,8 @@ def unavailable(
         channel_family=channel_family,
         dependency_semantic=dependency_semantic,
         source_ref=source_ref,
+        source_id=source_id,
+        source_version=source_version,
+        scenario_id=scenario_id,
+        generator_version=generator_version,
     )

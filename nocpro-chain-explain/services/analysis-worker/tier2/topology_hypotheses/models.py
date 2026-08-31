@@ -32,6 +32,7 @@ class TopologyHypothesisReason(str, Enum):
     DEPENDENCY_SCOPE_UNAVAILABLE = "DEPENDENCY_SCOPE_UNAVAILABLE"
     SCOPE_LIMIT_EXCEEDED = "SCOPE_LIMIT_EXCEEDED"
     MATERIALIZATION_LIMIT_EXCEEDED = "MATERIALIZATION_LIMIT_EXCEEDED"
+    TOPOLOGY_SOURCE_VERSION_MISSING = "TOPOLOGY_SOURCE_VERSION_MISSING"
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,9 @@ class DirectedUniverse:
     provenance_subtype: ProvenanceSubtype | None
     source_kind: str | None
     source_version: str | None
+    source_id: str | None = None
+    scenario_id: str | None = None
+    generator_version: str | None = None
 
     def __post_init__(self) -> None:
         """Normalize every public collection to deterministic immutable values."""
@@ -95,6 +99,10 @@ class DominatorResult:
     source_kind: str | None
     #: Retains the exact non-mixed universe for later scope analysis.
     universe: DirectedUniverse | None = None
+    source_id: str | None = None
+    source_version: str | None = None
+    scenario_id: str | None = None
+    generator_version: str | None = None
 
     def __post_init__(self) -> None:
         """Retain one deterministic immutable resource set in the public result."""
@@ -146,6 +154,10 @@ class PropagationResult:
     dangling_policy: str | None
     node_scores: tuple[PropagationNodeScore, ...]
     hypotheses: tuple[PropagationEdgeHypothesis, ...]
+    source_id: str | None = None
+    source_version: str | None = None
+    scenario_id: str | None = None
+    generator_version: str | None = None
 
     def __post_init__(self) -> None:
         """Freeze mappings and sort all public numerical output by alarm ID."""
@@ -218,6 +230,10 @@ class DependencyScopeResult:
     max_materialized_resources: int | None
     parameter_provenance: Mapping[str, str]
     resource_details: ResourceDetails
+    source_id: str | None = None
+    source_version: str | None = None
+    scenario_id: str | None = None
+    generator_version: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(

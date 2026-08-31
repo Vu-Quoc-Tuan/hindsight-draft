@@ -194,6 +194,26 @@ def test_propagation_requires_exact_boolean_true_for_directed_edges(
     assert result.node_scores == ()
 
 
+def test_propagation_missing_topology_source_version_fails_closed(
+    config: PropagationConfig,
+):
+    edge = _edge("R_A", "R_B")
+    edge.pop("source_version")
+    package = _package(
+        {
+            "A": "2026-08-30T00:00:00Z",
+            "B": "2026-08-30T00:00:01Z",
+        },
+        [edge],
+    )
+
+    result = analyze_propagation(package, "C1", config)
+
+    assert result.status is HypothesisStatus.UNAVAILABLE
+    assert result.reason is TopologyHypothesisReason.TOPOLOGY_SOURCE_VERSION_MISSING
+    assert result.hypotheses == ()
+
+
 @pytest.mark.parametrize("status", ["UNMAPPED", "AMBIGUOUS"])
 def test_every_member_requires_exact_or_verified_mapping(
     config: PropagationConfig, status: str
