@@ -2,11 +2,11 @@
   "snapshot": {
     "snapshot_id": "history_positive_lift_v1:snapshot_003",
     "snapshot_version": "4",
-    "snapshot_time": "2026-01-01T00:03:00",
+    "snapshot_time": "2026-01-01T00:03:00+00:00",
     "status": "COMPLETE",
     "source": "nocpro-mock",
     "source_kind": "SYNTHETIC_TEST",
-    "produced_at": "2026-01-01T00:03:00",
+    "produced_at": "2026-01-01T00:03:00+00:00",
     "schema_version": "v1"
   },
   "alarms": [
@@ -18,12 +18,12 @@
       "raw": {
         "cah.id": "SYN-ALARM-A4",
         "chaining_id": "SYN-CHAIN-T",
-        "cah.start_time": "2026-01-01T00:03:00",
+        "cah.start_time": "2026-01-01T00:03:00+00:00",
         "device_code": "SYN-ALARM-A4",
         "alarm_name": "SYN-FAMILY-A"
       },
-      "raw_start_time": "2026-01-01T00:03:00",
-      "canonical_start_time": "2026-01-01T00:03:00",
+      "raw_start_time": "2026-01-01T00:03:00+00:00",
+      "canonical_start_time": "2026-01-01T00:03:00+00:00",
       "alarm_name": "SYN-FAMILY-A",
       "device_code": "SYN-ALARM-A4",
       "quality_flags": []
@@ -36,12 +36,12 @@
       "raw": {
         "cah.id": "SYN-ALARM-B4",
         "chaining_id": "SYN-CHAIN-T",
-        "cah.start_time": "2026-01-01T00:03:01",
+        "cah.start_time": "2026-01-01T00:03:01+00:00",
         "device_code": "SYN-ALARM-B4",
         "alarm_name": "SYN-FAMILY-B"
       },
-      "raw_start_time": "2026-01-01T00:03:01",
-      "canonical_start_time": "2026-01-01T00:03:01",
+      "raw_start_time": "2026-01-01T00:03:01+00:00",
+      "canonical_start_time": "2026-01-01T00:03:01+00:00",
       "alarm_name": "SYN-FAMILY-B",
       "device_code": "SYN-ALARM-B4",
       "quality_flags": []
