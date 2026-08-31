@@ -264,6 +264,7 @@ class FailureDomain:
     members: tuple[str, ...]
     source_id: str
     source_kind: SourceKind
+    source_version: str | None = None
     provenance_class: ProvenanceClass = ProvenanceClass.EXTERNAL_OPERATIONAL
     provenance_subtype: ProvenanceSubtype | None = ProvenanceSubtype.TOPOLOGY_EXTERNAL
     quality_status: QualityStatus = QualityStatus.UNKNOWN
@@ -279,6 +280,7 @@ class ActivePath:
     nodes: tuple[str, ...]
     source_id: str
     source_kind: SourceKind
+    source_version: str | None = None
     generation: GenerationMetadata | None = None
 
 
