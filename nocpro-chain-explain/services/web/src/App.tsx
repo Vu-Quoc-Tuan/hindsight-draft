@@ -133,6 +133,8 @@ function PairEvidenceRail({ analysis, selected, pair, loading, layer }: {
               {item.dependency_semantic && <p>{humanize(item.dependency_semantic)}</p>}
               <dl className="mini-grid"><div><dt>score</dt><dd>{percent(item.score)}</dd></div><div><dt>threshold</dt><dd>{percent(item.threshold)}</dd></div></dl>
               <small>{item.derivation_tag}</small>
+              {(item.source_id || item.source_version) && <small>topology source · {item.source_id ?? 'UNAVAILABLE'} @ {item.source_version ?? 'UNAVAILABLE'}</small>}
+              {(item.scenario_id || item.generator_version) && <small>synthetic generation · {item.scenario_id ?? 'UNAVAILABLE'} · {item.generator_version ?? 'UNAVAILABLE'}</small>}
               {item.detail && <p className="evidence-detail">{item.detail}</p>}
             </div>
           </article>

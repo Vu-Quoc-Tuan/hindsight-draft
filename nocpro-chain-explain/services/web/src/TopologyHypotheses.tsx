@@ -28,8 +28,18 @@ function Metric({ label, value }: { label: string; value: string | number }) {
   return <div className="topology-metric"><dt>{label}</dt><dd>{value}</dd></div>
 }
 
-function Provenance({ sourceRef, relationType }: { sourceRef: string | null; relationType: string | null }) {
-  return <p className="topology-provenance">{sourceRef ?? 'source unavailable'} · {relationType ?? 'relation unavailable'}</p>
+function Provenance({ result }: { result: {
+  source_ref: string | null
+  source_id: string | null
+  source_version: string | null
+  scenario_id: string | null
+  generator_version: string | null
+  relation_type: string | null
+} }) {
+  return <div className="topology-provenance">
+    <p>topology source · {result.source_id ?? 'UNAVAILABLE'} @ {result.source_version ?? 'UNAVAILABLE'} · {result.relation_type ?? 'relation unavailable'}</p>
+    {(result.scenario_id || result.generator_version) && <p>synthetic generation · {result.scenario_id ?? 'UNAVAILABLE'} · {result.generator_version ?? 'UNAVAILABLE'}</p>}
+  </div>
 }
 
 function UnavailableCard({ title, result }: { title: string; result: { status: 'UNAVAILABLE'; reason: string } }) {
@@ -49,7 +59,7 @@ function DominatorCard({ result }: { result: DominatorResult }) {
       <Metric label="witness" value={result.witness_resource_id ?? 'UNAVAILABLE'} />
       <Metric label="covered resources" value={result.covered_resource_ids.length} />
     </dl>
-    <Provenance sourceRef={result.source_ref} relationType={result.relation_type} />
+    <Provenance result={result} />
   </article>
 }
 
@@ -83,7 +93,7 @@ function PropagationCard({ result }: { result: PropagationResult }) {
     </div>
     <p className="topology-provenance">{result.seed_policy ?? 'seed unavailable'} · {result.dangling_policy ?? 'dangling policy unavailable'}</p>
     {Object.keys(result.parameter_provenance).length > 0 && <p className="topology-provenance">parameter provenance · {Object.entries(result.parameter_provenance).map(([name, source]) => `${name}: ${source}`).join(' · ')}</p>}
-    <Provenance sourceRef={result.source_ref} relationType={result.relation_type} />
+    <Provenance result={result} />
   </article>
 }
 
@@ -118,7 +128,7 @@ function ScopeCard({ result }: { result: DependencyScopeResult }) {
     <ScopeMetrics result={result} />
     <ScopeDetails result={result} />
     <p className="topology-provenance">witness {result.witness_resource_id ?? 'UNAVAILABLE'} · scope anchored to selected witness</p>
-    <Provenance sourceRef={result.source_ref} relationType={result.relation_type} />
+    <Provenance result={result} />
   </article>
 }
 

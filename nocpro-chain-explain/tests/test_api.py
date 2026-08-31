@@ -188,6 +188,57 @@ def test_pair_why_serializes_channel_family_and_dependency_semantic():
     assert {item["derivation_tag"] for item in dependencies} == {
         "dependency:inventory@v17"
     }
+    assert {item["source_id"] for item in dependencies} == {"inventory"}
+    assert {item["source_version"] for item in dependencies} == {"v17"}
+    assert {item["scenario_id"] for item in dependencies} == {None}
+    assert {item["generator_version"] for item in dependencies} == {None}
+
+
+def test_pair_why_keeps_snapshot_available_but_disables_unversioned_topology():
+    payload = _payload()
+    payload["snapshot"]["topology_version"] = "must-not-be-a-fallback"
+    payload["topology"] = {
+        "active_paths": [
+            {
+                "path_id": "p-a",
+                "resource_id": "RA",
+                "nodes": ["RA", "ROOT"],
+                "source_id": "foreign-topology",
+                "source_kind": "REAL_EXPORT_REPLAY",
+            }
+        ],
+        "mappings": [
+            {
+                "alarm_id": "a1",
+                "resource_id": "RA",
+                "mapping_status": "EXACT",
+                "mapping_method": "EXACT_IDENTITY",
+            },
+            {
+                "alarm_id": "a2",
+                "resource_id": "RB",
+                "mapping_status": "EXACT",
+                "mapping_method": "EXACT_IDENTITY",
+            },
+        ],
+    }
+
+    async def exercise(client: httpx2.AsyncClient):
+        loaded = await client.post("/api/v1/snapshots", json=payload)
+        assert loaded.status_code == 201
+        return await client.get("/api/v1/chains/C1/pairs/a1/a2")
+
+    response = run_api_test(exercise)
+
+    assert response.status_code == 200
+    active_path = next(
+        item
+        for item in response.json()["evidence"]
+        if item["dependency_semantic"] == "SHARED_ACTIVE_PATH"
+    )
+    assert active_path["state"] == "UNAVAILABLE"
+    assert active_path["detail"] == "TOPOLOGY_SOURCE_VERSION_MISSING"
+    assert active_path["source_version"] is None
 
 
 def test_deep_dive_is_submitted_and_polled_as_a_job():

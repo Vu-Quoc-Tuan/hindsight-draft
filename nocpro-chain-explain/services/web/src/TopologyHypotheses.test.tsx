@@ -13,6 +13,10 @@ const provenance = {
   provenance_class: 'EXTERNAL_OPERATIONAL',
   provenance_subtype: 'TOPOLOGY_EXPORT',
   source_kind: 'SYNTHETIC_GROUND_TRUTH',
+  source_id: null,
+  source_version: null,
+  scenario_id: null,
+  generator_version: null,
 }
 
 const unavailableDominator: DominatorResult = {
@@ -90,6 +94,10 @@ const availableTopology: TopologyHypothesesResult = {
     witness_resource_id: 'resource-a',
     covered_resource_ids: ['resource-a', 'resource-b'],
     source_ref: 'topology-v1',
+    source_id: 'synthetic-topology',
+    source_version: 'syn-topo-v1',
+    scenario_id: 'synthetic-active-path-v1',
+    generator_version: 'mockgen-1.4.0',
     relation_type: 'DIRECTED_DEPENDENCY',
   },
   propagation: {
@@ -98,6 +106,10 @@ const availableTopology: TopologyHypothesesResult = {
     reason: null,
     semantic: 'PROPAGATION_HYPOTHESIS',
     source_ref: 'topology-v1',
+    source_id: 'synthetic-topology',
+    source_version: 'syn-topo-v1',
+    scenario_id: 'synthetic-active-path-v1',
+    generator_version: 'mockgen-1.4.0',
     relation_type: 'DIRECTED_DEPENDENCY',
     config_version: 'propagation-v1',
     candidate_node_count: 2,
@@ -124,6 +136,10 @@ const availableTopology: TopologyHypothesesResult = {
     semantic: 'DEPENDENCY_SCOPE_OVERLAP_SIGNAL',
     witness_resource_id: 'resource-a',
     source_ref: 'topology-v1',
+    source_id: 'synthetic-topology',
+    source_version: 'syn-topo-v1',
+    scenario_id: 'synthetic-active-path-v1',
+    generator_version: 'mockgen-1.4.0',
     relation_type: 'DIRECTED_DEPENDENCY',
     observed_resource_count: 3,
     scope_resource_count: 4,
@@ -175,6 +191,8 @@ describe('TopologyHypotheses', () => {
     expect(html).toContain('0.0000007')
     expect(html).toContain('ALL_SOURCE_NODES_UNIFORM')
     expect(html).toContain('REDISTRIBUTE_TO_RESTART')
+    expect(html).toContain('topology source · synthetic-topology @ syn-topo-v1')
+    expect(html).toContain('synthetic generation · synthetic-active-path-v1 · mockgen-1.4.0')
   })
 
   it('keeps exact scope aggregates while hiding unavailable detail lists', () => {

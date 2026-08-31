@@ -141,6 +141,10 @@ def pair_evidence_view(value: ChannelValue) -> PairEvidenceView:
             value.provenance_subtype.value if value.provenance_subtype else None
         ),
         source_ref=value.source_ref,
+        source_id=value.source_id,
+        source_version=value.source_version,
+        scenario_id=value.scenario_id,
+        generator_version=value.generator_version,
     )
 
 
@@ -192,6 +196,10 @@ def dominator_view(result: DominatorResult) -> DominatorView:
         witness_resource_id=result.witness_resource_id,
         covered_resource_ids=list(result.covered_resource_ids),
         source_ref=result.source_ref,
+        source_id=result.source_id,
+        source_version=result.source_version,
+        scenario_id=result.scenario_id,
+        generator_version=result.generator_version,
         relation_type=result.relation_type,
         provenance_class=_status(result.provenance_class),
         provenance_subtype=_status(result.provenance_subtype),
@@ -205,6 +213,10 @@ def propagation_view(result: PropagationResult) -> PropagationView:
         reason=_reason(result.reason),
         semantic=result.semantic,
         source_ref=result.source_ref,
+        source_id=result.source_id,
+        source_version=result.source_version,
+        scenario_id=result.scenario_id,
+        generator_version=result.generator_version,
         relation_type=result.relation_type,
         provenance_class=_status(result.provenance_class),
         provenance_subtype=_status(result.provenance_subtype),
@@ -265,6 +277,10 @@ def dependency_scope_view(result: DependencyScopeResult) -> DependencyScopeView:
         semantic=result.semantic,
         witness_resource_id=result.witness_resource_id,
         source_ref=result.source_ref,
+        source_id=result.source_id,
+        source_version=result.source_version,
+        scenario_id=result.scenario_id,
+        generator_version=result.generator_version,
         relation_type=result.relation_type,
         provenance_class=_status(result.provenance_class),
         provenance_subtype=_status(result.provenance_subtype),

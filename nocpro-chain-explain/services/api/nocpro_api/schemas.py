@@ -115,6 +115,10 @@ class PairEvidenceView(ApiModel):
     provenance_class: str
     provenance_subtype: str | None
     source_ref: str | None
+    source_id: str | None
+    source_version: str | None
+    scenario_id: str | None
+    generator_version: str | None
 
 
 class SystemPairFactView(ApiModel):
@@ -153,6 +157,10 @@ class DominatorView(ApiModel):
     witness_resource_id: str | None
     covered_resource_ids: list[str]
     source_ref: str | None
+    source_id: str | None
+    source_version: str | None
+    scenario_id: str | None
+    generator_version: str | None
     relation_type: str | None
     provenance_class: str | None
     provenance_subtype: str | None
@@ -190,6 +198,10 @@ class PropagationView(ApiModel):
     reason: str | None
     semantic: str | None
     source_ref: str | None
+    source_id: str | None
+    source_version: str | None
+    scenario_id: str | None
+    generator_version: str | None
     relation_type: str | None
     provenance_class: str | None
     provenance_subtype: str | None
@@ -214,6 +226,10 @@ class DependencyScopeView(ApiModel):
     semantic: str | None
     witness_resource_id: str | None
     source_ref: str | None
+    source_id: str | None
+    source_version: str | None
+    scenario_id: str | None
+    generator_version: str | None
     relation_type: str | None
     provenance_class: str | None
     provenance_subtype: str | None

@@ -84,6 +84,10 @@ export type PairEvidence = {
   provenance_class: string
   provenance_subtype: string | null
   source_ref: string | null
+  source_id: string | null
+  source_version: string | null
+  scenario_id: string | null
+  generator_version: string | null
 }
 
 export type PairWhy = {
@@ -143,6 +147,10 @@ export type TopologyHypothesisStatus = 'AVAILABLE' | 'UNAVAILABLE'
 
 type TopologyProvenance = {
   source_ref: string | null
+  source_id: string | null
+  source_version: string | null
+  scenario_id: string | null
+  generator_version: string | null
   relation_type: string | null
   provenance_class: string | null
   provenance_subtype: string | null
