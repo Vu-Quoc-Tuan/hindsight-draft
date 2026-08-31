@@ -13,6 +13,7 @@ export TIER1A_RECOVERY_INTERVAL_SECONDS="${TIER1A_RECOVERY_INTERVAL_SECONDS:-0.2
 export NOCPRO_E2E_KAFKA="127.0.0.1:${KAFKA_HOST_PORT}"
 export NOCPRO_E2E_DATABASE_URL="postgresql://nocpro:nocpro@127.0.0.1:${POSTGRES_HOST_PORT}/nocpro"
 export NOCPRO_E2E_BASE_URL="http://127.0.0.1:${WEB_HOST_PORT}"
+export NOCPRO_E2E_API_URL="http://127.0.0.1:${API_HOST_PORT}"
 
 cleanup() {
   if [[ "${KEEP_E2E_STACK:-0}" == "1" ]]; then
@@ -53,6 +54,20 @@ curl -fsS "http://127.0.0.1:${API_HOST_PORT}/api/v1/chains/6907125" \
 
 NOCPRO_RUN_DOCKER_E2E=1 PYTHONPATH="../nocpro-mock/src" \
   .venv/bin/python -m pytest tests/e2e/test_docker_failures.py -q
+
+ANALYSIS_CONFIG_PATH="/app/config/thresholds/e2e-p2.yaml" \
+  docker compose up -d --force-recreate api
+deadline=$((SECONDS + 60))
+until curl -fsS "http://127.0.0.1:${API_HOST_PORT}/api/v1/health" >/dev/null; do
+  if (( SECONDS >= deadline )); then
+    docker compose logs --no-color api
+    echo "API did not restart with synthetic P2 acceptance config" >&2
+    exit 1
+  fi
+  sleep 1
+done
+NOCPRO_RUN_DOCKER_E2E=1 PYTHONPATH="../nocpro-mock/src" \
+  .venv/bin/python -m pytest tests/e2e/test_synthetic_p2_kafka.py -q
 
 echo "acceptance_snapshot=${snapshot_id}"
 echo "production_delta_validation=BLOCKED_BY_DATA_AVAILABILITY"

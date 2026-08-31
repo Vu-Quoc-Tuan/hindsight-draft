@@ -81,6 +81,7 @@ services:
       TIER1A_RECOVERY_INTERVAL_SECONDS: "${TIER1A_RECOVERY_INTERVAL_SECONDS:-2}"
       TIER1A_MAX_ATTEMPTS: "5"
       TIER1A_BACKOFF_BASE_SECONDS: "2"
+      ANALYSIS_CONFIG_PATH: "${ANALYSIS_CONFIG_PATH:-/app/config/thresholds/v1.yaml}"
     depends_on:
       migrate:
         condition: service_completed_successfully

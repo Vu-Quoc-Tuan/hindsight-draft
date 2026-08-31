@@ -12,6 +12,7 @@ Frozen rules:
 from __future__ import annotations
 
 import dataclasses
+from datetime import datetime
 
 import pytest
 import yaml
@@ -222,6 +223,22 @@ def test_synthetic_snapshot_is_deterministic():
 
     producer = DirectSnapshotProducer()
     assert producer.render(build()) == producer.render(build())
+
+
+def test_synthetic_snapshot_canonical_times_are_timezone_qualified():
+    package = build_synthetic_snapshot(
+        scenario_id="synthetic_temporal_contract_v1",
+        seed=42,
+        generator_version=GENERATOR_VERSION,
+        snapshot_index=0,
+        chains={"SYN-CHAIN-TIME": ["SYN-ALARM-TIME-1", "SYN-ALARM-TIME-2"]},
+    )
+
+    assert datetime.fromisoformat(package.snapshot.snapshot_time).tzinfo is not None
+    assert all(
+        datetime.fromisoformat(alarm.canonical_start_time).tzinfo is not None
+        for alarm in package.alarms
+    )
 
 
 def test_duplicate_member_is_refused():

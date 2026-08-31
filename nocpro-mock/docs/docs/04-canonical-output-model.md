@@ -19,6 +19,7 @@ MockSnapshotPackage
 │   ├── nodes[]
 │   ├── edges[]
 │   ├── failure_domains[]
+│   ├── active_paths[]
 │   └── mappings[]
 ├── operational_context[]
 └── provenance_manifest
@@ -75,6 +76,31 @@ freshness
 ```
 
 Do not use a generic directed edge when source only provides undirected adjacency.
+
+## Synthetic topology source identity
+
+A scenario that provides `topology`, `paths`, `failure_domain` or
+`failure_domains` must declare:
+
+```yaml
+generator_version: mockgen-1.4.0
+topology_source:
+  source_id: synthetic-topology
+  source_version: syn-topo-activepath-v1
+```
+
+`generator_version` identifies generator code. `topology_source.source_version`
+identifies the topology model being generated. They are independent and must
+never be aliased or used as fallbacks for one another. The mock stamps the
+exact topology source ID/version plus generation metadata on every topology
+node, edge, active path and failure domain, validates the package before
+publication, and preserves those fields inside the canonical bytes transported
+by Kafka.
+
+The canonical contract keeps record-level `source_version` optional so Explain
+can ingest foreign producers in degraded mode. That compatibility does not
+weaken the mock scenario contract: a mock topology scenario missing either
+source field is rejected before publication.
 
 ## Alarm-resource mapping
 

@@ -277,6 +277,14 @@ but are not production validation. Graph motifs, `UNAVOIDABLE_DEPENDENCY` as a
 normalized evidence channel, and other P2 extensions remain not started until
 their documented data/capability gates are met.
 
+Every topology-derived capability also requires an exact record-level source
+identity. `source_id` and `source_version` identify the topology model, while
+`scenario_id` and `generator_version` identify how a synthetic fixture was
+generated; neither pair is a fallback for the other. A foreign payload missing
+the topology source version keeps the snapshot and Tier-1A usable, but topology
+channels and P2 return `TOPOLOGY_SOURCE_VERSION_MISSING`. The producer rejects
+such synthetic scenarios before Kafka publication.
+
 ## API
 
 The HTTP layer is an adapter over the existing analysis services; it does not
@@ -383,6 +391,20 @@ were cleaned up successfully. The export mount is an environment precondition
 for replay; a plain worktree run without that external mount cannot locate
 `datasets/raw/alarm_data.csv`. This is local-run evidence, not a production
 SLO or production-data validation.
+
+The acceptance runner additionally publishes a deterministic versioned
+synthetic directed topology through the same Kafka chunk/barrier and PostgreSQL
+path. It verifies available dominator, configured propagation and exact scope
+output with all four provenance fields, then publishes a foreign unversioned
+variant and verifies Tier-1A remains READY while all affected P2 capabilities
+fail closed. This uses `config/thresholds/e2e-p2.yaml`, which is explicitly
+synthetic acceptance configuration; production continues to use
+`config/thresholds/v1.yaml` and does not acquire uncalibrated P2 defaults.
+On 2026-08-31 this targeted Docker acceptance passed both Kafka cases (`2/2`)
+and cleaned its isolated containers, network and PostgreSQL volume. The same
+day's full real-replay/browser rerun stopped before replay because this worktree
+did not have the external `datasets/raw/alarm_data.csv` mount; no replacement
+or synthetic export was substituted for that browser gate.
 
 The unresolved external gates are recorded explicitly:
 

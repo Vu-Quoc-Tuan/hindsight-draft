@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from threading import RLock
 from typing import Any
@@ -26,8 +27,11 @@ class SnapshotNotLoaded(RuntimeError):
 class Workspace:
     """Owns current snapshot, reusable index/cache and Tier-2 executor."""
 
-    def __init__(self, *, config_path: Path = DEFAULT_CONFIG) -> None:
-        self.config: AnalysisConfig = load_analysis_config(config_path)
+    def __init__(self, *, config_path: Path | None = None) -> None:
+        selected_config = config_path or Path(
+            os.environ.get("ANALYSIS_CONFIG_PATH", str(DEFAULT_CONFIG))
+        )
+        self.config: AnalysisConfig = load_analysis_config(selected_config)
         self.cache = Tier1Cache()
         self.jobs = Tier2JobManager(cache=self.cache)
         self.package: IngestedPackage | None = None

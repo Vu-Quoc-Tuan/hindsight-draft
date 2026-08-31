@@ -18,6 +18,7 @@ from tests.test_tier1b_analysis import _alarm, _snapshot
 
 ROOT = Path(__file__).resolve().parents[1]
 SHIPPED_CONFIG = ROOT / "config/thresholds/v1.yaml"
+SYNTHETIC_E2E_CONFIG = ROOT / "config/thresholds/e2e-p2.yaml"
 
 COMPLETE_P2_YAML = (
     SHIPPED_CONFIG.read_text(encoding="utf-8")
@@ -61,6 +62,16 @@ def test_shipped_config_keeps_p2_fail_closed():
         config.p2_topology.dependency_scope_reason
         == "DEPENDENCY_SCOPE_CONFIG_INCOMPLETE"
     )
+
+
+def test_synthetic_e2e_config_enables_p2_without_changing_production_default():
+    config = load_analysis_config(SYNTHETIC_E2E_CONFIG)
+
+    assert config.config_version == "e2e-p2-v1"
+    assert config.status == "synthetic_acceptance_only_not_production_calibrated"
+    assert config.p2_topology.propagation is not None
+    assert config.p2_topology.dependency_scope is not None
+    assert config.incremental_snapshot.enabled is False
 
 
 def test_complete_p2_config_preserves_parameter_provenance(tmp_path: Path):

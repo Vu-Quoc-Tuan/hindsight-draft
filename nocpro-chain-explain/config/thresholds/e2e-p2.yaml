@@ -1,0 +1,96 @@
+config_version: e2e-p2-v1
+status: synthetic_acceptance_only_not_production_calibrated
+
+incremental_snapshot:
+  mode: disabled
+  reason: sequential_production_snapshots_not_available
+
+temporal:
+  burst:
+    gap_seconds: {value: 120, source: DOCUMENTED_DEFAULT}
+  delay:
+    bandwidth_seconds: {value: 5.0, source: DOCUMENTED_DEFAULT}
+    support_threshold: {value: 0.5, source: DOCUMENTED_DEFAULT}
+
+dependency:
+  max_hop: {value: 3, source: DOCUMENTED_DEFAULT}
+  lambda_dep: {value: 2.0, source: DOCUMENTED_DEFAULT}
+  common_support_threshold: {value: 0.3, source: DOCUMENTED_DEFAULT}
+
+history:
+  min_support: {value: 5, source: DOCUMENTED_DEFAULT}
+  lambda_h: {value: 10.0, source: DOCUMENTED_DEFAULT}
+
+role:
+  c_min: {value: 0.5, source: DOCUMENTED_DEFAULT}
+  min_computable_groups: {value: 2, source: FROZEN_SPEC}
+  s_min: {value: 0.6, source: DOCUMENTED_DEFAULT}
+  s_weak: {value: 0.3, source: DOCUMENTED_DEFAULT}
+  r_min: {value: 0.5, source: DOCUMENTED_DEFAULT}
+  core_quantile: {value: 0.5, source: DOCUMENTED_DEFAULT}
+  small_chain_threshold: {value: 8, source: FROZEN_SPEC}
+
+descriptor:
+  max_depth: {value: 3, source: DOCUMENTED_DEFAULT}
+  beam_width: {value: 8, source: DOCUMENTED_DEFAULT}
+  top_k: {value: 10, source: DOCUMENTED_DEFAULT}
+  max_values_per_field: {value: 32, source: DOCUMENTED_DEFAULT}
+  precision_global_min: {value: 0.5, source: DOCUMENTED_DEFAULT}
+  precision_local_min: {value: 0.7, source: DOCUMENTED_DEFAULT}
+  redundancy_jaccard: {value: 0.9, source: FROZEN_SPEC}
+
+contrastive:
+  local_universe_k: {value: 5, source: DOCUMENTED_DEFAULT}
+  top_k: {value: 3, source: FROZEN_SPEC}
+  g_min: {value: 2, source: DOCUMENTED_DEFAULT}
+
+redundancy:
+  small_dt_seconds: {value: 5, source: DOCUMENTED_DEFAULT}
+
+audit:
+  rho: {value: 0.2, source: DOCUMENTED_DEFAULT}
+  min_side_size: {value: 5, source: FROZEN_SPEC}
+  small_chain_threshold: {value: 10, source: FROZEN_SPEC}
+  calibration_n_min: {value: 20, source: DOCUMENTED_DEFAULT}
+  calibration_quantile: {value: 0.05, source: FROZEN_SPEC}
+  global_weak_baseline: {value: 0.3, source: DOCUMENTED_DEFAULT}
+  exact_max_members: {value: 2000, source: DOCUMENTED_DEFAULT}
+
+lineage:
+  min_intersection: {value: 3, source: FROZEN_SPEC}
+  beta_parent: {value: 0.5, source: DOCUMENTED_DEFAULT}
+  beta_child: {value: 0.5, source: DOCUMENTED_DEFAULT}
+  small_chain_jaccard: {value: 0.5, source: DOCUMENTED_DEFAULT}
+  stable_threshold: {value: 0.9, source: DOCUMENTED_DEFAULT}
+  boundary_threshold: {value: 0.3, source: DOCUMENTED_DEFAULT}
+
+similar_chains:
+  corpus_policy: HISTORY_BEFORE_SNAPSHOT
+  model_update_policy: SNAPSHOT_VERSIONED
+  temporal_cutoff: snapshot_time
+  exclude_same_lineage: true
+  top_descriptor_predicates: {value: 5, source: DOCUMENTED_DEFAULT}
+  result_top_k: {value: 5, source: DOCUMENTED_DEFAULT}
+
+propagation:
+  config_version: propagation-synthetic-e2e-v1
+  rwr:
+    restart_probability: {value: 0.2, source: FROZEN_SPEC}
+    convergence_tolerance: {value: 0.001, source: FROZEN_SPEC}
+    max_iterations: {value: 100, source: FROZEN_SPEC}
+  temporal:
+    decay_type: exponential
+    decay_parameter: {value: 30.0, source: FROZEN_SPEC}
+  acceptance:
+    score_threshold: {value: 0.5, source: FROZEN_SPEC}
+  limits:
+    max_candidate_edges: {value: 500, source: FROZEN_SPEC}
+
+dependency_scope:
+  limits:
+    max_scope_resources: {value: 1000, source: FROZEN_SPEC}
+    max_materialized_resources: {value: 100, source: FROZEN_SPEC}
+
+notes:
+  - Synthetic Docker acceptance config only; it is not production calibration evidence.
+  - Production remains on config/thresholds/v1.yaml and keeps optional P2 numeric capabilities fail-closed.

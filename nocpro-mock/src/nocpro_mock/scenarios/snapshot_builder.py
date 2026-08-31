@@ -10,7 +10,7 @@ Snapshots stay ``source_kind=SYNTHETIC_TEST``: the delivery role
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from ..contract import (
     Alarm,
@@ -29,7 +29,7 @@ from ..contract import (
 from .schema import TopologySourceDefinition
 
 #: Fixed epoch so generated fixtures are byte-stable across runs.
-SEQUENCE_EPOCH = datetime(2026, 1, 1, 0, 0, 0)
+SEQUENCE_EPOCH = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
 
 
 def build_synthetic_snapshot(
