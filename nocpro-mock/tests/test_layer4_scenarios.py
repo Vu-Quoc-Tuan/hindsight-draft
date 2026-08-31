@@ -16,6 +16,8 @@ import yaml
 
 from nocpro_mock.contract import (
     FailureDomainType,
+    MappingMethod,
+    MappingStatus,
     ProvenanceClass,
     ProvenanceSubtype,
     RelationType,
@@ -28,6 +30,7 @@ from nocpro_mock.scenarios import (
     generate_active_paths,
     generate_dependency_hierarchy,
     generate_failure_domains,
+    generate_integrated_topology,
     generate_operational_context,
     is_synthetic_identifier,
     load_scenario,
@@ -159,6 +162,116 @@ def test_same_generator_can_emit_distinct_topology_source_versions(hierarchy):
     assert {edge.generation.generator_version for edge in first + second} == {VERSION}
     assert {edge.source_version for edge in first} == {"syn-topo-hierarchy-v1"}
     assert {edge.source_version for edge in second} == {"syn-topo-hierarchy-v2"}
+
+
+def test_integrated_topology_keeps_capabilities_and_exact_mapping():
+    scenario = parse_scenario(
+        {
+            "scenario_id": "synthetic_integrated_topology_v1",
+            "source_kind": "SYNTHETIC_TEST",
+            "seed": 42,
+            "topology_source": {
+                "source_id": "synthetic-topology",
+                "source_version": "syn-topo-integrated-v1",
+            },
+            "topology": {
+                "relation_type": "LOGICAL_DEPENDENCY",
+                "directed": True,
+                "edges": [
+                    ["SYN-CORE-01", "SYN-AGG-01"],
+                    ["SYN-AGG-01", "SYN-DEVICE-01"],
+                    ["SYN-AGG-01", "SYN-DEVICE-02"],
+                ],
+            },
+            "paths": [
+                {
+                    "path_id": "SYN-PATH-01",
+                    "resource_id": "SYN-DEVICE-01",
+                    "nodes": ["SYN-DEVICE-01", "SYN-AGG-01", "SYN-CORE-01"],
+                },
+                {
+                    "path_id": "SYN-PATH-02",
+                    "resource_id": "SYN-DEVICE-02",
+                    "nodes": ["SYN-DEVICE-02", "SYN-AGG-01", "SYN-CORE-01"],
+                },
+            ],
+            "failure_domains": [
+                {
+                    "failure_domain_id": "SRLG-SYN-INTEGRATED-01",
+                    "domain_type": "SRLG",
+                    "members": ["SYN-DEVICE-01", "SYN-DEVICE-02"],
+                }
+            ],
+        }
+    )
+
+    topology = generate_integrated_topology(
+        scenario,
+        generator_version="mockgen-integrated-v1",
+        alarm_resource_ids=("SYN-DEVICE-01", "SYN-DEVICE-02"),
+    )
+
+    assert len(topology.nodes) == 4
+    assert len(topology.edges) == 3
+    assert len(topology.active_paths) == 2
+    assert len(topology.failure_domains) == 1
+    assert {mapping.alarm_id for mapping in topology.mappings} == {
+        "SYN-DEVICE-01",
+        "SYN-DEVICE-02",
+    }
+    assert all(
+        mapping.mapping_status is MappingStatus.EXACT
+        for mapping in topology.mappings
+    )
+    assert all(
+        mapping.mapping_method is MappingMethod.EXACT_IDENTITY
+        for mapping in topology.mappings
+    )
+    assert all(mapping.mapping_confidence == 1.0 for mapping in topology.mappings)
+    assert all(
+        mapping.source_version == "syn-topo-integrated-v1"
+        for mapping in topology.mappings
+    )
+
+
+def test_integrated_topology_refuses_mapping_to_absent_resource():
+    scenario = parse_scenario(
+        {
+            "scenario_id": "synthetic_integrated_missing_resource_v1",
+            "source_kind": "SYNTHETIC_TEST",
+            "seed": 42,
+            "topology_source": {
+                "source_id": "synthetic-topology",
+                "source_version": "syn-topo-integrated-v1",
+            },
+            "topology": {
+                "relation_type": "LOGICAL_DEPENDENCY",
+                "directed": True,
+                "edges": [["SYN-CORE-01", "SYN-DEVICE-01"]],
+            },
+            "paths": [
+                {
+                    "path_id": "SYN-PATH-01",
+                    "resource_id": "SYN-DEVICE-01",
+                    "nodes": ["SYN-DEVICE-01", "SYN-CORE-01"],
+                }
+            ],
+            "failure_domains": [
+                {
+                    "failure_domain_id": "SRLG-SYN-01",
+                    "domain_type": "SRLG",
+                    "members": ["SYN-DEVICE-01"],
+                }
+            ],
+        }
+    )
+
+    with pytest.raises(ScenarioError, match="absent from generated topology"):
+        generate_integrated_topology(
+            scenario,
+            generator_version="mockgen-integrated-v1",
+            alarm_resource_ids=("SYN-DEVICE-02",),
+        )
 
 
 def test_every_topology_derived_record_carries_declared_source_identity(

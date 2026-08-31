@@ -17,16 +17,20 @@ from __future__ import annotations
 
 from ..contract import (
     ActivePath,
+    AlarmResourceMapping,
     ChainingUsage,
     ChainingUsageAssessment,
     FailureDomain,
     FailureDomainType,
     GenerationMetadata,
+    MappingMethod,
+    MappingStatus,
     ProvenanceClass,
     ProvenanceSubtype,
     QualityStatus,
     RelationType,
     SourceKind,
+    Topology,
     TopologyEdge,
     TopologyNode,
 )
@@ -284,3 +288,77 @@ def generate_failure_domains(
         )
 
     return _nodes(all_members, scenario, generation), tuple(domains)
+
+
+def generate_integrated_topology(
+    scenario: ScenarioDefinition,
+    *,
+    generator_version: str,
+    alarm_resource_ids: tuple[str, ...],
+) -> Topology:
+    """Compose all explicit synthetic topology capabilities for one snapshot.
+
+    This helper is deliberately synthetic-only. It does not orient real
+    ``topoIP`` adjacency and it accepts no inferred mapping: every alarm ID must
+    be an exact resource ID already present in the generated topology.
+    """
+    if scenario.source_kind is not SourceKind.SYNTHETIC_TEST:
+        raise ScenarioError(
+            "integrated topology generation requires source_kind=SYNTHETIC_TEST"
+        )
+    source = scenario.topology_source
+    if source is None:
+        raise ScenarioError(
+            f"scenario {scenario.scenario_id!r} has no topology_source"
+        )
+
+    hierarchy_nodes, edges = generate_dependency_hierarchy(
+        scenario, generator_version=generator_version
+    )
+    path_nodes, active_paths = generate_active_paths(
+        scenario, generator_version=generator_version
+    )
+    domain_nodes, failure_domains = generate_failure_domains(
+        scenario, generator_version=generator_version
+    )
+
+    nodes_by_id: dict[str, TopologyNode] = {}
+    for node in (*hierarchy_nodes, *path_nodes, *domain_nodes):
+        existing = nodes_by_id.get(node.resource_id)
+        if existing is not None and (
+            existing.source_id,
+            existing.source_version,
+        ) != (node.source_id, node.source_version):
+            raise ScenarioError(
+                f"resource {node.resource_id!r} has conflicting topology source identity"
+            )
+        nodes_by_id[node.resource_id] = node
+
+    requested = tuple(dict.fromkeys(alarm_resource_ids))
+    require_synthetic_identifiers(list(requested), context=scenario.scenario_id)
+    absent = sorted(set(requested) - set(nodes_by_id))
+    if absent:
+        raise ScenarioError(
+            "exact alarm-resource mapping targets are absent from generated topology: "
+            f"{absent}"
+        )
+
+    mappings = tuple(
+        AlarmResourceMapping(
+            alarm_id=resource_id,
+            resource_id=resource_id,
+            mapping_status=MappingStatus.EXACT,
+            mapping_method=MappingMethod.EXACT_IDENTITY,
+            mapping_confidence=1.0,
+            topology_layer=TOPOLOGY_LAYER_SYNTHETIC,
+            source_version=source.source_version,
+        )
+        for resource_id in requested
+    )
+    return Topology(
+        nodes=tuple(nodes_by_id[key] for key in sorted(nodes_by_id)),
+        edges=edges,
+        failure_domains=failure_domains,
+        active_paths=active_paths,
+        mappings=mappings,
+    )

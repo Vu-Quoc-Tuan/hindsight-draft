@@ -42,6 +42,7 @@ from .topology_generators import (
     generate_active_paths,
     generate_dependency_hierarchy,
     generate_failure_domains,
+    generate_integrated_topology,
 )
 
 __all__ = [
@@ -65,6 +66,7 @@ __all__ = [
     "generate_active_paths",
     "generate_dependency_hierarchy",
     "generate_failure_domains",
+    "generate_integrated_topology",
     "generate_operational_context",
     "generate_system_pair_metadata",
     "is_synthetic_identifier",
