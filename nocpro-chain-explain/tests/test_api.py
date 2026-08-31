@@ -273,6 +273,16 @@ def test_deep_dive_is_submitted_and_polled_as_a_job():
     assert attribution["chain_size"] == 3
     assert attribution["total_pair_count"] == 3
     assert attribution["total_coverage"] == 1.0
+    evaluation = polled.json()["result"]["evidence_attribution_evaluation"]
+    assert evaluation["status"] == "AVAILABLE"
+    assert evaluation["mode"] == "EXACT"
+    assert evaluation["group_count"] == len(attribution["contributions"])
+    assert evaluation["primary"]["coverage_curve"][0] == 1.0
+    assert evaluation["primary"]["coverage_curve"][-1] == 0.0
+    assert evaluation["random"]["algorithm"] == "SPLITMIX64_FISHER_YATES_V1"
+    assert evaluation["random"]["seed"] == 42
+    assert evaluation["random"]["repetitions"] == 100
+    assert evaluation["random"]["repetitions_executed"] == 100
     topology = polled.json()["result"]["topology_hypotheses"]
     assert topology["dominator"]["status"] == "UNAVAILABLE"
     assert topology["dominator"]["reason"] is not None
@@ -311,3 +321,8 @@ def test_singleton_deep_dive_serializes_not_applicable_attribution():
     assert attribution["detail"] == "SINGLETON_CHAIN"
     assert attribution["total_coverage"] is None
     assert attribution["contributions"] == []
+    evaluation = response.json()["result"]["evidence_attribution_evaluation"]
+    assert evaluation["status"] == "UNAVAILABLE"
+    assert evaluation["reason"] == "ATTRIBUTION_UNAVAILABLE"
+    assert evaluation["primary"]["coverage_curve"] == []
+    assert evaluation["primary"]["auc"] is None

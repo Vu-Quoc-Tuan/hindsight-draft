@@ -8,7 +8,7 @@ from math import factorial
 
 import pytest
 
-from groups import IndexedChainStatistics, StatisticsMode
+from groups import IndexedChainStatistics, StatisticsMode, SupportIndexSemantics
 from libs.provenance import ProvenanceClass, ProvenanceSubtype
 from tier2.evidence_attribution import (
     AttributionExecutionPolicy,
@@ -25,6 +25,7 @@ def _statistics(*, duplicate_reference_channel: bool = False) -> IndexedChainSta
         chain_id="C1",
         members=members,
         statistics_mode=StatisticsMode.EXACT_INDEXED,
+        support_index_semantics=SupportIndexSemantics.SYMMETRIC_UNORDERED_PAIRS_V1,
     )
     stats.channel_meta = {
         "reference": ("identity", ProvenanceClass.POST_HOC, None),
@@ -176,6 +177,7 @@ def test_ceiling_sized_exact_index_uses_bitmap_partitions_not_pair_matrix():
         chain_id="C1",
         members=members,
         statistics_mode=StatisticsMode.EXACT_INDEXED,
+        support_index_semantics=SupportIndexSemantics.SYMMETRIC_UNORDERED_PAIRS_V1,
     )
     all_members = (1 << member_count) - 1
     for group_index in range(3):
@@ -222,6 +224,37 @@ def test_singleton_is_not_applicable_and_never_returns_zero_attribution():
     assert result.contributions == ()
 
 
+def test_non_singleton_with_no_explain_eligible_groups_is_exact_zero_coverage():
+    members = ("a", "b")
+    stats = IndexedChainStatistics(
+        chain_id="C1",
+        members=members,
+        statistics_mode=StatisticsMode.EXACT_INDEXED,
+        support_index_semantics=SupportIndexSemantics.SYMMETRIC_UNORDERED_PAIRS_V1,
+    )
+    stats.channel_meta = {
+        "system": ("system", ProvenanceClass.SYSTEM_FACT, None),
+    }
+    stats.support_peer_bitmaps = {
+        ("a", "system"): 0b10,
+        ("b", "system"): 0b01,
+    }
+
+    result = compute_evidence_coverage_attribution(
+        "C1",
+        members,
+        stats,
+        policy=AttributionExecutionPolicy(exact_max_members=3),
+    )
+
+    assert result.status is AttributionStatus.AVAILABLE
+    assert result.mode is AttributionMode.EXACT
+    assert result.total_pair_count == 1
+    assert result.covered_pair_count == 0
+    assert result.total_coverage == 0.0
+    assert result.contributions == ()
+
+
 def test_missing_exact_indexed_statistics_is_domain_unavailable():
     stats = _statistics()
     stats.statistics_mode = StatisticsMode.UNAVAILABLE
@@ -246,3 +279,15 @@ def test_incomplete_or_malformed_support_index_fails_closed():
             is AttributionReason.EXACT_INDEXED_STATISTICS_UNAVAILABLE
         )
         assert result.contributions == ()
+
+
+def test_uncertified_asymmetric_support_index_fails_closed():
+    stats = _statistics()
+    stats.support_index_semantics = SupportIndexSemantics.UNSPECIFIED
+    stats.support_peer_bitmaps[("a", "reference")] = 0
+    stats.support_peer_bitmaps[("b", "reference")] = 0b001
+
+    result = _compute(stats)
+
+    assert result.status is AttributionStatus.UNAVAILABLE
+    assert result.reason is AttributionReason.EXACT_INDEXED_STATISTICS_UNAVAILABLE

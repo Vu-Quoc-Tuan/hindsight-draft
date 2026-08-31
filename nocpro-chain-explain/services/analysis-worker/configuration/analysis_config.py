@@ -62,6 +62,15 @@ class ConfiguredValue:
 
 
 @dataclass(frozen=True)
+class AttributionEvaluationConfig:
+    """Versioned deterministic-randomization envelope for ADR-0031 evaluation."""
+
+    randomization_algorithm: str
+    random_seed: ConfiguredValue
+    random_repetitions: ConfiguredValue
+
+
+@dataclass(frozen=True)
 class PropagationConfig:
     config_version: str
     restart_probability: ConfiguredValue
@@ -154,6 +163,8 @@ _P2_DEPENDENCY_SCOPE_RULES: dict[str, _ParameterRule] = {
     "limits.max_materialized_resources": _POSITIVE_INT,
 }
 
+ATTRIBUTION_RANDOMIZATION_ALGORITHM = "SPLITMIX64_FISHER_YATES_V1"
+
 
 PARAMETER_RULES: dict[str, _ParameterRule] = {
     "temporal.burst.gap_seconds": _POSITIVE_INT,
@@ -208,6 +219,8 @@ class AnalysisConfig:
     incremental_snapshot: IncrementalSnapshotPolicy
     similar_chains: SimilarChainsPolicy
     p2_topology: P2TopologyConfig
+    attribution_evaluation: AttributionEvaluationConfig | None = None
+    attribution_evaluation_reason: str | None = None
 
     REQUIRED_PARAMETERS = tuple(PARAMETER_RULES)
 
@@ -361,6 +374,45 @@ def _load_optional_p2_topology(document: dict[str, Any]) -> P2TopologyConfig:
     )
 
 
+def _load_optional_attribution_evaluation(
+    document: dict[str, Any],
+) -> tuple[AttributionEvaluationConfig | None, str | None]:
+    try:
+        raw = _lookup(document, "attribution_evaluation.randomization")
+        if not isinstance(raw, dict):
+            raise AnalysisConfigError(
+                "attribution_evaluation.randomization must be a YAML mapping"
+            )
+        algorithm = raw.get("algorithm")
+        if algorithm != ATTRIBUTION_RANDOMIZATION_ALGORITHM:
+            raise AnalysisConfigError(
+                "attribution_evaluation.randomization.algorithm must be "
+                f"{ATTRIBUTION_RANDOMIZATION_ALGORITHM}"
+            )
+        seed = _load_p2_configured_value(
+            raw,
+            "seed",
+            _NONNEGATIVE_INT,
+            configured_path="attribution_evaluation.randomization.seed",
+        )
+        repetitions = _load_p2_configured_value(
+            raw,
+            "repetitions",
+            _POSITIVE_INT,
+            configured_path="attribution_evaluation.randomization.repetitions",
+        )
+        return (
+            AttributionEvaluationConfig(
+                randomization_algorithm=algorithm,
+                random_seed=seed,
+                random_repetitions=repetitions,
+            ),
+            None,
+        )
+    except AnalysisConfigError:
+        return None, "ATTRIBUTION_EVALUATION_CONFIG_INCOMPLETE"
+
+
 def load_analysis_config(
     path: str | Path,
     *,
@@ -469,6 +521,10 @@ def load_analysis_config(
         exclude_same_lineage=True,
     )
     p2_topology = _load_optional_p2_topology(document)
+    (
+        attribution_evaluation,
+        attribution_evaluation_reason,
+    ) = _load_optional_attribution_evaluation(document)
 
     config = AnalysisConfig(
         config_version=version.strip(),
@@ -477,6 +533,8 @@ def load_analysis_config(
         incremental_snapshot=incremental_snapshot,
         similar_chains=similar_chains,
         p2_topology=p2_topology,
+        attribution_evaluation=attribution_evaluation,
+        attribution_evaluation_reason=attribution_evaluation_reason,
     )
     if "role.s_weak" in parameters and "role.s_min" in parameters:
         if config.value("role.s_weak") > config.value("role.s_min"):

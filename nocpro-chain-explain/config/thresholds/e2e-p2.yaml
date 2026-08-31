@@ -56,6 +56,12 @@ audit:
   global_weak_baseline: {value: 0.3, source: DOCUMENTED_DEFAULT}
   exact_max_members: {value: 2000, source: DOCUMENTED_DEFAULT}
 
+attribution_evaluation:
+  randomization:
+    algorithm: SPLITMIX64_FISHER_YATES_V1
+    seed: {value: 42, source: FROZEN_SPEC}
+    repetitions: {value: 100, source: FROZEN_SPEC}
+
 lineage:
   min_intersection: {value: 3, source: FROZEN_SPEC}
   beta_parent: {value: 0.5, source: DOCUMENTED_DEFAULT}

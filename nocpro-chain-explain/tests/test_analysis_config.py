@@ -276,6 +276,66 @@ def test_shipped_v1_config_constructs_engine_configs_with_one_version():
     )
     assert config.similar_chains.temporal_cutoff == "snapshot_time"
     assert config.similar_chains.exclude_same_lineage is True
+    assert config.attribution_evaluation is not None
+    assert (
+        config.attribution_evaluation.randomization_algorithm
+        == "SPLITMIX64_FISHER_YATES_V1"
+    )
+    assert config.attribution_evaluation.random_seed.value == 42
+    assert config.attribution_evaluation.random_seed.source is ParameterSource.FROZEN_SPEC
+    assert config.attribution_evaluation.random_repetitions.value == 100
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "    algorithm: SPLITMIX64_FISHER_YATES_V1\n",
+        "    seed: {value: 42, source: FROZEN_SPEC}\n",
+        "    repetitions: {value: 100, source: FROZEN_SPEC}\n",
+    ],
+)
+def test_incomplete_attribution_evaluation_config_is_component_unavailable(
+    tmp_path: Path, line: str
+):
+    text = SHIPPED_CONFIG.read_text(encoding="utf-8").replace(line, "", 1)
+    config = load_analysis_config(_write(tmp_path, text))
+
+    assert config.attribution_evaluation is None
+    assert (
+        config.attribution_evaluation_reason
+        == "ATTRIBUTION_EVALUATION_CONFIG_INCOMPLETE"
+    )
+    assert config.value("role.c_min") == 0.5
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        (
+            "algorithm: SPLITMIX64_FISHER_YATES_V1",
+            "algorithm: PYTHON_RANDOM_SHUFFLE",
+        ),
+        (
+            "seed: {value: 42, source: FROZEN_SPEC}",
+            "seed: {value: -1, source: FROZEN_SPEC}",
+        ),
+        (
+            "repetitions: {value: 100, source: FROZEN_SPEC}",
+            "repetitions: {value: 0, source: FROZEN_SPEC}",
+        ),
+    ],
+)
+def test_invalid_attribution_evaluation_config_is_component_unavailable(
+    tmp_path: Path, old: str, new: str
+):
+    text = SHIPPED_CONFIG.read_text(encoding="utf-8").replace(old, new, 1)
+    config = load_analysis_config(_write(tmp_path, text))
+
+    assert config.attribution_evaluation is None
+    assert (
+        config.attribution_evaluation_reason
+        == "ATTRIBUTION_EVALUATION_CONFIG_INCOMPLETE"
+    )
 
 
 @pytest.mark.parametrize(

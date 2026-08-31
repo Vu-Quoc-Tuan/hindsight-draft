@@ -1,11 +1,51 @@
-import type { EvidenceCoverageAttributionResult } from './types'
+import type { AttributionDeletionEvaluationResult, EvidenceCoverageAttributionResult } from './types'
 
 function percent(value: number | null) {
   if (value === null) return '⊥'
   return `${(value * 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}%`
 }
 
-export function EvidenceAttribution({ result }: { result: EvidenceCoverageAttributionResult }) {
+function decimal(value: number | null) {
+  return value === null ? '⊥' : value.toFixed(3)
+}
+
+function DeletionEvaluation({ evaluation }: { evaluation: AttributionDeletionEvaluationResult }) {
+  return (
+    <section className="deletion-evaluation" aria-label="Attribution deletion evaluation">
+      <header>
+        <div><p className="kicker">Ranking check · lower primary AUC is better</p><h4>Exact deletion curves</h4></div>
+        <div className="attribution-status"><span>Evaluation {evaluation.status}</span><strong>Evaluation {evaluation.mode}</strong></div>
+      </header>
+      {evaluation.status === 'AVAILABLE' ? (
+        <>
+          <dl className="attribution-summary">
+            <div><dt>primary AUC</dt><dd>{decimal(evaluation.primary.auc)}</dd></div>
+            <div><dt>random AUC</dt><dd>{decimal(evaluation.random.mean_auc)} ± {decimal(evaluation.random.std_auc)}</dd></div>
+            <div><dt>reverse AUC</dt><dd>{decimal(evaluation.reverse.auc)}</dd></div>
+          </dl>
+          <dl className="deletion-deltas">
+            <div><dt>Δ vs random</dt><dd>{decimal(evaluation.delta_vs_random_auc)}</dd></div>
+            <div><dt>Δ vs reverse</dt><dd>{decimal(evaluation.delta_vs_reverse_auc)}</dd></div>
+            <div><dt>randomization</dt><dd>{evaluation.random.algorithm} · seed {evaluation.random.seed} · {evaluation.random.repetitions_executed} runs</dd></div>
+          </dl>
+        </>
+      ) : (
+        <div className="attribution-reason">
+          <strong>{evaluation.reason ?? evaluation.status}</strong>
+          <p>{evaluation.group_count} eligible groups; no deletion AUC is reported.</p>
+        </div>
+      )}
+    </section>
+  )
+}
+
+export function EvidenceAttribution({
+  result,
+  evaluation,
+}: {
+  result: EvidenceCoverageAttributionResult
+  evaluation: AttributionDeletionEvaluationResult
+}) {
   const available = result.status === 'AVAILABLE'
   return (
     <section className={`attribution ${available ? '' : 'attribution--unavailable'}`} aria-label="Evidence Coverage Attribution">
@@ -41,6 +81,7 @@ export function EvidenceAttribution({ result }: { result: EvidenceCoverageAttrib
           </div>
         </>
       )}
+      <DeletionEvaluation evaluation={evaluation} />
     </section>
   )
 }

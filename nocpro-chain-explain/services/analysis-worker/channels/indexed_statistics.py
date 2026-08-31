@@ -11,6 +11,7 @@ from groups.indexed_statistics import (
     ChannelFitFromIndex,
     IndexedChainStatistics,
     StatisticsMode,
+    SupportIndexSemantics,
 )
 
 from .semantic import EMPTY_TAXONOMY, AlarmTaxonomy
@@ -190,6 +191,11 @@ def build_indexed_statistics(
         statistics,
         lambda_dep=lambda_dep,
         theta=common_dependency_threshold,
+    )
+    # All providers above emit unordered pair support symmetrically. Consumers
+    # require this explicit construction contract rather than assuming it.
+    statistics.support_index_semantics = (
+        SupportIndexSemantics.SYMMETRIC_UNORDERED_PAIRS_V1
     )
     return statistics
 

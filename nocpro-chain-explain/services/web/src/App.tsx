@@ -204,7 +204,10 @@ function StructurePanel({ job, onRun, submitting }: { job: Job | null; onRun: ()
           <p>{result.structural_audit.reason}</p>
           <dl className="metric-row"><div><dt>best cut</dt><dd>{result.structural_audit.best_cut_label ?? 'none'}</dd></div><div><dt>conductance</dt><dd>{result.structural_audit.best_cut_phi?.toFixed(3) ?? '⊥'}</dd></div><div><dt>over-merge</dt><dd>{humanize(result.over_merge_strength)}</dd></div></dl>
           <p className="audit-narrative">{result.over_merge_narrative}</p>
-          <EvidenceAttribution result={result.evidence_attribution} />
+          <EvidenceAttribution
+            result={result.evidence_attribution}
+            evaluation={result.evidence_attribution_evaluation}
+          />
           <section className="similar-results" aria-label="Similar chains">
             <header><div><p className="kicker">Different incidents</p><h3>Similar chains</h3></div><Pill tone={statusTone(result.similarity_status)}>{result.similarity_status}</Pill></header>
             {result.similarity_status === 'UNAVAILABLE' ? (

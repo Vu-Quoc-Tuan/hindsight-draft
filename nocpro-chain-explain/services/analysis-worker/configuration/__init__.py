@@ -3,6 +3,8 @@
 from .analysis_config import (
     AnalysisConfig,
     AnalysisConfigError,
+    ATTRIBUTION_RANDOMIZATION_ALGORITHM,
+    AttributionEvaluationConfig,
     ConfiguredValue,
     DependencyScopeConfig,
     IncrementalSnapshotMode,
@@ -17,6 +19,8 @@ from .analysis_config import (
 __all__ = [
     "AnalysisConfig",
     "AnalysisConfigError",
+    "ATTRIBUTION_RANDOMIZATION_ALGORITHM",
+    "AttributionEvaluationConfig",
     "ConfiguredValue",
     "DependencyScopeConfig",
     "IncrementalSnapshotMode",

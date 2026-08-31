@@ -113,7 +113,12 @@ def test_success_is_cached_by_tier2_fingerprint_snapshot_and_config(analysis_con
         entries = cache.tier_entries(CacheTier.TIER_2)
         assert len(entries) == 1
         assert entries[0].key.snapshot_id == "s1"
-        assert entries[0].key.config_version == "v1"
+        assert entries[0].key.config_version.startswith(
+            "v1|attribution-evaluation:"
+        )
+        assert "SPLITMIX64_FISHER_YATES_V1" in entries[0].key.config_version
+        assert "seed=42" in entries[0].key.config_version
+        assert "repetitions=100" in entries[0].key.config_version
     finally:
         manager.shutdown()
 
@@ -592,4 +597,6 @@ def test_versioned_similarity_context_is_used_and_part_of_cache_key(analysis_con
     assert "alarm_taxonomy" not in completed.result.active_fingerprint_blocks
     assert "size_bin" in completed.result.active_fingerprint_blocks
     assert "duration_bin" in completed.result.active_fingerprint_blocks
-    assert completed.cache_key.config_version == "v1|similarity:sim-test-v1"
+    assert completed.cache_key.config_version.startswith(
+        "v1|similarity:sim-test-v1|attribution-evaluation:"
+    )

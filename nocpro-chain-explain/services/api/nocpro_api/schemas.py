@@ -280,6 +280,35 @@ class EvidenceCoverageAttributionView(ApiModel):
     contributions: list[EvidenceCoverageContributionView]
 
 
+class AttributionDeletionCurveView(ApiModel):
+    ordering: list[str]
+    coverage_curve: list[float]
+    auc: float | None
+
+
+class AttributionRandomBaselineView(ApiModel):
+    algorithm: str
+    seed: int | None
+    repetitions: int | None
+    repetitions_executed: int
+    mean_curve: list[float]
+    std_curve: list[float]
+    mean_auc: float | None
+    std_auc: float | None
+
+
+class AttributionDeletionEvaluationView(ApiModel):
+    status: str
+    mode: str
+    reason: str | None
+    group_count: int
+    primary: AttributionDeletionCurveView
+    reverse: AttributionDeletionCurveView
+    random: AttributionRandomBaselineView
+    delta_vs_random_auc: float | None
+    delta_vs_reverse_auc: float | None
+
+
 class DeepDiveView(ApiModel):
     chain_id: str
     audit_graph_mode: str
@@ -298,6 +327,7 @@ class DeepDiveView(ApiModel):
     active_fingerprint_blocks: list[str]
     topology_hypotheses: TopologyHypothesesView
     evidence_attribution: EvidenceCoverageAttributionView
+    evidence_attribution_evaluation: AttributionDeletionEvaluationView
 
 
 class JobView(ApiModel):

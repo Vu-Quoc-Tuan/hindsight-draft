@@ -7,7 +7,12 @@ import random
 
 from channels import AlarmTaxonomy, evaluate_chain_channels
 from channels.indexed_statistics import build_indexed_statistics
-from groups import RoleThresholds, classify_membership, membership_support
+from groups import (
+    RoleThresholds,
+    SupportIndexSemantics,
+    classify_membership,
+    membership_support,
+)
 from groups.fit_from_index import membership_support_from_index
 from libs.contracts import load_package
 
@@ -96,6 +101,11 @@ def mixed_package():
 def _assert_equivalent(package, *, taxonomy=AlarmTaxonomy({}, {}), d_max=3):
     oracle = evaluate_chain_channels(package, "C1", taxonomy=taxonomy, d_max=d_max)
     indexed = build_indexed_statistics(package, "C1", taxonomy=taxonomy, d_max=d_max)
+
+    assert (
+        indexed.support_index_semantics
+        is SupportIndexSemantics.SYMMETRIC_UNORDERED_PAIRS_V1
+    )
 
     assert set(indexed.channel_ids) == set(oracle.statistics.channel_ids())
     oracle_supports = {}

@@ -21,6 +21,16 @@ from .evidence_attribution import (
     EvidenceCoverageContribution,
     compute_evidence_coverage_attribution,
 )
+from .attribution_evaluation import (
+    RANDOMIZATION_ALGORITHM,
+    AttributionDeletionEvaluationResult,
+    AttributionEvaluationMode,
+    AttributionEvaluationReason,
+    AttributionEvaluationStatus,
+    DeletionCurve,
+    RandomDeletionBaseline,
+    evaluate_attribution_deletion,
+)
 from .topology_hypotheses import (
     TopologyHypothesesResult,
     analyze_topology_hypotheses,
@@ -44,4 +54,12 @@ __all__ = [
     "EvidenceCoverageAttributionResult",
     "EvidenceCoverageContribution",
     "compute_evidence_coverage_attribution",
+    "RANDOMIZATION_ALGORITHM",
+    "AttributionDeletionEvaluationResult",
+    "AttributionEvaluationMode",
+    "AttributionEvaluationReason",
+    "AttributionEvaluationStatus",
+    "DeletionCurve",
+    "RandomDeletionBaseline",
+    "evaluate_attribution_deletion",
 ]

@@ -27,6 +27,11 @@ class PairMaterializationMode(str, Enum):
     TRUNCATED = "TRUNCATED"
 
 
+class SupportIndexSemantics(str, Enum):
+    UNSPECIFIED = "UNSPECIFIED"
+    SYMMETRIC_UNORDERED_PAIRS_V1 = "SYMMETRIC_UNORDERED_PAIRS_V1"
+
+
 @dataclass(frozen=True)
 class ChannelFitFromIndex:
     channel_id: str
@@ -48,6 +53,7 @@ class IndexedChainStatistics:
     statistics_mode: StatisticsMode
     audit_graph_mode: AuditGraphMode = AuditGraphMode.NOT_COMPUTED
     pair_materialization: PairMaterializationMode = PairMaterializationMode.ON_DEMAND
+    support_index_semantics: SupportIndexSemantics = SupportIndexSemantics.UNSPECIFIED
     fits: dict[tuple[str, str], ChannelFitFromIndex] = field(default_factory=dict)
     channel_meta: dict[
         str, tuple[str, ProvenanceClass, ProvenanceSubtype | None]

@@ -402,11 +402,14 @@ variant and verifies Tier-1A remains READY while all affected P2 capabilities
 fail closed. This uses `config/thresholds/e2e-p2.yaml`, which is explicitly
 synthetic acceptance configuration; production continues to use
 `config/thresholds/v1.yaml` and does not acquire uncalibrated P2 defaults.
-On 2026-08-31 this targeted Docker acceptance passed both Kafka cases (`2/2`)
-and cleaned its isolated containers, network and PostgreSQL volume. The same
-day's full real-replay/browser rerun stopped before replay because this worktree
-did not have the external `datasets/raw/alarm_data.csv` mount; no replacement
-or synthetic export was substituted for that browser gate.
+On 2026-08-31 the full acceptance was rerun with the authoritative external
+real-export directory mounted read-only into this worktree's mock producer.
+Chromium operator/singleton flows passed (`2/2`), recovery and ingest failure
+cases passed (`4/4`), and synthetic topology Kafka/P2 cases passed (`3/3`). The
+1,072-member Tier-1B request completed in `0.826174s`. The runner cleaned its
+isolated containers, network and PostgreSQL volume. The mount changes only the
+location from which `nocpro-mock` reads the existing export; it does not replace
+or synthesize production replay data.
 
 The unresolved external gates are recorded explicitly:
 

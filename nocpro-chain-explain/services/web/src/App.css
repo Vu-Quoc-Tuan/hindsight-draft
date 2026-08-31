@@ -179,6 +179,15 @@ button.table-row:hover, button.table-row.is-selected { background: #eff6cf; }
 .attribution-reason strong, .attribution-reason small { display: block; font: 700 .62rem var(--mono); overflow-wrap: anywhere; }
 .attribution-reason small { margin-top: .3rem; color: #6c797d; }
 .attribution-reason p { margin: .6rem 0 0; color: #68777c; font: .58rem var(--mono); }
+.deletion-evaluation { border-top: 1px solid var(--ink); background: #f7f9f2; }
+.deletion-evaluation > header { display: flex; justify-content: space-between; gap: 1rem; padding: .7rem .85rem; border-bottom: 1px solid var(--line); }
+.deletion-evaluation h4 { margin: 0; font-size: .82rem; }
+.deletion-deltas { display: grid; grid-template-columns: .7fr .7fr 2fr; margin: 0; border-top: 1px solid var(--line); }
+.deletion-deltas div { padding: .55rem .65rem; border-right: 1px solid var(--line); min-width: 0; }
+.deletion-deltas div:last-child { border: 0; }
+.deletion-deltas dt, .deletion-deltas dd { margin: 0; font: .54rem var(--mono); }
+.deletion-deltas dt { color: #788388; text-transform: uppercase; }
+.deletion-deltas dd { margin-top: .2rem; overflow-wrap: anywhere; font-weight: 700; }
 .similar-results { margin-top: 1rem; border-top: 1px solid var(--ink); }
 .similar-results > header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 0 .8rem; }
 .similar-results h3 { margin: 0; font-size: 1rem; }

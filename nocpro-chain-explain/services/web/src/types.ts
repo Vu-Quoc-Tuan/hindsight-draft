@@ -132,6 +132,7 @@ export type DeepDive = {
   active_fingerprint_blocks: string[]
   topology_hypotheses: TopologyHypothesesResult
   evidence_attribution: EvidenceCoverageAttributionResult
+  evidence_attribution_evaluation: AttributionDeletionEvaluationResult
 }
 
 export type EvidenceCoverageAttributionResult = {
@@ -155,6 +156,35 @@ export type EvidenceCoverageAttributionResult = {
     supported_pair_count: number
     attribution: number
   }>
+}
+
+export type AttributionDeletionEvaluationResult = {
+  status: 'AVAILABLE' | 'UNAVAILABLE' | 'NOT_APPLICABLE'
+  mode: 'EXACT' | 'UNAVAILABLE'
+  reason: string | null
+  group_count: number
+  primary: {
+    ordering: string[]
+    coverage_curve: number[]
+    auc: number | null
+  }
+  reverse: {
+    ordering: string[]
+    coverage_curve: number[]
+    auc: number | null
+  }
+  random: {
+    algorithm: string
+    seed: number | null
+    repetitions: number | null
+    repetitions_executed: number
+    mean_curve: number[]
+    std_curve: number[]
+    mean_auc: number | null
+    std_auc: number | null
+  }
+  delta_vs_random_auc: number | null
+  delta_vs_reverse_auc: number | null
 }
 
 export type Job = {

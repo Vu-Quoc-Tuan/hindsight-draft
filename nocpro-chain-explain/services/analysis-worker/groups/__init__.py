@@ -37,6 +37,7 @@ from .indexed_statistics import (
     IndexedChainStatistics,
     PairMaterializationMode,
     StatisticsMode,
+    SupportIndexSemantics,
 )
 
 __all__ = [
@@ -56,6 +57,7 @@ __all__ = [
     "StatisticsMode",
     "AuditGraphMode",
     "PairMaterializationMode",
+    "SupportIndexSemantics",
     "RoleThresholds",
     "availability_coverage",
     "channel_fit",

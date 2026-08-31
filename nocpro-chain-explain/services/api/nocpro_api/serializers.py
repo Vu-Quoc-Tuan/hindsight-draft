@@ -178,6 +178,9 @@ def deep_dive_view(result) -> DeepDiveView:
         active_fingerprint_blocks=list(result.active_fingerprint_blocks),
         topology_hypotheses=topology_hypotheses_view(result.topology_hypotheses),
         evidence_attribution=evidence_attribution_view(result.evidence_attribution),
+        evidence_attribution_evaluation=attribution_evaluation_view(
+            result.evidence_attribution_evaluation
+        ),
     )
 
 
@@ -207,6 +210,37 @@ def evidence_attribution_view(result) -> EvidenceCoverageAttributionView:
             for item in result.contributions
         ],
     )
+
+
+def attribution_evaluation_view(result):
+    return {
+        "status": _status(result.status),
+        "mode": _status(result.mode),
+        "reason": _reason(result.reason),
+        "group_count": result.group_count,
+        "primary": {
+            "ordering": list(result.primary.ordering),
+            "coverage_curve": list(result.primary.coverage_curve),
+            "auc": result.primary.auc,
+        },
+        "reverse": {
+            "ordering": list(result.reverse.ordering),
+            "coverage_curve": list(result.reverse.coverage_curve),
+            "auc": result.reverse.auc,
+        },
+        "random": {
+            "algorithm": result.random.algorithm,
+            "seed": result.random.seed,
+            "repetitions": result.random.repetitions,
+            "repetitions_executed": result.random.repetitions_executed,
+            "mean_curve": list(result.random.mean_curve),
+            "std_curve": list(result.random.std_curve),
+            "mean_auc": result.random.mean_auc,
+            "std_auc": result.random.std_auc,
+        },
+        "delta_vs_random_auc": result.delta_vs_random_auc,
+        "delta_vs_reverse_auc": result.delta_vs_reverse_auc,
+    }
 
 
 def _status(value) -> str:

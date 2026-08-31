@@ -155,6 +155,11 @@ def test_singleton_attribution_is_not_applicable_without_zero_value():
     assert attribution.covered_pair_count is None
     assert attribution.total_coverage is None
     assert attribution.contributions == ()
+    assert result.evidence_attribution_evaluation.status.value == "UNAVAILABLE"
+    assert (
+        result.evidence_attribution_evaluation.reason.value
+        == "ATTRIBUTION_UNAVAILABLE"
+    )
 
 
 def test_policy_bound_must_be_positive():

@@ -101,6 +101,24 @@ def _p2_cache_stamp(analysis_config: Any) -> str | None:
     return ";".join(parts) or None
 
 
+def _attribution_evaluation_cache_stamp(analysis_config: Any) -> str:
+    config = getattr(analysis_config, "attribution_evaluation", None)
+    if config is None:
+        reason = getattr(
+            analysis_config,
+            "attribution_evaluation_reason",
+            "ATTRIBUTION_EVALUATION_CONFIG_INCOMPLETE",
+        )
+        return f"UNAVAILABLE:{reason}"
+    seed = config.random_seed
+    repetitions = config.random_repetitions
+    return (
+        f"algorithm={config.randomization_algorithm!r},"
+        f"seed={seed.value!r}[source={seed.source.value!r}],"
+        f"repetitions={repetitions.value!r}[source={repetitions.source.value!r}]"
+    )
+
+
 class JobStatus(str, Enum):
     QUEUED = "QUEUED"
     RUNNING = "RUNNING"
@@ -197,6 +215,10 @@ class Tier2JobManager:
         p2_stamp = _p2_cache_stamp(analysis_config)
         if p2_stamp is not None:
             run_config_version = f"{run_config_version}|p2:{p2_stamp}"
+        run_config_version = (
+            f"{run_config_version}|attribution-evaluation:"
+            f"{_attribution_evaluation_cache_stamp(analysis_config)}"
+        )
         key = self.cache.key_for(
             CacheTier.TIER_2,
             member_ids=members,
@@ -297,6 +319,9 @@ class Tier2JobManager:
                     analysis_config.value("similar_chains.result_top_k")
                 ),
                 p2_topology_config=getattr(analysis_config, "p2_topology", None),
+                attribution_evaluation_config=getattr(
+                    analysis_config, "attribution_evaluation", None
+                ),
             )
         except Exception as exc:  # job boundary: failures become observable state
             with self._lock:

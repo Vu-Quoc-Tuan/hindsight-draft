@@ -35,7 +35,7 @@ from descriptor import (
     build_predicate_index,
     mine_descriptors,
 )
-from configuration import P2TopologyConfig
+from configuration import AttributionEvaluationConfig, P2TopologyConfig
 from groups import AuditGraphMode
 from libs.contracts import IngestedPackage
 from similar_chains import (
@@ -52,6 +52,11 @@ from .evidence_attribution import (
     AttributionExecutionPolicy,
     EvidenceCoverageAttributionResult,
     compute_evidence_coverage_attribution,
+    build_exact_attribution_support,
+)
+from .attribution_evaluation import (
+    AttributionDeletionEvaluationResult,
+    evaluate_attribution_deletion,
 )
 
 
@@ -112,6 +117,7 @@ class Tier2AuditAnalysis:
     over_merge: OverMergeVerdict
     topology_hypotheses: TopologyHypothesesResult
     evidence_attribution: EvidenceCoverageAttributionResult
+    evidence_attribution_evaluation: AttributionDeletionEvaluationResult
     reason: str | None = None
     config_version: str | None = None
     epsilon: float | None = None
@@ -145,6 +151,7 @@ def analyze_structural_audit(
     similarity_context: SimilarityQueryContext | None = None,
     similarity_top_k: int = 5,
     p2_topology_config: P2TopologyConfig | None = None,
+    attribution_evaluation_config: AttributionEvaluationConfig | None = None,
 ) -> Tier2AuditAnalysis:
     """Run independent Tier-2 components with component-level fail-closed results."""
     chain = package.chains.get(chain_id)
@@ -217,6 +224,10 @@ def analyze_structural_audit(
         if exact_allowed
         else None
     )
+    exact_support = build_exact_attribution_support(
+        tuple(members),
+        indexed_evidence.statistics if indexed_evidence is not None else None,
+    )
     evidence_attribution = compute_evidence_coverage_attribution(
         chain_id,
         tuple(members),
@@ -224,6 +235,14 @@ def analyze_structural_audit(
         policy=AttributionExecutionPolicy(
             exact_max_members=policy.exact_max_members
         ),
+        exact_support=exact_support,
+    )
+    evidence_attribution_evaluation = evaluate_attribution_deletion(
+        evidence_attribution,
+        tuple(members),
+        indexed_evidence.statistics if indexed_evidence is not None else None,
+        config=attribution_evaluation_config,
+        exact_support=exact_support,
     )
 
     graph: AuditGraph | None
@@ -305,6 +324,7 @@ def analyze_structural_audit(
         over_merge=over_merge,
         topology_hypotheses=topology_hypotheses,
         evidence_attribution=evidence_attribution,
+        evidence_attribution_evaluation=evidence_attribution_evaluation,
         config_version=mining_config.config_version,
         epsilon=epsilon,
         similar_chains=similar_results,
