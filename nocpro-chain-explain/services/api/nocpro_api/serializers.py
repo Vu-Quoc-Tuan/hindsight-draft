@@ -19,6 +19,7 @@ from .schemas import (
     ChainAnalysisView,
     DeepDiveView,
     DescriptorView,
+    EvidenceCoverageAttributionView,
     GrayBoxView,
     GroupFitView,
     JobView,
@@ -176,6 +177,35 @@ def deep_dive_view(result) -> DeepDiveView:
         taxonomy_reason=result.taxonomy_reason,
         active_fingerprint_blocks=list(result.active_fingerprint_blocks),
         topology_hypotheses=topology_hypotheses_view(result.topology_hypotheses),
+        evidence_attribution=evidence_attribution_view(result.evidence_attribution),
+    )
+
+
+def evidence_attribution_view(result) -> EvidenceCoverageAttributionView:
+    return EvidenceCoverageAttributionView(
+        status=_status(result.status),
+        mode=_status(result.mode),
+        reason=_reason(result.reason),
+        detail=result.detail,
+        chain_size=result.chain_size,
+        exact_max_members=result.exact_max_members,
+        total_pair_count=result.total_pair_count,
+        covered_pair_count=result.covered_pair_count,
+        total_coverage=result.total_coverage,
+        contributions=[
+            {
+                "group_id": item.group_id,
+                "derivation_tag": item.derivation_tag,
+                "provenance_class": _status(item.provenance_class),
+                "explain_eligible": item.explain_eligible,
+                "role_eligible": item.role_eligible,
+                "audit_eligible": item.audit_eligible,
+                "behavioral": item.behavioral,
+                "supported_pair_count": item.supported_pair_count,
+                "attribution": item.attribution,
+            }
+            for item in result.contributions
+        ],
     )
 
 

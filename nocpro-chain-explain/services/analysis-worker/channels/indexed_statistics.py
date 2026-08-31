@@ -86,6 +86,7 @@ def build_indexed_statistics(
         members=tuple(alarm.alarm_id for alarm in alarms),
         statistics_mode=StatisticsMode.EXACT_INDEXED,
     )
+    positions = {alarm.alarm_id: index for index, alarm in enumerate(alarms)}
 
     for channel_id, tag, field in EQUALITY_CHANNELS:
         statistics.channel_meta[channel_id] = (tag, ProvenanceClass.POST_HOC, None)
@@ -101,6 +102,11 @@ def build_indexed_statistics(
             available.add(alarm.alarm_id)
             groups.setdefault(key, []).append(alarm.alarm_id)
 
+        group_bitmaps = {
+            key: sum(1 << positions[alarm_id] for alarm_id in alarm_ids)
+            for key, alarm_ids in groups.items()
+        }
+
         for alarm in alarms:
             if alarm.alarm_id not in available:
                 domain = supporting = 0
@@ -114,6 +120,13 @@ def build_indexed_statistics(
                 domain_size=domain,
                 supporting=supporting,
             )
+            peer_bitmap = (
+                group_bitmaps[values[alarm.alarm_id]]
+                & ~(1 << positions[alarm.alarm_id])
+                if alarm.alarm_id in available
+                else 0
+            )
+            statistics.support_peer_bitmaps[(alarm.alarm_id, channel_id)] = peer_bitmap
 
     burst_channel = "T_burst"
     burst_tag = "temporal_burst"
@@ -126,6 +139,11 @@ def build_indexed_statistics(
     burst_groups: dict[str, int] = {}
     for burst_id in segmentation.burst_of.values():
         burst_groups[burst_id] = burst_groups.get(burst_id, 0) + 1
+    burst_bitmaps: dict[str, int] = {}
+    for alarm_id, burst_id in segmentation.burst_of.items():
+        burst_bitmaps[burst_id] = (
+            burst_bitmaps.get(burst_id, 0) | (1 << positions[alarm_id])
+        )
     burst_domain = len(segmentation.burst_of)
     for alarm in alarms:
         burst_id = segmentation.burst_of.get(alarm.alarm_id)
@@ -138,6 +156,12 @@ def build_indexed_statistics(
             domain_size=domain,
             supporting=supporting,
         )
+        peer_bitmap = (
+            burst_bitmaps[burst_id] & ~(1 << positions[alarm.alarm_id])
+            if burst_id is not None
+            else 0
+        )
+        statistics.support_peer_bitmaps[(alarm.alarm_id, burst_channel)] = peer_bitmap
 
     statistics.channel_meta["T_delay"] = (
         "temporal_delay",
@@ -152,6 +176,7 @@ def build_indexed_statistics(
             domain_size=0,
             supporting=0,
         )
+        statistics.support_peer_bitmaps[(alarm.alarm_id, "T_delay")] = 0
 
     _add_dep_hop_statistics(
         package,
@@ -187,6 +212,8 @@ def _add_dep_upstream_statistics(
     for alarm in alarms:
         for entry in index.fits_for(alarm):
             statistics.fits[(alarm.alarm_id, entry.channel_id)] = entry
+        for channel_id, bitmap in index.support_bitmaps_for(alarm):
+            statistics.support_peer_bitmaps[(alarm.alarm_id, channel_id)] = bitmap
 
 
 def _add_dep_hop_statistics(
@@ -210,9 +237,16 @@ def _add_dep_hop_statistics(
     resources = {
         alarm.alarm_id: resolver.resource_of(alarm.alarm_id) for alarm in alarms
     }
+    positions = {alarm.alarm_id: index for index, alarm in enumerate(alarms)}
     alarms_per_resource = Counter(
         resource for resource in resources.values() if resource is not None
     )
+    resource_bitmaps: dict[str, int] = {}
+    for alarm_id, resource in resources.items():
+        if resource is not None:
+            resource_bitmaps[resource] = (
+                resource_bitmaps.get(resource, 0) | (1 << positions[alarm_id])
+            )
     neighbourhoods: dict[str, set[str]] = {}
     if graph.adjacency:
         neighbourhoods = {
@@ -239,3 +273,9 @@ def _add_dep_hop_statistics(
             domain_size=domain,
             supporting=supporting,
         )
+        peer_bitmap = 0
+        if resource is not None and graph.adjacency:
+            for reachable_resource in neighbourhoods[resource]:
+                peer_bitmap |= resource_bitmaps.get(reachable_resource, 0)
+            peer_bitmap &= ~(1 << positions[alarm.alarm_id])
+        statistics.support_peer_bitmaps[(alarm.alarm_id, channel_id)] = peer_bitmap

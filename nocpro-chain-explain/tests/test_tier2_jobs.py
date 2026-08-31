@@ -206,6 +206,31 @@ def test_default_worker_runs_real_per_chain_audit(analysis_config):
     )
 
 
+def test_domain_limits_return_a_successful_job_with_partial_results(analysis_config):
+    parameters = dict(analysis_config.parameters)
+    parameters["audit.exact_max_members"] = replace(
+        parameters["audit.exact_max_members"], value=5
+    )
+    limited = replace(analysis_config, parameters=parameters)
+
+    with Tier2JobManager(max_workers=1) as manager:
+        submission = manager.submit(_package(), "C1", analysis_config=limited)
+        completed = manager.wait(submission.job_id, timeout=5)
+
+    assert completed.status is JobStatus.SUCCEEDED
+    assert completed.error is None
+    assert completed.result.audit_graph_mode is AuditGraphMode.NOT_COMPUTED
+    assert completed.result.structural_audit.verdict.value == "UNAVAILABLE"
+    assert completed.result.structural_audit.reason == "AUDIT_LIMIT_EXCEEDED"
+    assert completed.result.evidence_attribution.status.value == "UNAVAILABLE"
+    assert (
+        completed.result.evidence_attribution.reason.value
+        == "ATTRIBUTION_LIMIT_EXCEEDED"
+    )
+    assert completed.result.similarity_unavailable_reason == "LINEAGE_NOT_READY"
+    assert completed.result.topology_hypotheses is not None
+
+
 def test_p2_config_versions_and_scope_values_are_part_of_cache_stamp(analysis_config):
     calls = 0
 

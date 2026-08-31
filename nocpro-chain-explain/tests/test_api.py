@@ -266,6 +266,13 @@ def test_deep_dive_is_submitted_and_polled_as_a_job():
     assert polled.json()["result"]["similarity_trained_until_exclusive"] is None
     assert polled.json()["result"]["similarity_corpus_policy"] is None
     assert polled.json()["result"]["similarity_model_update_policy"] is None
+    attribution = polled.json()["result"]["evidence_attribution"]
+    assert attribution["status"] == "AVAILABLE"
+    assert attribution["mode"] == "EXACT"
+    assert attribution["reason"] is None
+    assert attribution["chain_size"] == 3
+    assert attribution["total_pair_count"] == 3
+    assert attribution["total_coverage"] == 1.0
     topology = polled.json()["result"]["topology_hypotheses"]
     assert topology["dominator"]["status"] == "UNAVAILABLE"
     assert topology["dominator"]["reason"] is not None
@@ -275,3 +282,32 @@ def test_deep_dive_is_submitted_and_polled_as_a_job():
     assert topology["dependency_scope"]["status"] == "UNAVAILABLE"
     assert topology["dependency_scope"]["resource_details"]["missing_resources"] is None
     assert topology["dependency_scope"]["resource_details"]["extra_resources"] is None
+
+
+def test_singleton_deep_dive_serializes_not_applicable_attribution():
+    payload = _payload()
+    payload["alarms"] = payload["alarms"][:1]
+    payload["memberships"] = payload["memberships"][:1]
+    payload["chains"][0]["member_count"] = 1
+
+    async def exercise(client: httpx2.AsyncClient):
+        await client.post("/api/v1/snapshots", json=payload)
+        submission = await client.post("/api/v1/chains/C1/deep-dive")
+        job_id = submission.json()["job_id"]
+        polled = await client.get(f"/api/v1/jobs/{job_id}")
+        for _ in range(20):
+            if polled.json()["status"] in {"SUCCEEDED", "FAILED"}:
+                break
+            await asyncio.sleep(0.01)
+            polled = await client.get(f"/api/v1/jobs/{job_id}")
+        return polled
+
+    response = run_api_test(exercise)
+    attribution = response.json()["result"]["evidence_attribution"]
+    assert response.json()["status"] == "SUCCEEDED"
+    assert attribution["status"] == "NOT_APPLICABLE"
+    assert attribution["mode"] == "UNAVAILABLE"
+    assert attribution["reason"] == "SINGLETON"
+    assert attribution["detail"] == "SINGLETON_CHAIN"
+    assert attribution["total_coverage"] is None
+    assert attribution["contributions"] == []

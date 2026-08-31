@@ -52,9 +52,16 @@ class IndexedChainStatistics:
     channel_meta: dict[
         str, tuple[str, ProvenanceClass, ProvenanceSubtype | None]
     ] = field(default_factory=dict)
+    #: Exact bitmap of supporting peers for one member/channel. Bit positions
+    #: follow ``members``. This is sufficient statistics for joint support
+    #: queries without retaining or re-evaluating a pair list.
+    support_peer_bitmaps: dict[tuple[str, str], int] = field(default_factory=dict)
 
     def fit_of(self, alarm_id: str, channel_id: str) -> ChannelFitFromIndex | None:
         return self.fits.get((alarm_id, channel_id))
+
+    def support_bitmap_of(self, alarm_id: str, channel_id: str) -> int:
+        return self.support_peer_bitmaps.get((alarm_id, channel_id), 0)
 
     @property
     def channel_ids(self) -> list[str]:

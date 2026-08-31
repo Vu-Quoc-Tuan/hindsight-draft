@@ -255,6 +255,31 @@ class TopologyHypothesesView(ApiModel):
     dependency_scope: DependencyScopeView
 
 
+class EvidenceCoverageContributionView(ApiModel):
+    group_id: str
+    derivation_tag: str
+    provenance_class: str
+    explain_eligible: bool
+    role_eligible: bool
+    audit_eligible: bool
+    behavioral: bool
+    supported_pair_count: int
+    attribution: float
+
+
+class EvidenceCoverageAttributionView(ApiModel):
+    status: str
+    mode: str
+    reason: str | None
+    detail: str | None
+    chain_size: int
+    exact_max_members: int
+    total_pair_count: int
+    covered_pair_count: int | None
+    total_coverage: float | None
+    contributions: list[EvidenceCoverageContributionView]
+
+
 class DeepDiveView(ApiModel):
     chain_id: str
     audit_graph_mode: str
@@ -272,6 +297,7 @@ class DeepDiveView(ApiModel):
     taxonomy_reason: str | None
     active_fingerprint_blocks: list[str]
     topology_hypotheses: TopologyHypothesesView
+    evidence_attribution: EvidenceCoverageAttributionView
 
 
 class JobView(ApiModel):

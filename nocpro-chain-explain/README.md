@@ -35,6 +35,7 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | CommonDependency: SHARED_ANCESTOR + SHARED_ACTIVE_PATH (`channels/common_dependency.py`) | P1-Core | done |
 | Similar Chains: fingerprint + cosine baseline (`similar_chains/`) | P1-Core | done |
 | Similar Chains production index (`history<t`, snapshot-versioned model) | P1-Core | done |
+| Evidence Coverage Attribution (exact indexed, derivation-group level) | P1-optional | done; fail-closed above configured ceiling |
 | **P1-Core (3+1) feature set implemented** | | **4/4** |
 | Contrastive top-3: per-candidate `Margin_common` (§5, §11) | P0 | done |
 | Hybrid indexed Tier-1B + pairwise oracle | P0 | done |
@@ -90,6 +91,7 @@ services/analysis-worker/audit/      audit graph, candidate cuts, conductance, o
 services/analysis-worker/channels/common_dependency.py  SHARED_ANCESTOR, SHARED_ACTIVE_PATH
 services/analysis-worker/similar_chains/  fingerprint, TF-IDF, cosine similarity baseline
 services/analysis-worker/tier2/topology_hypotheses/  fail-closed P2 topology foundation
+services/analysis-worker/tier2/evidence_attribution.py  exact indexed Evidence Coverage Attribution
 services/api/nocpro_api/             FastAPI transport and in-process repository boundary
 services/api/nocpro_api/ingest/      Kafka v1 wire parser + consumer/coordinator
 services/api/nocpro_api/persistence/ PostgreSQL models and snapshot repository

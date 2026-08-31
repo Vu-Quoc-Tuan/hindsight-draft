@@ -160,6 +160,7 @@ def run_structural_audit(
 
 
 class OverMergeStrength(str, Enum):
+    UNAVAILABLE = "UNAVAILABLE"
     NONE = "NONE"
     WEAK = "WEAK"
     MODERATE = "MODERATE"

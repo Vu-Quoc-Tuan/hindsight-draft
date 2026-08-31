@@ -8,7 +8,13 @@ from audit import AuditVerdict
 from descriptor import MiningConfig
 from groups import AuditGraphMode
 from libs.contracts import load_package
-from tier2 import AuditExecutionPolicy, AuditPolicyRequired, analyze_structural_audit
+from nocpro_api.serializers import deep_dive_view
+from tier2 import AuditExecutionPolicy, analyze_structural_audit
+from tier2.evidence_attribution import (
+    AttributionMode,
+    AttributionReason,
+    AttributionStatus,
+)
 
 
 MINING = MiningConfig(config_version="tier2-test-v1")
@@ -85,15 +91,70 @@ def test_tier2_uses_explicit_audit_balance_parameters():
     assert result.structural_audit.verdict is not AuditVerdict.SKIPPED_SMALL_CHAIN
 
 
-def test_large_chain_requires_an_explicit_compressed_policy():
-    with pytest.raises(AuditPolicyRequired, match="exceeds exact audit bound"):
-        analyze_structural_audit(
-            _package(6),
-            "C1",
-            policy=AuditExecutionPolicy(exact_max_members=5),
-            mining_config=MINING,
-            epsilon=0.3,
-        )
+def test_large_chain_returns_partial_domain_results_without_dense_paths(monkeypatch):
+    import tier2.audit_analysis as audit_module
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("large-chain partial result must not build pair evidence/graph")
+
+    monkeypatch.setattr(audit_module, "evaluate_chain_channels", forbidden)
+    monkeypatch.setattr(audit_module, "build_audit_graph", forbidden)
+    result = analyze_structural_audit(
+        _package(6),
+        "C1",
+        policy=AuditExecutionPolicy(exact_max_members=5),
+        mining_config=MINING,
+        epsilon=0.3,
+    )
+
+    assert result.audit_graph_mode is AuditGraphMode.NOT_COMPUTED
+    assert result.graph is None
+    assert result.structural_audit.verdict is AuditVerdict.UNAVAILABLE
+    assert result.structural_audit.reason == "AUDIT_LIMIT_EXCEEDED"
+    assert result.over_merge.strength.value == "UNAVAILABLE"
+    assert result.evidence_attribution.status is AttributionStatus.UNAVAILABLE
+    assert (
+        result.evidence_attribution.reason
+        is AttributionReason.ATTRIBUTION_LIMIT_EXCEEDED
+    )
+    # Independent components still return domain results.
+    assert result.similarity_unavailable_reason == "LINEAGE_NOT_READY"
+    assert result.topology_hypotheses is not None
+    serialized = deep_dive_view(result).model_dump()
+    assert serialized["structural_audit"]["verdict"] == "UNAVAILABLE"
+    assert serialized["structural_audit"]["reason"] == "AUDIT_LIMIT_EXCEEDED"
+    assert serialized["evidence_attribution"] == {
+        "status": "UNAVAILABLE",
+        "mode": "UNAVAILABLE",
+        "reason": "ATTRIBUTION_LIMIT_EXCEEDED",
+        "detail": None,
+        "chain_size": 6,
+        "exact_max_members": 5,
+        "total_pair_count": 15,
+        "covered_pair_count": None,
+        "total_coverage": None,
+        "contributions": [],
+    }
+
+
+def test_singleton_attribution_is_not_applicable_without_zero_value():
+    result = analyze_structural_audit(
+        _package(1),
+        "C1",
+        policy=AuditExecutionPolicy(exact_max_members=5),
+        mining_config=MINING,
+        epsilon=0.3,
+    )
+
+    attribution = result.evidence_attribution
+    assert attribution.status is AttributionStatus.NOT_APPLICABLE
+    assert attribution.mode is AttributionMode.UNAVAILABLE
+    assert attribution.reason is AttributionReason.SINGLETON
+    assert attribution.detail == "SINGLETON_CHAIN"
+    assert attribution.total_pair_count == 0
+    assert attribution.covered_pair_count is None
+    assert attribution.total_coverage is None
+    assert attribution.contributions == ()
 
 
 def test_policy_bound_must_be_positive():

@@ -100,6 +100,7 @@ def _assert_equivalent(package, *, taxonomy=AlarmTaxonomy({}, {}), d_max=3):
     assert set(indexed.channel_ids) == set(oracle.statistics.channel_ids())
     oracle_supports = {}
     indexed_supports = {}
+    positions = {alarm_id: index for index, alarm_id in enumerate(oracle.members)}
     for alarm_id in oracle.members:
         for channel_id in oracle.statistics.channel_ids():
             expected = oracle.statistics.counts_for(alarm_id, channel_id)
@@ -111,6 +112,16 @@ def _assert_equivalent(package, *, taxonomy=AlarmTaxonomy({}, {}), d_max=3):
                 assert actual.fit is None
             else:
                 assert actual.fit == pytest.approx(expected.fit)
+
+            expected_bitmap = 0
+            for (left, right), values in oracle.matrix.values.items():
+                if alarm_id not in {left, right}:
+                    continue
+                value = next(item for item in values if item.channel_id == channel_id)
+                if value.supports:
+                    peer_id = right if left == alarm_id else left
+                    expected_bitmap |= 1 << positions[peer_id]
+            assert indexed.support_bitmap_of(alarm_id, channel_id) == expected_bitmap
 
         expected_support = membership_support(alarm_id, oracle.statistics)
         actual_support = membership_support_from_index(alarm_id, indexed)

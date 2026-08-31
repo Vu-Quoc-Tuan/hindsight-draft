@@ -131,6 +131,30 @@ export type DeepDive = {
   taxonomy_reason: string | null
   active_fingerprint_blocks: string[]
   topology_hypotheses: TopologyHypothesesResult
+  evidence_attribution: EvidenceCoverageAttributionResult
+}
+
+export type EvidenceCoverageAttributionResult = {
+  status: 'AVAILABLE' | 'UNAVAILABLE' | 'NOT_APPLICABLE'
+  mode: 'EXACT' | 'UNAVAILABLE'
+  reason: string | null
+  detail: string | null
+  chain_size: number
+  exact_max_members: number
+  total_pair_count: number
+  covered_pair_count: number | null
+  total_coverage: number | null
+  contributions: Array<{
+    group_id: string
+    derivation_tag: string
+    provenance_class: string
+    explain_eligible: boolean
+    role_eligible: boolean
+    audit_eligible: boolean
+    behavioral: boolean
+    supported_pair_count: number
+    attribution: number
+  }>
 }
 
 export type Job = {
