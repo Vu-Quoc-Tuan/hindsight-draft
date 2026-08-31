@@ -6,6 +6,7 @@ import json
 import zstandard
 
 from nocpro_mock.contract import package_to_dict
+from nocpro_mock.contract import Topology
 from nocpro_mock.producer.kafka_snapshot import (
     SNAPSHOT_CHUNK,
     SNAPSHOT_COMPLETE,
@@ -15,6 +16,12 @@ from nocpro_mock.producer.kafka_snapshot import (
     sha256_hex,
 )
 from nocpro_mock.replay import build_golden_snapshot
+from nocpro_mock.scenarios import (
+    build_synthetic_snapshot,
+    generate_dependency_hierarchy,
+    load_scenario,
+)
+from tests.conftest import REPO_ROOT
 
 
 def test_chunked_wire_round_trips_to_canonical_snapshot(config):
@@ -60,3 +67,31 @@ def test_event_encoding_is_compact_json(config):
     encoded = encode_event(event)
     assert b"\n" not in encoded
     assert json.loads(encoded) == event
+
+
+def test_kafka_round_trip_preserves_independent_topology_and_generator_versions():
+    scenario = load_scenario(
+        REPO_ROOT / "docs/examples/synthetic/scenario_dependency_hierarchy.yaml"
+    )
+    nodes, edges = generate_dependency_hierarchy(
+        scenario, generator_version="mockgen-transport-v4"
+    )
+    package = build_synthetic_snapshot(
+        scenario_id=scenario.scenario_id,
+        seed=scenario.seed,
+        generator_version="mockgen-transport-v4",
+        snapshot_index=0,
+        chains={"SYN-CHAIN-1": ["SYN-DEA-HN-01"]},
+        topology=Topology(nodes=nodes, edges=edges),
+        topology_source=scenario.topology_source,
+    )
+
+    batch = build_snapshot_wire_batch(package)
+    payload = json.loads(batch.canonical_bytes)
+
+    assert payload["topology"]["edges"][0]["source_id"] == "synthetic-topology"
+    assert payload["topology"]["edges"][0]["source_version"] == "syn-topo-hierarchy-v1"
+    assert payload["topology"]["edges"][0]["generation"]["generator_version"] == "mockgen-transport-v4"
+    sources = {item["source_id"]: item for item in payload["provenance_manifest"]["sources"]}
+    assert sources["synthetic-topology"]["source_version"] == "syn-topo-hierarchy-v1"
+    assert payload["provenance_manifest"]["generator_version"] == "mockgen-transport-v4"

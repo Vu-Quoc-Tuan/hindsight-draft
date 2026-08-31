@@ -24,7 +24,9 @@ from ..contract import (
     SnapshotStatus,
     SourceKind,
     SourceRecord,
+    Topology,
 )
+from .schema import TopologySourceDefinition
 
 #: Fixed epoch so generated fixtures are byte-stable across runs.
 SEQUENCE_EPOCH = datetime(2026, 1, 1, 0, 0, 0)
@@ -40,6 +42,8 @@ def build_synthetic_snapshot(
     alarm_families: dict[str, str] | None = None,
     snapshot_interval_seconds: int = 60,
     generation_rule: str = "synthetic snapshot sequence member",
+    topology: Topology | None = None,
+    topology_source: TopologySourceDefinition | None = None,
 ) -> MockSnapshotPackage:
     """Build one synthetic snapshot from a ``chain_id -> [alarm_id]`` mapping.
 
@@ -51,6 +55,35 @@ def build_synthetic_snapshot(
         seconds=snapshot_index * snapshot_interval_seconds
     )
     families = alarm_families or {}
+    supplied_topology = topology or Topology()
+    topology_records = (
+        *supplied_topology.nodes,
+        *supplied_topology.edges,
+        *supplied_topology.failure_domains,
+        *supplied_topology.active_paths,
+    )
+    if topology_records and topology_source is None:
+        raise ValueError("topology records require an explicit topology_source")
+    if topology_source is not None:
+        expected_identity = (
+            topology_source.source_id,
+            topology_source.source_version,
+        )
+        for record in topology_records:
+            actual_identity = (
+                getattr(record, "source_id", None),
+                getattr(record, "source_version", None),
+            )
+            if actual_identity != expected_identity:
+                raise ValueError(
+                    "topology record source identity does not match topology_source: "
+                    f"expected={expected_identity!r}, actual={actual_identity!r}"
+                )
+        for mapping in supplied_topology.mappings:
+            if mapping.source_version != topology_source.source_version:
+                raise ValueError(
+                    "topology mapping source_version does not match topology_source"
+                )
 
     generation = GenerationMetadata(
         scenario_id=scenario_id,
@@ -124,10 +157,14 @@ def build_synthetic_snapshot(
             # Synthetic stays synthetic regardless of delivery role.
             source_kind=SourceKind.SYNTHETIC_TEST,
             produced_at=snapshot_time.isoformat(),
+            topology_version=(
+                topology_source.source_version if topology_source else None
+            ),
         ),
         alarms=tuple(alarms),
         chains=tuple(chain_records),
         memberships=tuple(memberships),
+        topology=supplied_topology,
         provenance_manifest=ProvenanceManifest(
             sources=(
                 SourceRecord(
@@ -135,6 +172,23 @@ def build_synthetic_snapshot(
                     source_kind=SourceKind.SYNTHETIC_TEST,
                     record_count=len(alarms),
                     notes=(generation.generation_rule,),
+                ),
+                *(
+                    (
+                        SourceRecord(
+                            source_id=topology_source.source_id,
+                            source_version=topology_source.source_version,
+                            source_kind=SourceKind.SYNTHETIC_TEST,
+                            record_count=len(topology_records),
+                            notes=(
+                                f"scenario_id={scenario_id}",
+                                f"generator_version={generator_version}",
+                                "Synthetic topology; cannot validate production.",
+                            ),
+                        ),
+                    )
+                    if topology_source
+                    else ()
                 ),
             ),
             generator_version=generator_version,
