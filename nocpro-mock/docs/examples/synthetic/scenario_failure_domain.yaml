@@ -2,6 +2,10 @@ scenario_id: synthetic_failure_domain_v1
 source_kind: SYNTHETIC_TEST
 seed: 42
 
+topology_source:
+  source_id: synthetic-topology
+  source_version: syn-topo-failure-domain-v1
+
 failure_domains:
   - failure_domain_id: SRLG-SYN-001
     domain_type: SRLG

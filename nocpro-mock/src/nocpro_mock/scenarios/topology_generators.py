@@ -54,9 +54,14 @@ def _usage(scenario: ScenarioDefinition) -> ChainingUsageAssessment:
     did not exist when chaining ran. It still cannot validate, because the
     source-kind gate rejects SYNTHETIC_TEST first (ADR-0010).
     """
+    source = scenario.topology_source
+    if source is None:
+        raise ScenarioError(
+            f"scenario {scenario.scenario_id!r} has no topology_source"
+        )
     return ChainingUsageAssessment(
-        source_id=scenario.scenario_id,
-        source_version=None,
+        source_id=source.source_id,
+        source_version=source.source_version,
         chaining_config_version=None,
         usage=ChainingUsage.CONFIRMED_NOT_USED.value,
         run_context="synthetic scenario; data absent from any chaining run",
@@ -66,12 +71,18 @@ def _usage(scenario: ScenarioDefinition) -> ChainingUsageAssessment:
 def _nodes(
     resource_ids: list[str], scenario: ScenarioDefinition, generation: GenerationMetadata
 ) -> tuple[TopologyNode, ...]:
+    source = scenario.topology_source
+    if source is None:
+        raise ScenarioError(
+            f"scenario {scenario.scenario_id!r} has no topology_source"
+        )
     return tuple(
         TopologyNode(
             resource_id=resource_id,
-            source_id=scenario.scenario_id,
+            source_id=source.source_id,
             source_kind=SourceKind.SYNTHETIC_TEST,
             topology_layer=TOPOLOGY_LAYER_SYNTHETIC,
+            source_version=source.source_version,
             generation=generation,
         )
         for resource_id in sorted(set(resource_ids))
@@ -123,24 +134,27 @@ def generate_dependency_hierarchy(
         generator_version=generator_version,
     )
     usage = _usage(scenario)
+    source_meta = scenario.topology_source
+    assert source_meta is not None
 
     edges: list[TopologyEdge] = []
     seen: set[tuple[str, str]] = set()
-    for source, target in pairs:
-        if source == target:
-            raise ScenarioError(f"self-dependency is not meaningful: {source!r}")
-        if (source, target) in seen:
+    for parent, target in pairs:
+        if parent == target:
+            raise ScenarioError(f"self-dependency is not meaningful: {parent!r}")
+        if (parent, target) in seen:
             continue
-        seen.add((source, target))
+        seen.add((parent, target))
         edges.append(
             TopologyEdge(
-                edge_id=f"{scenario.scenario_id}:{source}->{target}",
-                source_resource_id=source,
+                edge_id=f"{scenario.scenario_id}:{parent}->{target}",
+                source_resource_id=parent,
                 target_resource_id=target,
                 relation_type=relation_type,
                 directed=directed,
-                source_id=scenario.scenario_id,
+                source_id=source_meta.source_id,
                 source_kind=SourceKind.SYNTHETIC_TEST,
+                source_version=source_meta.source_version,
                 provenance_class=ProvenanceClass.EXTERNAL_OPERATIONAL,
                 provenance_subtype=ProvenanceSubtype.TOPOLOGY_EXTERNAL,
                 chaining_usage=usage,
@@ -170,6 +184,8 @@ def generate_active_paths(
         rule="explicit active path node sequence",
         generator_version=generator_version,
     )
+    source = scenario.topology_source
+    assert source is not None
 
     paths: list[ActivePath] = []
     all_nodes: list[str] = []
@@ -193,8 +209,9 @@ def generate_active_paths(
                 path_id=path_id,
                 resource_id=resource_id,
                 nodes=tuple(nodes),
-                source_id=scenario.scenario_id,
+                source_id=source.source_id,
                 source_kind=SourceKind.SYNTHETIC_TEST,
+                source_version=source.source_version,
                 generation=generation,
             )
         )
@@ -227,6 +244,8 @@ def generate_failure_domains(
         rule="explicit failure-domain member set (hyperedge, not clique-projected)",
         generator_version=generator_version,
     )
+    source = scenario.topology_source
+    assert source is not None
 
     domains: list[FailureDomain] = []
     all_members: list[str] = []
@@ -254,8 +273,9 @@ def generate_failure_domains(
                 failure_domain_id=domain_id,
                 domain_type=domain_type,
                 members=tuple(members),
-                source_id=scenario.scenario_id,
+                source_id=source.source_id,
                 source_kind=SourceKind.SYNTHETIC_TEST,
+                source_version=source.source_version,
                 provenance_class=ProvenanceClass.EXTERNAL_OPERATIONAL,
                 provenance_subtype=ProvenanceSubtype.TOPOLOGY_EXTERNAL,
                 quality_status=QualityStatus.UNKNOWN,

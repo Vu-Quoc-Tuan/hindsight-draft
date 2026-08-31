@@ -38,6 +38,14 @@ class ScenarioError(ValueError):
     """Raised when a scenario definition is unusable. Never repaired silently."""
 
 
+@dataclass(frozen=True)
+class TopologySourceDefinition:
+    """Exact identity of the topology source modelled by one scenario."""
+
+    source_id: str
+    source_version: str
+
+
 def is_synthetic_identifier(identifier: str) -> bool:
     """True when ``identifier`` carries an explicit ``SYN`` token."""
     return SYNTHETIC_TOKEN in identifier.upper().split("-")
@@ -64,6 +72,7 @@ class ScenarioDefinition:
     base_fixture: str | None = None
     mutations: tuple[str, ...] = ()
     expected_contract_assertions: tuple[Any, ...] = ()
+    topology_source: TopologySourceDefinition | None = None
 
     def block(self, name: str) -> Any:
         return self.raw.get(name)
@@ -118,6 +127,30 @@ def parse_scenario(data: dict[str, Any]) -> ScenarioDefinition:
     mutations = data.get("mutations") or ()
     assertions = data.get("expected_contract_assertions") or ()
 
+    topology_keys = ("topology", "paths", "failure_domain", "failure_domains")
+    has_topology_capability = any(key in data for key in topology_keys)
+    topology_source: TopologySourceDefinition | None = None
+    if has_topology_capability:
+        raw_source = data.get("topology_source")
+        if not isinstance(raw_source, dict):
+            raise ScenarioError(
+                "topology-derived scenario requires topology_source object"
+            )
+        source_id = raw_source.get("source_id")
+        source_version = raw_source.get("source_version")
+        if not isinstance(source_id, str) or not source_id.strip():
+            raise ScenarioError(
+                "topology_source.source_id must be a non-blank string"
+            )
+        if not isinstance(source_version, str) or not source_version.strip():
+            raise ScenarioError(
+                "topology_source.source_version must be a non-blank string"
+            )
+        topology_source = TopologySourceDefinition(
+            source_id=source_id,
+            source_version=source_version,
+        )
+
     return ScenarioDefinition(
         scenario_id=str(data["scenario_id"]),
         seed=seed,
@@ -129,6 +162,7 @@ def parse_scenario(data: dict[str, Any]) -> ScenarioDefinition:
         base_fixture=(str(data["base_fixture"]) if data.get("base_fixture") else None),
         mutations=tuple(str(m) for m in mutations),
         expected_contract_assertions=tuple(assertions),
+        topology_source=topology_source,
     )
 
 
