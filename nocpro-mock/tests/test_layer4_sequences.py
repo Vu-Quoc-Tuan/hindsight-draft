@@ -24,6 +24,7 @@ from nocpro_mock.replay import SequenceRunner, validate_sequence_payloads
 from nocpro_mock.scenarios import (
     EVOLUTION_SPLIT_MERGE,
     HISTORY_POSITIVE_LIFT,
+    INTEGRATED_TEMPORAL_TOPOLOGY,
     EvolutionEvent,
     ScenarioError,
     SequenceType,
@@ -36,6 +37,7 @@ from tests.conftest import REPO_ROOT
 SYNTHETIC_DIR = REPO_ROOT / "docs/examples/synthetic"
 HISTORY_DIR = SYNTHETIC_DIR / "history_positive_lift"
 EVOLUTION_DIR = SYNTHETIC_DIR / "evolution_split_merge"
+TEMPORAL_TOPOLOGY_DIR = SYNTHETIC_DIR / "temporal_topology"
 
 
 def _built(directory):
@@ -118,6 +120,20 @@ def test_evolution_manifest_parses():
     assert manifest.sequence_type is SequenceType.EVOLUTION
     events = [t.expected_event for t in manifest.expected_transitions]
     assert events == [EvolutionEvent.SPLIT, EvolutionEvent.MERGE]
+
+
+def test_temporal_topology_manifest_covers_required_events():
+    manifest = load_sequence_manifest(TEMPORAL_TOPOLOGY_DIR / "sequence.yaml")
+    assert manifest.scenario_id == "synthetic_temporal_topology_v1"
+    assert manifest.sequence_type is SequenceType.EVOLUTION
+    assert len(manifest.snapshots) == 6
+    assert [item.expected_event for item in manifest.expected_transitions] == [
+        EvolutionEvent.CONTINUE,
+        EvolutionEvent.GROW,
+        EvolutionEvent.SPLIT,
+        EvolutionEvent.MERGE,
+        EvolutionEvent.SHRINK,
+    ]
 
 
 def test_evolution_requires_transitions():
@@ -292,8 +308,37 @@ def test_history_then_target_rejects_evolution_sequences():
 
 
 def test_every_sequence_snapshot_validates():
-    for directory in (HISTORY_DIR, EVOLUTION_DIR):
+    for directory in (HISTORY_DIR, EVOLUTION_DIR, TEMPORAL_TOPOLOGY_DIR):
         assert validate_sequence_payloads(_built(directory)) == []
+
+
+def test_temporal_topology_sequence_carries_exact_versioned_capabilities():
+    runner = SequenceRunner(_built(TEMPORAL_TOPOLOGY_DIR))
+    for step in runner.run():
+        topology = step.payload["topology"]
+        assert topology["edges"]
+        assert topology["active_paths"]
+        assert topology["failure_domains"]
+        assert topology["mappings"]
+        assert {
+            mapping["alarm_id"] for mapping in topology["mappings"]
+        } == {alarm["alarm_id"] for alarm in step.payload["alarms"]}
+        assert all(
+            mapping["mapping_status"] == "EXACT"
+            and mapping["mapping_method"] == "EXACT_IDENTITY"
+            and mapping["mapping_confidence"] == 1.0
+            and mapping["source_version"] == "syn-topo-temporal-v1"
+            for mapping in topology["mappings"]
+        )
+        assert all(
+            edge["source_kind"] == "SYNTHETIC_TEST"
+            and edge["source_id"] == "synthetic-topology"
+            and edge["source_version"] == "syn-topo-temporal-v1"
+            for edge in topology["edges"]
+        )
+        assert step.payload["provenance_manifest"]["generator_version"] == (
+            "mockgen-integrated-v1"
+        )
 
 
 def test_each_sequence_file_is_a_single_snapshot_package():
@@ -375,6 +420,7 @@ def test_fixture_definitions_match_their_manifests():
     for fixture, directory in (
         (HISTORY_POSITIVE_LIFT, HISTORY_DIR),
         (EVOLUTION_SPLIT_MERGE, EVOLUTION_DIR),
+        (INTEGRATED_TEMPORAL_TOPOLOGY, TEMPORAL_TOPOLOGY_DIR),
     ):
         manifest = load_sequence_manifest(directory / "sequence.yaml")
         assert fixture.scenario_id == manifest.scenario_id

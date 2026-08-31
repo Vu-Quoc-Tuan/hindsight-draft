@@ -20,6 +20,8 @@ class SequenceFixture:
     #: One ``chain_id -> [alarm_id]`` mapping per snapshot, in sequence order.
     snapshots: tuple[dict[str, list[str]], ...]
     alarm_families: dict[str, str]
+    topology_scenario_file: str | None = None
+    generator_version: str | None = None
 
 
 #: History: FAMILY-A and FAMILY-B are grouped together in the three history
@@ -77,4 +79,49 @@ EVOLUTION_SPLIT_MERGE = SequenceFixture(
     alarm_families={},
 )
 
-SEQUENCE_FIXTURES = (HISTORY_POSITIVE_LIFT, EVOLUTION_SPLIT_MERGE)
+
+INTEGRATED_TEMPORAL_TOPOLOGY = SequenceFixture(
+    scenario_id="synthetic_temporal_topology_v1",
+    directory="temporal_topology",
+    snapshots=(
+        {"SYN-CHAIN-T0": ["SYN-DEVICE-01", "SYN-DEVICE-02"]},
+        {"SYN-CHAIN-T1": ["SYN-DEVICE-01", "SYN-DEVICE-02"]},
+        {
+            "SYN-CHAIN-T2": [
+                "SYN-DEVICE-01",
+                "SYN-DEVICE-02",
+                "SYN-DEVICE-03",
+                "SYN-DEVICE-04",
+            ]
+        },
+        {
+            "SYN-CHAIN-T3A": ["SYN-DEVICE-01", "SYN-DEVICE-02"],
+            "SYN-CHAIN-T3B": ["SYN-DEVICE-03", "SYN-DEVICE-04"],
+        },
+        {
+            "SYN-CHAIN-T4": [
+                "SYN-DEVICE-01",
+                "SYN-DEVICE-02",
+                "SYN-DEVICE-03",
+                "SYN-DEVICE-04",
+            ]
+        },
+        {
+            "SYN-CHAIN-T5": [
+                "SYN-DEVICE-01",
+                "SYN-DEVICE-02",
+                "SYN-DEVICE-03",
+            ]
+        },
+    ),
+    alarm_families={},
+    topology_scenario_file="scenario.yaml",
+    generator_version="mockgen-integrated-v1",
+)
+
+
+SEQUENCE_FIXTURES = (
+    HISTORY_POSITIVE_LIFT,
+    EVOLUTION_SPLIT_MERGE,
+    INTEGRATED_TEMPORAL_TOPOLOGY,
+)

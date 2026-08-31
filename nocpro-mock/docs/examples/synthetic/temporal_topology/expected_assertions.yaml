@@ -1,0 +1,18 @@
+scenario_id: synthetic_temporal_topology_v1
+
+expected:
+  transitions: [CONTINUE, GROW, SPLIT, MERGE, SHRINK]
+  source_kind: SYNTHETIC_TEST
+  generator_version: mockgen-integrated-v1
+  topology_source_id: synthetic-topology
+  topology_source_version: syn-topo-temporal-v1
+  mapping_method: EXACT_IDENTITY
+  directed_dependency: true
+  explicit_active_paths: true
+  failure_domain_representation: HYPEREDGE
+
+must_not_claim:
+  - production_topology_validation
+  - production_evolution_validation
+  - active_path_inferred_from_adjacency
+  - causal_proof

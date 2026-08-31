@@ -115,7 +115,12 @@ def _cmd_golden(args: argparse.Namespace) -> int:
 def _cmd_build_sequences(args: argparse.Namespace) -> int:
     """Materialize the shipped sequence fixtures next to their manifests."""
     from .config import GENERATOR_VERSION
-    from .scenarios import SEQUENCE_FIXTURES, build_synthetic_snapshot
+    from .scenarios import (
+        SEQUENCE_FIXTURES,
+        build_synthetic_snapshot,
+        generate_integrated_topology,
+        load_scenario,
+    )
     from .scenarios.sequence import load_sequence_manifest
 
     base = Path(args.base_dir)
@@ -136,16 +141,45 @@ def _cmd_build_sequences(args: argparse.Namespace) -> int:
         for index, (name, chains) in enumerate(
             zip(manifest.snapshots, fixture.snapshots)
         ):
+            generator_version = fixture.generator_version or GENERATOR_VERSION
+            topology = None
+            topology_source = None
+            if fixture.topology_scenario_file:
+                scenario = load_scenario(
+                    directory / fixture.topology_scenario_file
+                )
+                if scenario.scenario_id != fixture.scenario_id:
+                    print(
+                        f"{fixture.scenario_id}: topology scenario declares "
+                        f"{scenario.scenario_id!r}",
+                        file=sys.stderr,
+                    )
+                    return 2
+                alarm_ids = tuple(
+                    dict.fromkeys(
+                        alarm_id
+                        for members in chains.values()
+                        for alarm_id in members
+                    )
+                )
+                topology = generate_integrated_topology(
+                    scenario,
+                    generator_version=generator_version,
+                    alarm_resource_ids=alarm_ids,
+                )
+                topology_source = scenario.topology_source
             package = build_synthetic_snapshot(
                 scenario_id=fixture.scenario_id,
                 seed=manifest.seed,
-                generator_version=GENERATOR_VERSION,
+                generator_version=generator_version,
                 snapshot_index=index,
                 chains=chains,
                 alarm_families=fixture.alarm_families,
                 generation_rule=(
                     f"{manifest.sequence_type.value} sequence member {index}"
                 ),
+                topology=topology,
+                topology_source=topology_source,
             )
             try:
                 producer.write(package, directory / name)

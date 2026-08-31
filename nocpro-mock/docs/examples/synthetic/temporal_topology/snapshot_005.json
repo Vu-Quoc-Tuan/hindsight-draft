@@ -1,0 +1,468 @@
+{
+  "snapshot": {
+    "snapshot_id": "synthetic_temporal_topology_v1:snapshot_005",
+    "snapshot_version": "6",
+    "snapshot_time": "2026-01-01T00:05:00+00:00",
+    "status": "COMPLETE",
+    "source": "nocpro-mock",
+    "source_kind": "SYNTHETIC_TEST",
+    "produced_at": "2026-01-01T00:05:00+00:00",
+    "schema_version": "v1",
+    "topology_version": "syn-topo-temporal-v1"
+  },
+  "alarms": [
+    {
+      "alarm_id": "SYN-DEVICE-01",
+      "snapshot_id": "synthetic_temporal_topology_v1:snapshot_005",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-DEVICE-01",
+        "chaining_id": "SYN-CHAIN-T5",
+        "cah.start_time": "2026-01-01T00:05:00+00:00",
+        "device_code": "SYN-DEVICE-01"
+      },
+      "raw_start_time": "2026-01-01T00:05:00+00:00",
+      "canonical_start_time": "2026-01-01T00:05:00+00:00",
+      "device_code": "SYN-DEVICE-01",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-DEVICE-02",
+      "snapshot_id": "synthetic_temporal_topology_v1:snapshot_005",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-DEVICE-02",
+        "chaining_id": "SYN-CHAIN-T5",
+        "cah.start_time": "2026-01-01T00:05:01+00:00",
+        "device_code": "SYN-DEVICE-02"
+      },
+      "raw_start_time": "2026-01-01T00:05:01+00:00",
+      "canonical_start_time": "2026-01-01T00:05:01+00:00",
+      "device_code": "SYN-DEVICE-02",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-DEVICE-03",
+      "snapshot_id": "synthetic_temporal_topology_v1:snapshot_005",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-DEVICE-03",
+        "chaining_id": "SYN-CHAIN-T5",
+        "cah.start_time": "2026-01-01T00:05:02+00:00",
+        "device_code": "SYN-DEVICE-03"
+      },
+      "raw_start_time": "2026-01-01T00:05:02+00:00",
+      "canonical_start_time": "2026-01-01T00:05:02+00:00",
+      "device_code": "SYN-DEVICE-03",
+      "quality_flags": []
+    }
+  ],
+  "chains": [
+    {
+      "chain_id": "SYN-CHAIN-T5",
+      "snapshot_id": "synthetic_temporal_topology_v1:snapshot_005",
+      "member_count": 3,
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "event_span_seconds": 2
+    }
+  ],
+  "memberships": [
+    {
+      "chain_id": "SYN-CHAIN-T5",
+      "alarm_id": "SYN-DEVICE-01",
+      "snapshot_id": "synthetic_temporal_topology_v1:snapshot_005",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-T5",
+      "alarm_id": "SYN-DEVICE-02",
+      "snapshot_id": "synthetic_temporal_topology_v1:snapshot_005",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-T5",
+      "alarm_id": "SYN-DEVICE-03",
+      "snapshot_id": "synthetic_temporal_topology_v1:snapshot_005",
+      "source_kind": "SYNTHETIC_TEST"
+    }
+  ],
+  "system_metadata": {
+    "chain_rules": [],
+    "chain_characteristics": [],
+    "attribute_configs": [],
+    "pair_metadata": [],
+    "pair_metadata_batches": []
+  },
+  "topology": {
+    "nodes": [
+      {
+        "resource_id": "SYN-AGG-01",
+        "source_id": "synthetic-topology",
+        "source_kind": "SYNTHETIC_TEST",
+        "topology_layer": "SYNTHETIC",
+        "source_version": "syn-topo-temporal-v1",
+        "generation": {
+          "scenario_id": "synthetic_temporal_topology_v1",
+          "seed": 42,
+          "generator_version": "mockgen-integrated-v1",
+          "generation_rule": "explicit active path node sequence"
+        }
+      },
+      {
+        "resource_id": "SYN-CORE-01",
+        "source_id": "synthetic-topology",
+        "source_kind": "SYNTHETIC_TEST",
+        "topology_layer": "SYNTHETIC",
+        "source_version": "syn-topo-temporal-v1",
+        "generation": {
+          "scenario_id": "synthetic_temporal_topology_v1",
+          "seed": 42,
+          "generator_version": "mockgen-integrated-v1",
+          "generation_rule": "explicit active path node sequence"
+        }
+      },
+      {
+        "resource_id": "SYN-DEVICE-01",
+        "source_id": "synthetic-topology",
+        "source_kind": "SYNTHETIC_TEST",
+        "topology_layer": "SYNTHETIC",
+        "source_version": "syn-topo-temporal-v1",
+        "generation": {
+          "scenario_id": "synthetic_temporal_topology_v1",
+          "seed": 42,
+          "generator_version": "mockgen-integrated-v1",
+          "generation_rule": "explicit failure-domain member set (hyperedge, not clique-projected)"
+        }
+      },
+      {
+        "resource_id": "SYN-DEVICE-02",
+        "source_id": "synthetic-topology",
+        "source_kind": "SYNTHETIC_TEST",
+        "topology_layer": "SYNTHETIC",
+        "source_version": "syn-topo-temporal-v1",
+        "generation": {
+          "scenario_id": "synthetic_temporal_topology_v1",
+          "seed": 42,
+          "generator_version": "mockgen-integrated-v1",
+          "generation_rule": "explicit failure-domain member set (hyperedge, not clique-projected)"
+        }
+      },
+      {
+        "resource_id": "SYN-DEVICE-03",
+        "source_id": "synthetic-topology",
+        "source_kind": "SYNTHETIC_TEST",
+        "topology_layer": "SYNTHETIC",
+        "source_version": "syn-topo-temporal-v1",
+        "generation": {
+          "scenario_id": "synthetic_temporal_topology_v1",
+          "seed": 42,
+          "generator_version": "mockgen-integrated-v1",
+          "generation_rule": "explicit failure-domain member set (hyperedge, not clique-projected)"
+        }
+      },
+      {
+        "resource_id": "SYN-DEVICE-04",
+        "source_id": "synthetic-topology",
+        "source_kind": "SYNTHETIC_TEST",
+        "topology_layer": "SYNTHETIC",
+        "source_version": "syn-topo-temporal-v1",
+        "generation": {
+          "scenario_id": "synthetic_temporal_topology_v1",
+          "seed": 42,
+          "generator_version": "mockgen-integrated-v1",
+          "generation_rule": "explicit failure-domain member set (hyperedge, not clique-projected)"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "edge_id": "synthetic_temporal_topology_v1:SYN-CORE-01->SYN-AGG-01",
+        "source_resource_id": "SYN-CORE-01",
+        "target_resource_id": "SYN-AGG-01",
+        "relation_type": "LOGICAL_DEPENDENCY",
+        "directed": true,
+        "source_id": "synthetic-topology",
+        "source_kind": "SYNTHETIC_TEST",
+        "source_version": "syn-topo-temporal-v1",
+        "provenance_class": "EXTERNAL_OPERATIONAL",
+        "provenance_subtype": "TOPOLOGY_EXTERNAL",
+        "chaining_usage": {
+          "source_id": "synthetic-topology",
+          "usage": "CONFIRMED_NOT_USED",
+          "source_version": "syn-topo-temporal-v1",
+          "run_context": "synthetic scenario; data absent from any chaining run"
+        },
+        "quality_status": "UNKNOWN",
+        "generation": {
+          "scenario_id": "synthetic_temporal_topology_v1",
+          "seed": 42,
+          "generator_version": "mockgen-integrated-v1",
+          "generation_rule": "explicit directed LOGICAL_DEPENDENCY edge list"
+        }
+      },
+      {
+        "edge_id": "synthetic_temporal_topology_v1:SYN-AGG-01->SYN-DEVICE-01",
+        "source_resource_id": "SYN-AGG-01",
+        "target_resource_id": "SYN-DEVICE-01",
+        "relation_type": "LOGICAL_DEPENDENCY",
+        "directed": true,
+        "source_id": "synthetic-topology",
+        "source_kind": "SYNTHETIC_TEST",
+        "source_version": "syn-topo-temporal-v1",
+        "provenance_class": "EXTERNAL_OPERATIONAL",
+        "provenance_subtype": "TOPOLOGY_EXTERNAL",
+        "chaining_usage": {
+          "source_id": "synthetic-topology",
+          "usage": "CONFIRMED_NOT_USED",
+          "source_version": "syn-topo-temporal-v1",
+          "run_context": "synthetic scenario; data absent from any chaining run"
+        },
+        "quality_status": "UNKNOWN",
+        "generation": {
+          "scenario_id": "synthetic_temporal_topology_v1",
+          "seed": 42,
+          "generator_version": "mockgen-integrated-v1",
+          "generation_rule": "explicit directed LOGICAL_DEPENDENCY edge list"
+        }
+      },
+      {
+        "edge_id": "synthetic_temporal_topology_v1:SYN-AGG-01->SYN-DEVICE-02",
+        "source_resource_id": "SYN-AGG-01",
+        "target_resource_id": "SYN-DEVICE-02",
+        "relation_type": "LOGICAL_DEPENDENCY",
+        "directed": true,
+        "source_id": "synthetic-topology",
+        "source_kind": "SYNTHETIC_TEST",
+        "source_version": "syn-topo-temporal-v1",
+        "provenance_class": "EXTERNAL_OPERATIONAL",
+        "provenance_subtype": "TOPOLOGY_EXTERNAL",
+        "chaining_usage": {
+          "source_id": "synthetic-topology",
+          "usage": "CONFIRMED_NOT_USED",
+          "source_version": "syn-topo-temporal-v1",
+          "run_context": "synthetic scenario; data absent from any chaining run"
+        },
+        "quality_status": "UNKNOWN",
+        "generation": {
+          "scenario_id": "synthetic_temporal_topology_v1",
+          "seed": 42,
+          "generator_version": "mockgen-integrated-v1",
+          "generation_rule": "explicit directed LOGICAL_DEPENDENCY edge list"
+        }
+      },
+      {
+        "edge_id": "synthetic_temporal_topology_v1:SYN-AGG-01->SYN-DEVICE-03",
+        "source_resource_id": "SYN-AGG-01",
+        "target_resource_id": "SYN-DEVICE-03",
+        "relation_type": "LOGICAL_DEPENDENCY",
+        "directed": true,
+        "source_id": "synthetic-topology",
+        "source_kind": "SYNTHETIC_TEST",
+        "source_version": "syn-topo-temporal-v1",
+        "provenance_class": "EXTERNAL_OPERATIONAL",
+        "provenance_subtype": "TOPOLOGY_EXTERNAL",
+        "chaining_usage": {
+          "source_id": "synthetic-topology",
+          "usage": "CONFIRMED_NOT_USED",
+          "source_version": "syn-topo-temporal-v1",
+          "run_context": "synthetic scenario; data absent from any chaining run"
+        },
+        "quality_status": "UNKNOWN",
+        "generation": {
+          "scenario_id": "synthetic_temporal_topology_v1",
+          "seed": 42,
+          "generator_version": "mockgen-integrated-v1",
+          "generation_rule": "explicit directed LOGICAL_DEPENDENCY edge list"
+        }
+      },
+      {
+        "edge_id": "synthetic_temporal_topology_v1:SYN-AGG-01->SYN-DEVICE-04",
+        "source_resource_id": "SYN-AGG-01",
+        "target_resource_id": "SYN-DEVICE-04",
+        "relation_type": "LOGICAL_DEPENDENCY",
+        "directed": true,
+        "source_id": "synthetic-topology",
+        "source_kind": "SYNTHETIC_TEST",
+        "source_version": "syn-topo-temporal-v1",
+        "provenance_class": "EXTERNAL_OPERATIONAL",
+        "provenance_subtype": "TOPOLOGY_EXTERNAL",
+        "chaining_usage": {
+          "source_id": "synthetic-topology",
+          "usage": "CONFIRMED_NOT_USED",
+          "source_version": "syn-topo-temporal-v1",
+          "run_context": "synthetic scenario; data absent from any chaining run"
+        },
+        "quality_status": "UNKNOWN",
+        "generation": {
+          "scenario_id": "synthetic_temporal_topology_v1",
+          "seed": 42,
+          "generator_version": "mockgen-integrated-v1",
+          "generation_rule": "explicit directed LOGICAL_DEPENDENCY edge list"
+        }
+      }
+    ],
+    "failure_domains": [
+      {
+        "failure_domain_id": "SRLG-SYN-TEMPORAL-01",
+        "domain_type": "SRLG",
+        "members": [
+          "SYN-DEVICE-01",
+          "SYN-DEVICE-02",
+          "SYN-DEVICE-03",
+          "SYN-DEVICE-04"
+        ],
+        "source_id": "synthetic-topology",
+        "source_kind": "SYNTHETIC_TEST",
+        "source_version": "syn-topo-temporal-v1",
+        "provenance_class": "EXTERNAL_OPERATIONAL",
+        "provenance_subtype": "TOPOLOGY_EXTERNAL",
+        "quality_status": "UNKNOWN",
+        "generation": {
+          "scenario_id": "synthetic_temporal_topology_v1",
+          "seed": 42,
+          "generator_version": "mockgen-integrated-v1",
+          "generation_rule": "explicit failure-domain member set (hyperedge, not clique-projected)"
+        }
+      }
+    ],
+    "active_paths": [
+      {
+        "path_id": "SYN-PATH-DEVICE-01",
+        "resource_id": "SYN-DEVICE-01",
+        "nodes": [
+          "SYN-DEVICE-01",
+          "SYN-AGG-01",
+          "SYN-CORE-01"
+        ],
+        "source_id": "synthetic-topology",
+        "source_kind": "SYNTHETIC_TEST",
+        "source_version": "syn-topo-temporal-v1",
+        "generation": {
+          "scenario_id": "synthetic_temporal_topology_v1",
+          "seed": 42,
+          "generator_version": "mockgen-integrated-v1",
+          "generation_rule": "explicit active path node sequence"
+        }
+      },
+      {
+        "path_id": "SYN-PATH-DEVICE-02",
+        "resource_id": "SYN-DEVICE-02",
+        "nodes": [
+          "SYN-DEVICE-02",
+          "SYN-AGG-01",
+          "SYN-CORE-01"
+        ],
+        "source_id": "synthetic-topology",
+        "source_kind": "SYNTHETIC_TEST",
+        "source_version": "syn-topo-temporal-v1",
+        "generation": {
+          "scenario_id": "synthetic_temporal_topology_v1",
+          "seed": 42,
+          "generator_version": "mockgen-integrated-v1",
+          "generation_rule": "explicit active path node sequence"
+        }
+      },
+      {
+        "path_id": "SYN-PATH-DEVICE-03",
+        "resource_id": "SYN-DEVICE-03",
+        "nodes": [
+          "SYN-DEVICE-03",
+          "SYN-AGG-01",
+          "SYN-CORE-01"
+        ],
+        "source_id": "synthetic-topology",
+        "source_kind": "SYNTHETIC_TEST",
+        "source_version": "syn-topo-temporal-v1",
+        "generation": {
+          "scenario_id": "synthetic_temporal_topology_v1",
+          "seed": 42,
+          "generator_version": "mockgen-integrated-v1",
+          "generation_rule": "explicit active path node sequence"
+        }
+      },
+      {
+        "path_id": "SYN-PATH-DEVICE-04",
+        "resource_id": "SYN-DEVICE-04",
+        "nodes": [
+          "SYN-DEVICE-04",
+          "SYN-AGG-01",
+          "SYN-CORE-01"
+        ],
+        "source_id": "synthetic-topology",
+        "source_kind": "SYNTHETIC_TEST",
+        "source_version": "syn-topo-temporal-v1",
+        "generation": {
+          "scenario_id": "synthetic_temporal_topology_v1",
+          "seed": 42,
+          "generator_version": "mockgen-integrated-v1",
+          "generation_rule": "explicit active path node sequence"
+        }
+      }
+    ],
+    "mappings": [
+      {
+        "alarm_id": "SYN-DEVICE-01",
+        "resource_id": "SYN-DEVICE-01",
+        "mapping_status": "EXACT",
+        "mapping_method": "EXACT_IDENTITY",
+        "mapping_confidence": 1.0,
+        "topology_layer": "SYNTHETIC",
+        "source_version": "syn-topo-temporal-v1"
+      },
+      {
+        "alarm_id": "SYN-DEVICE-02",
+        "resource_id": "SYN-DEVICE-02",
+        "mapping_status": "EXACT",
+        "mapping_method": "EXACT_IDENTITY",
+        "mapping_confidence": 1.0,
+        "topology_layer": "SYNTHETIC",
+        "source_version": "syn-topo-temporal-v1"
+      },
+      {
+        "alarm_id": "SYN-DEVICE-03",
+        "resource_id": "SYN-DEVICE-03",
+        "mapping_status": "EXACT",
+        "mapping_method": "EXACT_IDENTITY",
+        "mapping_confidence": 1.0,
+        "topology_layer": "SYNTHETIC",
+        "source_version": "syn-topo-temporal-v1"
+      }
+    ]
+  },
+  "operational_context": [],
+  "provenance_manifest": {
+    "sources": [
+      {
+        "source_id": "synthetic_temporal_topology_v1",
+        "source_kind": "SYNTHETIC_TEST",
+        "record_count": 3,
+        "notes": [
+          "EVOLUTION sequence member 5"
+        ]
+      },
+      {
+        "source_id": "synthetic-topology",
+        "source_kind": "SYNTHETIC_TEST",
+        "source_version": "syn-topo-temporal-v1",
+        "record_count": 16,
+        "notes": [
+          "scenario_id=synthetic_temporal_topology_v1",
+          "generator_version=mockgen-integrated-v1",
+          "Synthetic topology; cannot validate production."
+        ]
+      }
+    ],
+    "generator_version": "mockgen-integrated-v1",
+    "unavailable_capabilities": [],
+    "notes": [
+      "scenario_id=synthetic_temporal_topology_v1",
+      "seed=42",
+      "Synthetic snapshot; cannot be used as real validation."
+    ]
+  },
+  "schema_version": "v1"
+}
