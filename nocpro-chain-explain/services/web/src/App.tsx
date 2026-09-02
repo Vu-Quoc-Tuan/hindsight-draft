@@ -4,16 +4,18 @@ import { api, ApiError } from './api'
 import { compactTime, duration, humanize, percent } from './format'
 import { TopologyHypotheses } from './TopologyHypotheses'
 import { EvidenceAttribution } from './EvidenceAttribution'
+import { CounterfactualReview } from './CounterfactualReview'
 import type { ChainAnalysis, ChainList, Job, Member, PairEvidence, PairWhy } from './types'
 import './App.css'
 
-type Tab = 'why' | 'members' | 'structure' | 'evolution'
+type Tab = 'why' | 'members' | 'structure' | 'review' | 'evolution'
 type EvidenceLayer = 'ALL' | PairEvidence['provenance_class']
 
 const tabs: Array<{ id: Tab; label: string; eyebrow: string }> = [
   { id: 'why', label: 'Why grouped', eyebrow: 'Tier 1B' },
   { id: 'members', label: 'Members', eyebrow: 'Role map' },
   { id: 'structure', label: 'Structure', eyebrow: 'Tier 2' },
+  { id: 'review', label: 'Review', eyebrow: 'What-if' },
   { id: 'evolution', label: 'Evolution', eyebrow: 'Snapshots' },
 ]
 
@@ -402,6 +404,7 @@ function App() {
                 <StructurePanel job={visibleJob} onRun={() => void runDeepDive()} submitting={submitting} />
                 {visibleJob?.result && <TopologyHypotheses topology_hypotheses={visibleJob.result.topology_hypotheses} />}
               </>}
+              {tab === 'review' && <CounterfactualReview key={chainId} chainId={chainId} />}
               {tab === 'evolution' && <section className="unavailable-card"><span>UNAVAILABLE</span><h2>Sequential production snapshots are not loaded.</h2><p>Evolution remains off rather than inferring lineage from unrelated alarm exports. Load a verified sequence before enabling overlap, NEW/CLEARED and cache-consistency analysis.</p></section>}
             </div>
             <PairEvidenceRail analysis={analysis} selected={selectedMembers} pair={visiblePair} loading={selectedMembers.length === 2 && !pairMatchesSelection} layer={layer} />

@@ -197,6 +197,91 @@ export type Job = {
   error: string | null
 }
 
+export type CounterfactualMetricValue = {
+  availability: 'AVAILABLE' | 'UNAVAILABLE' | 'NOT_APPLICABLE'
+  value: number | null
+  reason: string | null
+}
+
+export type CounterfactualMetricVector = {
+  weak_member_count: CounterfactualMetricValue
+  minimum_membership_support: CounterfactualMetricValue
+  evidence_union_coverage: CounterfactualMetricValue
+  component_count: CounterfactualMetricValue
+  audit_conductance: CounterfactualMetricValue
+  audit_verdict_severity: CounterfactualMetricValue
+  eligible_external_contradiction_count: CounterfactualMetricValue
+}
+
+export type CounterfactualCandidate = {
+  candidate_id: string
+  operation: 'REMOVE_MEMBER' | 'SPLIT_CHAIN'
+  member_ids: string[]
+  source_ref: string
+  status: string
+  reason: string | null
+  edit_cost: {
+    operation_count: number
+    membership_reassignments: number
+    affected_member_count: number
+  }
+  partition_delta: {
+    before: Array<[string, string[]]>
+    after: Array<[string, string[]]>
+  }
+  before: CounterfactualMetricVector | null
+  after: CounterfactualMetricVector | null
+  materially_improved_metrics: string[]
+}
+
+export type CounterfactualOperation = {
+  operation: 'REMOVE_MEMBER' | 'SPLIT_CHAIN'
+  status: 'AVAILABLE' | 'UNAVAILABLE' | 'NOT_APPLICABLE'
+  reason: string | null
+  search_mode: 'BOUNDED' | 'NOT_RUN'
+  discovered_candidate_count: number
+  evaluated_candidate_count: number
+  rejected_candidate_count: number
+  candidate_limit: number | null
+  candidates: CounterfactualCandidate[]
+}
+
+export type CounterfactualResult = {
+  identity: {
+    snapshot_id: string
+    snapshot_version: string
+    chain_id: string
+    alarm_universe_fingerprint: string
+    analysis_version: string
+    engine_version: string
+    config_version: string
+    tier1b_artifact_fingerprint: string
+    structural_audit_artifact_fingerprint: string | null
+    external_validation_artifact_fingerprint: string | null
+  }
+  status: 'AVAILABLE' | 'UNAVAILABLE' | 'NOT_APPLICABLE'
+  reason: string | null
+  recommendation_status: 'AVAILABLE' | 'UNAVAILABLE' | 'NO_CLEAR_ALTERNATIVE'
+  remove: CounterfactualOperation
+  split: CounterfactualOperation
+  recommendations: CounterfactualCandidate[]
+  frontier_count_before_limit: number
+  frontier_truncated: boolean
+  parameter_provenance: Record<string, string>
+}
+
+export type CounterfactualJob = {
+  job_id: string
+  chain_id: string
+  status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED'
+  progress_percent: number
+  cache_hit: boolean
+  cache_fingerprint: string
+  identity: CounterfactualResult['identity']
+  result: CounterfactualResult | null
+  error: string | null
+}
+
 export type TopologyHypothesisStatus = 'AVAILABLE' | 'UNAVAILABLE'
 
 type TopologyProvenance = {

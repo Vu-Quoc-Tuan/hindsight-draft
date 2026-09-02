@@ -1,4 +1,4 @@
-import type { ChainAnalysis, ChainList, Job, PairWhy } from './types'
+import type { ChainAnalysis, ChainList, CounterfactualJob, Job, PairWhy } from './types'
 
 export class ApiError extends Error {
   status: number
@@ -62,4 +62,19 @@ export const api = {
     ),
   job: (jobId: string, signal?: AbortSignal) =>
     request<Job>(`/api/v1/jobs/${encodeURIComponent(jobId)}`, { signal }),
+  submitReview: (chainId: string) =>
+    request<{ job_id: string; cache_hit: boolean; deduplicated: boolean }>(
+      `/api/v1/chains/${encodeURIComponent(chainId)}/review`,
+      { method: 'POST' },
+    ),
+  reviewJob: (jobId: string, signal?: AbortSignal) =>
+    request<CounterfactualJob>(
+      `/api/v1/review-jobs/${encodeURIComponent(jobId)}`,
+      { signal },
+    ),
+  latestReview: (chainId: string, signal?: AbortSignal) =>
+    request<CounterfactualJob>(
+      `/api/v1/chains/${encodeURIComponent(chainId)}/review`,
+      { signal },
+    ),
 }
