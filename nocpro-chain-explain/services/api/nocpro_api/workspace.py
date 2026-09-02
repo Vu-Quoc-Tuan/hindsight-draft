@@ -16,7 +16,11 @@ from tier1a import SnapshotPrecompute, Tier1Cache, precompute_snapshot
 from tier1b import analyze_chain_configured
 from tier2 import Tier2JobManager
 from tier2 import SimilarityQueryContext
-from tier2.counterfactual import CounterfactualJobManager
+from tier2.counterfactual import (
+    CounterfactualJobManager,
+    artifact_fingerprint,
+    review_identity,
+)
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -203,7 +207,7 @@ class Workspace:
             similarity_context=similarity_context,
         )
 
-    def submit_review(self, chain_id: str):
+    def _review_context(self, chain_id: str):
         package = self.require_package()
         tier1b_artifact = self.analyze(chain_id)
         audit_view = self.jobs.latest_succeeded(
@@ -211,10 +215,39 @@ class Workspace:
             package.snapshot.snapshot_version,
             chain_id,
         )
+        audit_artifact = audit_view.result if audit_view is not None else None
+        config = self.config.counterfactual
+        identity = review_identity(
+            package,
+            chain_id,
+            analysis_version=self.config.config_version,
+            config_version=(
+                config.config_version if config is not None else "UNAVAILABLE"
+            ),
+            tier1b_artifact=tier1b_artifact,
+            audit_artifact=audit_artifact,
+            external_artifact=None,
+        )
+        return package, tier1b_artifact, audit_artifact, identity
+
+    def submit_review(self, chain_id: str):
+        package, tier1b_artifact, audit_artifact, _ = self._review_context(chain_id)
         return self.review_jobs.submit(
             package,
             chain_id,
             tier1b_artifact=tier1b_artifact,
-            audit_artifact=audit_view.result if audit_view is not None else None,
+            audit_artifact=audit_artifact,
             analysis_config=self.config,
+        )
+
+    async def latest_review(self, chain_id: str):
+        _, _, _, identity = self._review_context(chain_id)
+        in_memory = self.review_jobs.latest_compatible(identity)
+        if in_memory is not None or self.repository is None:
+            return in_memory
+        return await self.repository.latest_compatible_counterfactual_job(
+            snapshot_id=identity.snapshot_id,
+            snapshot_version=identity.snapshot_version,
+            chain_id=chain_id,
+            cache_fingerprint=artifact_fingerprint(identity.cache_tuple()),
         )

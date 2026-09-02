@@ -7,6 +7,7 @@ from dataclasses import asdict
 from channels import ChannelValue
 from tier1b import ChainAnalysis
 from tier2 import Tier2JobView
+from tier2.counterfactual import CounterfactualJobView as DomainCounterfactualJobView
 from tier2.topology_hypotheses import (
     DependencyScopeResult,
     DominatorResult,
@@ -17,6 +18,7 @@ from tier2.topology_hypotheses import (
 
 from .schemas import (
     ChainAnalysisView,
+    CounterfactualJobView,
     DeepDiveView,
     DescriptorView,
     EvidenceCoverageAttributionView,
@@ -36,6 +38,122 @@ from .schemas import (
     ResourceDetailsView,
     TopologyHypothesesView,
 )
+
+
+def _metric_value_view(value):
+    return {
+        "availability": _status(value.availability),
+        "value": value.value,
+        "reason": value.reason,
+    }
+
+
+def _metric_vector_view(vector):
+    if vector is None:
+        return None
+    return {
+        name: _metric_value_view(getattr(vector, name))
+        for name in (
+            "weak_member_count",
+            "minimum_membership_support",
+            "evidence_union_coverage",
+            "component_count",
+            "audit_conductance",
+            "audit_verdict_severity",
+            "eligible_external_contradiction_count",
+        )
+    }
+
+
+def _candidate_view(evaluation):
+    candidate = evaluation.candidate
+    return {
+        "candidate_id": candidate.candidate_id,
+        "operation": candidate.operation.value,
+        "member_ids": list(candidate.member_ids),
+        "source_ref": candidate.source_ref,
+        "status": evaluation.status.value,
+        "reason": evaluation.reason,
+        "edit_cost": asdict(candidate.edit_cost),
+        "partition_delta": {
+            "before": [
+                (chain_id, list(members))
+                for chain_id, members in candidate.partition_delta.before
+            ],
+            "after": [
+                (chain_id, list(members))
+                for chain_id, members in candidate.partition_delta.after
+            ],
+        },
+        "before": _metric_vector_view(evaluation.before),
+        "after": _metric_vector_view(evaluation.after),
+        "materially_improved_metrics": list(
+            evaluation.materially_improved_metrics
+        ),
+    }
+
+
+def _operation_view(operation):
+    return {
+        "operation": operation.operation.value,
+        "status": operation.status.value,
+        "reason": operation.reason,
+        "search_mode": operation.search_mode.value,
+        "discovered_candidate_count": operation.discovered_candidate_count,
+        "evaluated_candidate_count": operation.evaluated_candidate_count,
+        "rejected_candidate_count": operation.rejected_candidate_count,
+        "candidate_limit": operation.candidate_limit,
+        "candidates": [_candidate_view(item) for item in operation.candidates],
+    }
+
+
+def counterfactual_result_view(result):
+    return {
+        "identity": asdict(result.identity),
+        "status": result.status.value,
+        "reason": result.reason,
+        "recommendation_status": result.recommendation_status.value,
+        "remove": _operation_view(result.remove),
+        "split": _operation_view(result.split),
+        "recommendations": [
+            _candidate_view(item) for item in result.recommendations
+        ],
+        "frontier_count_before_limit": result.frontier_count_before_limit,
+        "frontier_truncated": result.frontier_truncated,
+        "parameter_provenance": dict(result.parameter_provenance),
+    }
+
+
+def counterfactual_job_view(job) -> CounterfactualJobView:
+    if isinstance(job, DomainCounterfactualJobView):
+        payload = {
+            "job_id": job.job_id,
+            "chain_id": job.chain_id,
+            "status": job.status.value,
+            "progress_percent": job.progress_percent,
+            "cache_hit": job.cache_hit,
+            "cache_fingerprint": job.cache_fingerprint,
+            "identity": asdict(job.identity),
+            "result": (
+                counterfactual_result_view(job.result)
+                if job.result is not None
+                else None
+            ),
+            "error": job.error,
+        }
+    else:
+        payload = {
+            "job_id": job.job_id,
+            "chain_id": job.chain_id,
+            "status": job.status,
+            "progress_percent": job.progress_percent,
+            "cache_hit": job.cache_hit,
+            "cache_fingerprint": job.cache_fingerprint,
+            "identity": job.identity,
+            "result": job.result,
+            "error": job.error,
+        }
+    return CounterfactualJobView.model_validate(payload)
 
 
 def descriptor_view(descriptor) -> DescriptorView:

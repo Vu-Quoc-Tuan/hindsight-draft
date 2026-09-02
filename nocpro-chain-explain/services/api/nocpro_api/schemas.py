@@ -338,3 +338,94 @@ class JobView(ApiModel):
     cache_hit: bool
     result: DeepDiveView | None
     error: str | None
+
+
+class ReviewIdentityView(ApiModel):
+    snapshot_id: str
+    snapshot_version: str
+    chain_id: str
+    alarm_universe_fingerprint: str
+    analysis_version: str
+    engine_version: str
+    config_version: str
+    tier1b_artifact_fingerprint: str
+    structural_audit_artifact_fingerprint: str | None
+    external_validation_artifact_fingerprint: str | None
+
+
+class CounterfactualMetricValueView(ApiModel):
+    availability: str
+    value: float | int | None
+    reason: str | None
+
+
+class CounterfactualMetricVectorView(ApiModel):
+    weak_member_count: CounterfactualMetricValueView
+    minimum_membership_support: CounterfactualMetricValueView
+    evidence_union_coverage: CounterfactualMetricValueView
+    component_count: CounterfactualMetricValueView
+    audit_conductance: CounterfactualMetricValueView
+    audit_verdict_severity: CounterfactualMetricValueView
+    eligible_external_contradiction_count: CounterfactualMetricValueView
+
+
+class CounterfactualEditCostView(ApiModel):
+    operation_count: int
+    membership_reassignments: int
+    affected_member_count: int
+
+
+class CounterfactualPartitionView(ApiModel):
+    before: list[tuple[str, list[str]]]
+    after: list[tuple[str, list[str]]]
+
+
+class CounterfactualCandidateView(ApiModel):
+    candidate_id: str
+    operation: str
+    member_ids: list[str]
+    source_ref: str
+    status: str
+    reason: str | None
+    edit_cost: CounterfactualEditCostView
+    partition_delta: CounterfactualPartitionView
+    before: CounterfactualMetricVectorView | None
+    after: CounterfactualMetricVectorView | None
+    materially_improved_metrics: list[str]
+
+
+class CounterfactualOperationView(ApiModel):
+    operation: str
+    status: str
+    reason: str | None
+    search_mode: str
+    discovered_candidate_count: int
+    evaluated_candidate_count: int
+    rejected_candidate_count: int
+    candidate_limit: int | None
+    candidates: list[CounterfactualCandidateView]
+
+
+class CounterfactualResultView(ApiModel):
+    identity: ReviewIdentityView
+    status: str
+    reason: str | None
+    recommendation_status: str
+    remove: CounterfactualOperationView
+    split: CounterfactualOperationView
+    recommendations: list[CounterfactualCandidateView]
+    frontier_count_before_limit: int
+    frontier_truncated: bool
+    parameter_provenance: dict[str, str]
+
+
+class CounterfactualJobView(ApiModel):
+    job_id: str
+    chain_id: str
+    status: str
+    progress_percent: int = Field(ge=0, le=100)
+    cache_hit: bool
+    cache_fingerprint: str
+    identity: ReviewIdentityView
+    result: CounterfactualResultView | None
+    error: str | None

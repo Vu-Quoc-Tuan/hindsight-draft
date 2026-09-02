@@ -38,8 +38,24 @@ def _jsonable(value: Any) -> Any:
     return repr(value)
 
 
+def _semantic_artifact(value: Any) -> Any:
+    serialized = _jsonable(value)
+    if isinstance(serialized, dict):
+        return {
+            key: _semantic_artifact(item)
+            for key, item in serialized.items()
+            if key not in {"phase_durations"}
+        }
+    if isinstance(serialized, list):
+        return [_semantic_artifact(item) for item in serialized]
+    return serialized
+
+
 def artifact_fingerprint(value: Any) -> str:
-    payload = json.dumps(_jsonable(value), sort_keys=True, separators=(",", ":"))
+    """Hash semantic content while excluding non-reproducible run telemetry."""
+    payload = json.dumps(
+        _semantic_artifact(value), sort_keys=True, separators=(",", ":")
+    )
     return sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -305,6 +321,18 @@ class CounterfactualJobManager:
                 (snapshot_id, snapshot_version, chain_id)
             )
             return self._jobs[job_id].view() if job_id is not None else None
+
+    def latest_compatible(
+        self, identity: ReviewIdentity
+    ) -> CounterfactualJobView | None:
+        with self._lock:
+            matches = [
+                job.view()
+                for job in self._jobs.values()
+                if job.status is JobStatus.SUCCEEDED
+                and job.identity.cache_tuple() == identity.cache_tuple()
+            ]
+        return matches[-1] if matches else None
 
     def wait(self, job_id: str, *, timeout: float | None = None) -> CounterfactualJobView:
         with self._lock:

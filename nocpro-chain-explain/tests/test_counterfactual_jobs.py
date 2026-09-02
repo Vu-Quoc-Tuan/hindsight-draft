@@ -5,6 +5,7 @@ from threading import Event
 from configuration import load_analysis_config
 from tier2 import JobStatus
 from tier2.counterfactual import CounterfactualJobManager, DomainStatus
+from tier2.counterfactual import artifact_fingerprint
 from tests.test_counterfactual_analysis import _metric_computer, _tier1b
 from tests.test_counterfactual_evaluator import _package
 
@@ -133,3 +134,11 @@ def test_unexpected_exception_is_failed_job() -> None:
         assert view.error == "RuntimeError: boom"
     finally:
         manager.shutdown()
+
+
+def test_execution_timings_do_not_change_artifact_identity() -> None:
+    assert artifact_fingerprint(
+        {"members": ["A"], "phase_durations": {"fit": 0.01}}
+    ) == artifact_fingerprint(
+        {"members": ["A"], "phase_durations": {"fit": 9.99}}
+    )

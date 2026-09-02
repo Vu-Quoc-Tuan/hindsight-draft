@@ -12,13 +12,19 @@ from libs.contracts import ContractIngestError
 from .schemas import (
     ChainListView,
     ChainSummaryView,
+    CounterfactualJobView,
     JobSubmissionView,
     JobView,
     PairWhyView,
     SnapshotLoadedView,
     SystemPairFactView,
 )
-from .serializers import chain_analysis_view, job_view, pair_evidence_view
+from .serializers import (
+    chain_analysis_view,
+    counterfactual_job_view,
+    job_view,
+    pair_evidence_view,
+)
 from .workspace import SnapshotNotLoaded, Workspace
 
 
@@ -150,5 +156,49 @@ async def submit_deep_dive(
 async def get_job(job_id: str, request: Request) -> JobView:
     try:
         return job_view(workspace(request).jobs.get(job_id))
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.post(
+    "/chains/{chain_id}/review",
+    response_model=JobSubmissionView,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def submit_review(
+    chain_id: str, request: Request
+) -> JobSubmissionView:
+    try:
+        result = workspace(request).submit_review(chain_id)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+    return JobSubmissionView(
+        job_id=result.job_id,
+        cache_hit=result.cache_hit,
+        deduplicated=result.deduplicated,
+    )
+
+
+@router.get("/review-jobs/{job_id}", response_model=CounterfactualJobView)
+async def get_review_job(
+    job_id: str, request: Request
+) -> CounterfactualJobView:
+    try:
+        return counterfactual_job_view(
+            workspace(request).review_jobs.get(job_id)
+        )
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.get("/chains/{chain_id}/review", response_model=CounterfactualJobView)
+async def get_latest_review(
+    chain_id: str, request: Request
+) -> CounterfactualJobView:
+    try:
+        result = await workspace(request).latest_review(chain_id)
+        if result is None:
+            raise KeyError(f"no compatible Counterfactual review for {chain_id!r}")
+        return counterfactual_job_view(result)
     except Exception as exc:
         raise translate_error(exc) from exc
