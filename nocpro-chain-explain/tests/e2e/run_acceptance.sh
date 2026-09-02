@@ -69,6 +69,21 @@ done
 NOCPRO_RUN_DOCKER_E2E=1 PYTHONPATH="../nocpro-mock/src" \
   .venv/bin/python -m pytest tests/e2e/test_synthetic_p2_kafka.py -q
 
+ANALYSIS_CONFIG_PATH="/app/config/thresholds/e2e-counterfactual.yaml" \
+  docker compose up -d --force-recreate api
+deadline=$((SECONDS + 60))
+until curl -fsS "http://127.0.0.1:${API_HOST_PORT}/api/v1/health" >/dev/null; do
+  if (( SECONDS >= deadline )); then
+    docker compose logs --no-color api
+    echo "API did not restart with synthetic Counterfactual acceptance config" >&2
+    exit 1
+  fi
+  sleep 1
+done
+NOCPRO_RUN_DOCKER_E2E=1 PYTHONPATH="../nocpro-mock/src" \
+  .venv/bin/python -m pytest tests/e2e/test_counterfactual_review.py -q
+pnpm --dir services/web exec playwright test e2e/counterfactual-review.spec.ts
+
 echo "acceptance_snapshot=${snapshot_id}"
 echo "production_delta_validation=BLOCKED_BY_DATA_AVAILABILITY"
 echo "production_delta_implementation=READY"

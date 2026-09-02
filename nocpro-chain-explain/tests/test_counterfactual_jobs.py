@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from threading import Event
+from dataclasses import dataclass
+from types import MappingProxyType
 
 from configuration import load_analysis_config
 from tier2 import JobStatus
@@ -142,3 +144,15 @@ def test_execution_timings_do_not_change_artifact_identity() -> None:
     ) == artifact_fingerprint(
         {"members": ["A"], "phase_durations": {"fit": 9.99}}
     )
+
+
+def test_artifact_identity_accepts_immutable_mapping_fields() -> None:
+    @dataclass(frozen=True)
+    class Artifact:
+        provenance: object
+
+    assert len(
+        artifact_fingerprint(
+            Artifact(MappingProxyType({"source": "FROZEN_SPEC"}))
+        )
+    ) == 64

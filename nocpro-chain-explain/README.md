@@ -36,6 +36,7 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | Similar Chains: fingerprint + cosine baseline (`similar_chains/`) | P1-Core | done |
 | Similar Chains production index (`history<t`, snapshot-versioned model) | P1-Core | done |
 | Evidence Coverage Attribution (exact indexed, derivation-group level) | P1-optional | done; fail-closed above configured ceiling |
+| Counterfactual Chain Review P0 (`REMOVE_MEMBER`, exact-Audit `SPLIT_CHAIN`) | review extension | implemented; synthetic correctness verified, production calibration not established |
 | **P1-Core (3+1) feature set implemented** | | **4/4** |
 | Contrastive top-3: per-candidate `Margin_common` (§5, §11) | P0 | done |
 | Hybrid indexed Tier-1B + pairwise oracle | P0 | done |
@@ -92,6 +93,7 @@ services/analysis-worker/channels/common_dependency.py  SHARED_ANCESTOR, SHARED_
 services/analysis-worker/similar_chains/  fingerprint, TF-IDF, cosine similarity baseline
 services/analysis-worker/tier2/topology_hypotheses/  fail-closed P2 topology foundation
 services/analysis-worker/tier2/evidence_attribution.py  exact indexed Evidence Coverage Attribution
+services/analysis-worker/tier2/counterfactual/  bounded exact review-only alternatives
 services/api/nocpro_api/             FastAPI transport and in-process repository boundary
 services/api/nocpro_api/ingest/      Kafka v1 wire parser + consumer/coordinator
 services/api/nocpro_api/persistence/ PostgreSQL models and snapshot repository
@@ -137,6 +139,14 @@ Kafka and PostgreSQL, browser WHY/role/descriptor/deep-dive behavior, and the
 missing-chunk, consumer-restart, duplicate-snapshot and expired-lease recovery
 cases. Docker failure tests require the explicit `NOCPRO_RUN_DOCKER_E2E=1`
 opt-in and therefore cannot control Docker during an ordinary pytest run.
+
+Counterfactual Review has an additional synthetic-only acceptance stage. It
+publishes the explicit extra-member and over-merge fixtures from `nocpro-mock`
+through Kafka chunk/barrier, waits for Tier-1A READY, materializes exact Audit,
+submits the separate Review job, verifies its PostgreSQL result envelope, then
+opens the REVIEW tab in Chromium. These fixtures and
+`config/thresholds/e2e-counterfactual.yaml` are labelled `SYNTHETIC_TEST`; they
+cannot calibrate or enable a production recommendation policy.
 
 ## Behavior worth knowing
 
@@ -206,6 +216,15 @@ drill-down and visualization. A verdict is never a function of a display
   with a perfect score.
 - Candidate cuts come only from Entity/Dependency/`H_domain`/Descriptor plus
   their union/difference. No second community-detection algorithm runs.
+- Counterfactual Chain Review is proposal-only and never mutates the NocPro
+  partition. P0 generates bounded deterministic `REMOVE_MEMBER` candidates
+  from member triggers and reuses only exact Structural Audit cuts for
+  `SPLIT_CHAIN`; it does not run another clustering algorithm. Candidate
+  aggregates are recomputed exactly over affected chains, missing required
+  metrics reject the candidate, and REMOVE/SPLIT remain independent partial
+  results. The shipped production config intentionally has no calibrated
+  Counterfactual envelope, so production returns
+  `COUNTERFACTUAL_CONFIG_INCOMPLETE` rather than using synthetic thresholds.
 - `|C| < 10` is `SKIPPED_SMALL_CHAIN`, never `NO_LOW_CONDUCTANCE_CUT`: "too small
   to test" and "tested, found nothing" are different claims.
 - Calibration falls back FULL bin -> COARSE bin -> GLOBAL weak baseline rather
@@ -305,6 +324,20 @@ then use `/api/v1/chains`, `/api/v1/chains/{chain_id}`, pair WHY, and the
 Tier-2 submit/poll endpoints under `/api/v1`. Snapshot replacement performs a
 full exact precompute because `incremental_snapshot.mode` is deliberately
 disabled until consecutive production snapshots are available.
+
+Review uses its own lazy job boundary:
+
+```text
+POST /api/v1/chains/{chain_id}/review
+GET  /api/v1/review-jobs/{job_id}
+GET  /api/v1/chains/{chain_id}/review
+```
+
+The convenience GET returns only a result compatible with the current
+snapshot, Tier-1B/Audit artifact fingerprints, engine and config. Job identity,
+progress, terminal result and artifact fingerprints are persisted in
+PostgreSQL; domain-level `UNAVAILABLE` is a successful job result, while an
+unexpected infrastructure exception is `FAILED`.
 
 Run the frontend in another terminal:
 
@@ -411,6 +444,18 @@ isolated containers, network and PostgreSQL volume. The mount changes only the
 location from which `nocpro-mock` reads the existing export; it does not replace
 or synthesize production replay data.
 
+On 2026-09-02 the isolated Counterfactual stage was run independently because
+this feature worktree did not contain the external real-export mount needed by
+the full replay stage. Both mutation fixtures passed the real Mock → Kafka →
+PostgreSQL → Explain path (`1/1` combined Docker test), and the Chromium REVIEW
+flow passed (`1/1`) with no console errors and no Apply control. The synthetic
+benchmark, five repetitions per mutation, reported issue detection `1.0`,
+exact repair `1.0`, clean false-recommendation rate `0.0`, clean abstention
+`1.0`, mean ARI `1.0`, mean AMI approximately `1.0`, median end-to-end local
+analysis latency `0.163s`, and maximum `0.259s`. These are small synthetic
+correctness/latency measurements, not a production threshold or SLO. The
+isolated containers, network and PostgreSQL volume were removed after the run.
+
 The unresolved external gates are recorded explicitly:
 
 ```text
@@ -420,4 +465,6 @@ empirical_threshold          = NOT_ESTABLISHED
 incremental_snapshot.mode    = disabled
 P2 topology foundation      = IMPLEMENTED / PRODUCTION_UNAVAILABLE
 remaining P2 extensions     = NOT_STARTED / DATA_AND_CAPABILITY_GATED
+counterfactual review P0    = IMPLEMENTED / SYNTHETIC_CORRECTNESS_VERIFIED
+production review policy    = NOT_CALIBRATED / FAIL_CLOSED
 ```

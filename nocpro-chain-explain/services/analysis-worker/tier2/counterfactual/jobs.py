@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import asdict, dataclass, is_dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, fields, is_dataclass
 from enum import Enum
 from hashlib import sha256
 import json
@@ -23,10 +24,13 @@ ENGINE_VERSION = "counterfactual-p0-v1"
 
 def _jsonable(value: Any) -> Any:
     if is_dataclass(value):
-        return _jsonable(asdict(value))
+        return {
+            item.name: _jsonable(getattr(value, item.name))
+            for item in fields(value)
+        }
     if isinstance(value, Enum):
         return value.value
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return {str(key): _jsonable(item) for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))}
     if isinstance(value, (list, tuple, set, frozenset)):
         values = [_jsonable(item) for item in value]

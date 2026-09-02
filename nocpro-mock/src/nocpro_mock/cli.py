@@ -116,6 +116,7 @@ def _cmd_build_sequences(args: argparse.Namespace) -> int:
     """Materialize the shipped sequence fixtures next to their manifests."""
     from .config import GENERATOR_VERSION
     from .scenarios import (
+        COUNTERFACTUAL_FIXTURES,
         SEQUENCE_FIXTURES,
         build_synthetic_snapshot,
         generate_integrated_topology,
@@ -188,6 +189,25 @@ def _cmd_build_sequences(args: argparse.Namespace) -> int:
                 return 2
             written += 1
         print(f"{fixture.scenario_id}: wrote {len(fixture.snapshots)} snapshots")
+
+    for fixture in COUNTERFACTUAL_FIXTURES:
+        directory = base / fixture.directory
+        package = build_synthetic_snapshot(
+            scenario_id=fixture.scenario_id,
+            seed=42,
+            generator_version=GENERATOR_VERSION,
+            snapshot_index=0,
+            chains={fixture.chain_id: list(fixture.members)},
+            alarm_profiles=fixture.alarm_profiles,
+            generation_rule=f"COUNTERFACTUAL {fixture.mutation} fixture",
+        )
+        try:
+            producer.write(package, directory / "snapshot_000.json")
+        except ContractViolation as exc:
+            print(f"{fixture.scenario_id}: {exc}", file=sys.stderr)
+            return 2
+        written += 1
+        print(f"{fixture.scenario_id}: wrote snapshot_000.json")
 
     print(f"total {written} snapshot file(s)")
     return 0

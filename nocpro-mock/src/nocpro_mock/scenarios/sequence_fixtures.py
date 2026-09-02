@@ -24,6 +24,17 @@ class SequenceFixture:
     generator_version: str | None = None
 
 
+@dataclass(frozen=True)
+class CounterfactualFixture:
+    scenario_id: str
+    directory: str
+    chain_id: str
+    members: tuple[str, ...]
+    alarm_profiles: dict[str, dict[str, object]]
+    truth_partition: tuple[tuple[str, tuple[str, ...]], ...]
+    mutation: str
+
+
 #: History: FAMILY-A and FAMILY-B are grouped together in the three history
 #: snapshots, then appear again in the target. Support therefore comes only from
 #: history, never from the target itself.
@@ -125,3 +136,53 @@ SEQUENCE_FIXTURES = (
     EVOLUTION_SPLIT_MERGE,
     INTEGRATED_TEMPORAL_TOPOLOGY,
 )
+
+
+def _block_profiles(prefix: str, *, start: int, device: str) -> dict[str, dict[str, object]]:
+    return {
+        f"SYN-{prefix}-{index:02d}": {
+            "device_code": device,
+            "node_reference": f"SYN-REF-{prefix}-{1 if index <= 4 else 2}",
+            "start_offset_seconds": start + index,
+        }
+        for index in range(1, 9)
+    }
+
+
+_REMOVE_CORE = _block_profiles("REMOVE-CORE", start=0, device="SYN-DEVICE-REMOVE-CORE")
+COUNTERFACTUAL_REMOVE = CounterfactualFixture(
+    scenario_id="synthetic_counterfactual_remove_v1",
+    directory="counterfactual_remove",
+    chain_id="SYN-CHAIN-REMOVE-MUTATED",
+    members=(*_REMOVE_CORE, "SYN-REMOVE-EXTRA"),
+    alarm_profiles={
+        **_REMOVE_CORE,
+        "SYN-REMOVE-EXTRA": {
+            "device_code": "SYN-DEVICE-REMOVE-EXTRA",
+            "node_reference": "SYN-REF-REMOVE-EXTRA",
+            "start_offset_seconds": 600,
+        },
+    },
+    truth_partition=(
+        ("SYN-CHAIN-REMOVE-TRUTH", tuple(_REMOVE_CORE)),
+        ("SYN-CHAIN-REMOVE-EXTRA", ("SYN-REMOVE-EXTRA",)),
+    ),
+    mutation="EXTRA_MEMBER",
+)
+
+_SPLIT_A = _block_profiles("SPLIT-A", start=0, device="SYN-DEVICE-SPLIT-A")
+_SPLIT_B = _block_profiles("SPLIT-B", start=600, device="SYN-DEVICE-SPLIT-B")
+COUNTERFACTUAL_SPLIT = CounterfactualFixture(
+    scenario_id="synthetic_counterfactual_split_v1",
+    directory="counterfactual_split",
+    chain_id="SYN-CHAIN-SPLIT-MUTATED",
+    members=(*_SPLIT_A, *_SPLIT_B),
+    alarm_profiles={**_SPLIT_A, **_SPLIT_B},
+    truth_partition=(
+        ("SYN-CHAIN-SPLIT-A", tuple(_SPLIT_A)),
+        ("SYN-CHAIN-SPLIT-B", tuple(_SPLIT_B)),
+    ),
+    mutation="OVER_MERGE",
+)
+
+COUNTERFACTUAL_FIXTURES = (COUNTERFACTUAL_REMOVE, COUNTERFACTUAL_SPLIT)

@@ -1,0 +1,20 @@
+scenario_id: synthetic_counterfactual_remove_v1
+source_kind: SYNTHETIC_TEST
+mutation: EXTRA_MEMBER
+mutated_chain_id: SYN-CHAIN-REMOVE-MUTATED
+truth_partition:
+  SYN-CHAIN-REMOVE-TRUTH:
+    - SYN-REMOVE-CORE-01
+    - SYN-REMOVE-CORE-02
+    - SYN-REMOVE-CORE-03
+    - SYN-REMOVE-CORE-04
+    - SYN-REMOVE-CORE-05
+    - SYN-REMOVE-CORE-06
+    - SYN-REMOVE-CORE-07
+    - SYN-REMOVE-CORE-08
+  SYN-CHAIN-REMOVE-EXTRA:
+    - SYN-REMOVE-EXTRA
+expected_review:
+  operation: REMOVE_MEMBER
+  member_ids: [SYN-REMOVE-EXTRA]
+validation_scope: SYNTHETIC_CORRECTNESS_ONLY

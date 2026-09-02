@@ -22,6 +22,7 @@ from nocpro_mock.contract import MockSnapshotPackage, SourceKind, validate_packa
 from nocpro_mock.producer import DirectSnapshotProducer
 from nocpro_mock.replay import SequenceRunner, validate_sequence_payloads
 from nocpro_mock.scenarios import (
+    COUNTERFACTUAL_FIXTURES,
     EVOLUTION_SPLIT_MERGE,
     HISTORY_POSITIVE_LIFT,
     INTEGRATED_TEMPORAL_TOPOLOGY,
@@ -425,3 +426,43 @@ def test_fixture_definitions_match_their_manifests():
         manifest = load_sequence_manifest(directory / "sequence.yaml")
         assert fixture.scenario_id == manifest.scenario_id
         assert len(fixture.snapshots) == len(manifest.snapshots)
+
+
+def test_counterfactual_fixtures_are_reproducible_and_truth_is_external() -> None:
+    producer = DirectSnapshotProducer()
+    for fixture in COUNTERFACTUAL_FIXTURES:
+        package = build_synthetic_snapshot(
+            scenario_id=fixture.scenario_id,
+            seed=42,
+            generator_version=GENERATOR_VERSION,
+            snapshot_index=0,
+            chains={fixture.chain_id: list(fixture.members)},
+            alarm_profiles=fixture.alarm_profiles,
+            generation_rule=f"COUNTERFACTUAL {fixture.mutation} fixture",
+        )
+        materialized = (
+            SYNTHETIC_DIR / fixture.directory / "snapshot_000.json"
+        ).read_text(encoding="utf-8")
+        assert producer.render(package) == materialized.rstrip("\n")
+        assert "truth_partition" not in materialized
+
+
+def test_alarm_profiles_control_only_explicit_synthetic_fields() -> None:
+    package = build_synthetic_snapshot(
+        scenario_id="synthetic_profile_contract_v1",
+        seed=42,
+        generator_version=GENERATOR_VERSION,
+        snapshot_index=0,
+        chains={"SYN-CHAIN-PROFILE": ["SYN-ALARM-PROFILE"]},
+        alarm_profiles={
+            "SYN-ALARM-PROFILE": {
+                "device_code": "SYN-DEVICE-PROFILE",
+                "node_reference": "SYN-REF-PROFILE",
+                "start_offset_seconds": 600,
+            }
+        },
+    )
+    alarm = package.alarms[0]
+    assert alarm.device_code == "SYN-DEVICE-PROFILE"
+    assert alarm.node_reference == "SYN-REF-PROFILE"
+    assert alarm.canonical_start_time.endswith("00:10:00+00:00")

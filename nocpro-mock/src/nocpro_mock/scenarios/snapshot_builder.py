@@ -40,6 +40,7 @@ def build_synthetic_snapshot(
     snapshot_index: int,
     chains: dict[str, list[str]],
     alarm_families: dict[str, str] | None = None,
+    alarm_profiles: dict[str, dict[str, object]] | None = None,
     snapshot_interval_seconds: int = 60,
     generation_rule: str = "synthetic snapshot sequence member",
     topology: Topology | None = None,
@@ -55,6 +56,7 @@ def build_synthetic_snapshot(
         seconds=snapshot_index * snapshot_interval_seconds
     )
     families = alarm_families or {}
+    profiles = alarm_profiles or {}
     supplied_topology = topology or Topology()
     topology_records = (
         *supplied_topology.nodes,
@@ -100,16 +102,23 @@ def build_synthetic_snapshot(
         if len(set(members)) != len(members):
             raise ValueError(f"chain {chain_id!r} lists an alarm twice")
         for offset, alarm_id in enumerate(members):
-            start = snapshot_time + timedelta(seconds=offset)
+            profile = profiles.get(alarm_id, {})
+            start = snapshot_time + timedelta(
+                seconds=int(profile.get("start_offset_seconds", offset))
+            )
+            device_code = str(profile.get("device_code", alarm_id))
+            node_reference = profile.get("node_reference")
+            alarm_name = profile.get("alarm_name", families.get(alarm_id))
             raw = {
                 "cah.id": alarm_id,
                 "chaining_id": chain_id,
                 "cah.start_time": start.isoformat(),
-                "device_code": alarm_id,
+                "device_code": device_code,
             }
-            family = families.get(alarm_id)
-            if family:
-                raw["alarm_name"] = family
+            if alarm_name:
+                raw["alarm_name"] = str(alarm_name)
+            if node_reference:
+                raw["node_reference"] = str(node_reference)
             alarms.append(
                 Alarm(
                     alarm_id=alarm_id,
@@ -119,8 +128,11 @@ def build_synthetic_snapshot(
                     raw=raw,
                     raw_start_time=start.isoformat(),
                     canonical_start_time=start.isoformat(),
-                    alarm_name=family,
-                    device_code=alarm_id,
+                    alarm_name=str(alarm_name) if alarm_name else None,
+                    device_code=device_code,
+                    node_reference=(
+                        str(node_reference) if node_reference else None
+                    ),
                 )
             )
             memberships.append(
@@ -133,7 +145,13 @@ def build_synthetic_snapshot(
             )
 
         starts = [
-            snapshot_time + timedelta(seconds=i) for i in range(len(members))
+            snapshot_time
+            + timedelta(
+                seconds=int(
+                    profiles.get(alarm_id, {}).get("start_offset_seconds", index)
+                )
+            )
+            for index, alarm_id in enumerate(members)
         ]
         span = int((max(starts) - min(starts)).total_seconds()) if starts else None
         chain_records.append(

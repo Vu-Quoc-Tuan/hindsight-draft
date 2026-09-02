@@ -31,11 +31,15 @@ from .sequence import (
     parse_sequence_manifest,
 )
 from .sequence_fixtures import (
+    COUNTERFACTUAL_FIXTURES,
+    COUNTERFACTUAL_REMOVE,
+    COUNTERFACTUAL_SPLIT,
     EVOLUTION_SPLIT_MERGE,
     HISTORY_POSITIVE_LIFT,
     INTEGRATED_TEMPORAL_TOPOLOGY,
     SEQUENCE_FIXTURES,
     SequenceFixture,
+    CounterfactualFixture,
 )
 from .snapshot_builder import SEQUENCE_EPOCH, build_synthetic_snapshot
 from .topology_generators import (
@@ -48,6 +52,10 @@ from .topology_generators import (
 
 __all__ = [
     "EVOLUTION_SPLIT_MERGE",
+    "COUNTERFACTUAL_FIXTURES",
+    "COUNTERFACTUAL_REMOVE",
+    "COUNTERFACTUAL_SPLIT",
+    "CounterfactualFixture",
     "GENERATOR_TYPE_DETERMINISTIC",
     "HISTORY_POSITIVE_LIFT",
     "INTEGRATED_TEMPORAL_TOPOLOGY",
