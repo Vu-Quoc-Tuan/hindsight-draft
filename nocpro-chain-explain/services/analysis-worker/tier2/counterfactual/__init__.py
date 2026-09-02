@@ -3,6 +3,7 @@
 from .config import CalibrationStatus, CounterfactualConfig
 from .models import (
     CandidateEvaluation,
+    CandidateBatch,
     CandidateStatus,
     CounterfactualCandidate,
     CounterfactualResult,
@@ -22,6 +23,7 @@ from .models import (
 __all__ = [
     "CalibrationStatus",
     "CandidateEvaluation",
+    "CandidateBatch",
     "CandidateStatus",
     "CounterfactualCandidate",
     "CounterfactualConfig",

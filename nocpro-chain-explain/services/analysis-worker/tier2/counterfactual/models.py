@@ -190,6 +190,16 @@ class CounterfactualCandidate:
 
 
 @dataclass(frozen=True)
+class CandidateBatch:
+    operation: Operation
+    discovered_count: int
+    evaluated_count: int
+    candidate_limit: int
+    candidates: tuple[CounterfactualCandidate, ...]
+    canonical_remove_member_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class CandidateEvaluation:
     candidate: CounterfactualCandidate
     status: CandidateStatus
@@ -224,4 +234,3 @@ class CounterfactualResult:
     frontier_count_before_limit: int = 0
     frontier_truncated: bool = False
     parameter_provenance: dict[str, str] = field(default_factory=dict)
-
