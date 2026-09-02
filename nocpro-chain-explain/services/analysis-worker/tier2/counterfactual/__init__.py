@@ -19,6 +19,13 @@ from .models import (
     ReviewIdentity,
     SearchMode,
 )
+from .evaluator import (
+    apply_partition_delta,
+    compare_before_after,
+    compute_exact_partition_metrics,
+    evaluate_candidate,
+)
+from .pareto import FrontierResult, dominates, select_frontier
 
 __all__ = [
     "CalibrationStatus",
@@ -39,4 +46,11 @@ __all__ = [
     "RecommendationStatus",
     "ReviewIdentity",
     "SearchMode",
+    "FrontierResult",
+    "apply_partition_delta",
+    "compare_before_after",
+    "compute_exact_partition_metrics",
+    "dominates",
+    "evaluate_candidate",
+    "select_frontier",
 ]

@@ -243,6 +243,16 @@ policy; otherwise the candidate yields `REQUIRED_METRIC_UNAVAILABLE`. This
 prevents a skipped small-chain Audit from being interpreted as structurally
 perfect. Improvement must meet `minimum_conductance_improvement`.
 
+When an edit creates multiple affected chains, aggregation is exact and
+conservative. Singleton chains created by removal remain in the partition but
+are excluded from pair/structural metrics because those metrics are not
+applicable to singletons. `weak_member_count` is summed, minimum membership is
+the minimum computable support, union coverage is pair-count weighted as total
+covered within-chain pairs divided by total within-chain pairs,
+`component_count` is the maximum internal component count, conductance is the
+minimum exact feasible internal conductance, and Audit severity is the maximum
+(worst) affected-chain severity.
+
 Edit cost is a structured deterministic tuple, not a weighted score:
 
 ```text
