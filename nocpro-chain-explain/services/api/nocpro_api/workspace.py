@@ -12,7 +12,7 @@ from typing import Any
 from channels import evaluate_pair_channels
 from configuration import AnalysisConfig, load_analysis_config
 from libs.contracts import IngestedPackage, load_validated_package
-from tier1a import SnapshotPrecompute, Tier1Cache, precompute_snapshot
+from tier1a import CacheTier, SnapshotPrecompute, Tier1Cache, precompute_snapshot
 from tier1b import analyze_chain_configured
 from tier2 import (
     AUDIT_ANALYSIS_VERSION,
@@ -189,12 +189,26 @@ class Workspace:
         package = self.require_package()
         if self.precompute is None:
             raise SnapshotNotLoaded("snapshot precompute unavailable")
-        return analyze_chain_configured(
+        members = set(package.members_of(chain_id))
+        key = self.cache.key_for(
+            CacheTier.TIER_1B,
+            member_ids=members,
+            snapshot_id=package.snapshot.snapshot_id,
+            snapshot_version=package.snapshot.snapshot_version,
+            config_version=self.config.config_version,
+        )
+        cached = self.cache.get(key)
+        if cached is not None:
+            return cached
+
+        analysis = analyze_chain_configured(
             package,
             chain_id,
             analysis_config=self.config,
             predicate_index=self.precompute.predicate_index,
         )
+        self.cache.put(key, analysis, snapshot_chain_id=chain_id)
+        return analysis
 
     def pair_why(self, chain_id: str, alarm_a: str, alarm_b: str):
         package = self.require_package()
