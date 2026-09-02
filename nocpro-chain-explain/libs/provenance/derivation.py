@@ -17,6 +17,7 @@ Only normalized ``K_pair`` channels are players. ``SYSTEM_FACT`` adapter objects
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Protocol, Sequence
 
 from .classes import ProvenanceClass, ProvenanceSubtype
 from .eligibility import EligibilitySignature, baseline_eligibility
@@ -46,6 +47,43 @@ class NormalizedChannel:
     @property
     def eligibility(self) -> EligibilitySignature:
         return baseline_eligibility(self.provenance_class, self.provenance_subtype)
+
+
+class PairChannelVerdict(Protocol):
+    """Structural view required to normalize a pair channel for grouping."""
+
+    channel_id: str
+    derivation_tag: str
+    provenance_class: ProvenanceClass
+    provenance_subtype: ProvenanceSubtype | None
+    availability: bool
+    positive_score: float
+
+    @property
+    def supports(self) -> bool: ...
+
+
+def normalize_pair_channels(
+    values: Sequence[PairChannelVerdict],
+) -> list[NormalizedChannel]:
+    """Copy pair verdicts into the grouping model without importing channels.
+
+    The shared helper deliberately lives in ``libs.provenance`` so both audit
+    and other exact evidence aggregators can use identical normalization
+    without creating an ``audit <-> channels`` import cycle.
+    """
+    return [
+        NormalizedChannel(
+            channel_id=value.channel_id,
+            derivation_tag=value.derivation_tag,
+            provenance_class=value.provenance_class,
+            provenance_subtype=value.provenance_subtype,
+            availability=value.availability,
+            supports=value.supports,
+            positive_score=value.positive_score,
+        )
+        for value in values
+    ]
 
 
 @dataclass(frozen=True)

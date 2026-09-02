@@ -43,6 +43,11 @@ from .evaluator import (
     evaluate_chain_channels,
     evaluate_pair_channels,
 )
+from .cross_chain import (
+    CrossChainEvidence,
+    CrossGroupStatistics,
+    exact_cross_chain_evidence,
+)
 from .indexed_evaluator import IndexedChainEvidence, evaluate_chain_indexed
 from .indexed_statistics import build_indexed_statistics
 from .rival_index import RivalFitIndex
@@ -90,6 +95,8 @@ __all__ = [
     "AlarmTaxonomy",
     "BurstSegmentation",
     "ChainEvidence",
+    "CrossChainEvidence",
+    "CrossGroupStatistics",
     "ChannelFamily",
     "ChannelValue",
     "DelayDistribution",
@@ -110,6 +117,7 @@ __all__ = [
     "entity_channel",
     "evaluate_burst_channel",
     "evaluate_chain_channels",
+    "exact_cross_chain_evidence",
     "evaluate_chain_indexed",
     "evaluate_pair_channels",
     "IndexedChainEvidence",

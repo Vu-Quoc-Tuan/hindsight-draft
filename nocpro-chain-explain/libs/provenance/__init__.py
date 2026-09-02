@@ -7,6 +7,7 @@ from .derivation import (
     NormalizedChannel,
     audit_groups,
     build_derivation_groups,
+    normalize_pair_channels,
     role_groups,
 )
 from .eligibility import EligibilitySignature, baseline_eligibility
@@ -21,5 +22,6 @@ __all__ = [
     "audit_groups",
     "baseline_eligibility",
     "build_derivation_groups",
+    "normalize_pair_channels",
     "role_groups",
 ]

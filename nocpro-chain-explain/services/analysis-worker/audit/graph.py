@@ -24,6 +24,7 @@ from libs.provenance import (
     NormalizedChannel,
     audit_groups,
     build_derivation_groups,
+    normalize_pair_channels,
 )
 
 #: Above this member count, the audit graph must not be materialized exactly.
@@ -73,18 +74,7 @@ def _channel_representatives(values: list[ChannelValue]) -> list[NormalizedChann
     only) would make every group look non-supporting regardless of the real
     verdict.
     """
-    return [
-        NormalizedChannel(
-            channel_id=value.channel_id,
-            derivation_tag=value.derivation_tag,
-            provenance_class=value.provenance_class,
-            provenance_subtype=value.provenance_subtype,
-            availability=value.availability,
-            supports=value.supports,
-            positive_score=value.positive_score,
-        )
-        for value in values
-    ]
+    return normalize_pair_channels(values)
 
 
 def _pair_audit_groups(values: list[ChannelValue]) -> list[DerivationGroup]:
