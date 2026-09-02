@@ -12,6 +12,7 @@ from tier2.counterfactual import (
     ReviewIdentity,
     analyze_counterfactual_review,
 )
+from tier2.audit_artifact import build_review_audit_artifact
 from tests.test_counterfactual_candidates import CONFIG, _audit, _member, _scored
 from tests.test_counterfactual_evaluator import _metrics, _package
 
@@ -106,6 +107,33 @@ def test_exact_audit_enables_split_and_singleton_cut_is_not_duplicated() -> None
         for evaluation in result.remove.candidates
     ]
     assert remove_ids.count(("X",)) == 1
+
+
+def test_persistable_exact_audit_artifact_enables_split_after_restart() -> None:
+    artifact = build_review_audit_artifact(
+        snapshot_id="s1",
+        snapshot_version="1",
+        chain_id="C",
+        members=("A", "B", "C", "X"),
+        structural_audit=_audit(_scored("split", {"A", "B"}, 0.1)),
+        analysis_version="tier2-audit-v1",
+        analysis_config_version="analysis-v1",
+        artifact_id="persisted-audit",
+        created_at="2026-09-02T10:00:00+00:00",
+    )
+    result = analyze_counterfactual_review(
+        _package(),
+        "C",
+        identity=IDENTITY,
+        tier1b_artifact=_tier1b(),
+        audit_artifact=artifact,
+        analysis_config=object(),
+        config=CONFIG,
+        metric_computer=_metric_computer,
+    )
+
+    assert result.remove.status is DomainStatus.AVAILABLE
+    assert result.split.status is DomainStatus.AVAILABLE
 
 
 def test_synthetic_policy_cannot_recommend_on_real_source() -> None:

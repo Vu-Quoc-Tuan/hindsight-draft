@@ -14,8 +14,12 @@ from configuration import AnalysisConfig, load_analysis_config
 from libs.contracts import IngestedPackage, load_validated_package
 from tier1a import SnapshotPrecompute, Tier1Cache, precompute_snapshot
 from tier1b import analyze_chain_configured
-from tier2 import Tier2JobManager
-from tier2 import SimilarityQueryContext
+from tier2 import (
+    AUDIT_ANALYSIS_VERSION,
+    SimilarityQueryContext,
+    Tier2JobManager,
+    chain_membership_fingerprint,
+)
 from tier2.counterfactual import (
     CounterfactualJobManager,
     artifact_fingerprint,
@@ -51,11 +55,23 @@ class Workspace:
         self.lineage_by_chain: dict[str, str] = {}
         self._persistence_loop = None
         self._review_persistence_futures: list[Future] = []
+        self._audit_persistence_futures: list[Future] = []
 
     def close(self) -> None:
         self.review_jobs.shutdown()
         self.review_jobs.set_state_listener(None)
+        self.jobs.set_artifact_listener(None)
         self.jobs.shutdown()
+
+    async def flush_audit_persistence(self) -> None:
+        with self._lock:
+            pending = list(self._audit_persistence_futures)
+            self._audit_persistence_futures.clear()
+        if pending:
+            await asyncio.gather(
+                *(asyncio.wrap_future(future) for future in pending),
+                return_exceptions=False,
+            )
 
     async def flush_review_persistence(self) -> None:
         with self._lock:
@@ -81,6 +97,16 @@ class Workspace:
                 self._review_persistence_futures.append(future)
 
         self.review_jobs.set_state_listener(persist_review_state)
+
+        def persist_audit_artifact(artifact) -> None:
+            future = asyncio.run_coroutine_threadsafe(
+                repository.persist_audit_artifact(artifact),
+                self._persistence_loop,
+            )
+            with self._lock:
+                self._audit_persistence_futures.append(future)
+
+        self.jobs.set_artifact_listener(persist_audit_artifact)
 
     async def ingest_snapshot(self, payload: dict[str, Any]) -> SnapshotPrecompute:
         if self.repository is None or self.coordinator is None:
@@ -207,7 +233,7 @@ class Workspace:
             similarity_context=similarity_context,
         )
 
-    def _review_context(self, chain_id: str):
+    async def _review_context(self, chain_id: str):
         package = self.require_package()
         tier1b_artifact = self.analyze(chain_id)
         audit_view = self.jobs.latest_succeeded(
@@ -215,7 +241,38 @@ class Workspace:
             package.snapshot.snapshot_version,
             chain_id,
         )
-        audit_artifact = audit_view.result if audit_view is not None else None
+        audit_artifact = (
+            audit_view.audit_artifact if audit_view is not None else None
+        )
+        members = package.members_of(chain_id)
+        if audit_artifact is not None and not audit_artifact.is_compatible(
+            snapshot_id=package.snapshot.snapshot_id,
+            snapshot_version=package.snapshot.snapshot_version,
+            chain_id=chain_id,
+            members=members,
+            analysis_version=AUDIT_ANALYSIS_VERSION,
+            analysis_config_version=self.config.config_version,
+        ):
+            audit_artifact = None
+        if audit_artifact is None and self.repository is not None:
+            await self.flush_audit_persistence()
+            audit_artifact = await self.repository.latest_compatible_audit_artifact(
+                snapshot_id=package.snapshot.snapshot_id,
+                snapshot_version=package.snapshot.snapshot_version,
+                chain_id=chain_id,
+                chain_fingerprint=chain_membership_fingerprint(members),
+                analysis_version=AUDIT_ANALYSIS_VERSION,
+                analysis_config_version=self.config.config_version,
+            )
+        if audit_artifact is not None and not audit_artifact.is_compatible(
+            snapshot_id=package.snapshot.snapshot_id,
+            snapshot_version=package.snapshot.snapshot_version,
+            chain_id=chain_id,
+            members=members,
+            analysis_version=AUDIT_ANALYSIS_VERSION,
+            analysis_config_version=self.config.config_version,
+        ):
+            audit_artifact = None
         config = self.config.counterfactual
         identity = review_identity(
             package,
@@ -230,8 +287,10 @@ class Workspace:
         )
         return package, tier1b_artifact, audit_artifact, identity
 
-    def submit_review(self, chain_id: str):
-        package, tier1b_artifact, audit_artifact, _ = self._review_context(chain_id)
+    async def submit_review(self, chain_id: str):
+        package, tier1b_artifact, audit_artifact, _ = await self._review_context(
+            chain_id
+        )
         return self.review_jobs.submit(
             package,
             chain_id,
@@ -241,7 +300,7 @@ class Workspace:
         )
 
     async def latest_review(self, chain_id: str):
-        _, _, _, identity = self._review_context(chain_id)
+        _, _, _, identity = await self._review_context(chain_id)
         in_memory = self.review_jobs.latest_compatible(identity)
         if in_memory is not None or self.repository is None:
             return in_memory

@@ -20,13 +20,31 @@ from descriptor.contrastive import (
     margin_common,
 )
 from graybox.singleton import MembershipVerdict
-from groups import AuditGraphMode, RoleThresholds
+from groups import AuditGraphMode, MembershipSupport, RoleThresholds
 from libs.contracts import load_package
 from tier1b import analyze_chain, auto_chain_title
+from tier1b.chain_analysis import _membership_support_rank_key
 from tests.conftest import MOCK_ROOT
 
 THRESHOLDS = RoleThresholds(config_version="t1b-v1")
 MINING = MiningConfig(config_version="t1b-mine-v1")
+
+
+def test_membership_support_ranking_distinguishes_zero_from_unavailable():
+    ranked = sorted(
+        {
+            "positive": MembershipSupport("positive", 0.5, ()),
+            "zero": MembershipSupport("zero", 0.0, ()),
+            "unavailable": MembershipSupport("unavailable", None, ()),
+        }.items(),
+        key=_membership_support_rank_key,
+    )
+
+    assert [alarm_id for alarm_id, _ in ranked] == [
+        "positive",
+        "zero",
+        "unavailable",
+    ]
 
 
 def _snapshot(alarms, chains, memberships):

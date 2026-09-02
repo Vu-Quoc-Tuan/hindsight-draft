@@ -155,6 +155,7 @@ async def submit_deep_dive(
 @router.get("/jobs/{job_id}", response_model=JobView)
 async def get_job(job_id: str, request: Request) -> JobView:
     try:
+        await workspace(request).flush_audit_persistence()
         return job_view(workspace(request).jobs.get(job_id))
     except Exception as exc:
         raise translate_error(exc) from exc
@@ -169,7 +170,7 @@ async def submit_review(
     chain_id: str, request: Request
 ) -> JobSubmissionView:
     try:
-        result = workspace(request).submit_review(chain_id)
+        result = await workspace(request).submit_review(chain_id)
     except Exception as exc:
         raise translate_error(exc) from exc
     return JobSubmissionView(

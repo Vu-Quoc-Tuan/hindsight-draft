@@ -29,10 +29,16 @@ from similar_chains import (
     model_from_dict,
     model_to_dict,
 )
+from tier2.audit_artifact import (
+    ReviewAuditArtifact,
+    audit_artifact_from_dict,
+    audit_artifact_to_dict,
+)
 
 from ..ingest.wire import SnapshotChunkEvent, SnapshotCompleteEvent, SnapshotWireEvent
 from .models import (
     Alarm,
+    AuditArtifactRecord,
     Chain,
     CounterfactualJobRecord,
     KafkaInbox,
@@ -122,6 +128,73 @@ class SnapshotRepository:
     ) -> None:
         self.sessions = sessions
         self.max_compressed_snapshot_bytes = max_compressed_snapshot_bytes
+
+    async def persist_audit_artifact(
+        self, artifact: ReviewAuditArtifact
+    ) -> ReviewAuditArtifact:
+        """Insert one immutable exact artifact; never update an existing run."""
+        payload = audit_artifact_to_dict(artifact)
+        validated = audit_artifact_from_dict(payload)
+        values = {
+            "artifact_id": validated.artifact_id,
+            "artifact_version": validated.artifact_version,
+            "artifact_fingerprint": validated.artifact_fingerprint,
+            "snapshot_id": validated.snapshot_id,
+            "snapshot_version": validated.snapshot_version,
+            "chain_id": validated.chain_id,
+            "chain_fingerprint": validated.chain_fingerprint,
+            "analysis_version": validated.analysis_version,
+            "analysis_config_version": validated.analysis_config_version,
+            "status": validated.status,
+            "mode": validated.mode,
+            "payload": payload,
+            "created_at": _logical_time(validated.created_at),
+        }
+        async with self.sessions.begin() as session:
+            existing = await session.get(AuditArtifactRecord, validated.artifact_id)
+            if existing is not None:
+                if existing.payload != payload:
+                    raise ValueError("Audit artifact identity is immutable")
+                return audit_artifact_from_dict(existing.payload)
+            await session.execute(pg_insert(AuditArtifactRecord).values(**values))
+        return validated
+
+    async def latest_compatible_audit_artifact(
+        self,
+        *,
+        snapshot_id: str,
+        snapshot_version: str,
+        chain_id: str,
+        chain_fingerprint: str,
+        analysis_version: str,
+        analysis_config_version: str,
+    ) -> ReviewAuditArtifact | None:
+        async with self.sessions() as session:
+            row = await session.scalar(
+                select(AuditArtifactRecord)
+                .where(
+                    AuditArtifactRecord.snapshot_id == snapshot_id,
+                    AuditArtifactRecord.snapshot_version == snapshot_version,
+                    AuditArtifactRecord.chain_id == chain_id,
+                    AuditArtifactRecord.chain_fingerprint == chain_fingerprint,
+                    AuditArtifactRecord.analysis_version == analysis_version,
+                    AuditArtifactRecord.analysis_config_version
+                    == analysis_config_version,
+                    AuditArtifactRecord.status == "AVAILABLE",
+                    AuditArtifactRecord.mode == "EXACT",
+                )
+                .order_by(AuditArtifactRecord.created_at.desc())
+                .limit(1)
+            )
+        if row is None:
+            return None
+        artifact = audit_artifact_from_dict(row.payload)
+        if (
+            artifact.artifact_id != row.artifact_id
+            or artifact.artifact_fingerprint != row.artifact_fingerprint
+        ):
+            raise ValueError("persisted Audit artifact columns do not match payload")
+        return artifact
 
     async def persist_counterfactual_job(
         self, payload: dict[str, Any]
@@ -823,7 +896,9 @@ class SnapshotRepository:
         }
         nodes = {}
         for row in node_rows:
-            key = LineageNodeKey(row.snapshot_id, row.snapshot_chain_id)
+            key = LineageNodeKey(
+                row.snapshot_id, row.snapshot_version, row.snapshot_chain_id
+            )
             nodes[key] = DomainLineageNode(
                 key=key,
                 snapshot_time=row.snapshot_time.isoformat(),
@@ -832,8 +907,16 @@ class SnapshotRepository:
             )
         edges = {}
         for row in edge_rows:
-            parent = LineageNodeKey(row.parent_snapshot_id, row.parent_chain_id)
-            child = LineageNodeKey(row.child_snapshot_id, row.child_chain_id)
+            parent = LineageNodeKey(
+                row.parent_snapshot_id,
+                row.parent_snapshot_version,
+                row.parent_chain_id,
+            )
+            child = LineageNodeKey(
+                row.child_snapshot_id,
+                row.child_snapshot_version,
+                row.child_chain_id,
+            )
             edges[(parent, child)] = DomainLineageEdge(
                 parent=parent,
                 child=child,
@@ -872,6 +955,7 @@ class SnapshotRepository:
             for node in dag.nodes.values():
                 statement = pg_insert(LineageNode).values(
                     snapshot_id=node.key.snapshot_id,
+                    snapshot_version=node.key.snapshot_version,
                     snapshot_chain_id=node.key.snapshot_chain_id,
                     snapshot_time=_logical_time(node.snapshot_time),
                     component_id=node.component_id,
@@ -881,8 +965,10 @@ class SnapshotRepository:
             for edge in dag.edges.values():
                 statement = pg_insert(LineageEdge).values(
                     parent_snapshot_id=edge.parent.snapshot_id,
+                    parent_snapshot_version=edge.parent.snapshot_version,
                     parent_chain_id=edge.parent.snapshot_chain_id,
                     child_snapshot_id=edge.child.snapshot_id,
+                    child_snapshot_version=edge.child.snapshot_version,
                     child_chain_id=edge.child.snapshot_chain_id,
                     edge_type=edge.edge_type,
                     overlap_count=edge.overlap_count,
@@ -1006,7 +1092,9 @@ class SnapshotRepository:
         history = []
         for row in rows:
             canonical = dag.canonical_lineage(
-                LineageNodeKey(row.snapshot_id, row.snapshot_chain_id)
+                LineageNodeKey(
+                    row.snapshot_id, row.snapshot_version, row.snapshot_chain_id
+                )
             )
             if canonical is None:
                 raise RuntimeError("historical fingerprint has no canonical lineage")
@@ -1017,7 +1105,10 @@ class SnapshotRepository:
             )
             history.append(
                 TimedChainFingerprint(
-                    fingerprint, row.event_time.isoformat(), row.snapshot_id
+                    fingerprint,
+                    row.event_time.isoformat(),
+                    row.snapshot_id,
+                    row.snapshot_version,
                 )
             )
         return history
@@ -1032,6 +1123,7 @@ class SnapshotRepository:
             model_statement = pg_insert(SimilarityModelRecord).values(
                 model_version=index.model.model_version,
                 snapshot_id=claim.snapshot_id,
+                snapshot_version=claim.snapshot_version,
                 trained_until_exclusive=_logical_time(
                     index.model.trained_until_exclusive
                 ),
@@ -1041,7 +1133,8 @@ class SnapshotRepository:
             for entry in current_fingerprints:
                 statement = pg_insert(SimilarityFingerprint).values(
                     snapshot_id=claim.snapshot_id,
-                    snapshot_chain_id=entry.fingerprint.chain_id.split("::", 1)[-1],
+                    snapshot_version=claim.snapshot_version,
+                    snapshot_chain_id=entry.fingerprint.chain_id.rsplit("::", 1)[-1],
                     event_time=_logical_time(entry.event_time),
                     component_id=entry.fingerprint.lineage_component_id,
                     fingerprint_payload=fingerprint_to_dict(entry.fingerprint),
@@ -1051,7 +1144,8 @@ class SnapshotRepository:
                 statement = pg_insert(SimilarityIndexEntry).values(
                     model_version=index.model.model_version,
                     snapshot_id=entry.snapshot_id,
-                    snapshot_chain_id=entry.fingerprint.chain_id.split("::", 1)[-1],
+                    snapshot_version=entry.snapshot_version,
+                    snapshot_chain_id=entry.fingerprint.chain_id.rsplit("::", 1)[-1],
                     event_time=_logical_time(entry.event_time),
                     fingerprint_payload=fingerprint_to_dict(entry.fingerprint),
                 )
@@ -1075,12 +1169,13 @@ class SnapshotRepository:
                 raise RuntimeError("similarity lease ownership was lost")
 
     async def load_similarity_index(
-        self, snapshot_id: str
+        self, snapshot_id: str, snapshot_version: str
     ) -> VersionedSimilarityIndex | None:
         async with self.sessions() as session:
             model_row = await session.scalar(
                 select(SimilarityModelRecord).where(
-                    SimilarityModelRecord.snapshot_id == snapshot_id
+                    SimilarityModelRecord.snapshot_id == snapshot_id,
+                    SimilarityModelRecord.snapshot_version == snapshot_version,
                 )
             )
             if model_row is None:
@@ -1107,17 +1202,21 @@ class SnapshotRepository:
                 fingerprint_from_dict(row.fingerprint_payload),
                 row.event_time.isoformat(),
                 row.snapshot_id,
+                row.snapshot_version,
             )
             for row in entry_rows
         )
         return VersionedSimilarityIndex(model=model, entries=entries)
 
-    async def canonical_lineages(self, snapshot_id: str) -> dict[str, str]:
+    async def canonical_lineages(
+        self, snapshot_id: str, snapshot_version: str
+    ) -> dict[str, str]:
         dag = await self.load_episode_dag()
         return {
             key.snapshot_chain_id: canonical
             for key in dag.nodes
             if key.snapshot_id == snapshot_id
+            and key.snapshot_version == snapshot_version
             and (canonical := dag.canonical_lineage(key)) is not None
         }
 

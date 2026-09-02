@@ -82,7 +82,12 @@ def _audit_is_exact(audit_artifact) -> bool:
     if audit_artifact is None:
         return False
     mode = getattr(audit_artifact, "audit_graph_mode", None)
-    return mode is AuditGraphMode.EXACT_FULL or getattr(mode, "value", mode) == "EXACT_FULL"
+    if mode is AuditGraphMode.EXACT_FULL or getattr(mode, "value", mode) == "EXACT_FULL":
+        return True
+    return (
+        getattr(audit_artifact, "status", None) == "AVAILABLE"
+        and getattr(audit_artifact, "mode", None) == "EXACT"
+    )
 
 
 def analyze_counterfactual_review(

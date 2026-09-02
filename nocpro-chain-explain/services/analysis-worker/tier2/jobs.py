@@ -16,6 +16,7 @@ from uuid import uuid4
 
 from channels import EMPTY_TAXONOMY, AlarmTaxonomy
 from configuration import DependencyScopeConfig, PropagationConfig
+from groups import AuditGraphMode
 from libs.contracts import IngestedPackage
 from tier1a import CacheKey, CacheTier, Tier1Cache
 
@@ -23,6 +24,11 @@ from .audit_analysis import (
     AuditExecutionPolicy,
     SimilarityQueryContext,
     analyze_structural_audit,
+)
+from .audit_artifact import (
+    AUDIT_ANALYSIS_VERSION,
+    ReviewAuditArtifact,
+    build_review_audit_artifact,
 )
 from .topology_hypotheses.propagation import _configured_values
 from .topology_hypotheses.scope_overlap import _limits
@@ -143,6 +149,7 @@ class Tier2JobView:
     cache_key: CacheKey
     result: Any | None = None
     error: str | None = None
+    audit_artifact: ReviewAuditArtifact | None = None
 
 
 @dataclass
@@ -155,6 +162,7 @@ class _MutableJob:
     cache_key: CacheKey
     result: Any | None = None
     error: str | None = None
+    audit_artifact: ReviewAuditArtifact | None = None
 
     def view(self) -> Tier2JobView:
         return Tier2JobView(
@@ -166,6 +174,7 @@ class _MutableJob:
             cache_key=self.cache_key,
             result=self.result,
             error=self.error,
+            audit_artifact=self.audit_artifact,
         )
 
 
@@ -178,6 +187,7 @@ class Tier2JobManager:
         cache: Tier1Cache | None = None,
         analyzer: Callable[..., Any] = analyze_structural_audit,
         max_workers: int = 2,
+        artifact_listener: Callable[[ReviewAuditArtifact], None] | None = None,
     ) -> None:
         if max_workers <= 0:
             raise ValueError("max_workers must be positive")
@@ -190,6 +200,45 @@ class Tier2JobManager:
         self._jobs: dict[str, _MutableJob] = {}
         self._futures: dict[str, Future[Any]] = {}
         self._inflight_by_key: dict[tuple[str, str, str, str, str], str] = {}
+        self._artifact_listener = artifact_listener
+
+    def set_artifact_listener(
+        self, listener: Callable[[ReviewAuditArtifact], None] | None
+    ) -> None:
+        with self._lock:
+            self._artifact_listener = listener
+
+    def _emit_artifact(self, artifact: ReviewAuditArtifact) -> None:
+        with self._lock:
+            listener = self._artifact_listener
+        if listener is not None:
+            listener(artifact)
+
+    @staticmethod
+    def _build_artifact(
+        package: IngestedPackage,
+        chain_id: str,
+        result: Any,
+        analysis_config: Any,
+    ) -> ReviewAuditArtifact | None:
+        mode = getattr(result, "audit_graph_mode", None)
+        if not (
+            mode is AuditGraphMode.EXACT_FULL
+            or getattr(mode, "value", mode) == AuditGraphMode.EXACT_FULL.value
+        ):
+            return None
+        structural_audit = getattr(result, "structural_audit", None)
+        if structural_audit is None:
+            return None
+        return build_review_audit_artifact(
+            snapshot_id=package.snapshot.snapshot_id,
+            snapshot_version=package.snapshot.snapshot_version,
+            chain_id=chain_id,
+            members=package.members_of(chain_id),
+            structural_audit=structural_audit,
+            analysis_version=AUDIT_ANALYSIS_VERSION,
+            analysis_config_version=analysis_config.config_version,
+        )
 
     def submit(
         self,
@@ -228,6 +277,7 @@ class Tier2JobManager:
         )
         cached = self.cache.get(key)
         if cached is not None:
+            artifact = self._build_artifact(package, chain_id, cached, analysis_config)
             job_id = uuid4().hex
             with self._lock:
                 self._jobs[job_id] = _MutableJob(
@@ -238,7 +288,10 @@ class Tier2JobManager:
                     cache_hit=True,
                     cache_key=key,
                     result=cached,
+                    audit_artifact=artifact,
                 )
+            if artifact is not None:
+                self._emit_artifact(artifact)
             return Tier2Submission(job_id, cache_hit=True, deduplicated=False)
 
         key_tuple = key.as_tuple()
@@ -310,6 +363,17 @@ class Tier2JobManager:
                 small_chain_threshold=int(
                     analysis_config.value("audit.small_chain_threshold")
                 ),
+                delay_threshold=float(
+                    analysis_config.value("temporal.delay.support_threshold")
+                ),
+                d_max=int(analysis_config.value("dependency.max_hop")),
+                lambda_dep=float(analysis_config.value("dependency.lambda_dep")),
+                common_dependency_threshold=float(
+                    analysis_config.value("dependency.common_support_threshold")
+                ),
+                silent_gap_seconds=int(
+                    analysis_config.value("temporal.burst.gap_seconds")
+                ),
                 taxonomy=taxonomy,
                 dependency_edges=dependency_edges,
                 failure_domains=failure_domains,
@@ -338,15 +402,20 @@ class Tier2JobManager:
                 for path, configured in analysis_config.parameters.items()
             }
 
+        artifact = self._build_artifact(package, chain_id, result, analysis_config)
+
         with self._lock:
             job = self._jobs[job_id]
             self.cache.put(
                 job.cache_key, result, snapshot_chain_id=job.chain_id
             )
             job.result = result
+            job.audit_artifact = artifact
             job.status = JobStatus.SUCCEEDED
             job.progress_percent = 100
             self._inflight_by_key.pop(job.cache_key.as_tuple(), None)
+        if artifact is not None:
+            self._emit_artifact(artifact)
 
     def get(self, job_id: str) -> Tier2JobView:
         with self._lock:

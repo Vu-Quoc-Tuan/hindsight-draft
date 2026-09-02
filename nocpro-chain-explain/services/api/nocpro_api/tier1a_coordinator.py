@@ -123,9 +123,9 @@ class Tier1ACoordinator:
             package, precompute = self.workspace.compute_snapshot(payload)
             self.workspace.activate_snapshot(package, precompute)
         if self.workspace.similarity_index is None:
-            index = await self.repository.load_similarity_index(identity[0])
+            index = await self.repository.load_similarity_index(*identity)
             if index is not None:
-                lineages = await self.repository.canonical_lineages(identity[0])
+                lineages = await self.repository.canonical_lineages(*identity)
                 self.workspace.attach_similarity(index, lineages)
         return precompute
 
@@ -202,14 +202,21 @@ class Tier1ACoordinator:
             current_fingerprints: list[TimedChainFingerprint] = []
             for chain_id in sorted(package.chains):
                 canonical = dag.canonical_lineage(
-                    LineageNodeKey(package.snapshot.snapshot_id, chain_id)
+                    LineageNodeKey(
+                        package.snapshot.snapshot_id,
+                        package.snapshot.snapshot_version,
+                        chain_id,
+                    )
                 )
                 if canonical is None:
                     raise RuntimeError("LINEAGE_NOT_READY")
                 lineage_by_chain[chain_id] = canonical
                 summary = precompute.chains[chain_id]
                 fingerprint = build_fingerprint(
-                    f"{package.snapshot.snapshot_id}::{chain_id}",
+                    (
+                        f"{package.snapshot.snapshot_id}::"
+                        f"{package.snapshot.snapshot_version}::{chain_id}"
+                    ),
                     package.alarms_of(chain_id),
                     lineage_component_id=canonical,
                     identity_descriptors=summary.descriptors.identity,
@@ -225,6 +232,7 @@ class Tier1ACoordinator:
                         fingerprint,
                         cutoff,
                         package.snapshot.snapshot_id,
+                        package.snapshot.snapshot_version,
                     )
                 )
             version_material = (

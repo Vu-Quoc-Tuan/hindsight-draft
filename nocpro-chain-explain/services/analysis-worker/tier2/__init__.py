@@ -6,6 +6,15 @@ from .audit_analysis import (
     Tier2AuditAnalysis,
     analyze_structural_audit,
 )
+from .audit_artifact import (
+    AUDIT_ANALYSIS_VERSION,
+    AUDIT_ARTIFACT_VERSION,
+    ReviewAuditArtifact,
+    audit_artifact_from_dict,
+    audit_artifact_to_dict,
+    build_review_audit_artifact,
+    chain_membership_fingerprint,
+)
 from .jobs import (
     JobStatus,
     Tier2JobManager,
@@ -41,6 +50,13 @@ __all__ = [
     "SimilarityQueryContext",
     "Tier2AuditAnalysis",
     "analyze_structural_audit",
+    "AUDIT_ANALYSIS_VERSION",
+    "AUDIT_ARTIFACT_VERSION",
+    "ReviewAuditArtifact",
+    "audit_artifact_from_dict",
+    "audit_artifact_to_dict",
+    "build_review_audit_artifact",
+    "chain_membership_fingerprint",
     "JobStatus",
     "Tier2JobManager",
     "Tier2JobView",

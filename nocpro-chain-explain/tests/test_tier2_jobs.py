@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from threading import Event
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
@@ -157,6 +158,25 @@ def test_worker_failure_is_a_failed_job_not_a_submit_error(analysis_config):
         manager.shutdown()
 
 
+def test_non_exact_or_failed_deep_dive_never_emits_a_review_audit_artifact(
+    analysis_config,
+):
+    artifacts = []
+
+    def unavailable_audit(*args, **kwargs):
+        return SimpleNamespace(audit_graph_mode=AuditGraphMode.NOT_COMPUTED)
+
+    with Tier2JobManager(
+        analyzer=unavailable_audit, max_workers=1, artifact_listener=artifacts.append
+    ) as manager:
+        submission = manager.submit(_package(), "C1", analysis_config=analysis_config)
+        completed = manager.wait(submission.job_id, timeout=2)
+
+    assert completed.status is JobStatus.SUCCEEDED
+    assert completed.audit_artifact is None
+    assert artifacts == []
+
+
 def test_worker_passes_versioned_audit_balance_parameters(analysis_config):
     received = {}
 
@@ -174,6 +194,17 @@ def test_worker_passes_versioned_audit_balance_parameters(analysis_config):
     assert received["small_chain_threshold"] == analysis_config.value(
         "audit.small_chain_threshold"
     )
+    assert received["delay_threshold"] == analysis_config.value(
+        "temporal.delay.support_threshold"
+    )
+    assert received["d_max"] == analysis_config.value("dependency.max_hop")
+    assert received["lambda_dep"] == analysis_config.value("dependency.lambda_dep")
+    assert received["common_dependency_threshold"] == analysis_config.value(
+        "dependency.common_support_threshold"
+    )
+    assert received["silent_gap_seconds"] == analysis_config.value(
+        "temporal.burst.gap_seconds"
+    )
 
 
 def test_unknown_chain_fails_before_scheduling(analysis_config):
@@ -186,13 +217,20 @@ def test_unknown_chain_fails_before_scheduling(analysis_config):
 
 
 def test_default_worker_runs_real_per_chain_audit(analysis_config):
+    artifacts = []
     with Tier2JobManager(max_workers=1) as manager:
+        manager.set_artifact_listener(artifacts.append)
         submission = manager.submit(_package(), "C1", analysis_config=analysis_config)
         completed = manager.wait(submission.job_id, timeout=5)
 
     assert completed.status is JobStatus.SUCCEEDED
     assert completed.result.chain_id == "C1"
     assert completed.result.audit_graph_mode is AuditGraphMode.EXACT_FULL
+    assert completed.audit_artifact is artifacts[0]
+    assert len(artifacts) == 1
+    assert completed.audit_artifact.mode == "EXACT"
+    assert completed.audit_artifact.snapshot_id == "s1"
+    assert completed.audit_artifact.snapshot_version == "1"
     assert completed.result.config_version == "v1"
     assert completed.result.parameter_provenance["audit.rho"] == "DOCUMENTED_DEFAULT"
     assert completed.result.similar_chains == ()
@@ -555,8 +593,12 @@ def test_versioned_similarity_context_is_used_and_part_of_cache_key(analysis_con
     )
     index = materialize_similarity_index(
         [
-            TimedChainFingerprint(same_lineage, "2025-12-31T23:58:00Z"),
-            TimedChainFingerprint(different_incident, "2025-12-31T23:59:00Z"),
+            TimedChainFingerprint(
+                same_lineage, "2025-12-31T23:58:00Z", "s0", "v1"
+            ),
+            TimedChainFingerprint(
+                different_incident, "2025-12-31T23:59:00Z", "s0", "v1"
+            ),
         ],
         model_version="sim-test-v1",
         trained_until_exclusive=package.snapshot.snapshot_time,

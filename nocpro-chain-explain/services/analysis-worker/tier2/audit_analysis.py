@@ -22,6 +22,11 @@ from audit import (
     run_structural_audit,
 )
 from channels import (
+    DEFAULT_DELAY_THRESHOLD,
+    DEFAULT_D_MAX,
+    DEFAULT_LAMBDA_DEP,
+    DEFAULT_SILENT_GAP_SECONDS,
+    DEFAULT_THETA_CD,
     EMPTY_TAXONOMY,
     AlarmTaxonomy,
     evaluate_chain_channels,
@@ -144,6 +149,11 @@ def analyze_structural_audit(
     rho: float = DEFAULT_RHO,
     min_side_size: int = MIN_SIDE_SIZE,
     small_chain_threshold: int = SMALL_CHAIN_THRESHOLD,
+    delay_threshold: float = DEFAULT_DELAY_THRESHOLD,
+    d_max: int = DEFAULT_D_MAX,
+    lambda_dep: float = DEFAULT_LAMBDA_DEP,
+    common_dependency_threshold: float = DEFAULT_THETA_CD,
+    silent_gap_seconds: int = DEFAULT_SILENT_GAP_SECONDS,
     taxonomy: AlarmTaxonomy = EMPTY_TAXONOMY,
     dependency_edges: list[tuple[str, str, float]] | None = None,
     failure_domains: list[tuple[str, frozenset[str]]] | None = None,
@@ -275,6 +285,11 @@ def analyze_structural_audit(
             package,
             chain_id,
             taxonomy=taxonomy,
+            delay_threshold=delay_threshold,
+            d_max=d_max,
+            lambda_dep=lambda_dep,
+            common_dependency_threshold=common_dependency_threshold,
+            silent_gap_seconds=silent_gap_seconds,
             pair_detail_limit=pair_count,
         )
         graph = build_audit_graph(evidence.members, evidence.matrix.values)

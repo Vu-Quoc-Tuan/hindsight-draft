@@ -91,6 +91,37 @@ def test_tier2_uses_explicit_audit_balance_parameters():
     assert result.structural_audit.verdict is not AuditVerdict.SKIPPED_SMALL_CHAIN
 
 
+def test_tier2_passes_explicit_channel_parameters_to_pair_evaluator(monkeypatch):
+    import tier2.audit_analysis as audit_module
+
+    captured = {}
+    original = audit_module.evaluate_chain_channels
+
+    def recording_evaluator(*args, **kwargs):
+        captured.update(kwargs)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(audit_module, "evaluate_chain_channels", recording_evaluator)
+    analyze_structural_audit(
+        _package(6),
+        "C1",
+        policy=AuditExecutionPolicy(exact_max_members=10),
+        mining_config=MINING,
+        epsilon=0.3,
+        delay_threshold=0.17,
+        d_max=7,
+        lambda_dep=4.25,
+        common_dependency_threshold=0.61,
+        silent_gap_seconds=37,
+    )
+
+    assert captured["delay_threshold"] == 0.17
+    assert captured["d_max"] == 7
+    assert captured["lambda_dep"] == 4.25
+    assert captured["common_dependency_threshold"] == 0.61
+    assert captured["silent_gap_seconds"] == 37
+
+
 def test_large_chain_returns_partial_domain_results_without_dense_paths(monkeypatch):
     import tier2.audit_analysis as audit_module
 

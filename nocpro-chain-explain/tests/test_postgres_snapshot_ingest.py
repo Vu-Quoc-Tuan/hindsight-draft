@@ -522,11 +522,11 @@ def test_global_lineage_and_similarity_survive_restart_and_exclude_same_episode(
                         break
 
             dag = await repository.load_episode_dag()
-            assert dag.canonical_lineage(LineageNodeKey(s1, "A")) == dag.canonical_lineage(
-                LineageNodeKey(s2, "B")
+            assert dag.canonical_lineage(LineageNodeKey(s1, "1", "A")) == dag.canonical_lineage(
+                LineageNodeKey(s2, "1", "B")
             )
-            assert dag.canonical_lineage(LineageNodeKey(s1, "X")) != dag.canonical_lineage(
-                LineageNodeKey(s2, "B")
+            assert dag.canonical_lineage(LineageNodeKey(s1, "1", "X")) != dag.canonical_lineage(
+                LineageNodeKey(s2, "1", "B")
             )
             counts = (len(dag.nodes), len(dag.edges), len(dag.components))
             assert await coordinator.run_lineage_pending_once() is None
