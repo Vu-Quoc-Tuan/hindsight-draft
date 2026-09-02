@@ -363,6 +363,14 @@ the whole-snapshot checksum, and the canonical Input Contract pass validation.
 Completion triggers Tier-1A exactly once through the persisted claim; Tier-1B
 remains lazy and runs only when a chain is requested.
 
+Chunk retention is an explicit deployment policy under
+`ingest.chunk_retention.mode`. Production `config/thresholds/v1.yaml` uses
+`KEEP`. `DELETE_AFTER_READY` is available for local/synthetic deployments: its
+transaction deletes chunks only after canonical payload persistence, ingest
+`COMPLETE`, and the Tier-1A transition to `READY`. There is no implicit
+time-based retention for completed snapshots. Cleanup is idempotent and never
+removes the canonical snapshot, lineage, similarity, Audit, or Review records.
+
 After Tier-1A, recovery processes global lineage and Similar Chains strictly in
 logical snapshot order: `READY -> LINEAGE_PENDING -> LINEAGE_READY ->
 SIMILAR_READY`. The persisted episode DAG uses `(snapshot_id,

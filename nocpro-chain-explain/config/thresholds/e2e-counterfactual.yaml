@@ -5,6 +5,10 @@ incremental_snapshot:
   mode: disabled
   reason: sequential_production_snapshots_not_available
 
+ingest:
+  chunk_retention:
+    mode: DELETE_AFTER_READY
+
 temporal:
   burst:
     gap_seconds: {value: 120, source: DOCUMENTED_DEFAULT}

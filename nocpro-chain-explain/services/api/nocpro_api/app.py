@@ -71,6 +71,7 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
                 backoff_base_seconds=int(
                     os.environ.get("TIER1A_BACKOFF_BASE_SECONDS", "2")
                 ),
+                chunk_retention_mode=service.config.chunk_retention.mode,
             )
             service.attach_persistence(repository, coordinator)
             # READY remains available while older pending/stale work resumes in

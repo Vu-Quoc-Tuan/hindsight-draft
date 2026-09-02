@@ -125,6 +125,24 @@ async def _wait_ready(snapshot_id: str, timeout: float = 60) -> None:
     raise AssertionError(f"snapshot did not become READY: {last}")
 
 
+async def _chunk_count(snapshot_id: str) -> int:
+    connection = await asyncpg.connect(DATABASE_URL)
+    try:
+        return int(
+            await connection.fetchval(
+                """
+                SELECT count(*)
+                  FROM snapshot_chunks
+                 WHERE snapshot_id = $1 AND snapshot_version = '1'
+                """,
+                snapshot_id,
+            )
+            or 0
+        )
+    finally:
+        await connection.close()
+
+
 async def _wait_active(client, snapshot_id: str) -> None:
     deadline = asyncio.get_running_loop().time() + 30
     while asyncio.get_running_loop().time() < deadline:
@@ -173,6 +191,9 @@ async def _run_case(client, fixture, logical_time):
         config=KafkaSnapshotConfig(chunk_target_bytes=128),
     )
     await _wait_ready(package.snapshot.snapshot_id)
+    # This E2E deployment explicitly chooses DELETE_AFTER_READY.  The API must
+    # remain usable from canonical persistence after the transport bytes vanish.
+    assert await _chunk_count(package.snapshot.snapshot_id) == 0
     await _wait_active(client, package.snapshot.snapshot_id)
 
     audit_submission = await client.post(

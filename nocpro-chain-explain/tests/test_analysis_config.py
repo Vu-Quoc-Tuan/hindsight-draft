@@ -8,6 +8,7 @@ import pytest
 
 from configuration import (
     AnalysisConfigError,
+    ChunkRetentionMode,
     ParameterSource,
     load_analysis_config,
 )
@@ -55,6 +56,7 @@ def _write(tmp_path: Path, text: str) -> Path:
 def test_shipped_config_keeps_p2_fail_closed():
     config = load_analysis_config(SHIPPED_CONFIG)
 
+    assert config.chunk_retention.mode is ChunkRetentionMode.KEEP
     assert config.p2_topology.propagation is None
     assert config.p2_topology.propagation_reason == "PROPAGATION_CONFIG_INCOMPLETE"
     assert config.p2_topology.dependency_scope is None
@@ -72,6 +74,32 @@ def test_synthetic_e2e_config_enables_p2_without_changing_production_default():
     assert config.p2_topology.propagation is not None
     assert config.p2_topology.dependency_scope is not None
     assert config.incremental_snapshot.enabled is False
+
+
+def test_counterfactual_e2e_explicitly_deletes_chunks_only_after_ready():
+    config = load_analysis_config(ROOT / "config/thresholds/e2e-counterfactual.yaml")
+
+    assert config.chunk_retention.mode is ChunkRetentionMode.DELETE_AFTER_READY
+
+
+def test_legacy_config_without_ingest_retention_keeps_chunks(tmp_path: Path):
+    text = SHIPPED_CONFIG.read_text(encoding="utf-8").replace(
+        "ingest:\n  chunk_retention:\n    mode: KEEP\n\n", "", 1
+    )
+
+    config = load_analysis_config(_write(tmp_path, text))
+
+    assert config.chunk_retention.mode is ChunkRetentionMode.KEEP
+
+
+@pytest.mark.parametrize("mode", ["delete_after_ready", "DELETE_NOW", ""])
+def test_invalid_chunk_retention_mode_rejects_config(tmp_path: Path, mode: str):
+    text = SHIPPED_CONFIG.read_text(encoding="utf-8").replace(
+        "mode: KEEP", f"mode: {mode}", 1
+    )
+
+    with pytest.raises(AnalysisConfigError, match="chunk_retention.mode"):
+        load_analysis_config(_write(tmp_path, text))
 
 
 def test_complete_p2_config_preserves_parameter_provenance(tmp_path: Path):

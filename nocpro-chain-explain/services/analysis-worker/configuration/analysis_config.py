@@ -36,6 +36,13 @@ class IncrementalSnapshotMode(str, Enum):
     DISABLED = "disabled"
 
 
+class ChunkRetentionMode(str, Enum):
+    """Durable ingest-artifact retention policy."""
+
+    KEEP = "KEEP"
+    DELETE_AFTER_READY = "DELETE_AFTER_READY"
+
+
 class CalibrationStatus(str, Enum):
     SYNTHETIC_ONLY = "SYNTHETIC_ONLY"
     PRODUCTION_CALIBRATED = "PRODUCTION_CALIBRATED"
@@ -49,6 +56,11 @@ class IncrementalSnapshotPolicy:
     @property
     def enabled(self) -> bool:
         return False
+
+
+@dataclass(frozen=True)
+class ChunkRetentionPolicy:
+    mode: ChunkRetentionMode
 
 
 @dataclass(frozen=True)
@@ -239,6 +251,7 @@ class AnalysisConfig:
     status: str
     parameters: dict[str, ConfiguredValue]
     incremental_snapshot: IncrementalSnapshotPolicy
+    chunk_retention: ChunkRetentionPolicy
     similar_chains: SimilarChainsPolicy
     p2_topology: P2TopologyConfig
     attribution_evaluation: AttributionEvaluationConfig | None = None
@@ -510,6 +523,25 @@ def _load_optional_counterfactual(
         return None, "COUNTERFACTUAL_CONFIG_INCOMPLETE"
 
 
+def _load_chunk_retention(document: dict[str, Any]) -> ChunkRetentionPolicy:
+    """Load the deployment retention choice, keeping legacy YAML fail-safe."""
+    raw_ingest = document.get("ingest")
+    if raw_ingest is None:
+        return ChunkRetentionPolicy(mode=ChunkRetentionMode.KEEP)
+    if not isinstance(raw_ingest, dict):
+        raise AnalysisConfigError("ingest must be a YAML mapping")
+    raw_retention = raw_ingest.get("chunk_retention")
+    if not isinstance(raw_retention, dict):
+        raise AnalysisConfigError("ingest.chunk_retention must be a YAML mapping")
+    try:
+        mode = ChunkRetentionMode(raw_retention.get("mode"))
+    except (TypeError, ValueError) as exc:
+        raise AnalysisConfigError(
+            "ingest.chunk_retention.mode must be KEEP or DELETE_AFTER_READY"
+        ) from exc
+    return ChunkRetentionPolicy(mode=mode)
+
+
 def load_analysis_config(
     path: str | Path,
     *,
@@ -577,6 +609,7 @@ def load_analysis_config(
         mode=IncrementalSnapshotMode.DISABLED,
         reason=reason.strip(),
     )
+    chunk_retention = _load_chunk_retention(document)
 
     raw_similar = document.get("similar_chains")
     if not isinstance(raw_similar, dict):
@@ -629,6 +662,7 @@ def load_analysis_config(
         status=status.strip(),
         parameters=parameters,
         incremental_snapshot=incremental_snapshot,
+        chunk_retention=chunk_retention,
         similar_chains=similar_chains,
         p2_topology=p2_topology,
         attribution_evaluation=attribution_evaluation,

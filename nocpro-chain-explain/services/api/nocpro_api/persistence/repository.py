@@ -1026,26 +1026,29 @@ class SnapshotRepository:
         result: dict[str, Any] | None = None,
         error: str | None = None,
         worker_id: str | None = None,
-    ) -> None:
+        delete_chunks_after_ready: bool = False,
+    ) -> int:
         async with self.sessions.begin() as session:
-            statement = update(SnapshotIngest).where(
-                    SnapshotIngest.snapshot_id == snapshot_id,
-                    SnapshotIngest.snapshot_version == snapshot_version,
-                    SnapshotIngest.tier1a_status == "RUNNING",
-                )
+            statement = select(SnapshotIngest).where(
+                SnapshotIngest.snapshot_id == snapshot_id,
+                SnapshotIngest.snapshot_version == snapshot_version,
+                SnapshotIngest.tier1a_status == "RUNNING",
+            )
             if worker_id is not None:
                 statement = statement.where(SnapshotIngest.worker_id == worker_id)
-            await session.execute(
-                statement.values(
-                    tier1a_status="FAILED" if error else "READY",
-                    tier1a_result=result if error is None else {"error": error},
-                    worker_id=None,
-                    lease_expires_at=None,
-                    heartbeat_at=None,
-                    next_attempt_at=None,
-                    lineage_status="PENDING" if error is None else None,
-                )
-            )
+            row = await session.scalar(statement.with_for_update())
+            if row is None:
+                return 0
+            row.tier1a_status = "FAILED" if error else "READY"
+            row.tier1a_result = result if error is None else {"error": error}
+            row.worker_id = None
+            row.lease_expires_at = None
+            row.heartbeat_at = None
+            row.next_attempt_at = None
+            row.lineage_status = "PENDING" if error is None else None
+            if not delete_chunks_after_ready:
+                return 0
+            return await self._delete_chunks_if_cleanup_eligible(session, row)
 
     async def claim_next_lineage(
         self,
@@ -1542,14 +1545,36 @@ class SnapshotRepository:
                 self._invalidate(row, reason)
 
     async def cleanup_chunks(self, snapshot_id: str, snapshot_version: str) -> int:
+        """Delete only chunks whose canonical snapshot has reached Tier-1A READY.
+
+        The operation is idempotent and cannot remove chunks from receiving,
+        invalid, or merely COMPLETE snapshots.
+        """
         async with self.sessions.begin() as session:
-            result = await session.execute(
-                delete(SnapshotChunk).where(
-                    SnapshotChunk.snapshot_id == snapshot_id,
-                    SnapshotChunk.snapshot_version == snapshot_version,
-                )
+            row = await session.get(
+                SnapshotIngest,
+                (snapshot_id, snapshot_version),
+                with_for_update=True,
             )
-            return int(result.rowcount or 0)
+            if row is None:
+                return 0
+            return await self._delete_chunks_if_cleanup_eligible(session, row)
+
+    @staticmethod
+    async def _delete_chunks_if_cleanup_eligible(session, row: SnapshotIngest) -> int:
+        if not (
+            row.status == "COMPLETE"
+            and row.canonical_payload is not None
+            and row.tier1a_status == "READY"
+        ):
+            return 0
+        result = await session.execute(
+            delete(SnapshotChunk).where(
+                SnapshotChunk.snapshot_id == row.snapshot_id,
+                SnapshotChunk.snapshot_version == row.snapshot_version,
+            )
+        )
+        return int(result.rowcount or 0)
 
     async def expire_receiving(
         self,

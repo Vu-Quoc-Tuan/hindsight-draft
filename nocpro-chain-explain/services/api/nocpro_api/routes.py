@@ -195,10 +195,19 @@ async def get_review_job(
     job_id: str, request: Request
 ) -> CounterfactualJobView:
     try:
-        await workspace(request).flush_review_persistence()
-        return counterfactual_job_view(
-            workspace(request).review_jobs.get(job_id)
-        )
+        service = workspace(request)
+        # The manager sets a terminal state and enqueues its persistence future
+        # under one lock.  Read the state first so a terminal response cannot
+        # flush an older future list and race a subsequent API restart.
+        try:
+            job = service.review_jobs.get(job_id)
+        except KeyError:
+            # Preserve the read-boundary flush even for an unknown in-memory
+            # job: another request may have pending durable state to release.
+            await service.flush_review_persistence()
+            raise
+        await service.flush_review_persistence()
+        return counterfactual_job_view(job)
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -208,8 +217,9 @@ async def get_latest_review(
     chain_id: str, request: Request
 ) -> CounterfactualJobView:
     try:
-        await workspace(request).flush_review_persistence()
-        result = await workspace(request).latest_review(chain_id)
+        service = workspace(request)
+        result = await service.latest_review(chain_id)
+        await service.flush_review_persistence()
         if result is None:
             raise KeyError(f"no compatible Counterfactual review for {chain_id!r}")
         return counterfactual_job_view(result)

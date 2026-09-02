@@ -16,7 +16,7 @@ from nocpro_api.workspace import Workspace
 from evolution import LineageNodeKey
 from similar_chains import build_fingerprint, find_similar_chains
 from sqlalchemy import func, select
-from nocpro_api.persistence.models import SnapshotIngest
+from nocpro_api.persistence.models import SnapshotChunk, SnapshotIngest
 
 
 pytestmark = pytest.mark.postgres
@@ -224,6 +224,78 @@ def test_postgres_barrier_assembly_is_idempotent_and_claims_tier1a_once():
                 result={"chain_count": 1},
                 worker_id="test-worker",
             )
+        finally:
+            await database.close()
+
+    import asyncio
+
+    asyncio.run(exercise())
+
+
+def test_chunk_cleanup_requires_ready_and_preserves_canonical_snapshot():
+    database_url = os.environ.get("TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("TEST_DATABASE_URL is not configured")
+
+    async def chunk_count(database, snapshot_id: str) -> int:
+        async with database.sessions() as session:
+            return int(
+                await session.scalar(
+                    select(func.count(SnapshotChunk.chunk_index)).where(
+                        SnapshotChunk.snapshot_id == snapshot_id,
+                        SnapshotChunk.snapshot_version == "1",
+                    )
+                )
+                or 0
+            )
+
+    async def canonical_payload(database, snapshot_id: str) -> dict:
+        async with database.sessions() as session:
+            payload = await session.scalar(
+                select(SnapshotIngest.canonical_payload).where(
+                    SnapshotIngest.snapshot_id == snapshot_id,
+                    SnapshotIngest.snapshot_version == "1",
+                )
+            )
+            assert payload is not None
+            return payload
+
+    async def exercise():
+        database = Database(database_url)
+        repository = SnapshotRepository(database.sessions)
+        snapshot_id = f"pg-cleanup-{uuid4().hex}"
+        topic = f"test-cleanup-{uuid4().hex}"
+        payload = _payload(snapshot_id)
+        events = _events(payload, chunk_size=16)
+        try:
+            for offset, raw in enumerate(events):
+                await repository.record_kafka_event(
+                    parse_snapshot_event(raw), topic=topic, partition=0, offset=offset
+                )
+
+            retained = await chunk_count(database, snapshot_id)
+            assert retained > 1
+            # COMPLETE alone is intentionally insufficient for cleanup.
+            assert await repository.cleanup_chunks(snapshot_id, "1") == 0
+            assert await chunk_count(database, snapshot_id) == retained
+
+            claim = await repository.claim_next_tier1a(
+                worker_id="cleanup-worker", lease_seconds=120
+            )
+            assert claim is not None
+            deleted = await repository.finish_tier1a(
+                snapshot_id,
+                "1",
+                result={"chain_count": 1},
+                worker_id="cleanup-worker",
+                delete_chunks_after_ready=True,
+            )
+            assert deleted == retained
+            assert await chunk_count(database, snapshot_id) == 0
+            # Replays of cleanup are harmless, and the durable canonical payload
+            # remains the source used by restart hydration.
+            assert await repository.cleanup_chunks(snapshot_id, "1") == 0
+            assert await canonical_payload(database, snapshot_id) == payload
         finally:
             await database.close()
 

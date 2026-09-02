@@ -16,6 +16,7 @@ from similar_chains import (
     build_fingerprint,
     materialize_similarity_index,
 )
+from configuration import ChunkRetentionMode
 
 from .persistence import SnapshotRepository
 
@@ -32,6 +33,7 @@ class Tier1ACoordinator:
         lease_seconds: int = 120,
         max_attempts: int = 5,
         backoff_base_seconds: int = 2,
+        chunk_retention_mode: ChunkRetentionMode = ChunkRetentionMode.KEEP,
     ) -> None:
         self.repository = repository
         self.workspace = workspace
@@ -39,6 +41,7 @@ class Tier1ACoordinator:
         self.lease_seconds = lease_seconds
         self.max_attempts = max_attempts
         self.backoff_base_seconds = backoff_base_seconds
+        self.chunk_retention_mode = chunk_retention_mode
 
     async def run(self, snapshot_id: str, snapshot_version: str):
         """Process logical-oldest jobs until the requested snapshot is READY."""
@@ -82,6 +85,10 @@ class Tier1ACoordinator:
                 claim.snapshot_version,
                 result=summary,
                 worker_id=self.worker_id,
+                delete_chunks_after_ready=(
+                    self.chunk_retention_mode
+                    is ChunkRetentionMode.DELETE_AFTER_READY
+                ),
             )
             active_payload = await self.repository.latest_ready_payload()
             if active_payload is not None:
