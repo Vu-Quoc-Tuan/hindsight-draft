@@ -9,6 +9,7 @@ from .models import (
     CounterfactualResult,
     DomainStatus,
     EditCost,
+    ExternalValidationArtifact,
     MetricAvailability,
     MetricValue,
     MetricVector,
@@ -26,6 +27,7 @@ from .evaluator import (
     evaluate_candidate,
 )
 from .pareto import FrontierResult, dominates, select_frontier
+from .analysis import analyze_counterfactual_review
 
 __all__ = [
     "CalibrationStatus",
@@ -37,6 +39,7 @@ __all__ = [
     "CounterfactualResult",
     "DomainStatus",
     "EditCost",
+    "ExternalValidationArtifact",
     "MetricAvailability",
     "MetricValue",
     "MetricVector",
@@ -53,4 +56,5 @@ __all__ = [
     "dominates",
     "evaluate_candidate",
     "select_frontier",
+    "analyze_counterfactual_review",
 ]

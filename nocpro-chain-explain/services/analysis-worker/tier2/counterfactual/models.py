@@ -180,6 +180,16 @@ class ReviewIdentity:
 
 
 @dataclass(frozen=True)
+class ExternalValidationArtifact:
+    """Already eligibility-gated external conclusions for Review P0."""
+
+    fingerprint: str
+    contradicted_member_ids: frozenset[str] = frozenset()
+    supported_candidate_ids: frozenset[str] = frozenset()
+    contradicted_candidate_ids: frozenset[str] = frozenset()
+
+
+@dataclass(frozen=True)
 class CounterfactualCandidate:
     candidate_id: str
     operation: Operation
