@@ -1,8 +1,11 @@
 # Counterfactual Chain Review P0 Design
 
-**Status:** approved for implementation  
-**Date:** 2026-09-02  
-**Base:** `feat/p2-topology-foundation` at `5fa099f`  
+**Status:** approved for implementation
+
+**Date:** 2026-09-02
+
+**Base:** `feat/p2-topology-foundation` at `5fa099f`
+
 **Scope:** exact, review-only `REMOVE_MEMBER` and `SPLIT_CHAIN`
 
 ## 1. Purpose and boundary

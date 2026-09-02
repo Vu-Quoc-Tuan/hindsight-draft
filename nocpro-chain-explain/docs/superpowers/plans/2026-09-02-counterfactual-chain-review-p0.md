@@ -36,7 +36,7 @@
 - Produces `CounterfactualConfig`, `CalibrationStatus`, `Operation`, `DomainStatus`, `CandidateStatus`, `MetricAvailability`, `MetricVector`, `EditCost`, `PartitionDelta`, `CandidateEvaluation`, `OperationResult`, and `CounterfactualResult`.
 - `AnalysisConfig.counterfactual` is `CounterfactualConfig | None`; invalid or absent envelopes retain a structured reason rather than supplying defaults.
 
-- [ ] **Step 1: Write failing config and model tests**
+- [x] **Step 1: Write failing config and model tests**
 
 ```python
 def test_counterfactual_config_requires_every_numeric_field(tmp_path):
@@ -50,12 +50,13 @@ def test_partition_delta_rejects_alarm_loss():
         PartitionDelta(before=(("C", ("A", "B")),), after=(("C", ("A",)),))
 ```
 
-- [ ] **Step 2: Run focused tests and confirm they fail**
+- [x] **Step 2: Run focused tests and confirm they fail**
 
-Run: `uv run pytest tests/test_counterfactual_config.py -q`  
+Run: `uv run pytest tests/test_counterfactual_config.py -q`
+
 Expected: collection failure because `tier2.counterfactual` does not exist.
 
-- [ ] **Step 3: Implement strict typed parsing and immutable contracts**
+- [x] **Step 3: Implement strict typed parsing and immutable contracts**
 
 ```python
 @dataclass(frozen=True)
@@ -77,12 +78,13 @@ class CounterfactualConfig:
 
 Validate non-empty version, positive integer ceilings, unit-interval trigger fields, finite margins, and non-negative improvement values. Keep shipped production `v1.yaml` without an invented envelope, so it remains fail-closed. Add a separate explicit `e2e-counterfactual.yaml` with `calibration_status: SYNTHETIC_ONLY`; it remains unable to recommend for real production sources.
 
-- [ ] **Step 4: Run config/model tests**
+- [x] **Step 4: Run config/model tests**
 
-Run: `uv run pytest tests/test_counterfactual_config.py tests/test_analysis_config.py -q`  
+Run: `uv run pytest tests/test_counterfactual_config.py tests/test_analysis_config.py -q`
+
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nocpro-chain-explain/services/analysis-worker/tier2/counterfactual nocpro-chain-explain/services/analysis-worker/configuration/analysis_config.py nocpro-chain-explain/config/thresholds/e2e-counterfactual.yaml nocpro-chain-explain/tests/test_counterfactual_config.py
@@ -99,7 +101,7 @@ git commit -m "feat: add counterfactual review contracts"
 - Consumes Tier-1B member analysis and exact `StructuralAuditResult`.
 - Produces `generate_remove_candidates(...) -> CandidateBatch` and `generate_split_candidates(...) -> CandidateBatch` with deterministic discovered/evaluated counts and canonical IDs.
 
-- [ ] **Step 1: Write failing generation tests**
+- [x] **Step 1: Write failing generation tests**
 
 ```python
 def test_remove_preserves_alarm_as_singleton():
@@ -119,12 +121,13 @@ def test_candidate_limit_is_deterministic():
     assert first.discovered_count > first.evaluated_count
 ```
 
-- [ ] **Step 2: Run focused tests and confirm failure**
+- [x] **Step 2: Run focused tests and confirm failure**
 
-Run: `uv run pytest tests/test_counterfactual_candidates.py -q`  
+Run: `uv run pytest tests/test_counterfactual_candidates.py -q`
+
 Expected: import failure for candidate generators.
 
-- [ ] **Step 3: Implement bounded trigger union and exact-Audit cut reuse**
+- [x] **Step 3: Implement bounded trigger union and exact-Audit cut reuse**
 
 REMOVE triggers are the deterministic union of weak role, membership threshold, representativeness threshold, adverse margin, and eligible contradiction. SPLIT accepts only feasible exact Audit cuts. Canonicalize sorted IDs and hash the pinned identity, operation, affected sets, artifact fingerprints, engine version, and config version.
 
@@ -134,12 +137,13 @@ def deterministic_candidate_id(identity: ReviewIdentity, operation: Operation, d
     return sha256(payload.encode("utf-8")).hexdigest()
 ```
 
-- [ ] **Step 4: Run candidate tests**
+- [x] **Step 4: Run candidate tests**
 
-Run: `uv run pytest tests/test_counterfactual_candidates.py -q`  
+Run: `uv run pytest tests/test_counterfactual_candidates.py -q`
+
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nocpro-chain-explain/services/analysis-worker/tier2/counterfactual/candidates.py nocpro-chain-explain/tests/test_counterfactual_candidates.py
@@ -159,7 +163,7 @@ git commit -m "feat: generate bounded counterfactual candidates"
 - Produces `select_frontier(evaluations, config) -> FrontierResult`.
 - `MetricVector` contains weak count, minimum membership support, union coverage, component count, exact minimum feasible Audit conductance, Audit severity, and eligible external contradiction count with per-field availability.
 
-- [ ] **Step 1: Write failing exactness and Pareto tests**
+- [x] **Step 1: Write failing exactness and Pareto tests**
 
 ```python
 def test_missing_metric_is_not_zero():
@@ -178,16 +182,17 @@ def test_affected_region_equals_full_recompute(two_chain_package):
     assert evaluate_affected_region(two_chain_package, candidate) == evaluate_full_partition(two_chain_package, candidate)
 ```
 
-- [ ] **Step 2: Run tests and confirm failure**
+- [x] **Step 2: Run tests and confirm failure**
 
-Run: `uv run pytest tests/test_counterfactual_evaluator.py tests/test_counterfactual_equivalence.py -q`  
+Run: `uv run pytest tests/test_counterfactual_evaluator.py tests/test_counterfactual_equivalence.py -q`
+
 Expected: missing evaluator/Pareto symbols.
 
-- [ ] **Step 3: Implement exact aggregate recomputation**
+- [x] **Step 3: Implement exact aggregate recomputation**
 
 Reuse indexed primitive statistics and rebuild affected chain Fit, MembershipSupport, roles, descriptors, evidence coverage, graph/audit aggregates, and external summaries. Define conductance as the minimum exact feasible cut conductance among affected non-singleton chains; skipped/unscorable Audit remains unavailable.
 
-- [ ] **Step 4: Implement hard gates and bounded deterministic Pareto order**
+- [x] **Step 4: Implement hard gates and bounded deterministic Pareto order**
 
 ```python
 def dominates(left: CandidateEvaluation, right: CandidateEvaluation, policy: CounterfactualConfig) -> bool:
@@ -199,12 +204,13 @@ def dominates(left: CandidateEvaluation, right: CandidateEvaluation, policy: Cou
 
 Order an over-limit frontier by external support, material-improvement count, structured edit cost, operation enum, and stable candidate ID. Record pre-limit count and truncation.
 
-- [ ] **Step 5: Run evaluator/equivalence tests**
+- [x] **Step 5: Run evaluator/equivalence tests**
 
-Run: `uv run pytest tests/test_counterfactual_evaluator.py tests/test_counterfactual_equivalence.py -q`  
+Run: `uv run pytest tests/test_counterfactual_evaluator.py tests/test_counterfactual_equivalence.py -q`
+
 Expected: all tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add nocpro-chain-explain/services/analysis-worker/tier2/counterfactual/evaluator.py nocpro-chain-explain/services/analysis-worker/tier2/counterfactual/pareto.py nocpro-chain-explain/tests/test_counterfactual_evaluator.py nocpro-chain-explain/tests/test_counterfactual_equivalence.py
@@ -222,7 +228,7 @@ git commit -m "feat: evaluate counterfactual alternatives exactly"
 - Produces `analyze_counterfactual_review(package, chain_id, *, tier1b_artifact, audit_artifact, external_artifact, config) -> CounterfactualResult`.
 - The result has independent REMOVE/SPLIT operation states and an overall successful domain envelope.
 
-- [ ] **Step 1: Write failing partial-result and calibration tests**
+- [x] **Step 1: Write failing partial-result and calibration tests**
 
 ```python
 def test_missing_audit_only_disables_split():
@@ -237,21 +243,23 @@ def test_synthetic_policy_cannot_recommend_on_real_source():
     assert result.evaluated_candidates
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
-Run: `uv run pytest tests/test_counterfactual_analysis.py -q`  
+Run: `uv run pytest tests/test_counterfactual_analysis.py -q`
+
 Expected: analyzer missing.
 
-- [ ] **Step 3: Implement operation isolation and recommendation guard**
+- [x] **Step 3: Implement operation isolation and recommendation guard**
 
 Return `NOT_APPLICABLE` for singleton operations and two-member Split, merge singleton cuts into Remove generation, preserve exact evaluated metrics when recommendation is not calibrated, and never turn operation unavailability into an exception.
 
-- [ ] **Step 4: Run analysis tests**
+- [x] **Step 4: Run analysis tests**
 
-Run: `uv run pytest tests/test_counterfactual_analysis.py -q`  
+Run: `uv run pytest tests/test_counterfactual_analysis.py -q`
+
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nocpro-chain-explain/services/analysis-worker/tier2/counterfactual nocpro-chain-explain/tests/test_counterfactual_analysis.py
@@ -273,7 +281,7 @@ git commit -m "feat: orchestrate partial counterfactual review"
 - Produces `CounterfactualJobManager.submit(...)`, `.get(job_id)`, `.latest_compatible(...)`, `.wait(...)`, and `.shutdown()`.
 - Repository persists job identity/status/progress/error, cache fingerprint, result JSONB, timestamps, and pinned artifact identities.
 
-- [ ] **Step 1: Write failing job/cache/persistence tests**
+- [x] **Step 1: Write failing job/cache/persistence tests**
 
 ```python
 def test_same_pinned_identity_deduplicates_inflight(manager):
@@ -293,21 +301,23 @@ async def test_domain_unavailable_persists_succeeded(repository, manager):
     assert (await repository.counterfactual_job(view.job_id)).result["reason"] == "COUNTERFACTUAL_POLICY_NOT_CALIBRATED"
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
-Run: `uv run pytest tests/test_counterfactual_jobs.py tests/test_postgres_counterfactual_jobs.py -q`  
+Run: `uv run pytest tests/test_counterfactual_jobs.py tests/test_postgres_counterfactual_jobs.py -q`
+
 Expected: missing manager/model/repository methods.
 
-- [ ] **Step 3: Implement manager and DB migration/repository**
+- [x] **Step 3: Implement manager and DB migration/repository**
 
 Use the existing job state enum and executor pattern, but keep a separate manager/cache namespace. Persist immutable submission identity before execution, update status transactionally, and store the serialized result on success. A source snapshot becoming inactive does not change the package/artifacts captured by submission.
 
-- [ ] **Step 4: Run job and PostgreSQL tests**
+- [x] **Step 4: Run job and PostgreSQL tests**
 
-Run: `uv run pytest tests/test_counterfactual_jobs.py tests/test_postgres_counterfactual_jobs.py -q`  
+Run: `uv run pytest tests/test_counterfactual_jobs.py tests/test_postgres_counterfactual_jobs.py -q`
+
 Expected: unit tests pass; PostgreSQL tests skip only when their documented test DSN is absent.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nocpro-chain-explain/services/analysis-worker/tier2/counterfactual/jobs.py nocpro-chain-explain/services/api/nocpro_api/persistence nocpro-chain-explain/migrations/versions/0004_counterfactual_jobs.py nocpro-chain-explain/services/api/nocpro_api/workspace.py nocpro-chain-explain/tests/test_counterfactual_jobs.py nocpro-chain-explain/tests/test_postgres_counterfactual_jobs.py
@@ -326,7 +336,7 @@ git commit -m "feat: persist counterfactual review jobs"
 - Adds submission, job, operation, candidate, metric, frontier, and result Pydantic views.
 - Adds `POST /api/v1/chains/{chain_id}/review`, `GET /api/v1/review-jobs/{job_id}`, and `GET /api/v1/chains/{chain_id}/review` with the active snapshot pinned at submission.
 
-- [ ] **Step 1: Write failing endpoint tests**
+- [x] **Step 1: Write failing endpoint tests**
 
 ```python
 async def test_review_submit_poll_and_cached_lookup(client):
@@ -339,21 +349,23 @@ async def test_review_submit_poll_and_cached_lookup(client):
     assert cached.json()["job_id"] == job_id
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
-Run: `uv run pytest tests/test_counterfactual_api.py -q`  
+Run: `uv run pytest tests/test_counterfactual_api.py -q`
+
 Expected: 404 for new routes.
 
-- [ ] **Step 3: Implement schemas, serialization, and routes**
+- [x] **Step 3: Implement schemas, serialization, and routes**
 
 Serialize null/unavailable metrics explicitly, expose discovered/evaluated/truncated diagnostics, and translate unknown jobs/chains through existing 404/422 conventions. The convenience GET never returns an incompatible cached result.
 
-- [ ] **Step 4: Run API tests**
+- [x] **Step 4: Run API tests**
 
-Run: `uv run pytest tests/test_counterfactual_api.py tests/test_api.py -q`  
+Run: `uv run pytest tests/test_counterfactual_api.py tests/test_api.py -q`
+
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nocpro-chain-explain/services/api/nocpro_api/schemas.py nocpro-chain-explain/services/api/nocpro_api/serializers.py nocpro-chain-explain/services/api/nocpro_api/routes.py nocpro-chain-explain/tests/test_counterfactual_api.py
@@ -374,7 +386,7 @@ git commit -m "feat: expose counterfactual review api"
 - `api.submitReview`, `api.reviewJob`, and `api.latestReview` mirror Task 6.
 - `CounterfactualReview` renders job/calibration status, independent operation availability, search diagnostics, proposal details, before/after metrics, external state, and review-only wording.
 
-- [ ] **Step 1: Write failing component tests**
+- [x] **Step 1: Write failing component tests**
 
 ```tsx
 it('renders partial REMOVE result while SPLIT is unavailable', async () => {
@@ -385,23 +397,27 @@ it('renders partial REMOVE result while SPLIT is unavailable', async () => {
 })
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
-Run: `pnpm --dir services/web test -- CounterfactualReview.test.tsx`  
+Run: `pnpm --dir services/web test -- CounterfactualReview.test.tsx`
+
 Expected: missing component/types.
 
-- [ ] **Step 3: Implement typed API client and REVIEW tab**
+- [x] **Step 3: Implement typed API client and REVIEW tab**
 
 Opening REVIEW checks compatible cache, triggers only when missing, polls queued/running jobs, and leaves Explain/Audit usable. Render `BETTER_SUPPORTED`, `EXTERNALLY_SUPPORTED`, or exact unavailability wording; include a visible “proposal only; NocPro was not changed” notice.
 
-- [ ] **Step 4: Run web tests and build**
+- [x] **Step 4: Run web tests and build**
 
-Run: `pnpm --dir services/web test`  
-Expected: all Vitest tests pass.  
-Run: `pnpm --dir services/web build`  
+Run: `pnpm --dir services/web test`
+
+Expected: all Vitest tests pass.
+
+Run: `pnpm --dir services/web build`
+
 Expected: TypeScript/Vite build succeeds.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nocpro-chain-explain/services/web/src
@@ -426,7 +442,7 @@ git commit -m "feat: add counterfactual review ui"
 - Synthetic fixtures are labelled `SYNTHETIC_TEST`, use an explicit synthetic config version, and encode known true partitions plus one intentional extra-member or over-merge mutation.
 - Benchmark emits issue detection, repair accuracy, false recommendation, abstention, edit distance, ARI/AMI, and latency without setting a production threshold.
 
-- [ ] **Step 1: Write failing mutation acceptance tests**
+- [x] **Step 1: Write failing mutation acceptance tests**
 
 ```python
 def test_extra_member_mutation_recommends_expected_remove():
@@ -442,31 +458,39 @@ def test_clean_truth_abstains():
     assert run_clean_fixture().outcome == "NO_CLEAR_ALTERNATIVE"
 ```
 
-- [ ] **Step 2: Run and confirm fixtures fail before generator registration**
+- [x] **Step 2: Run and confirm fixtures fail before generator registration**
 
-Run: `uv run pytest tests/test_counterfactual_mutations.py -q`  
+Run: `uv run pytest tests/test_counterfactual_mutations.py -q`
+
 Expected: fixture lookup failure.
 
-- [ ] **Step 3: Add labelled fixtures and benchmark harness**
+- [x] **Step 3: Add labelled fixtures and benchmark harness**
 
 Keep truth and mutation metadata explicit, preserve topology/source version provenance when topology exists, and never expose synthetic configuration as production calibrated.
 
-- [ ] **Step 4: Add Docker/Chromium flow**
+- [x] **Step 4: Add Docker/Chromium flow**
 
 The test sends the synthetic snapshot from Mock through Kafka chunks/barrier, waits for READY, opens the chain, opens REVIEW, polls the separate job, verifies REMOVE/SPLIT output and the no-Apply notice, and checks persisted job/result provenance.
 
-- [ ] **Step 5: Run complete verification**
+- [x] **Step 5: Run complete verification**
 
-Run: `uv run pytest -q` in `nocpro-chain-explain`  
-Expected: all non-environment-gated tests pass.  
-Run: `uv run pytest -q` in `nocpro-mock`  
-Expected: all non-environment-gated tests pass.  
-Run: `pnpm --dir services/web test && pnpm --dir services/web build`  
-Expected: tests and build pass.  
-Run: `./tests/e2e/run_acceptance.sh`  
+Run: `uv run pytest -q` in `nocpro-chain-explain`
+
+Expected: all non-environment-gated tests pass.
+
+Run: `uv run pytest -q` in `nocpro-mock`
+
+Expected: all non-environment-gated tests pass.
+
+Run: `pnpm --dir services/web test && pnpm --dir services/web build`
+
+Expected: tests and build pass.
+
+Run: `./tests/e2e/run_acceptance.sh`
+
 Expected: Docker recovery, existing browser flows, synthetic P2, and Counterfactual REVIEW flow pass; cleanup succeeds.
 
-- [ ] **Step 6: Update status and commit**
+- [x] **Step 6: Update status and commit**
 
 Document exact proof levels: synthetic correctness, measured latency, production policy not calibrated, and no production topology/delta claim.
 
@@ -483,21 +507,28 @@ git commit -m "test: verify counterfactual review end to end"
 **Interfaces:**
 - Produces a clean feature branch with focused commits, no unrelated changes, and evidence-backed completion status.
 
-- [ ] **Step 1: Run whitespace, status, and change-scope checks**
+- [x] **Step 1: Run whitespace, status, and change-scope checks**
 
-Run: `git diff --check feat/p2-topology-foundation...HEAD`  
-Expected: no output.  
-Run: `git status --short`  
+Run: `git diff --check feat/p2-topology-foundation...HEAD`
+
+Expected: no output.
+
+Run: `git status --short`
+
 Expected: empty after final documentation commit.
 
-- [ ] **Step 2: Run complete focused regression one final time**
+- [x] **Step 2: Run complete focused regression one final time**
 
-Run: `uv run pytest -q` in both Python projects, then web tests/build.  
+Run: `uv run pytest -q` in both Python projects, then web tests/build.
+
 Expected: all non-gated tests pass and gated tests report explicit skips.
 
-- [ ] **Step 3: Inspect commit and diff summary**
+- [x] **Step 3: Inspect commit and diff summary**
 
-Run: `git log --oneline feat/p2-topology-foundation..HEAD`  
-Expected: design plus focused Task commits.  
-Run: `git diff --stat feat/p2-topology-foundation...HEAD`  
+Run: `git log --oneline feat/p2-topology-foundation..HEAD`
+
+Expected: design plus focused Task commits.
+
+Run: `git diff --stat feat/p2-topology-foundation...HEAD`
+
 Expected: only Counterfactual Review, synthetic fixture, API/UI, migration, tests, benchmark, and status-doc files.

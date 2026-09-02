@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import AsyncMock
 
 import httpx2
 
@@ -75,6 +76,24 @@ def test_review_routes_keep_unknown_resources_explicit() -> None:
                 )
                 assert unknown_chain.status_code == 404
                 assert unknown_job.status_code == 404
+        finally:
+            app.state.workspace.close()
+
+    asyncio.run(exercise())
+
+
+def test_review_reads_flush_pending_persistence_before_responding() -> None:
+    async def exercise() -> None:
+        app = create_app()
+        app.state.workspace.flush_review_persistence = AsyncMock()
+        transport = httpx2.ASGITransport(app=app)
+        try:
+            async with httpx2.AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as client:
+                response = await client.get("/api/v1/review-jobs/UNKNOWN")
+                assert response.status_code == 404
+                app.state.workspace.flush_review_persistence.assert_awaited_once()
         finally:
             app.state.workspace.close()
 

@@ -294,7 +294,9 @@ class CounterfactualJobManager:
                 job.error = f"{type(exc).__name__}: {exc}"
                 self._inflight_by_key.pop(job.identity.cache_tuple(), None)
                 failed_view = job.view()
-            self._notify(failed_view)
+                # Publish terminal persistence before another thread can
+                # observe the terminal in-memory state.
+                self._notify(failed_view)
             return
         with self._lock:
             job = self._jobs[job_id]
@@ -308,7 +310,10 @@ class CounterfactualJobManager:
                 (job.identity.snapshot_id, job.identity.snapshot_version, job.chain_id)
             ] = job_id
             succeeded_view = job.view()
-        self._notify(succeeded_view)
+            # Keep the manager lock until the listener has enqueued the
+            # terminal persistence write. API reads can then flush it before
+            # returning SUCCEEDED.
+            self._notify(succeeded_view)
 
     def get(self, job_id: str) -> CounterfactualJobView:
         with self._lock:

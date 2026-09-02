@@ -227,4 +227,3 @@ def test_frontier_prefers_external_then_improvements_then_stable_id() -> None:
     frontier = select_frontier((internal, external), replace(CONFIG, max_recommendations=1))
     assert frontier.items[0].candidate.candidate_id == "z"
     assert frontier.truncated is True
-

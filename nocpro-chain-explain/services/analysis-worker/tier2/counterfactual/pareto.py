@@ -70,4 +70,3 @@ def select_frontier(
         count_before_limit=len(ordered),
         truncated=len(ordered) > config.max_recommendations,
     )
-

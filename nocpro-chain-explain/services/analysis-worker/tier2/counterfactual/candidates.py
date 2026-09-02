@@ -233,4 +233,3 @@ def generate_split_candidates(
         candidates=tuple(candidates),
         canonical_remove_member_ids=tuple(sorted(canonical_remove)),
     )
-

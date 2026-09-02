@@ -331,4 +331,3 @@ def metric_delta(
 
 def required_metric_names() -> tuple[str, ...]:
     return _METRIC_NAMES
-

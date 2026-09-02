@@ -184,6 +184,7 @@ async def get_review_job(
     job_id: str, request: Request
 ) -> CounterfactualJobView:
     try:
+        await workspace(request).flush_review_persistence()
         return counterfactual_job_view(
             workspace(request).review_jobs.get(job_id)
         )
@@ -196,6 +197,7 @@ async def get_latest_review(
     chain_id: str, request: Request
 ) -> CounterfactualJobView:
     try:
+        await workspace(request).flush_review_persistence()
         result = await workspace(request).latest_review(chain_id)
         if result is None:
             raise KeyError(f"no compatible Counterfactual review for {chain_id!r}")
