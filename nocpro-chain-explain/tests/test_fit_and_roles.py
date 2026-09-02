@@ -298,6 +298,30 @@ def test_core_requires_the_absolute_floor():
     assert role.verdict is MembershipVerdict.CORE
 
 
+@pytest.mark.parametrize(
+    ("support", "representativeness", "margin_common", "expected"),
+    (
+        (_support(1.0, 1.0), None, 0.2, MembershipVerdict.PERIPHERAL),
+        (_support(1.0, 1.0), 0.9, None, MembershipVerdict.PERIPHERAL),
+        (_support(0.0, 0.0), None, None, MembershipVerdict.PERIPHERAL),
+        (_support(0.0, 0.0), None, -0.1, MembershipVerdict.WEAK),
+        (_support(1.0, 1.0), 0.9, 0.2, MembershipVerdict.CORE),
+    ),
+)
+def test_role_requires_computable_metrics_for_core_and_weak(
+    support, representativeness, margin_common, expected
+):
+    role = classify_membership(
+        support,
+        thresholds=THRESHOLDS,
+        chain_size=4,
+        representativeness=representativeness,
+        margin_common=margin_common,
+    )
+
+    assert role.verdict is expected
+
+
 def test_high_rank_below_floor_is_not_core():
     role = classify_membership(
         _support(0.0, 1.0),
