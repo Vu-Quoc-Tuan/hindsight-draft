@@ -10,6 +10,44 @@ export type ChainList = {
   chains: ChainSummary[]
 }
 
+export type EvolutionNode = {
+  snapshot_id: string
+  snapshot_version: string
+  chain_id: string
+  snapshot_time: string
+  lineage_component_id: string
+  branch_id: string
+  source_kind: string | null
+}
+
+export type EvolutionEdge = {
+  parent_snapshot_id: string
+  parent_snapshot_version: string
+  parent_chain_id: string
+  child_snapshot_id: string
+  child_snapshot_version: string
+  child_chain_id: string
+  event_type: string
+  overlap_count: number
+  contain_parent: number
+  contain_child: number
+}
+
+export type Evolution = {
+  status: 'AVAILABLE' | 'UNAVAILABLE'
+  reason: string | null
+  source_kind: string | null
+  sequence_status: 'VERIFIED' | 'UNAVAILABLE'
+  production_validation: 'ELIGIBLE' | 'NOT_ESTABLISHED'
+  lineage_component_id: string | null
+  branch_id: string | null
+  snapshot_id: string
+  snapshot_version: string
+  chain_id: string
+  nodes: EvolutionNode[]
+  edges: EvolutionEdge[]
+}
+
 export type Descriptor = {
   kind: string
   label: string

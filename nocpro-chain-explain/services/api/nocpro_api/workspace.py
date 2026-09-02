@@ -324,3 +324,32 @@ class Workspace:
             chain_id=chain_id,
             cache_fingerprint=artifact_fingerprint(identity.cache_tuple()),
         )
+
+    async def evolution(self, chain_id: str):
+        package = self.require_package()
+        if chain_id not in package.chains:
+            raise KeyError(f"unknown chain_id {chain_id!r}")
+        if self.repository is None:
+            from .persistence import StoredEvolution
+
+            return StoredEvolution(
+                status="UNAVAILABLE",
+                reason="SEQUENTIAL_SNAPSHOTS_NOT_AVAILABLE",
+                source_kind=getattr(
+                    package.snapshot.source_kind,
+                    "value",
+                    package.snapshot.source_kind,
+                ),
+                sequence_status="UNAVAILABLE",
+                production_validation="NOT_ESTABLISHED",
+                lineage_component_id=None,
+                branch_id=None,
+                snapshot_id=package.snapshot.snapshot_id,
+                snapshot_version=package.snapshot.snapshot_version,
+                chain_id=chain_id,
+            )
+        return await self.repository.load_evolution(
+            snapshot_id=package.snapshot.snapshot_id,
+            snapshot_version=package.snapshot.snapshot_version,
+            chain_id=chain_id,
+        )

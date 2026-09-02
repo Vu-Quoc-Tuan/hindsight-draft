@@ -6,6 +6,9 @@ from .repository import (
     LineageClaim,
     SimilarityClaim,
     SnapshotRepository,
+    StoredEvolution,
+    StoredEvolutionEdge,
+    StoredEvolutionNode,
     StoredCounterfactualJob,
     Tier1AClaim,
 )
@@ -16,6 +19,9 @@ __all__ = [
     "LineageClaim",
     "SimilarityClaim",
     "SnapshotRepository",
+    "StoredEvolution",
+    "StoredEvolutionEdge",
+    "StoredEvolutionNode",
     "StoredCounterfactualJob",
     "Tier1AClaim",
 ]

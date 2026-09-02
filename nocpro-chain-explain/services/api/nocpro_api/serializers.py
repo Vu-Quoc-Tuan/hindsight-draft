@@ -22,6 +22,7 @@ from .schemas import (
     DeepDiveView,
     DescriptorView,
     EvidenceCoverageAttributionView,
+    EvolutionView,
     GrayBoxView,
     GroupFitView,
     JobView,
@@ -236,6 +237,49 @@ def chain_analysis_view(analysis: ChainAnalysis, package) -> ChainAnalysisView:
         members=members,
         role_counts=analysis.role_counts(),
         phase_durations=analysis.phase_durations,
+    )
+
+
+def evolution_view(result) -> EvolutionView:
+    """Stable HTTP projection of an already-persisted lineage artifact."""
+    return EvolutionView(
+        status=result.status,
+        reason=result.reason,
+        source_kind=result.source_kind,
+        sequence_status=result.sequence_status,
+        production_validation=result.production_validation,
+        lineage_component_id=result.lineage_component_id,
+        branch_id=result.branch_id,
+        snapshot_id=result.snapshot_id,
+        snapshot_version=result.snapshot_version,
+        chain_id=result.chain_id,
+        nodes=[
+            {
+                "snapshot_id": node.snapshot_id,
+                "snapshot_version": node.snapshot_version,
+                "chain_id": node.chain_id,
+                "snapshot_time": node.snapshot_time.isoformat(),
+                "lineage_component_id": node.lineage_component_id,
+                "branch_id": node.branch_id,
+                "source_kind": node.source_kind,
+            }
+            for node in result.nodes
+        ],
+        edges=[
+            {
+                "parent_snapshot_id": edge.parent_snapshot_id,
+                "parent_snapshot_version": edge.parent_snapshot_version,
+                "parent_chain_id": edge.parent_chain_id,
+                "child_snapshot_id": edge.child_snapshot_id,
+                "child_snapshot_version": edge.child_snapshot_version,
+                "child_chain_id": edge.child_chain_id,
+                "event_type": edge.event_type,
+                "overlap_count": edge.overlap_count,
+                "contain_parent": edge.contain_parent,
+                "contain_child": edge.contain_child,
+            }
+            for edge in result.edges
+        ],
     )
 
 

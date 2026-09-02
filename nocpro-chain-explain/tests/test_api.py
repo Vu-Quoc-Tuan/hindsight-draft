@@ -9,6 +9,12 @@ from typing import TypeVar
 import httpx2
 
 from nocpro_api import create_app
+from nocpro_api.persistence import (
+    StoredEvolution,
+    StoredEvolutionEdge,
+    StoredEvolutionNode,
+)
+from nocpro_api.serializers import evolution_view
 
 
 T = TypeVar("T")
@@ -123,6 +129,89 @@ def test_snapshot_ingest_lists_and_explains_chains():
         "INSUFFICIENT_DATA",
     }
     assert body["descriptors"]
+
+
+def test_evolution_is_unavailable_for_a_single_direct_snapshot():
+    async def exercise(client: httpx2.AsyncClient):
+        await client.post("/api/v1/snapshots", json=_payload())
+        return await client.get("/api/v1/chains/C1/evolution")
+
+    response = run_api_test(exercise)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "UNAVAILABLE",
+        "reason": "SEQUENTIAL_SNAPSHOTS_NOT_AVAILABLE",
+        "source_kind": "SYNTHETIC_TEST",
+        "sequence_status": "UNAVAILABLE",
+        "production_validation": "NOT_ESTABLISHED",
+        "lineage_component_id": None,
+        "branch_id": None,
+        "snapshot_id": "s1",
+        "snapshot_version": "1",
+        "chain_id": "C1",
+        "nodes": [],
+        "edges": [],
+    }
+
+
+def test_evolution_serializer_keeps_verified_synthetic_artifact_provenance():
+    from datetime import datetime, timezone
+
+    result = evolution_view(
+        StoredEvolution(
+            status="AVAILABLE",
+            reason=None,
+            source_kind="SYNTHETIC_TEST",
+            sequence_status="VERIFIED",
+            production_validation="NOT_ESTABLISHED",
+            lineage_component_id="lc-test",
+            branch_id="lc-test:b0",
+            snapshot_id="s2",
+            snapshot_version="2",
+            chain_id="C2",
+            nodes=(
+                StoredEvolutionNode(
+                    snapshot_id="s1",
+                    snapshot_version="1",
+                    chain_id="C1",
+                    snapshot_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                    lineage_component_id="lc-test",
+                    branch_id="lc-test:b0",
+                    source_kind="SYNTHETIC_TEST",
+                ),
+                StoredEvolutionNode(
+                    snapshot_id="s2",
+                    snapshot_version="2",
+                    chain_id="C2",
+                    snapshot_time=datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc),
+                    lineage_component_id="lc-test",
+                    branch_id="lc-test:b0",
+                    source_kind="SYNTHETIC_TEST",
+                ),
+            ),
+            edges=(
+                StoredEvolutionEdge(
+                    parent_snapshot_id="s1",
+                    parent_snapshot_version="1",
+                    parent_chain_id="C1",
+                    child_snapshot_id="s2",
+                    child_snapshot_version="2",
+                    child_chain_id="C2",
+                    event_type="CONTINUE",
+                    overlap_count=3,
+                    contain_parent=1.0,
+                    contain_child=1.0,
+                ),
+            ),
+        )
+    )
+
+    assert result.status == "AVAILABLE"
+    assert result.source_kind == "SYNTHETIC_TEST"
+    assert result.production_validation == "NOT_ESTABLISHED"
+    assert result.edges[0].event_type == "CONTINUE"
+    assert result.edges[0].overlap_count == 3
 
 
 def test_pair_why_serializes_channel_family_and_dependency_semantic():

@@ -13,6 +13,7 @@ from .schemas import (
     ChainListView,
     ChainSummaryView,
     CounterfactualJobView,
+    EvolutionView,
     JobSubmissionView,
     JobView,
     PairWhyView,
@@ -22,6 +23,7 @@ from .schemas import (
 from .serializers import (
     chain_analysis_view,
     counterfactual_job_view,
+    evolution_view,
     job_view,
     pair_evidence_view,
 )
@@ -104,6 +106,14 @@ async def explain_chain(chain_id: str, request: Request):
     try:
         result = service.analyze(chain_id)
         return chain_analysis_view(result, service.require_package())
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.get("/chains/{chain_id}/evolution", response_model=EvolutionView)
+async def explain_evolution(chain_id: str, request: Request) -> EvolutionView:
+    try:
+        return evolution_view(await workspace(request).evolution(chain_id))
     except Exception as exc:
         raise translate_error(exc) from exc
 

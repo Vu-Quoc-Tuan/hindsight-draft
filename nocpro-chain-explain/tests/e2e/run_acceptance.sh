@@ -76,6 +76,7 @@ until curl -fsS "http://127.0.0.1:${API_HOST_PORT}/api/v1/health" >/dev/null; do
 done
 NOCPRO_RUN_DOCKER_E2E=1 PYTHONPATH="../nocpro-mock/src" \
   .venv/bin/python -m pytest tests/e2e/test_synthetic_p2_kafka.py -q
+pnpm --dir services/web exec playwright test e2e/evolution.spec.ts
 
 ANALYSIS_CONFIG_PATH="/app/config/thresholds/e2e-counterfactual.yaml" \
   docker compose up -d --force-recreate api

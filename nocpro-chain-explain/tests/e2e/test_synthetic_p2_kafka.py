@@ -398,10 +398,53 @@ def test_03_integrated_temporal_topology_reaches_lineage_similarity_and_p2():
         async with httpx2.AsyncClient(base_url=API_URL, timeout=10.0) as client:
             await _wait_until_active(client, latest.snapshot.snapshot_id)
             deep_dive = await _deep_dive_result(client, latest_chain_id)
+            evolution = await client.get(
+                f"/api/v1/chains/{latest_chain_id}/evolution"
+            )
+            assert evolution.status_code == 200, evolution.text
+            evolution_payload = evolution.json()
             assert deep_dive["similarity_trained_until_exclusive"] == (
                 latest.snapshot.snapshot_time
             )
             topology = deep_dive["topology_hypotheses"]
+
+        assert evolution_payload["status"] == "AVAILABLE"
+        assert evolution_payload["source_kind"] == "SYNTHETIC_TEST"
+        assert evolution_payload["sequence_status"] == "VERIFIED"
+        assert evolution_payload["production_validation"] == "NOT_ESTABLISHED"
+        assert evolution_payload["lineage_component_id"] is not None
+        assert evolution_payload["branch_id"] is not None
+        assert evolution_payload["nodes"]
+        assert evolution_payload["edges"]
+        node_time = {
+            (node["snapshot_id"], node["snapshot_version"], node["chain_id"]): node["snapshot_time"]
+            for node in evolution_payload["nodes"]
+        }
+        assert evolution_payload["edges"] == sorted(
+            evolution_payload["edges"],
+            key=lambda edge: (
+                node_time[
+                    (
+                        edge["parent_snapshot_id"],
+                        edge["parent_snapshot_version"],
+                        edge["parent_chain_id"],
+                    )
+                ],
+                node_time[
+                    (
+                        edge["child_snapshot_id"],
+                        edge["child_snapshot_version"],
+                        edge["child_chain_id"],
+                    )
+                ],
+                edge["parent_chain_id"],
+                edge["child_chain_id"],
+            ),
+        )
+        assert any(
+            edge["event_type"] == "SHRINK"
+            for edge in evolution_payload["edges"]
+        )
 
         for capability in ("dominator", "propagation", "dependency_scope"):
             assert topology[capability]["status"] == "AVAILABLE", json.dumps(

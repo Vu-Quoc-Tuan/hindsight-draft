@@ -1,4 +1,4 @@
-import type { ChainAnalysis, ChainList, CounterfactualJob, Job, PairWhy } from './types'
+import type { ChainAnalysis, ChainList, CounterfactualJob, Evolution, Job, PairWhy } from './types'
 
 export class ApiError extends Error {
   status: number
@@ -43,6 +43,10 @@ export const api = {
     request<ChainList>('/api/v1/chains', { signal }),
   analysis: (chainId: string, signal?: AbortSignal) =>
     request<ChainAnalysis>(`/api/v1/chains/${encodeURIComponent(chainId)}`, {
+      signal,
+    }),
+  evolution: (chainId: string, signal?: AbortSignal) =>
+    request<Evolution>(`/api/v1/chains/${encodeURIComponent(chainId)}/evolution`, {
       signal,
     }),
   pairWhy: (

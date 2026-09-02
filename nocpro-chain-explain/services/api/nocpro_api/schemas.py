@@ -142,6 +142,44 @@ class JobSubmissionView(ApiModel):
     deduplicated: bool
 
 
+class EvolutionNodeView(ApiModel):
+    snapshot_id: str
+    snapshot_version: str
+    chain_id: str
+    snapshot_time: str
+    lineage_component_id: str
+    branch_id: str
+    source_kind: str | None
+
+
+class EvolutionEdgeView(ApiModel):
+    parent_snapshot_id: str
+    parent_snapshot_version: str
+    parent_chain_id: str
+    child_snapshot_id: str
+    child_snapshot_version: str
+    child_chain_id: str
+    event_type: str
+    overlap_count: int
+    contain_parent: float
+    contain_child: float
+
+
+class EvolutionView(ApiModel):
+    status: str
+    reason: str | None
+    source_kind: str | None
+    sequence_status: str
+    production_validation: str
+    lineage_component_id: str | None
+    branch_id: str | None
+    snapshot_id: str
+    snapshot_version: str
+    chain_id: str
+    nodes: list[EvolutionNodeView]
+    edges: list[EvolutionEdgeView]
+
+
 class StructuralAuditView(ApiModel):
     verdict: str
     reason: str

@@ -347,9 +347,11 @@ pnpm install
 pnpm dev
 ```
 
-Vite proxies `/api` to `127.0.0.1:8000`. The Evolution view intentionally
-reports `UNAVAILABLE` until a verified sequential snapshot source is connected;
-it does not infer lineage from unrelated exports.
+Vite proxies `/api` to `127.0.0.1:8000`. Production Evolution remains
+`UNAVAILABLE` until verified sequential production snapshots exist. A verified
+`SYNTHETIC_TEST` sequence may render the persisted lineage artifact in
+development/E2E, with provenance and `production_validation=NOT_ESTABLISHED`;
+it never infers lineage from unrelated exports or enables production Evolution.
 
 ## Docker Kafka integration
 

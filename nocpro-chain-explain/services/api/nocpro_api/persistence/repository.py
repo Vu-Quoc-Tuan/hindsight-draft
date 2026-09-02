@@ -110,6 +110,47 @@ class StoredCounterfactualJob:
     updated_at: datetime
 
 
+@dataclass(frozen=True)
+class StoredEvolutionNode:
+    snapshot_id: str
+    snapshot_version: str
+    chain_id: str
+    snapshot_time: datetime
+    lineage_component_id: str
+    branch_id: str
+    source_kind: str | None
+
+
+@dataclass(frozen=True)
+class StoredEvolutionEdge:
+    parent_snapshot_id: str
+    parent_snapshot_version: str
+    parent_chain_id: str
+    child_snapshot_id: str
+    child_snapshot_version: str
+    child_chain_id: str
+    event_type: str
+    overlap_count: int
+    contain_parent: float
+    contain_child: float
+
+
+@dataclass(frozen=True)
+class StoredEvolution:
+    status: str
+    reason: str | None
+    source_kind: str | None
+    sequence_status: str
+    production_validation: str
+    lineage_component_id: str | None
+    branch_id: str | None
+    snapshot_id: str
+    snapshot_version: str
+    chain_id: str
+    nodes: tuple[StoredEvolutionNode, ...] = ()
+    edges: tuple[StoredEvolutionEdge, ...] = ()
+
+
 def _logical_time(value: str) -> datetime:
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
@@ -128,6 +169,202 @@ class SnapshotRepository:
     ) -> None:
         self.sessions = sessions
         self.max_compressed_snapshot_bytes = max_compressed_snapshot_bytes
+
+    async def load_evolution(
+        self,
+        *,
+        snapshot_id: str,
+        snapshot_version: str,
+        chain_id: str,
+    ) -> StoredEvolution:
+        """Project only the verified, persisted episode-DAG artifact.
+
+        This deliberately does not load snapshots or re-run the evolution
+        algorithm at request time.  A lineage node without an edge is one
+        snapshot of state, not a verified sequence.
+        """
+        unavailable = lambda reason, source_kind=None: StoredEvolution(
+            status="UNAVAILABLE",
+            reason=reason,
+            source_kind=source_kind,
+            sequence_status="UNAVAILABLE",
+            production_validation="NOT_ESTABLISHED",
+            lineage_component_id=None,
+            branch_id=None,
+            snapshot_id=snapshot_id,
+            snapshot_version=snapshot_version,
+            chain_id=chain_id,
+        )
+        async with self.sessions() as session:
+            snapshot = await session.get(
+                SnapshotIngest, (snapshot_id, snapshot_version)
+            )
+            if snapshot is None:
+                return unavailable("SNAPSHOT_NOT_PERSISTED")
+            if snapshot.lineage_status != "READY":
+                return unavailable(
+                    "SEQUENTIAL_SNAPSHOTS_NOT_AVAILABLE", snapshot.source_kind
+                )
+            current = await session.get(
+                LineageNode, (snapshot_id, snapshot_version, chain_id)
+            )
+            if current is None:
+                return unavailable(
+                    "SEQUENTIAL_SNAPSHOTS_NOT_AVAILABLE", snapshot.source_kind
+                )
+            component = await session.get(LineageComponent, current.component_id)
+            if component is None:
+                raise ValueError("persisted lineage node has no component")
+            canonical_component_id = component.canonical_component_id
+            component_ids = list(
+                (
+                    await session.scalars(
+                        select(LineageComponent.component_id).where(
+                            LineageComponent.canonical_component_id
+                            == canonical_component_id
+                        )
+                    )
+                ).all()
+            )
+            node_rows = list(
+                (
+                    await session.scalars(
+                        select(LineageNode)
+                        .where(LineageNode.component_id.in_(component_ids))
+                        .order_by(
+                            LineageNode.snapshot_time.asc(),
+                            LineageNode.snapshot_id.asc(),
+                            LineageNode.snapshot_version.asc(),
+                            LineageNode.snapshot_chain_id.asc(),
+                        )
+                    )
+                ).all()
+            )
+            keys = [
+                (row.snapshot_id, row.snapshot_version, row.snapshot_chain_id)
+                for row in node_rows
+            ]
+            edge_rows = list(
+                (
+                    await session.scalars(
+                        select(LineageEdge)
+                        .where(
+                            tuple_(
+                                LineageEdge.parent_snapshot_id,
+                                LineageEdge.parent_snapshot_version,
+                                LineageEdge.parent_chain_id,
+                            ).in_(keys),
+                            tuple_(
+                                LineageEdge.child_snapshot_id,
+                                LineageEdge.child_snapshot_version,
+                                LineageEdge.child_chain_id,
+                            ).in_(keys),
+                        )
+                        .order_by(
+                            LineageEdge.parent_snapshot_id.asc(),
+                            LineageEdge.parent_snapshot_version.asc(),
+                            LineageEdge.parent_chain_id.asc(),
+                            LineageEdge.child_snapshot_id.asc(),
+                            LineageEdge.child_snapshot_version.asc(),
+                            LineageEdge.child_chain_id.asc(),
+                        )
+                    )
+                ).all()
+            )
+            node_time_by_key = {
+                (row.snapshot_id, row.snapshot_version, row.snapshot_chain_id): row.snapshot_time
+                for row in node_rows
+            }
+            edge_rows.sort(
+                key=lambda row: (
+                    node_time_by_key[
+                        (
+                            row.parent_snapshot_id,
+                            row.parent_snapshot_version,
+                            row.parent_chain_id,
+                        )
+                    ],
+                    node_time_by_key[
+                        (
+                            row.child_snapshot_id,
+                            row.child_snapshot_version,
+                            row.child_chain_id,
+                        )
+                    ],
+                    row.parent_chain_id,
+                    row.child_chain_id,
+                )
+            )
+            if not edge_rows:
+                return unavailable(
+                    "SEQUENTIAL_SNAPSHOTS_NOT_AVAILABLE", snapshot.source_kind
+                )
+            snapshot_rows = list(
+                (
+                    await session.scalars(
+                        select(SnapshotIngest).where(
+                            tuple_(
+                                SnapshotIngest.snapshot_id,
+                                SnapshotIngest.snapshot_version,
+                            ).in_([(row.snapshot_id, row.snapshot_version) for row in node_rows])
+                        )
+                    )
+                ).all()
+            )
+        source_by_snapshot = {
+            (row.snapshot_id, row.snapshot_version): row.source_kind
+            for row in snapshot_rows
+        }
+        source_kinds = {
+            source_by_snapshot.get((row.snapshot_id, row.snapshot_version))
+            for row in node_rows
+        }
+        production_validation = (
+            "ELIGIBLE"
+            if source_kinds <= {"REAL_LIVE", "REAL_EXPORT_REPLAY"}
+            else "NOT_ESTABLISHED"
+        )
+        return StoredEvolution(
+            status="AVAILABLE",
+            reason=None,
+            source_kind=snapshot.source_kind,
+            sequence_status="VERIFIED",
+            production_validation=production_validation,
+            lineage_component_id=canonical_component_id,
+            branch_id=current.branch_id,
+            snapshot_id=snapshot_id,
+            snapshot_version=snapshot_version,
+            chain_id=chain_id,
+            nodes=tuple(
+                StoredEvolutionNode(
+                    snapshot_id=row.snapshot_id,
+                    snapshot_version=row.snapshot_version,
+                    chain_id=row.snapshot_chain_id,
+                    snapshot_time=row.snapshot_time,
+                    lineage_component_id=canonical_component_id,
+                    branch_id=row.branch_id,
+                    source_kind=source_by_snapshot.get(
+                        (row.snapshot_id, row.snapshot_version)
+                    ),
+                )
+                for row in node_rows
+            ),
+            edges=tuple(
+                StoredEvolutionEdge(
+                    parent_snapshot_id=row.parent_snapshot_id,
+                    parent_snapshot_version=row.parent_snapshot_version,
+                    parent_chain_id=row.parent_chain_id,
+                    child_snapshot_id=row.child_snapshot_id,
+                    child_snapshot_version=row.child_snapshot_version,
+                    child_chain_id=row.child_chain_id,
+                    event_type=row.edge_type,
+                    overlap_count=row.overlap_count,
+                    contain_parent=row.contain_parent,
+                    contain_child=row.contain_child,
+                )
+                for row in edge_rows
+            ),
+        )
 
     async def persist_audit_artifact(
         self, artifact: ReviewAuditArtifact
