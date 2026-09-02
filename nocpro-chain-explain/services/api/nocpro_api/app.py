@@ -117,9 +117,10 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
                     await recovery_task
             if consumer is not None:
                 await consumer.stop()
+            service.close()
+            await service.flush_review_persistence()
             if database is not None:
                 await database.close()
-            service.close()
 
     app = FastAPI(
         title="NocPro Chain Explain API",

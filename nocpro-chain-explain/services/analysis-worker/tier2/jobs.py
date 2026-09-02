@@ -355,6 +355,21 @@ class Tier2JobManager:
             except KeyError as exc:
                 raise KeyError(f"unknown Tier-2 job_id {job_id!r}") from exc
 
+    def latest_succeeded(
+        self, snapshot_id: str, snapshot_version: str, chain_id: str
+    ) -> Tier2JobView | None:
+        """Return an already-computed Audit artifact without triggering Tier-2."""
+        with self._lock:
+            matches = [
+                job.view()
+                for job in self._jobs.values()
+                if job.chain_id == chain_id
+                and job.cache_key.snapshot_id == snapshot_id
+                and job.cache_key.snapshot_version == snapshot_version
+                and job.status is JobStatus.SUCCEEDED
+            ]
+        return matches[-1] if matches else None
+
     def wait(self, job_id: str, *, timeout: float | None = None) -> Tier2JobView:
         with self._lock:
             if job_id not in self._jobs:

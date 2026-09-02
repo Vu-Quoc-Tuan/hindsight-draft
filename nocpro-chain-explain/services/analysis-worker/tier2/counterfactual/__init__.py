@@ -28,6 +28,13 @@ from .evaluator import (
 )
 from .pareto import FrontierResult, dominates, select_frontier
 from .analysis import analyze_counterfactual_review
+from .jobs import (
+    CounterfactualJobManager,
+    CounterfactualJobView,
+    CounterfactualSubmission,
+    artifact_fingerprint,
+    review_identity,
+)
 
 __all__ = [
     "CalibrationStatus",
@@ -57,4 +64,9 @@ __all__ = [
     "evaluate_candidate",
     "select_frontier",
     "analyze_counterfactual_review",
+    "CounterfactualJobManager",
+    "CounterfactualJobView",
+    "CounterfactualSubmission",
+    "artifact_fingerprint",
+    "review_identity",
 ]

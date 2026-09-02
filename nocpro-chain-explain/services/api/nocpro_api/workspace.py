@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import asyncio
+from concurrent.futures import Future
 from pathlib import Path
 from threading import RLock
 from typing import Any
@@ -14,6 +16,7 @@ from tier1a import SnapshotPrecompute, Tier1Cache, precompute_snapshot
 from tier1b import analyze_chain_configured
 from tier2 import Tier2JobManager
 from tier2 import SimilarityQueryContext
+from tier2.counterfactual import CounterfactualJobManager
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -34,6 +37,7 @@ class Workspace:
         self.config: AnalysisConfig = load_analysis_config(selected_config)
         self.cache = Tier1Cache()
         self.jobs = Tier2JobManager(cache=self.cache)
+        self.review_jobs = CounterfactualJobManager()
         self.package: IngestedPackage | None = None
         self.precompute: SnapshotPrecompute | None = None
         self._lock = RLock()
@@ -41,13 +45,38 @@ class Workspace:
         self.coordinator = None
         self.similarity_index = None
         self.lineage_by_chain: dict[str, str] = {}
+        self._persistence_loop = None
+        self._review_persistence_futures: list[Future] = []
 
     def close(self) -> None:
+        self.review_jobs.shutdown()
+        self.review_jobs.set_state_listener(None)
         self.jobs.shutdown()
+
+    async def flush_review_persistence(self) -> None:
+        with self._lock:
+            pending = list(self._review_persistence_futures)
+            self._review_persistence_futures.clear()
+        if pending:
+            await asyncio.gather(
+                *(asyncio.wrap_future(future) for future in pending),
+                return_exceptions=False,
+            )
 
     def attach_persistence(self, repository, coordinator) -> None:
         self.repository = repository
         self.coordinator = coordinator
+        self._persistence_loop = asyncio.get_running_loop()
+
+        def persist_review_state(view) -> None:
+            future = asyncio.run_coroutine_threadsafe(
+                repository.persist_counterfactual_job(view.persistence_payload()),
+                self._persistence_loop,
+            )
+            with self._lock:
+                self._review_persistence_futures.append(future)
+
+        self.review_jobs.set_state_listener(persist_review_state)
 
     async def ingest_snapshot(self, payload: dict[str, Any]) -> SnapshotPrecompute:
         if self.repository is None or self.coordinator is None:
@@ -172,4 +201,20 @@ class Workspace:
             chain_id,
             analysis_config=self.config,
             similarity_context=similarity_context,
+        )
+
+    def submit_review(self, chain_id: str):
+        package = self.require_package()
+        tier1b_artifact = self.analyze(chain_id)
+        audit_view = self.jobs.latest_succeeded(
+            package.snapshot.snapshot_id,
+            package.snapshot.snapshot_version,
+            chain_id,
+        )
+        return self.review_jobs.submit(
+            package,
+            chain_id,
+            tier1b_artifact=tier1b_artifact,
+            audit_artifact=audit_view.result if audit_view is not None else None,
+            analysis_config=self.config,
         )

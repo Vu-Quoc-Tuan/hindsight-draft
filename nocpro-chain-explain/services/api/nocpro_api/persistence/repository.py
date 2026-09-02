@@ -34,6 +34,7 @@ from ..ingest.wire import SnapshotChunkEvent, SnapshotCompleteEvent, SnapshotWir
 from .models import (
     Alarm,
     Chain,
+    CounterfactualJobRecord,
     KafkaInbox,
     LineageComponent,
     LineageEdge,
@@ -86,6 +87,23 @@ class SimilarityClaim:
     worker_id: str
 
 
+@dataclass(frozen=True)
+class StoredCounterfactualJob:
+    job_id: str
+    snapshot_id: str
+    snapshot_version: str
+    chain_id: str
+    cache_fingerprint: str
+    status: str
+    progress_percent: int
+    cache_hit: bool
+    identity: dict[str, Any]
+    result: dict[str, Any] | None
+    error: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
 def _logical_time(value: str) -> datetime:
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
@@ -104,6 +122,122 @@ class SnapshotRepository:
     ) -> None:
         self.sessions = sessions
         self.max_compressed_snapshot_bytes = max_compressed_snapshot_bytes
+
+    async def persist_counterfactual_job(
+        self, payload: dict[str, Any]
+    ) -> StoredCounterfactualJob:
+        """Upsert one immutable-identity Review lifecycle snapshot."""
+        status_rank = {"QUEUED": 0, "RUNNING": 1, "SUCCEEDED": 2, "FAILED": 2}
+        if payload["status"] not in status_rank:
+            raise ValueError("unknown counterfactual job status")
+        values = {
+            "job_id": payload["job_id"],
+            "snapshot_id": payload["snapshot_id"],
+            "snapshot_version": payload["snapshot_version"],
+            "chain_id": payload["chain_id"],
+            "cache_fingerprint": payload["cache_fingerprint"],
+            "status": payload["status"],
+            "progress_percent": payload["progress_percent"],
+            "cache_hit": payload["cache_hit"],
+            "identity_payload": payload["identity"],
+            "result_payload": payload.get("result"),
+            "error": payload.get("error"),
+        }
+        async with self.sessions.begin() as session:
+            existing = await session.get(
+                CounterfactualJobRecord, payload["job_id"], with_for_update=True
+            )
+            if existing is not None:
+                immutable = (
+                    existing.snapshot_id,
+                    existing.snapshot_version,
+                    existing.chain_id,
+                    existing.cache_fingerprint,
+                    existing.identity_payload,
+                )
+                proposed = (
+                    values["snapshot_id"],
+                    values["snapshot_version"],
+                    values["chain_id"],
+                    values["cache_fingerprint"],
+                    values["identity_payload"],
+                )
+                if immutable != proposed:
+                    raise ValueError("counterfactual job identity is immutable")
+                if status_rank[existing.status] > status_rank[values["status"]]:
+                    return self._stored_counterfactual(existing)
+                if (
+                    status_rank[existing.status] == 2
+                    and existing.status != values["status"]
+                ):
+                    raise ValueError("counterfactual terminal status is immutable")
+            statement = pg_insert(CounterfactualJobRecord).values(**values)
+            statement = statement.on_conflict_do_update(
+                index_elements=[CounterfactualJobRecord.job_id],
+                set_={
+                    "status": statement.excluded.status,
+                    "progress_percent": statement.excluded.progress_percent,
+                    "cache_hit": statement.excluded.cache_hit,
+                    "result_payload": statement.excluded.result_payload,
+                    "error": statement.excluded.error,
+                    "updated_at": func.now(),
+                },
+            )
+            await session.execute(statement)
+        stored = await self.counterfactual_job(payload["job_id"])
+        if stored is None:
+            raise RuntimeError("persisted counterfactual job is unavailable")
+        return stored
+
+    async def counterfactual_job(
+        self, job_id: str
+    ) -> StoredCounterfactualJob | None:
+        async with self.sessions() as session:
+            row = await session.get(CounterfactualJobRecord, job_id)
+            return self._stored_counterfactual(row) if row is not None else None
+
+    async def latest_compatible_counterfactual_job(
+        self,
+        *,
+        snapshot_id: str,
+        snapshot_version: str,
+        chain_id: str,
+        cache_fingerprint: str,
+    ) -> StoredCounterfactualJob | None:
+        async with self.sessions() as session:
+            row = await session.scalar(
+                select(CounterfactualJobRecord)
+                .where(
+                    CounterfactualJobRecord.snapshot_id == snapshot_id,
+                    CounterfactualJobRecord.snapshot_version == snapshot_version,
+                    CounterfactualJobRecord.chain_id == chain_id,
+                    CounterfactualJobRecord.cache_fingerprint == cache_fingerprint,
+                    CounterfactualJobRecord.status == "SUCCEEDED",
+                )
+                .order_by(CounterfactualJobRecord.updated_at.desc())
+                .limit(1)
+            )
+            return self._stored_counterfactual(row) if row is not None else None
+
+    @staticmethod
+    def _stored_counterfactual(
+        row: CounterfactualJobRecord,
+    ) -> StoredCounterfactualJob:
+        return StoredCounterfactualJob(
+            job_id=row.job_id,
+            snapshot_id=row.snapshot_id,
+            snapshot_version=row.snapshot_version,
+            chain_id=row.chain_id,
+            cache_fingerprint=row.cache_fingerprint,
+            status=row.status,
+            progress_percent=row.progress_percent,
+            cache_hit=row.cache_hit,
+            identity=row.identity_payload,
+            result=row.result_payload,
+            error=row.error,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
 
     async def record_kafka_event(
         self,
