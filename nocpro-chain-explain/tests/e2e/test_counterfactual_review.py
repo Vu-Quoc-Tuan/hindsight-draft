@@ -7,6 +7,8 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import json
 import os
+from pathlib import Path
+import subprocess
 from uuid import uuid4
 
 import asyncpg
@@ -33,6 +35,16 @@ DATABASE_URL = os.environ.get(
     "postgresql://nocpro:nocpro@127.0.0.1:55432/nocpro",
 )
 API_URL = os.environ.get("NOCPRO_E2E_API_URL", "http://127.0.0.1:8800")
+PROJECT = os.environ.get("NOCPRO_E2E_COMPOSE_PROJECT", "nocpro-acceptance")
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def _restart_api() -> None:
+    subprocess.run(
+        ["docker", "compose", "-p", PROJECT, "restart", "api"],
+        cwd=ROOT,
+        check=True,
+    )
 
 
 async def _next_logical_time() -> datetime:
@@ -123,6 +135,21 @@ async def _wait_active(client, snapshot_id: str) -> None:
     raise AssertionError(f"snapshot {snapshot_id} did not become active")
 
 
+async def _wait_health(client) -> None:
+    deadline = asyncio.get_running_loop().time() + 60
+    while asyncio.get_running_loop().time() < deadline:
+        try:
+            response = await client.get("/api/v1/health")
+            if response.status_code == 200:
+                return
+        except httpx2.HTTPError:
+            # The old keep-alive socket is expected to close when the API
+            # process restarts; retry with a fresh pooled connection.
+            pass
+        await asyncio.sleep(0.25)
+    raise AssertionError("API did not recover after restart")
+
+
 async def _poll(client, path: str) -> dict:
     deadline = asyncio.get_running_loop().time() + 30
     last = None
@@ -152,9 +179,33 @@ async def _run_case(client, fixture, logical_time):
         f"/api/v1/chains/{fixture.chain_id}/deep-dive"
     )
     assert audit_submission.status_code == 202, audit_submission.text
-    await _poll(
+    audit = await _poll(
         client, f"/api/v1/jobs/{audit_submission.json()['job_id']}"
     )
+    connection = await asyncpg.connect(DATABASE_URL)
+    try:
+        artifact = await connection.fetchrow(
+            """
+            SELECT artifact_fingerprint, mode, status
+              FROM audit_artifact
+             WHERE snapshot_id = $1 AND snapshot_version = $2 AND chain_id = $3
+             ORDER BY created_at DESC
+             LIMIT 1
+            """,
+            package.snapshot.snapshot_id,
+            package.snapshot.snapshot_version,
+            fixture.chain_id,
+        )
+    finally:
+        await connection.close()
+    assert audit["result"]["audit_graph_mode"] == "EXACT_FULL"
+    assert artifact is not None
+    assert artifact["status"] == "AVAILABLE"
+    assert artifact["mode"] == "EXACT"
+
+    _restart_api()
+    await _wait_health(client)
+    await _wait_active(client, package.snapshot.snapshot_id)
     review_submission = await client.post(
         f"/api/v1/chains/{fixture.chain_id}/review"
     )
@@ -162,7 +213,7 @@ async def _run_case(client, fixture, logical_time):
     review = await _poll(
         client, f"/api/v1/review-jobs/{review_submission.json()['job_id']}"
     )
-    return package, review
+    return package, review, artifact["artifact_fingerprint"]
 
 
 def test_counterfactual_remove_and_split_survive_real_transport_and_persistence():
@@ -170,7 +221,7 @@ def test_counterfactual_remove_and_split_survive_real_transport_and_persistence(
         base = await _next_logical_time()
         async with httpx2.AsyncClient(base_url=API_URL, timeout=15) as client:
             for index, fixture in enumerate(COUNTERFACTUAL_FIXTURES):
-                package, review = await _run_case(
+                package, review, artifact_fingerprint = await _run_case(
                     client, fixture, base + timedelta(minutes=index)
                 )
                 result = review["result"]
@@ -183,6 +234,10 @@ def test_counterfactual_remove_and_split_survive_real_transport_and_persistence(
                 assert result["identity"]["snapshot_id"] == package.snapshot.snapshot_id
                 assert result["identity"]["config_version"] == (
                     "synthetic-counterfactual-v1"
+                )
+                assert (
+                    result["identity"]["structural_audit_artifact_fingerprint"]
+                    == artifact_fingerprint
                 )
 
                 connection = await asyncpg.connect(DATABASE_URL)

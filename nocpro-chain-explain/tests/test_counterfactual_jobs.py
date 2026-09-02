@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from threading import Event
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import MappingProxyType
 
 from configuration import load_analysis_config
 from tier2 import JobStatus
-from tier2.counterfactual import CounterfactualJobManager, DomainStatus
+from tier2.counterfactual import CounterfactualJobManager, DomainStatus, review_identity
 from tier2.counterfactual import artifact_fingerprint
+from tier2.audit_artifact import build_review_audit_artifact
+from tests.test_audit_artifact import _audit
 from tests.test_counterfactual_analysis import _metric_computer, _tier1b
 from tests.test_counterfactual_evaluator import _package
 
@@ -88,6 +90,32 @@ def test_artifact_fingerprint_change_misses_cache() -> None:
         assert second.job_id != first.job_id
     finally:
         manager.shutdown()
+
+
+def test_review_identity_uses_persisted_audit_fingerprint_verbatim() -> None:
+    package = _package()
+    artifact = build_review_audit_artifact(
+        snapshot_id="s1",
+        snapshot_version="1",
+        chain_id="C",
+        members=("A", "B", "C", "X"),
+        structural_audit=replace(_audit(), chain_id="C"),
+        analysis_version="tier2-audit-v1",
+        analysis_config_version="synthetic-v1",
+        artifact_id="audit-identity",
+        created_at="2026-09-02T10:00:00+00:00",
+    )
+    identity = review_identity(
+        package,
+        "C",
+        analysis_version="analysis-v1",
+        config_version="synthetic-v1",
+        tier1b_artifact=_tier1b(),
+        audit_artifact=artifact,
+        external_artifact=None,
+    )
+
+    assert identity.structural_audit_artifact_fingerprint == artifact.artifact_fingerprint
 
 
 def test_domain_unavailable_is_succeeded_job() -> None:

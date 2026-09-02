@@ -27,30 +27,38 @@ trap cleanup EXIT
 docker compose down --volumes --remove-orphans
 docker compose up -d --build api web
 
+NOCPRO_RUN_DOCKER_E2E=1 PYTHONPATH="../nocpro-mock/src" \
+  .venv/bin/python -m pytest tests/e2e/test_postgres_migrations_runtime.py -q
+
 snapshot_id="acceptance-real-$(date -u +%Y%m%dT%H%M%SZ)"
-MOCK_SNAPSHOT_ID="$snapshot_id" MOCK_SNAPSHOT_VERSION=1 \
-  docker compose --profile replay run --rm mock-producer
+raw_alarm_csv="../nocpro-mock/datasets/raw/alarm_data.csv"
+if [[ -f "$raw_alarm_csv" ]]; then
+  MOCK_SNAPSHOT_ID="$snapshot_id" MOCK_SNAPSHOT_VERSION=1 \
+    docker compose --profile replay run --rm mock-producer
 
-deadline=$((SECONDS + 120))
-while (( SECONDS < deadline )); do
-  state="$(docker compose exec -T postgres psql -U nocpro -d nocpro -At -c \
-    "SELECT concat_ws('|', status, tier1a_status, lineage_status, similarity_status) FROM snapshot_ingest WHERE snapshot_id='${snapshot_id}' AND snapshot_version='1';")"
-  if [[ "$state" == "COMPLETE|READY|READY|READY" ]]; then
-    break
+  deadline=$((SECONDS + 120))
+  while (( SECONDS < deadline )); do
+    state="$(docker compose exec -T postgres psql -U nocpro -d nocpro -At -c \
+      "SELECT concat_ws('|', status, tier1a_status, lineage_status, similarity_status) FROM snapshot_ingest WHERE snapshot_id='${snapshot_id}' AND snapshot_version='1';")"
+    if [[ "$state" == "COMPLETE|READY|READY|READY" ]]; then
+      break
+    fi
+    sleep 1
+  done
+  if [[ "${state:-}" != "COMPLETE|READY|READY|READY" ]]; then
+    docker compose logs --no-color api
+    echo "snapshot ${snapshot_id} failed acceptance readiness: ${state:-missing}" >&2
+    exit 1
   fi
-  sleep 1
-done
-if [[ "${state:-}" != "COMPLETE|READY|READY|READY" ]]; then
-  docker compose logs --no-color api
-  echo "snapshot ${snapshot_id} failed acceptance readiness: ${state:-missing}" >&2
-  exit 1
+
+  pnpm --dir services/web e2e
+
+  curl -fsS "http://127.0.0.1:${API_HOST_PORT}/api/v1/chains/6907125" \
+    -o /tmp/nocpro-acceptance-largest-chain.json \
+    -w 'tier1b_chain_1072_seconds=%{time_total}\n'
+else
+  echo "production_replay_acceptance=SKIPPED_RAW_ALARM_EXPORT_MISSING"
 fi
-
-pnpm --dir services/web e2e
-
-curl -fsS "http://127.0.0.1:${API_HOST_PORT}/api/v1/chains/6907125" \
-  -o /tmp/nocpro-acceptance-largest-chain.json \
-  -w 'tier1b_chain_1072_seconds=%{time_total}\n'
 
 NOCPRO_RUN_DOCKER_E2E=1 PYTHONPATH="../nocpro-mock/src" \
   .venv/bin/python -m pytest tests/e2e/test_docker_failures.py -q

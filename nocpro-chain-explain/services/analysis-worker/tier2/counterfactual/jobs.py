@@ -84,7 +84,10 @@ def review_identity(
         config_version=config_version,
         tier1b_artifact_fingerprint=artifact_fingerprint(tier1b_artifact),
         structural_audit_artifact_fingerprint=(
-            artifact_fingerprint(audit_artifact) if audit_artifact is not None else None
+            getattr(audit_artifact, "artifact_fingerprint", None)
+            or artifact_fingerprint(audit_artifact)
+            if audit_artifact is not None
+            else None
         ),
         external_validation_artifact_fingerprint=(
             external_artifact.fingerprint if external_artifact is not None else None
