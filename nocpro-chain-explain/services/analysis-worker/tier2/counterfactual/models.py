@@ -46,6 +46,12 @@ class RecommendationStatus(str, Enum):
     NO_CLEAR_ALTERNATIVE = "NO_CLEAR_ALTERNATIVE"
 
 
+class SemanticEffect(str, Enum):
+    """A post-edit fact; it never changes operation selection or acceptance."""
+
+    BECOMES_CONNECTOR = "BECOMES_CONNECTOR"
+
+
 @dataclass(frozen=True)
 class MetricValue:
     availability: MetricAvailability
@@ -203,6 +209,16 @@ class CounterfactualCandidate:
 
 
 @dataclass(frozen=True)
+class MoveStructuralFacts:
+    """Exact structural facts for the moved member in a two-chain evaluation."""
+
+    before_structural_role: str
+    after_structural_role: str
+    after_is_articulation_point: bool
+    after_blocks_supported: int
+
+
+@dataclass(frozen=True)
 class CandidateBatch:
     operation: Operation
     discovered_count: int
@@ -220,6 +236,8 @@ class CandidateEvaluation:
     after: MetricVector | None = None
     materially_improved_metrics: tuple[str, ...] = ()
     reason: str | None = None
+    move_structural_facts: MoveStructuralFacts | None = None
+    semantic_effects: tuple[SemanticEffect, ...] = ()
 
 
 @dataclass(frozen=True)

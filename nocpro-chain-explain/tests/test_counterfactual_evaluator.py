@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
-
+import tier2.counterfactual.evaluator as evaluator_module
+from audit import StructuralRole, StructuralRoleResult
 from configuration import CalibrationStatus, CounterfactualConfig
 from libs.contracts import load_package
 from tier2.counterfactual import (
@@ -234,6 +235,144 @@ def test_move_recomputes_both_affected_chains_before_and_after() -> None:
         (("C", "U"), ("Z",)),
         (("C", "U"), ("X", "Z")),
     ]
+
+
+def test_exact_move_records_connector_fact_and_effect_after_hard_gate_passes(
+    monkeypatch,
+) -> None:
+    before = _metrics()
+    after = _metrics(
+        weak=1,
+        membership=0.4,
+        coverage=0.6,
+        components=1,
+        conductance=0.3,
+        severity=0,
+    )
+
+    def exact(package, chain_ids, *, structural_roles_by_chain=None, **_kwargs):
+        assert structural_roles_by_chain is not None
+        if package.members_of("U") == ["Z"]:
+            structural_roles_by_chain["C"] = {
+                "X": StructuralRoleResult(
+                    alarm_id="X",
+                    role=StructuralRole.NON_CONNECTOR,
+                    is_articulation_point=False,
+                    blocks_supported=1,
+                    reason="not a bridge",
+                )
+            }
+            return before
+        structural_roles_by_chain["U"] = {
+            "X": StructuralRoleResult(
+                alarm_id="X",
+                role=StructuralRole.CONNECTOR,
+                is_articulation_point=True,
+                blocks_supported=2,
+                reason="exact bridge",
+            )
+        }
+        return after
+
+    monkeypatch.setattr(evaluator_module, "compute_exact_partition_metrics", exact)
+    result = evaluate_candidate(
+        _package(), _move_candidate(), analysis_config=object(), config=CONFIG
+    )
+
+    assert result.status is CandidateStatus.BETTER_SUPPORTED
+    assert result.move_structural_facts is not None
+    assert result.move_structural_facts.before_structural_role == "NON_CONNECTOR"
+    assert result.move_structural_facts.after_structural_role == "CONNECTOR"
+    assert result.move_structural_facts.after_is_articulation_point is True
+    assert result.move_structural_facts.after_blocks_supported == 2
+    assert [effect.value for effect in result.semantic_effects] == ["BECOMES_CONNECTOR"]
+
+
+def test_exact_move_keeps_connector_fact_but_not_effect_after_hard_gate_rejection(
+    monkeypatch,
+) -> None:
+    before = _metrics()
+    rejected_after = _metrics(
+        weak=1,
+        membership=0.4,
+        coverage=0.3,
+        components=1,
+        conductance=0.3,
+        severity=0,
+    )
+
+    def exact(package, chain_ids, *, structural_roles_by_chain=None, **_kwargs):
+        assert structural_roles_by_chain is not None
+        roles = structural_roles_by_chain.setdefault(
+            "C" if package.members_of("U") == ["Z"] else "U", {}
+        )
+        roles["X"] = StructuralRoleResult(
+            alarm_id="X",
+            role=StructuralRole.CONNECTOR,
+            is_articulation_point=True,
+            blocks_supported=2,
+            reason="exact bridge",
+        )
+        return before if package.members_of("U") == ["Z"] else rejected_after
+
+    monkeypatch.setattr(evaluator_module, "compute_exact_partition_metrics", exact)
+    result = evaluate_candidate(
+        _package(), _move_candidate(), analysis_config=object(), config=CONFIG
+    )
+
+    assert result.status is CandidateStatus.HARD_GATE_REJECTED
+    assert result.move_structural_facts is not None
+    assert result.move_structural_facts.after_structural_role == "CONNECTOR"
+    assert result.semantic_effects == ()
+
+
+def test_singleton_source_move_can_become_connector(monkeypatch) -> None:
+    candidate = CounterfactualCandidate(
+        candidate_id="move-Z",
+        operation=Operation.MOVE_MEMBER,
+        partition_delta=PartitionDelta(
+            before=(("C", ("A", "B", "C", "X")), ("U", ("Z",))),
+            after=(("C", ("A", "B", "C", "X", "Z")),),
+        ),
+        edit_cost=EditCost(1, 1, 5),
+        source_ref="test",
+        member_ids=("Z",),
+        source_chain_id="U",
+        target_chain_id="C",
+    )
+    before = _metrics()
+    after = _metrics(
+        weak=1,
+        membership=0.4,
+        coverage=0.6,
+        components=1,
+        conductance=0.3,
+        severity=0,
+    )
+
+    def exact(package, chain_ids, *, structural_roles_by_chain=None, **_kwargs):
+        assert structural_roles_by_chain is not None
+        if package.members_of("U") == ["Z"]:
+            return before
+        structural_roles_by_chain["C"] = {
+            "Z": StructuralRoleResult(
+                alarm_id="Z",
+                role=StructuralRole.CONNECTOR,
+                is_articulation_point=True,
+                blocks_supported=2,
+                reason="exact bridge",
+            )
+        }
+        return after
+
+    monkeypatch.setattr(evaluator_module, "compute_exact_partition_metrics", exact)
+    result = evaluate_candidate(
+        _package(), candidate, analysis_config=object(), config=CONFIG
+    )
+
+    assert result.move_structural_facts is not None
+    assert result.move_structural_facts.before_structural_role == "NOT_APPLICABLE"
+    assert [effect.value for effect in result.semantic_effects] == ["BECOMES_CONNECTOR"]
 
 
 def test_incomparable_candidates_both_remain_on_frontier() -> None:

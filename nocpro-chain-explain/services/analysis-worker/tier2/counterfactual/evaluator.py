@@ -5,7 +5,12 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Callable, Iterable
 
-from audit import AuditVerdict, connected_components
+from audit import (
+    AuditVerdict,
+    StructuralRole,
+    StructuralRoleResult,
+    connected_components,
+)
 from channels import EMPTY_TAXONOMY
 from descriptor import build_predicate_index
 from graybox.singleton import MembershipVerdict
@@ -21,7 +26,10 @@ from .models import (
     MetricAvailability,
     MetricValue,
     MetricVector,
+    MoveStructuralFacts,
+    Operation,
     PartitionDelta,
+    SemanticEffect,
 )
 
 
@@ -105,6 +113,7 @@ def compute_exact_partition_metrics(
     analysis_config,
     counterfactual_config: CounterfactualConfig,
     eligible_external_contradiction_count: int = 0,
+    structural_roles_by_chain: dict[str, dict[str, StructuralRoleResult]] | None = None,
 ) -> MetricVector:
     """Compute approved conservative aggregates for affected non-singletons."""
     non_singletons = tuple(
@@ -189,6 +198,8 @@ def compute_exact_partition_metrics(
 
         if tier2.graph is None:
             return _unavailable_vector("REQUIRED_METRIC_UNAVAILABLE")
+        if structural_roles_by_chain is not None:
+            structural_roles_by_chain[chain_id] = dict(tier2.structural_roles)
         component_counts.append(len(connected_components(tier2.graph)))
         audit = tier2.structural_audit
         severity = _AUDIT_SEVERITY.get(audit.verdict)
@@ -213,6 +224,52 @@ def compute_exact_partition_metrics(
         eligible_external_contradiction_count=MetricValue.available(
             eligible_external_contradiction_count
         ),
+    )
+
+
+def _singleton_structural_role(alarm_id: str) -> StructuralRoleResult:
+    return StructuralRoleResult(
+        alarm_id=alarm_id,
+        role=StructuralRole.NOT_APPLICABLE,
+        is_articulation_point=False,
+        blocks_supported=0,
+        reason="singleton chain: no pair to audit",
+    )
+
+
+def _move_structural_facts(
+    package: IngestedPackage,
+    candidate: CounterfactualCandidate,
+    *,
+    before_roles: dict[str, dict[str, StructuralRoleResult]],
+    after_roles: dict[str, dict[str, StructuralRoleResult]],
+) -> MoveStructuralFacts | None:
+    """Project exact role facts for a MOVE without changing its acceptance."""
+    if candidate.operation is not Operation.MOVE_MEMBER:
+        return None
+    if (
+        len(candidate.member_ids) != 1
+        or candidate.source_chain_id is None
+        or candidate.target_chain_id is None
+    ):
+        return None
+    alarm_id = candidate.member_ids[0]
+    source = package.chains.get(candidate.source_chain_id)
+    if source is None:
+        return None
+    before = (
+        _singleton_structural_role(alarm_id)
+        if source.member_count == 1
+        else before_roles.get(candidate.source_chain_id, {}).get(alarm_id)
+    )
+    after = after_roles.get(candidate.target_chain_id, {}).get(alarm_id)
+    if before is None or after is None:
+        return None
+    return MoveStructuralFacts(
+        before_structural_role=before.role.value,
+        after_structural_role=after.role.value,
+        after_is_articulation_point=after.is_articulation_point,
+        after_blocks_supported=after.blocks_supported,
     )
 
 
@@ -286,12 +343,16 @@ def evaluate_candidate(
     before_chain_ids = tuple(chain_id for chain_id, _ in candidate.partition_delta.before)
     after_chain_ids = tuple(chain_id for chain_id, _ in candidate.partition_delta.after)
     candidate_package = apply_partition_delta(package, candidate.partition_delta)
+    structural_facts: MoveStructuralFacts | None = None
     if metric_computer is None:
+        before_roles: dict[str, dict[str, StructuralRoleResult]] = {}
+        after_roles: dict[str, dict[str, StructuralRoleResult]] = {}
         before = current_metrics or compute_exact_partition_metrics(
             package,
             before_chain_ids,
             analysis_config=analysis_config,
             counterfactual_config=config,
+            structural_roles_by_chain=before_roles,
         )
         after = compute_exact_partition_metrics(
             candidate_package,
@@ -301,6 +362,13 @@ def evaluate_candidate(
             eligible_external_contradiction_count=(
                 eligible_external_contradiction_count
             ),
+            structural_roles_by_chain=after_roles,
+        )
+        structural_facts = _move_structural_facts(
+            package,
+            candidate,
+            before_roles=before_roles,
+            after_roles=after_roles,
         )
     else:
         before = current_metrics or metric_computer(package, before_chain_ids)
@@ -316,6 +384,15 @@ def evaluate_candidate(
     status, improved, reason = compare_before_after(before, after, config)
     if status is CandidateStatus.BETTER_SUPPORTED and externally_supported:
         status = CandidateStatus.EXTERNALLY_SUPPORTED
+    semantic_effects: tuple[SemanticEffect, ...] = ()
+    if (
+        status
+        in {CandidateStatus.BETTER_SUPPORTED, CandidateStatus.EXTERNALLY_SUPPORTED}
+        and structural_facts is not None
+        and structural_facts.after_structural_role == StructuralRole.CONNECTOR.value
+        and structural_facts.before_structural_role != StructuralRole.CONNECTOR.value
+    ):
+        semantic_effects = (SemanticEffect.BECOMES_CONNECTOR,)
     return CandidateEvaluation(
         candidate=candidate,
         status=status,
@@ -323,6 +400,8 @@ def evaluate_candidate(
         after=after,
         materially_improved_metrics=improved,
         reason=reason,
+        move_structural_facts=structural_facts,
+        semantic_effects=semantic_effects,
     )
 
 

@@ -418,6 +418,13 @@ class CounterfactualPartitionView(ApiModel):
     after: list[tuple[str, list[str]]]
 
 
+class MoveStructuralFactsView(ApiModel):
+    before_structural_role: str
+    after_structural_role: str
+    after_is_articulation_point: bool
+    after_blocks_supported: int
+
+
 class CounterfactualCandidateView(ApiModel):
     candidate_id: str
     operation: str
@@ -432,6 +439,8 @@ class CounterfactualCandidateView(ApiModel):
     before: CounterfactualMetricVectorView | None
     after: CounterfactualMetricVectorView | None
     materially_improved_metrics: list[str]
+    move_structural_facts: MoveStructuralFactsView | None
+    semantic_effects: list[str]
 
 
 class CounterfactualOperationView(ApiModel):

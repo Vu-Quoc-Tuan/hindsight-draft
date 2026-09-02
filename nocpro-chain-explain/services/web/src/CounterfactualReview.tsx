@@ -54,6 +54,7 @@ function CandidateCard({ candidate, recommended }: { candidate: CounterfactualCa
       <footer>
         <span>Exact bounded evaluation · {candidate.source_ref}</span>
         {candidate.operation === 'MOVE_MEMBER' && candidate.source_chain_id && candidate.target_chain_id ? <span>Transfer {candidate.source_chain_id} → {candidate.target_chain_id}</span> : null}
+        {recommended && candidate.semantic_effects.includes('BECOMES_CONNECTOR') && candidate.move_structural_facts ? <span>Reason: becomes a connector after the move · {candidate.move_structural_facts.after_blocks_supported} supported blocks</span> : null}
         <span>{candidate.materially_improved_metrics.length} material improvements</span>
       </footer>
     </article>

@@ -272,6 +272,13 @@ export type CounterfactualCandidate = {
   before: CounterfactualMetricVector | null
   after: CounterfactualMetricVector | null
   materially_improved_metrics: string[]
+  move_structural_facts: {
+    before_structural_role: string
+    after_structural_role: string
+    after_is_articulation_point: boolean
+    after_blocks_supported: number
+  } | null
+  semantic_effects: string[]
 }
 
 export type CounterfactualOperation = {

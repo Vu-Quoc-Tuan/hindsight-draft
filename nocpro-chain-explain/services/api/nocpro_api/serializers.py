@@ -93,6 +93,12 @@ def _candidate_view(evaluation):
         "materially_improved_metrics": list(
             evaluation.materially_improved_metrics
         ),
+        "move_structural_facts": (
+            asdict(evaluation.move_structural_facts)
+            if evaluation.move_structural_facts is not None
+            else None
+        ),
+        "semantic_effects": [effect.value for effect in evaluation.semantic_effects],
     }
 
 

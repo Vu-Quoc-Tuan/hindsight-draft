@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { CounterfactualReview } from './CounterfactualReview'
-import type { CounterfactualJob, CounterfactualMetricVector } from './types'
+import type { CounterfactualCandidate, CounterfactualJob, CounterfactualMetricVector } from './types'
 
 const exactMetrics: CounterfactualMetricVector = {
   weak_member_count: { availability: 'AVAILABLE', value: 1, reason: null },
@@ -52,6 +52,8 @@ const job: CounterfactualJob = {
         before: exactMetrics,
         after: { ...exactMetrics, weak_member_count: { availability: 'AVAILABLE', value: 0, reason: null } },
         materially_improved_metrics: ['weak_member_count'],
+        move_structural_facts: null,
+        semantic_effects: [],
       }],
     },
     split: {
@@ -106,5 +108,33 @@ describe('CounterfactualReview', () => {
     expect(html).toContain('COUNTERFACTUAL_CONFIG_INCOMPLETE')
     expect(html).toContain('UNAVAILABLE')
     expect(html).not.toContain('review-ledger')
+  })
+
+  it('surfaces connector completion only for a Pareto recommendation', () => {
+    const move: CounterfactualCandidate = {
+      candidate_id: 'move-B', operation: 'MOVE_MEMBER' as const, member_ids: ['B'],
+      source_chain_id: 'C2', target_chain_id: 'C1', source_ref: 'move-trigger:WEAK',
+      status: 'BETTER_SUPPORTED', reason: null,
+      edit_cost: { operation_count: 1, membership_reassignments: 1, affected_member_count: 3 },
+      partition_delta: { before: [['C2', ['B']], ['C1', ['A', 'C']]], after: [['C1', ['A', 'B', 'C']]] },
+      before: exactMetrics, after: exactMetrics, materially_improved_metrics: ['component_count'],
+      move_structural_facts: {
+        before_structural_role: 'NOT_APPLICABLE', after_structural_role: 'CONNECTOR',
+        after_is_articulation_point: true, after_blocks_supported: 2,
+      },
+      semantic_effects: ['BECOMES_CONNECTOR'],
+    }
+    const withMove: CounterfactualJob = {
+      ...job,
+      result: job.result ? {
+        ...job.result,
+        move: { ...job.result.move, status: 'AVAILABLE', candidates: [move] },
+        recommendations: [move],
+      } : null,
+    }
+    const html = renderToStaticMarkup(<CounterfactualReview chainId="C1" initialJob={withMove} />)
+
+    expect(html).toContain('Reason: becomes a connector after the move')
+    expect(html).toContain('2 supported blocks')
   })
 })
