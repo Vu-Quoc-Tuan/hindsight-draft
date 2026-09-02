@@ -36,6 +36,11 @@ class IncrementalSnapshotMode(str, Enum):
     DISABLED = "disabled"
 
 
+class CalibrationStatus(str, Enum):
+    SYNTHETIC_ONLY = "SYNTHETIC_ONLY"
+    PRODUCTION_CALIBRATED = "PRODUCTION_CALIBRATED"
+
+
 @dataclass(frozen=True)
 class IncrementalSnapshotPolicy:
     mode: IncrementalSnapshotMode
@@ -68,6 +73,23 @@ class AttributionEvaluationConfig:
     randomization_algorithm: str
     random_seed: ConfiguredValue
     random_repetitions: ConfiguredValue
+
+
+@dataclass(frozen=True)
+class CounterfactualConfig:
+    config_version: str
+    calibration_status: CalibrationStatus
+    max_chain_members: int
+    max_remove_candidates: int
+    max_split_candidates: int
+    max_recommendations: int
+    membership_support_below: float
+    representativeness_below: float
+    adverse_margin_below: float
+    minimum_membership_improvement: float
+    minimum_coverage_improvement: float
+    minimum_conductance_improvement: float
+    pareto_tolerance: float
 
 
 @dataclass(frozen=True)
@@ -221,6 +243,8 @@ class AnalysisConfig:
     p2_topology: P2TopologyConfig
     attribution_evaluation: AttributionEvaluationConfig | None = None
     attribution_evaluation_reason: str | None = None
+    counterfactual: CounterfactualConfig | None = None
+    counterfactual_reason: str | None = None
 
     REQUIRED_PARAMETERS = tuple(PARAMETER_RULES)
 
@@ -413,6 +437,79 @@ def _load_optional_attribution_evaluation(
         return None, "ATTRIBUTION_EVALUATION_CONFIG_INCOMPLETE"
 
 
+def _counterfactual_number(
+    document: dict[str, Any], path: str, rule: _ParameterRule
+) -> int | float:
+    value = rule.validate(f"counterfactual.{path}", _lookup(document, path))
+    if isinstance(value, float) and not isfinite(value):
+        raise AnalysisConfigError(f"counterfactual.{path}: value must be finite")
+    return value
+
+
+def _load_optional_counterfactual(
+    document: dict[str, Any],
+) -> tuple[CounterfactualConfig | None, str | None]:
+    try:
+        raw = document.get("counterfactual")
+        if not isinstance(raw, dict):
+            raise AnalysisConfigError("counterfactual must be a YAML mapping")
+        raw_version = _lookup(raw, "config_version")
+        if not isinstance(raw_version, str) or not raw_version.strip():
+            raise AnalysisConfigError(
+                "counterfactual.config_version must be a non-empty string"
+            )
+        try:
+            calibration_status = CalibrationStatus(
+                _lookup(raw, "calibration_status")
+            )
+        except (TypeError, ValueError) as exc:
+            raise AnalysisConfigError(
+                "counterfactual.calibration_status is invalid"
+            ) from exc
+        return (
+            CounterfactualConfig(
+                config_version=raw_version.strip(),
+                calibration_status=calibration_status,
+                max_chain_members=int(
+                    _counterfactual_number(raw, "limits.max_chain_members", _POSITIVE_INT)
+                ),
+                max_remove_candidates=int(
+                    _counterfactual_number(raw, "limits.max_remove_candidates", _POSITIVE_INT)
+                ),
+                max_split_candidates=int(
+                    _counterfactual_number(raw, "limits.max_split_candidates", _POSITIVE_INT)
+                ),
+                max_recommendations=int(
+                    _counterfactual_number(raw, "limits.max_recommendations", _POSITIVE_INT)
+                ),
+                membership_support_below=float(
+                    _counterfactual_number(raw, "remove_triggers.membership_support_below", _PROBABILITY)
+                ),
+                representativeness_below=float(
+                    _counterfactual_number(raw, "remove_triggers.representativeness_below", _PROBABILITY)
+                ),
+                adverse_margin_below=float(
+                    _counterfactual_number(raw, "remove_triggers.adverse_margin_below", _ParameterRule(float))
+                ),
+                minimum_membership_improvement=float(
+                    _counterfactual_number(raw, "improvement.minimum_membership_improvement", _ParameterRule(float, 0.0))
+                ),
+                minimum_coverage_improvement=float(
+                    _counterfactual_number(raw, "improvement.minimum_coverage_improvement", _ParameterRule(float, 0.0))
+                ),
+                minimum_conductance_improvement=float(
+                    _counterfactual_number(raw, "improvement.minimum_conductance_improvement", _ParameterRule(float, 0.0))
+                ),
+                pareto_tolerance=float(
+                    _counterfactual_number(raw, "improvement.pareto_tolerance", _ParameterRule(float, 0.0))
+                ),
+            ),
+            None,
+        )
+    except AnalysisConfigError:
+        return None, "COUNTERFACTUAL_CONFIG_INCOMPLETE"
+
+
 def load_analysis_config(
     path: str | Path,
     *,
@@ -525,6 +622,7 @@ def load_analysis_config(
         attribution_evaluation,
         attribution_evaluation_reason,
     ) = _load_optional_attribution_evaluation(document)
+    counterfactual, counterfactual_reason = _load_optional_counterfactual(document)
 
     config = AnalysisConfig(
         config_version=version.strip(),
@@ -535,6 +633,8 @@ def load_analysis_config(
         p2_topology=p2_topology,
         attribution_evaluation=attribution_evaluation,
         attribution_evaluation_reason=attribution_evaluation_reason,
+        counterfactual=counterfactual,
+        counterfactual_reason=counterfactual_reason,
     )
     if "role.s_weak" in parameters and "role.s_min" in parameters:
         if config.value("role.s_weak") > config.value("role.s_min"):

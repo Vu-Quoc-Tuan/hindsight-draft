@@ -29,7 +29,7 @@
 - Create: `nocpro-chain-explain/services/analysis-worker/tier2/counterfactual/config.py`
 - Create: `nocpro-chain-explain/services/analysis-worker/tier2/counterfactual/__init__.py`
 - Modify: `nocpro-chain-explain/services/analysis-worker/configuration/analysis_config.py`
-- Modify: `nocpro-chain-explain/config/thresholds/v1.yaml`
+- Create: `nocpro-chain-explain/config/thresholds/e2e-counterfactual.yaml`
 - Test: `nocpro-chain-explain/tests/test_counterfactual_config.py`
 
 **Interfaces:**
@@ -75,7 +75,7 @@ class CounterfactualConfig:
     pareto_tolerance: float
 ```
 
-Validate non-empty version, positive integer ceilings, unit-interval trigger fields, finite margins, and non-negative improvement values. Add an explicit `counterfactual` envelope to the shipped config with `calibration_status: SYNTHETIC_ONLY`; this remains unable to recommend for real production sources.
+Validate non-empty version, positive integer ceilings, unit-interval trigger fields, finite margins, and non-negative improvement values. Keep shipped production `v1.yaml` without an invented envelope, so it remains fail-closed. Add a separate explicit `e2e-counterfactual.yaml` with `calibration_status: SYNTHETIC_ONLY`; it remains unable to recommend for real production sources.
 
 - [ ] **Step 4: Run config/model tests**
 
@@ -85,7 +85,7 @@ Expected: all tests pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add nocpro-chain-explain/services/analysis-worker/tier2/counterfactual nocpro-chain-explain/services/analysis-worker/configuration/analysis_config.py nocpro-chain-explain/config/thresholds/v1.yaml nocpro-chain-explain/tests/test_counterfactual_config.py
+git add nocpro-chain-explain/services/analysis-worker/tier2/counterfactual nocpro-chain-explain/services/analysis-worker/configuration/analysis_config.py nocpro-chain-explain/config/thresholds/e2e-counterfactual.yaml nocpro-chain-explain/tests/test_counterfactual_config.py
 git commit -m "feat: add counterfactual review contracts"
 ```
 
