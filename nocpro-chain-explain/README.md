@@ -36,7 +36,7 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | Similar Chains: fingerprint + cosine baseline (`similar_chains/`) | P1-Core | done |
 | Similar Chains production index (`history<t`, snapshot-versioned model) | P1-Core | done |
 | Evidence Coverage Attribution (exact indexed, derivation-group level) | P1-optional | done; fail-closed above configured ceiling |
-| Counterfactual Chain Review P0 (`REMOVE_MEMBER`, exact-Audit `SPLIT_CHAIN`) | review extension | implemented; synthetic correctness verified, production calibration not established |
+| Counterfactual Chain Review P0 + P1.1 (`REMOVE_MEMBER`, exact-Audit `SPLIT_CHAIN`, `MOVE_MEMBER`) | review extension | implemented; synthetic correctness verified, production calibration not established |
 | **P1-Core (3+1) feature set implemented** | | **4/4** |
 | Contrastive top-3: per-candidate `Margin_common` (§5, §11) | P0 | done |
 | Hybrid indexed Tier-1B + pairwise oracle | P0 | done |
@@ -141,7 +141,7 @@ cases. Docker failure tests require the explicit `NOCPRO_RUN_DOCKER_E2E=1`
 opt-in and therefore cannot control Docker during an ordinary pytest run.
 
 Counterfactual Review has an additional synthetic-only acceptance stage. It
-publishes the explicit extra-member and over-merge fixtures from `nocpro-mock`
+publishes the explicit extra-member, over-merge and misassigned-member fixtures from `nocpro-mock`
 through Kafka chunk/barrier, waits for Tier-1A READY, materializes exact Audit,
 submits the separate Review job, verifies its PostgreSQL result envelope, then
 opens the REVIEW tab in Chromium. These fixtures and
@@ -219,10 +219,13 @@ drill-down and visualization. A verdict is never a function of a display
 - Counterfactual Chain Review is proposal-only and never mutates the NocPro
   partition. P0 generates bounded deterministic `REMOVE_MEMBER` candidates
   from member triggers and reuses only exact Structural Audit cuts for
-  `SPLIT_CHAIN`; it does not run another clustering algorithm. Candidate
+  `SPLIT_CHAIN`. P1.1 also generates bounded canonical `MOVE_MEMBER`
+  transfers from all source Tier-1B `local_candidates`; a missing
+  `Margin_common` is neither zero nor a veto. Candidate
   aggregates are recomputed exactly over affected chains, missing required
-  metrics reject the candidate, and REMOVE/SPLIT remain independent partial
-  results. The shipped production config intentionally has no calibrated
+  metrics reject the candidate, and REMOVE/SPLIT/MOVE remain independent partial
+  results. A missing `counterfactual.move.max_candidates` makes only MOVE
+  unavailable. The shipped production config intentionally has no calibrated
   Counterfactual envelope, so production returns
   `COUNTERFACTUAL_CONFIG_INCOMPLETE` rather than using synthetic thresholds.
 - `|C| < 10` is `SKIPPED_SMALL_CHAIN`, never `NO_LOW_CONDUCTANCE_CUT`: "too small

@@ -45,6 +45,7 @@ const job: CounterfactualJob = {
       candidate_limit: 8,
       candidates: [{
         candidate_id: 'remove-X', operation: 'REMOVE_MEMBER', member_ids: ['X'],
+        source_chain_id: null, target_chain_id: null,
         source_ref: 'trigger-union', status: 'BETTER_SUPPORTED', reason: null,
         edit_cost: { operation_count: 1, membership_reassignments: 1, affected_member_count: 1 },
         partition_delta: { before: [['C1', ['A', 'B', 'X']]], after: [['C1', ['A', 'B']], ['singleton:X', ['X']]] },
@@ -57,6 +58,11 @@ const job: CounterfactualJob = {
       operation: 'SPLIT_CHAIN', status: 'UNAVAILABLE', reason: 'STRUCTURAL_AUDIT_UNAVAILABLE',
       search_mode: 'NOT_RUN', discovered_candidate_count: 0, evaluated_candidate_count: 0,
       rejected_candidate_count: 0, candidate_limit: 4, candidates: [],
+    },
+    move: {
+      operation: 'MOVE_MEMBER', status: 'UNAVAILABLE', reason: 'MOVE_POLICY_NOT_CALIBRATED',
+      search_mode: 'NOT_RUN', discovered_candidate_count: 0, evaluated_candidate_count: 0,
+      rejected_candidate_count: 0, candidate_limit: null, candidates: [],
     },
     recommendations: [],
     frontier_count_before_limit: 1,
@@ -73,6 +79,8 @@ describe('CounterfactualReview', () => {
     expect(html).toContain('Counterfactual chain review')
     expect(html).toContain('REMOVE_MEMBER')
     expect(html).toContain('SPLIT_CHAIN')
+    expect(html).toContain('MOVE_MEMBER')
+    expect(html).toContain('MOVE_POLICY_NOT_CALIBRATED')
     expect(html).toContain('STRUCTURAL_AUDIT_UNAVAILABLE')
     expect(html).toContain('Exact before and after metrics')
     expect(html).toContain('Proposal only')
@@ -90,6 +98,7 @@ describe('CounterfactualReview', () => {
         recommendation_status: 'UNAVAILABLE',
         remove: { ...job.result.remove, status: 'UNAVAILABLE', reason: 'COUNTERFACTUAL_CONFIG_INCOMPLETE', candidates: [] },
         split: { ...job.result.split, reason: 'COUNTERFACTUAL_CONFIG_INCOMPLETE' },
+        move: { ...job.result.move, reason: 'COUNTERFACTUAL_CONFIG_INCOMPLETE' },
       } : null,
     }
     const html = renderToStaticMarkup(<CounterfactualReview chainId="C1" initialJob={unavailable} />)

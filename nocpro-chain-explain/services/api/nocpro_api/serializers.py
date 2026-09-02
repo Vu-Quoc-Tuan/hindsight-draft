@@ -72,6 +72,8 @@ def _candidate_view(evaluation):
         "candidate_id": candidate.candidate_id,
         "operation": candidate.operation.value,
         "member_ids": list(candidate.member_ids),
+        "source_chain_id": candidate.source_chain_id,
+        "target_chain_id": candidate.target_chain_id,
         "source_ref": candidate.source_ref,
         "status": evaluation.status.value,
         "reason": evaluation.reason,
@@ -116,6 +118,7 @@ def counterfactual_result_view(result):
         "recommendation_status": result.recommendation_status.value,
         "remove": _operation_view(result.remove),
         "split": _operation_view(result.split),
+        "move": _operation_view(result.move),
         "recommendations": [
             _candidate_view(item) for item in result.recommendations
         ],

@@ -33,6 +33,17 @@ class CounterfactualFixture:
     alarm_profiles: dict[str, dict[str, object]]
     truth_partition: tuple[tuple[str, tuple[str, ...]], ...]
     mutation: str
+    additional_chains: tuple[tuple[str, tuple[str, ...]], ...] = ()
+
+    def snapshot_chains(self) -> dict[str, list[str]]:
+        """Canonical synthetic partition before the review proposal."""
+        return {
+            self.chain_id: list(self.members),
+            **{
+                chain_id: list(chain_members)
+                for chain_id, chain_members in self.additional_chains
+            },
+        }
 
 
 #: History: FAMILY-A and FAMILY-B are grouped together in the three history
@@ -185,4 +196,50 @@ COUNTERFACTUAL_SPLIT = CounterfactualFixture(
     mutation="OVER_MERGE",
 )
 
-COUNTERFACTUAL_FIXTURES = (COUNTERFACTUAL_REMOVE, COUNTERFACTUAL_SPLIT)
+_MOVE_SOURCE = _block_profiles(
+    "MOVE-SOURCE", start=0, device="SYN-DEVICE-MOVE-SOURCE"
+)
+_MOVE_TARGET = _block_profiles(
+    "MOVE-TARGET", start=600, device="SYN-DEVICE-MOVE-TARGET"
+)
+COUNTERFACTUAL_MOVE = CounterfactualFixture(
+    scenario_id="synthetic_counterfactual_move_v1",
+    directory="counterfactual_move",
+    chain_id="SYN-CHAIN-MOVE-SOURCE",
+    members=(*_MOVE_SOURCE, "SYN-MOVE-MISASSIGNED"),
+    alarm_profiles={
+        **{
+            alarm_id: {
+                **profile,
+                "alarm_name": (
+                    "SYN-MOVE-SOURCE-OUTLIER"
+                    if alarm_id == "SYN-MOVE-SOURCE-08"
+                    else "SYN-MOVE-SOURCE"
+                ),
+            }
+            for alarm_id, profile in _MOVE_SOURCE.items()
+        },
+        **{
+            alarm_id: {**profile, "alarm_name": "SYN-MOVE-TARGET"}
+            for alarm_id, profile in _MOVE_TARGET.items()
+        },
+        "SYN-MOVE-MISASSIGNED": {
+            "device_code": "SYN-DEVICE-MOVE-TARGET",
+            "node_reference": "SYN-REF-MOVE-TARGET-1",
+            "alarm_name": "SYN-MOVE-TARGET",
+            "start_offset_seconds": 605,
+        },
+    },
+    truth_partition=(
+        ("SYN-CHAIN-MOVE-SOURCE", tuple(_MOVE_SOURCE)),
+        ("SYN-CHAIN-MOVE-TARGET", (*_MOVE_TARGET, "SYN-MOVE-MISASSIGNED")),
+    ),
+    mutation="MISASSIGNED_MEMBER",
+    additional_chains=(("SYN-CHAIN-MOVE-TARGET", tuple(_MOVE_TARGET)),),
+)
+
+COUNTERFACTUAL_FIXTURES = (
+    COUNTERFACTUAL_REMOVE,
+    COUNTERFACTUAL_SPLIT,
+    COUNTERFACTUAL_MOVE,
+)

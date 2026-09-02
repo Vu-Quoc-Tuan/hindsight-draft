@@ -1,4 +1,4 @@
-"""Kafka/PostgreSQL/API acceptance for synthetic Counterfactual Review P0."""
+"""Kafka/PostgreSQL/API acceptance for synthetic Counterfactual Review P0/P1.1."""
 
 from __future__ import annotations
 
@@ -69,7 +69,7 @@ def _package(fixture, logical_time: datetime):
         seed=42,
         generator_version=GENERATOR_VERSION,
         snapshot_index=0,
-        chains={fixture.chain_id: list(fixture.members)},
+        chains=fixture.snapshot_chains(),
         alarm_profiles=fixture.alarm_profiles,
         generation_rule=f"COUNTERFACTUAL {fixture.mutation} Docker fixture",
     )
@@ -248,10 +248,25 @@ def test_counterfactual_remove_and_split_survive_real_transport_and_persistence(
                 result = review["result"]
                 assert result["recommendation_status"] == "AVAILABLE"
                 recommendation = result["recommendations"][0]
-                expected_operation = (
-                    "REMOVE_MEMBER" if fixture.mutation == "EXTRA_MEMBER" else "SPLIT_CHAIN"
-                )
-                assert recommendation["operation"] == expected_operation
+                if fixture.mutation == "MISASSIGNED_MEMBER":
+                    matching = [
+                        item
+                        for item in result["recommendations"]
+                        if item["operation"] == "MOVE_MEMBER"
+                        and item["member_ids"] == ["SYN-MOVE-MISASSIGNED"]
+                        and item["source_chain_id"] == "SYN-CHAIN-MOVE-SOURCE"
+                        and item["target_chain_id"] == "SYN-CHAIN-MOVE-TARGET"
+                        and item["status"]
+                        in {"BETTER_SUPPORTED", "EXTERNALLY_SUPPORTED"}
+                    ]
+                    assert matching, "expected MOVE_MEMBER absent from frontier"
+                else:
+                    expected_operation = (
+                        "REMOVE_MEMBER"
+                        if fixture.mutation == "EXTRA_MEMBER"
+                        else "SPLIT_CHAIN"
+                    )
+                    assert recommendation["operation"] == expected_operation
                 assert result["identity"]["snapshot_id"] == package.snapshot.snapshot_id
                 assert result["identity"]["config_version"] == (
                     "synthetic-counterfactual-v1"

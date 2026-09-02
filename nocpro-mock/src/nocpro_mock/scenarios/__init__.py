@@ -32,6 +32,7 @@ from .sequence import (
 )
 from .sequence_fixtures import (
     COUNTERFACTUAL_FIXTURES,
+    COUNTERFACTUAL_MOVE,
     COUNTERFACTUAL_REMOVE,
     COUNTERFACTUAL_SPLIT,
     EVOLUTION_SPLIT_MERGE,
@@ -53,6 +54,7 @@ from .topology_generators import (
 __all__ = [
     "EVOLUTION_SPLIT_MERGE",
     "COUNTERFACTUAL_FIXTURES",
+    "COUNTERFACTUAL_MOVE",
     "COUNTERFACTUAL_REMOVE",
     "COUNTERFACTUAL_SPLIT",
     "CounterfactualFixture",

@@ -7,7 +7,11 @@ from dataclasses import replace
 from groups import AuditGraphMode
 from libs.contracts import IngestedPackage
 
-from .candidates import generate_remove_candidates, generate_split_candidates
+from .candidates import (
+    generate_move_candidates,
+    generate_remove_candidates,
+    generate_split_candidates,
+)
 from .config import CalibrationStatus, CounterfactualConfig
 from .evaluator import MetricComputer, compute_exact_partition_metrics, evaluate_candidate
 from .models import (
@@ -117,20 +121,7 @@ def analyze_counterfactual_review(
             recommendation_status=RecommendationStatus.UNAVAILABLE,
             remove=_operation_unavailable(Operation.REMOVE_MEMBER, reason, None),
             split=_operation_unavailable(Operation.SPLIT_CHAIN, reason, None),
-        )
-
-    if chain.member_count == 1:
-        return CounterfactualResult(
-            identity=identity,
-            status=DomainStatus.AVAILABLE,
-            reason="SINGLETON_CHAIN",
-            recommendation_status=RecommendationStatus.NO_CLEAR_ALTERNATIVE,
-            remove=_operation_not_applicable(
-                Operation.REMOVE_MEMBER, "SINGLETON_CHAIN", config.max_remove_candidates
-            ),
-            split=_operation_not_applicable(
-                Operation.SPLIT_CHAIN, "SINGLETON_CHAIN", config.max_split_candidates
-            ),
+            move=_operation_unavailable(Operation.MOVE_MEMBER, reason, None),
         )
 
     if chain.member_count > config.max_chain_members:
@@ -145,6 +136,9 @@ def analyze_counterfactual_review(
             ),
             split=_operation_unavailable(
                 Operation.SPLIT_CHAIN, reason, config.max_split_candidates
+            ),
+            move=_operation_unavailable(
+                Operation.MOVE_MEMBER, reason, config.max_move_candidates
             ),
         )
 
@@ -171,9 +165,22 @@ def analyze_counterfactual_review(
         eligible_external_contradictions=external.contradicted_member_ids,
         additional_member_ids=split_batch.canonical_remove_member_ids,
     )
+    move_batch = (
+        generate_move_candidates(
+            identity,
+            source_chain_id=chain_id,
+            source_members=members,
+            member_analysis=tier1b_artifact.members,
+            local_candidates=tier1b_artifact.local_candidates,
+            package=package,
+            config=config,
+        )
+        if config.max_move_candidates is not None
+        else None
+    )
 
     current_metrics = None
-    if metric_computer is None:
+    if metric_computer is None and chain.member_count > 1:
         current_metrics = compute_exact_partition_metrics(
             package,
             (chain_id,),
@@ -181,7 +188,7 @@ def analyze_counterfactual_review(
             counterfactual_config=config,
         )
 
-    def evaluate(batch):
+    def evaluate(batch, *, baseline_metrics=current_metrics):
         values: list[CandidateEvaluation] = []
         for candidate in batch.candidates:
             values.append(
@@ -190,7 +197,7 @@ def analyze_counterfactual_review(
                     candidate,
                     analysis_config=analysis_config,
                     config=config,
-                    current_metrics=current_metrics,
+                    current_metrics=baseline_metrics,
                     metric_computer=metric_computer,
                     eligible_external_contradiction_count=(
                         1
@@ -206,27 +213,49 @@ def analyze_counterfactual_review(
 
     remove_evaluations = evaluate(remove_batch)
     split_evaluations = evaluate(split_batch)
-    remove_result = _evaluated_operation(
-        Operation.REMOVE_MEMBER, remove_batch, remove_evaluations
+    move_evaluations = (
+        evaluate(move_batch, baseline_metrics=None) if move_batch is not None else ()
     )
-    if chain.member_count < 4:
+    if chain.member_count == 1:
+        remove_result = _operation_not_applicable(
+            Operation.REMOVE_MEMBER, "SINGLETON_CHAIN", config.max_remove_candidates
+        )
+        split_result = _operation_not_applicable(
+            Operation.SPLIT_CHAIN, "SINGLETON_CHAIN", config.max_split_candidates
+        )
+    else:
+        remove_result = _evaluated_operation(
+            Operation.REMOVE_MEMBER, remove_batch, remove_evaluations
+        )
+        split_result = None
+    if chain.member_count > 1 and chain.member_count < 4:
         split_result = _operation_not_applicable(
             Operation.SPLIT_CHAIN,
             "NO_NONTRIVIAL_SPLIT",
             config.max_split_candidates,
         )
-    elif structural_audit is None:
+    elif chain.member_count > 1 and structural_audit is None:
         split_result = _operation_unavailable(
             Operation.SPLIT_CHAIN,
             "STRUCTURAL_AUDIT_UNAVAILABLE",
             config.max_split_candidates,
         )
-    else:
+    elif chain.member_count > 1:
         split_result = _evaluated_operation(
             Operation.SPLIT_CHAIN, split_batch, split_evaluations
         )
+    assert split_result is not None
+    move_result = (
+        _evaluated_operation(Operation.MOVE_MEMBER, move_batch, move_evaluations)
+        if move_batch is not None
+        else _operation_unavailable(
+            Operation.MOVE_MEMBER,
+            config.move_reason or "MOVE_POLICY_NOT_CALIBRATED",
+            None,
+        )
+    )
 
-    all_evaluations = remove_evaluations + split_evaluations
+    all_evaluations = remove_evaluations + split_evaluations + move_evaluations
     synthetic_allowed = (
         package.snapshot.source_kind == "SYNTHETIC_TEST"
         and config.calibration_status is CalibrationStatus.SYNTHETIC_ONLY
@@ -258,6 +287,10 @@ def analyze_counterfactual_review(
             split_result,
             candidates=tuple(uncalibrated(item) for item in split_result.candidates),
         )
+        move_result = replace(
+            move_result,
+            candidates=tuple(uncalibrated(item) for item in move_result.candidates),
+        )
         return CounterfactualResult(
             identity=identity,
             status=DomainStatus.AVAILABLE,
@@ -265,6 +298,7 @@ def analyze_counterfactual_review(
             recommendation_status=RecommendationStatus.UNAVAILABLE,
             remove=remove_result,
             split=split_result,
+            move=move_result,
         )
 
     frontier = select_frontier(all_evaluations, config)
@@ -280,6 +314,7 @@ def analyze_counterfactual_review(
         recommendation_status=recommendation_status,
         remove=remove_result,
         split=split_result,
+        move=move_result,
         recommendations=frontier.items,
         frontier_count_before_limit=frontier.count_before_limit,
         frontier_truncated=frontier.truncated,

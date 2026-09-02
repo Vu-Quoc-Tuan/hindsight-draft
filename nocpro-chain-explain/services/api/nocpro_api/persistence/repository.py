@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import zstandard
-from sqlalchemy import delete, func, or_, select, tuple_, update
+from sqlalchemy import and_, case, delete, func, or_, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -482,6 +482,18 @@ class SnapshotRepository:
                 ):
                     raise ValueError("counterfactual terminal status is immutable")
             statement = pg_insert(CounterfactualJobRecord).values(**values)
+            existing_rank = case(
+                (CounterfactualJobRecord.status == "QUEUED", 0),
+                (CounterfactualJobRecord.status == "RUNNING", 1),
+                (CounterfactualJobRecord.status.in_(("SUCCEEDED", "FAILED")), 2),
+                else_=-1,
+            )
+            incoming_rank = case(
+                (statement.excluded.status == "QUEUED", 0),
+                (statement.excluded.status == "RUNNING", 1),
+                (statement.excluded.status.in_(("SUCCEEDED", "FAILED")), 2),
+                else_=-1,
+            )
             statement = statement.on_conflict_do_update(
                 index_elements=[CounterfactualJobRecord.job_id],
                 set_={
@@ -492,6 +504,13 @@ class SnapshotRepository:
                     "error": statement.excluded.error,
                     "updated_at": func.now(),
                 },
+                where=or_(
+                    incoming_rank > existing_rank,
+                    and_(
+                        incoming_rank == existing_rank,
+                        CounterfactualJobRecord.status == statement.excluded.status,
+                    ),
+                ),
             )
             await session.execute(statement)
         stored = await self.counterfactual_job(payload["job_id"])

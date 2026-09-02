@@ -54,7 +54,10 @@ def run_fixture(name: str):
     return _run(payload, expected["mutated_chain_id"]), expected
 
 
-@pytest.mark.parametrize("name", ["counterfactual_remove", "counterfactual_split"])
+@pytest.mark.parametrize(
+    "name",
+    ["counterfactual_remove", "counterfactual_split", "counterfactual_move"],
+)
 def test_fixture_contract_is_explicitly_synthetic(name: str) -> None:
     payload = json.loads((MOCK_SYNTHETIC / name / "snapshot_000.json").read_text())
     expected = yaml.safe_load(
@@ -86,6 +89,27 @@ def test_overmerge_mutation_recommends_expected_split() -> None:
         frozenset(members) for members in expected["truth_partition"].values()
     }
     assert proposed == truth
+
+
+def test_misassigned_member_move_is_an_accepted_pareto_recommendation() -> None:
+    result, expected = run_fixture("counterfactual_move")
+    review = expected["expected_review"]
+    matching = [
+        evaluation
+        for evaluation in result.recommendations
+        if evaluation.candidate.operation.value == review["operation"]
+        and list(evaluation.candidate.member_ids) == review["member_ids"]
+        and evaluation.candidate.source_chain_id == review["source_chain_id"]
+        and evaluation.candidate.target_chain_id == review["target_chain_id"]
+    ]
+
+    assert matching, "expected MOVE_MEMBER was absent from the Pareto frontier"
+    candidate = matching[0]
+    assert candidate.status.value in {"BETTER_SUPPORTED", "EXTERNALLY_SUPPORTED"}
+    assert dict(candidate.candidate.partition_delta.after) == {
+        chain_id: tuple(sorted(members))
+        for chain_id, members in expected["truth_partition"].items()
+    }
 
 
 def test_clean_truth_partition_abstains() -> None:

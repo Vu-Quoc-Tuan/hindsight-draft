@@ -253,8 +253,10 @@ export type CounterfactualMetricVector = {
 
 export type CounterfactualCandidate = {
   candidate_id: string
-  operation: 'REMOVE_MEMBER' | 'SPLIT_CHAIN'
+  operation: 'REMOVE_MEMBER' | 'SPLIT_CHAIN' | 'MOVE_MEMBER'
   member_ids: string[]
+  source_chain_id: string | null
+  target_chain_id: string | null
   source_ref: string
   status: string
   reason: string | null
@@ -273,7 +275,7 @@ export type CounterfactualCandidate = {
 }
 
 export type CounterfactualOperation = {
-  operation: 'REMOVE_MEMBER' | 'SPLIT_CHAIN'
+  operation: 'REMOVE_MEMBER' | 'SPLIT_CHAIN' | 'MOVE_MEMBER'
   status: 'AVAILABLE' | 'UNAVAILABLE' | 'NOT_APPLICABLE'
   reason: string | null
   search_mode: 'BOUNDED' | 'NOT_RUN'
@@ -302,6 +304,7 @@ export type CounterfactualResult = {
   recommendation_status: 'AVAILABLE' | 'UNAVAILABLE' | 'NO_CLEAR_ALTERNATIVE'
   remove: CounterfactualOperation
   split: CounterfactualOperation
+  move: CounterfactualOperation
   recommendations: CounterfactualCandidate[]
   frontier_count_before_limit: number
   frontier_truncated: boolean

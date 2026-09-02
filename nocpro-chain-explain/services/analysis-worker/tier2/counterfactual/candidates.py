@@ -157,6 +157,115 @@ def generate_remove_candidates(
     )
 
 
+def generate_move_candidates(
+    identity: ReviewIdentity,
+    *,
+    source_chain_id: str,
+    source_members: tuple[str, ...],
+    member_analysis: Mapping[str, Any],
+    local_candidates: tuple[Any, ...],
+    package,
+    config: CounterfactualConfig,
+) -> CandidateBatch:
+    """Generate bounded canonical transfers to Tier-1B local candidates.
+
+    The destination pool is consumed verbatim from the source Tier-1B artifact.
+    A missing Margin_common is neither zero nor a veto: it simply contributes
+    no margin trigger and ranks after computable target-favoured margins.
+    """
+    limit = config.max_move_candidates
+    if limit is None:
+        return CandidateBatch(Operation.MOVE_MEMBER, 0, 0, 0, ())
+
+    source = tuple(sorted(source_members))
+    triggered: list[tuple[tuple[Any, ...], CounterfactualCandidate]] = []
+    for destination in local_candidates:
+        target_chain_id = destination.chain_id
+        if target_chain_id == source_chain_id or target_chain_id not in package.chains:
+            continue
+        target = tuple(sorted(package.members_of(target_chain_id)))
+        if not target:
+            continue
+        for alarm_id in source:
+            analysis = member_analysis.get(alarm_id)
+            role = _role_value(analysis) if analysis is not None else None
+            support = _membership_support(analysis) if analysis is not None else None
+            representation = (
+                _representativeness(analysis) if analysis is not None else None
+            )
+            margin_value = None
+            if analysis is not None:
+                for margin in getattr(analysis, "margins", ()):
+                    if getattr(margin, "compared_chain_id", None) == target_chain_id:
+                        margin_value = getattr(margin, "margin", None)
+                        break
+            reasons: list[str] = []
+            if role == "WEAK":
+                reasons.append("WEAK")
+            if support is not None and support < config.membership_support_below:
+                reasons.append("LOW_MEMBERSHIP_SUPPORT")
+            if (
+                representation is not None
+                and representation < config.representativeness_below
+            ):
+                reasons.append("LOW_REPRESENTATIVENESS")
+            if margin_value is not None and float(margin_value) < 0:
+                reasons.append("TARGET_FAVORED_MARGIN")
+            if not reasons:
+                continue
+
+            remaining = tuple(member for member in source if member != alarm_id)
+            after = [(target_chain_id, tuple(sorted((*target, alarm_id))))]
+            if remaining:
+                after.append((source_chain_id, remaining))
+            delta = PartitionDelta(
+                before=((source_chain_id, source), (target_chain_id, target)),
+                after=tuple(after),
+            )
+            candidate = CounterfactualCandidate(
+                candidate_id=_candidate_id(identity, Operation.MOVE_MEMBER, delta),
+                operation=Operation.MOVE_MEMBER,
+                partition_delta=delta,
+                edit_cost=EditCost(1, 1, len(source) + len(target)),
+                source_ref="move-trigger:" + ",".join(reasons),
+                member_ids=(alarm_id,),
+                source_chain_id=source_chain_id,
+                target_chain_id=target_chain_id,
+            )
+            if margin_value is not None and float(margin_value) < 0:
+                margin_state = 0
+            elif margin_value is None:
+                margin_state = 1
+            else:
+                margin_state = 2
+            triggered.append(
+                (
+                    (
+                        margin_state,
+                        float(margin_value) if margin_value is not None else inf,
+                        -int(destination.overlap),
+                        role != "WEAK",
+                        support is None,
+                        support if support is not None else inf,
+                        representation is None,
+                        representation if representation is not None else inf,
+                        alarm_id,
+                        target_chain_id,
+                    ),
+                    candidate,
+                )
+            )
+    ordered = sorted(triggered, key=lambda item: item[0])
+    selected = tuple(item[1] for item in ordered[:limit])
+    return CandidateBatch(
+        operation=Operation.MOVE_MEMBER,
+        discovered_count=len(ordered),
+        evaluated_count=len(selected),
+        candidate_limit=limit,
+        candidates=selected,
+    )
+
+
 def generate_split_candidates(
     identity: ReviewIdentity,
     *,

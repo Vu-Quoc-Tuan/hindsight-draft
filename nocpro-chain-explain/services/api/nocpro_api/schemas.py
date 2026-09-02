@@ -422,6 +422,8 @@ class CounterfactualCandidateView(ApiModel):
     candidate_id: str
     operation: str
     member_ids: list[str]
+    source_chain_id: str | None
+    target_chain_id: str | None
     source_ref: str
     status: str
     reason: str | None
@@ -451,6 +453,7 @@ class CounterfactualResultView(ApiModel):
     recommendation_status: str
     remove: CounterfactualOperationView
     split: CounterfactualOperationView
+    move: CounterfactualOperationView
     recommendations: list[CounterfactualCandidateView]
     frontier_count_before_limit: int
     frontier_truncated: bool

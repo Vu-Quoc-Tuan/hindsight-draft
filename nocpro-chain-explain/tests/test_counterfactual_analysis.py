@@ -37,7 +37,8 @@ def _tier1b():
             "B": _member(),
             "C": _member(),
             "X": _member(role="WEAK", support=0.1, representativeness=0.1),
-        }
+        },
+        local_candidates=(),
     )
 
 
@@ -79,6 +80,27 @@ def test_missing_audit_only_disables_split() -> None:
     assert result.split.status is DomainStatus.UNAVAILABLE
     assert result.split.reason == "STRUCTURAL_AUDIT_UNAVAILABLE"
     assert result.recommendation_status is RecommendationStatus.AVAILABLE
+
+
+def test_missing_move_policy_does_not_disable_remove_or_split() -> None:
+    result = analyze_counterfactual_review(
+        _package(),
+        "C",
+        identity=IDENTITY,
+        tier1b_artifact=_tier1b(),
+        audit_artifact=None,
+        analysis_config=object(),
+        config=replace(
+            CONFIG,
+            max_move_candidates=None,
+            move_reason="MOVE_POLICY_NOT_CALIBRATED",
+        ),
+        metric_computer=_metric_computer,
+    )
+
+    assert result.remove.status is DomainStatus.AVAILABLE
+    assert result.move.status is DomainStatus.UNAVAILABLE
+    assert result.move.reason == "MOVE_POLICY_NOT_CALIBRATED"
 
 
 def test_exact_audit_enables_split_and_singleton_cut_is_not_duplicated() -> None:

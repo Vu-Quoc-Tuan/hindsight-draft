@@ -49,6 +49,7 @@ def test_review_submit_poll_and_compatible_lookup() -> None:
                 )
                 assert completed["result"]["remove"]["status"] == "UNAVAILABLE"
                 assert completed["result"]["split"]["status"] == "UNAVAILABLE"
+                assert completed["result"]["move"]["status"] == "UNAVAILABLE"
 
                 latest = await client.get("/api/v1/chains/C1/review")
                 assert latest.status_code == 200

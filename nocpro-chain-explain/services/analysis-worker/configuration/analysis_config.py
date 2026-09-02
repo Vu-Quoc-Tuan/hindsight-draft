@@ -102,6 +102,8 @@ class CounterfactualConfig:
     minimum_coverage_improvement: float
     minimum_conductance_improvement: float
     pareto_tolerance: float
+    max_move_candidates: int | None = None
+    move_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -479,6 +481,16 @@ def _load_optional_counterfactual(
             raise AnalysisConfigError(
                 "counterfactual.calibration_status is invalid"
             ) from exc
+        try:
+            max_move_candidates = int(
+                _counterfactual_number(raw, "move.max_candidates", _POSITIVE_INT)
+            )
+            move_reason = None
+        except AnalysisConfigError:
+            # MOVE is an independent P1 operation.  Omitting its envelope must
+            # not disable the already-calibrated REMOVE/SPLIT P0 operations.
+            max_move_candidates = None
+            move_reason = "MOVE_POLICY_NOT_CALIBRATED"
         return (
             CounterfactualConfig(
                 config_version=raw_version.strip(),
@@ -516,6 +528,8 @@ def _load_optional_counterfactual(
                 pareto_tolerance=float(
                     _counterfactual_number(raw, "improvement.pareto_tolerance", _ParameterRule(float, 0.0))
                 ),
+                max_move_candidates=max_move_candidates,
+                move_reason=move_reason,
             ),
             None,
         )

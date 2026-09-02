@@ -78,6 +78,28 @@ def _candidate(candidate_id="remove-X"):
     )
 
 
+def _move_candidate(candidate_id="move-X"):
+    return CounterfactualCandidate(
+        candidate_id=candidate_id,
+        operation=Operation.MOVE_MEMBER,
+        partition_delta=PartitionDelta(
+            before=(
+                ("C", ("A", "B", "C", "X")),
+                ("U", ("Z",)),
+            ),
+            after=(
+                ("C", ("A", "B", "C")),
+                ("U", ("X", "Z")),
+            ),
+        ),
+        edit_cost=EditCost(1, 1, 5),
+        source_ref="test",
+        member_ids=("X",),
+        source_chain_id="C",
+        target_chain_id="U",
+    )
+
+
 def _metrics(
     *, weak=2, membership=0.2, coverage=0.4, components=2, conductance=0.1,
     severity=1, contradictions=0,
@@ -181,6 +203,37 @@ def test_one_worsened_metric_rejects_even_when_others_improve() -> None:
     )
     assert result.status is CandidateStatus.HARD_GATE_REJECTED
     assert result.reason == "PARETO_METRIC_WORSENED"
+
+
+def test_move_recomputes_both_affected_chains_before_and_after() -> None:
+    calls: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
+
+    def compute(package, chain_ids):
+        calls.append((chain_ids, tuple(package.members_of("U"))))
+        if tuple(package.members_of("U")) == ("Z",):
+            return _metrics()
+        return _metrics(
+            weak=1,
+            membership=0.4,
+            coverage=0.6,
+            components=1,
+            conductance=0.3,
+            severity=0,
+        )
+
+    result = evaluate_candidate(
+        _package(),
+        _move_candidate(),
+        analysis_config=object(),
+        config=CONFIG,
+        metric_computer=compute,
+    )
+
+    assert result.status is CandidateStatus.BETTER_SUPPORTED
+    assert calls == [
+        (("C", "U"), ("Z",)),
+        (("C", "U"), ("X", "Z")),
+    ]
 
 
 def test_incomparable_candidates_both_remain_on_frontier() -> None:

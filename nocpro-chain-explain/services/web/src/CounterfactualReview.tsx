@@ -53,6 +53,7 @@ function CandidateCard({ candidate, recommended }: { candidate: CounterfactualCa
       </div>
       <footer>
         <span>Exact bounded evaluation · {candidate.source_ref}</span>
+        {candidate.operation === 'MOVE_MEMBER' && candidate.source_chain_id && candidate.target_chain_id ? <span>Transfer {candidate.source_chain_id} → {candidate.target_chain_id}</span> : null}
         <span>{candidate.materially_improved_metrics.length} material improvements</span>
       </footer>
     </article>
@@ -141,6 +142,7 @@ export function CounterfactualReview({ chainId, initialJob = null }: { chainId: 
       <div className="review-operation-grid">
         <OperationSection operation={result.remove} recommendationIds={recommendationIds} />
         <OperationSection operation={result.split} recommendationIds={recommendationIds} />
+        <OperationSection operation={result.move} recommendationIds={recommendationIds} />
       </div>
       <footer className="review-provenance">
         <span>Snapshot {result.identity.snapshot_id}@{result.identity.snapshot_version}</span>

@@ -10,6 +10,7 @@ from typing import TypeAlias
 class Operation(str, Enum):
     REMOVE_MEMBER = "REMOVE_MEMBER"
     SPLIT_CHAIN = "SPLIT_CHAIN"
+    MOVE_MEMBER = "MOVE_MEMBER"
 
 
 class DomainStatus(str, Enum):
@@ -197,6 +198,8 @@ class CounterfactualCandidate:
     edit_cost: EditCost
     source_ref: str
     member_ids: tuple[str, ...]
+    source_chain_id: str | None = None
+    target_chain_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -240,6 +243,7 @@ class CounterfactualResult:
     recommendation_status: RecommendationStatus
     remove: OperationResult
     split: OperationResult
+    move: OperationResult
     recommendations: tuple[CandidateEvaluation, ...] = ()
     frontier_count_before_limit: int = 0
     frontier_truncated: bool = False

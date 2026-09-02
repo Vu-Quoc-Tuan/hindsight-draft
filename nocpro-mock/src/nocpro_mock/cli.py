@@ -197,7 +197,7 @@ def _cmd_build_sequences(args: argparse.Namespace) -> int:
             seed=42,
             generator_version=GENERATOR_VERSION,
             snapshot_index=0,
-            chains={fixture.chain_id: list(fixture.members)},
+            chains=fixture.snapshot_chains(),
             alarm_profiles=fixture.alarm_profiles,
             generation_rule=f"COUNTERFACTUAL {fixture.mutation} fixture",
         )
