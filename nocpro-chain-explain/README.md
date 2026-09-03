@@ -220,7 +220,13 @@ drill-down and visualization. A verdict is never a function of a display
   partition. P0 generates bounded deterministic `REMOVE_MEMBER` candidates
   from member triggers and reuses only exact Structural Audit cuts for
   `SPLIT_CHAIN`. P1.1 also generates bounded canonical `MOVE_MEMBER`
-  transfers from all source Tier-1B `local_candidates`; a missing
+  transfers from all source Tier-1B `local_candidates`; MOVE v1 is
+  source-local, so canonicalization does not make discovery independent of
+  which chain is under Review. For two singleton chains, only the
+  stable-greater chain may move into the stable-less chain; Review of the
+  stable-less side does not load the peer artifact or emit the reverse move. A
+  singleton/non-singleton pair is only represented as singleton-to-chain MOVE.
+  A missing
   `Margin_common` is neither zero nor a veto. Candidate
   aggregates are recomputed exactly over affected chains, missing required
   metrics reject the candidate, and REMOVE/SPLIT/MOVE remain independent partial

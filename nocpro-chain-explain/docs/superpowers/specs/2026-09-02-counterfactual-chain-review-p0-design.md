@@ -269,6 +269,16 @@ their members into individual transfers. Its affected-member count is `|C|`.
 Edit cost is used only after evidence comparison for preference and
 deterministic output; it cannot rescue an evidence-inferior candidate.
 
+MOVE v1 remains source-local and bounded: Review of chain `C` consumes only
+`Tier1B(C)` and its persisted local candidates. Canonicalization prevents a
+directionally equivalent proposal from being emitted, but does not promise
+review-context-independent discovery. For two singleton chains, the only
+canonical direction is stable-greater chain ID to stable-less chain ID; when
+the stable-less chain is reviewed, the engine does not load the peer artifact
+to recover the move and must not emit the reverse. For a singleton and a
+non-singleton chain, the only canonical MOVE direction is singleton to the
+non-singleton chain.
+
 ## 10. Hard gates and Pareto semantics
 
 A candidate is rejected if it:

@@ -274,11 +274,11 @@ def test_move_uses_all_local_candidates_and_margin_null_does_not_veto() -> None:
     package = _Package(
         {
             "C": ("X",),
-            "C1": ("A",),
-            "C2": ("B",),
-            "C3": ("D",),
-            "C4": ("E",),
-            "C5": ("F",),
+            "C1": ("A", "A1"),
+            "C2": ("B", "B1"),
+            "C3": ("D", "D1"),
+            "C4": ("E", "E1"),
+            "C5": ("F", "F1"),
         }
     )
     batch = generate_move_candidates(
@@ -322,14 +322,77 @@ def test_move_from_singleton_removes_empty_source_and_is_canonical() -> None:
     assert candidate.partition_delta.after == (("T", ("A", "B", "X")),)
 
 
+def test_singleton_pair_move_only_allows_stable_max_source_to_stable_min_target() -> None:
+    package = _Package({"C10": ("A",), "C20": ("B",)})
+    batch = generate_move_candidates(
+        IDENTITY,
+        source_chain_id="C20",
+        source_members=("B",),
+        member_analysis={"B": _member(role="WEAK")},
+        local_candidates=(_blocking("C10", 1),),
+        package=package,
+        config=replace(CONFIG, max_move_candidates=1),
+    )
+
+    assert len(batch.candidates) == 1
+    candidate = batch.candidates[0]
+    assert candidate.operation is Operation.MOVE_MEMBER
+    assert candidate.source_chain_id == "C20"
+    assert candidate.target_chain_id == "C10"
+    assert candidate.member_ids == ("B",)
+    assert candidate.partition_delta.after == (("C10", ("A", "B")),)
+
+
+def test_singleton_pair_reviewed_from_stable_min_suppresses_reverse_move() -> None:
+    package = _Package({"C10": ("A",), "C20": ("B",)})
+    batch = generate_move_candidates(
+        IDENTITY,
+        source_chain_id="C10",
+        source_members=("A",),
+        member_analysis={"A": _member(role="WEAK", support=0.0)},
+        local_candidates=(_blocking("C20", 999),),
+        package=package,
+        config=replace(CONFIG, max_move_candidates=1),
+    )
+
+    assert batch.candidates == ()
+
+
+def test_singleton_non_singleton_move_only_allows_singleton_source() -> None:
+    package = _Package({"C1": ("A", "B"), "C2": ("X",)})
+    allowed = generate_move_candidates(
+        IDENTITY,
+        source_chain_id="C2",
+        source_members=("X",),
+        member_analysis={"X": _member(role="WEAK")},
+        local_candidates=(_blocking("C1", 1),),
+        package=package,
+        config=replace(CONFIG, max_move_candidates=1),
+    )
+    suppressed = generate_move_candidates(
+        IDENTITY,
+        source_chain_id="C1",
+        source_members=("A", "B"),
+        member_analysis={"A": _member(role="WEAK"), "B": _member()},
+        local_candidates=(_blocking("C2", 999),),
+        package=package,
+        config=replace(CONFIG, max_move_candidates=1),
+    )
+
+    assert len(allowed.candidates) == 1
+    assert allowed.candidates[0].source_chain_id == "C2"
+    assert allowed.candidates[0].target_chain_id == "C1"
+    assert suppressed.candidates == ()
+
+
 def test_move_pre_ceiling_ranking_uses_frozen_margin_states_then_overlap() -> None:
     package = _Package(
         {
             "C": ("X",),
-            "T1": ("A",),
-            "T2": ("B",),
-            "T3": ("D",),
-            "T4": ("E",),
+            "T1": ("A", "A1"),
+            "T2": ("B", "B1"),
+            "T3": ("D", "D1"),
+            "T4": ("E", "E1"),
         }
     )
     base = _member(role="WEAK")
@@ -425,6 +488,28 @@ def test_merge_requires_at_least_one_cross_audit_edge_and_never_falls_back_to_si
         local_candidates=(_blocking("T", 4), _blocking("S", 4)),
         package=package,
         config=replace(CONFIG, max_merge_candidates=2),
+    )
+
+    assert batch.candidates == ()
+    assert batch.discovered_count == 0
+
+
+def test_singleton_pair_never_generates_merge_candidate(monkeypatch) -> None:
+    package = _Package({"C10": ("A",), "C20": ("B",)})
+
+    def unexpected_cross_evidence(*_args, **_kwargs):
+        raise AssertionError("singleton pair must be filtered before cross evidence")
+
+    monkeypatch.setattr(
+        "tier2.counterfactual.candidates.exact_cross_chain_evidence",
+        unexpected_cross_evidence,
+    )
+    batch = generate_merge_candidates(
+        IDENTITY,
+        review_chain_id="C20",
+        local_candidates=(_blocking("C10", 1),),
+        package=package,
+        config=replace(CONFIG, max_merge_candidates=1),
     )
 
     assert batch.candidates == ()

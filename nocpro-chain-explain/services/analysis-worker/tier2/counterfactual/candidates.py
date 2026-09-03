@@ -187,6 +187,17 @@ def generate_move_candidates(
         target = tuple(sorted(package.members_of(target_chain_id)))
         if not target:
             continue
+        # MOVE v1 is source-local. For two singleton chains it may surface only
+        # the globally canonical direction (stable-greater chain ->
+        # stable-less chain); it never loads the peer's Tier-1B artifact to
+        # recover that proposal when the less chain is under review. A
+        # singleton/non-singleton pair is likewise canonical only from the
+        # singleton into the existing non-singleton chain.
+        if len(source) == 1 and len(target) == 1:
+            if source_chain_id < target_chain_id:
+                continue
+        elif len(source) > 1 and len(target) == 1:
+            continue
         for alarm_id in source:
             analysis = member_analysis.get(alarm_id)
             role = _role_value(analysis) if analysis is not None else None
