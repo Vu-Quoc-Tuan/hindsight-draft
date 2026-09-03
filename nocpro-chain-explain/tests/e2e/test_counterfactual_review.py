@@ -241,45 +241,78 @@ def test_counterfactual_review_operations_survive_real_transport_and_persistence
     async def exercise() -> None:
         base = await _next_logical_time()
         async with httpx2.AsyncClient(base_url=API_URL, timeout=15) as client:
-            for index, fixture in enumerate(COUNTERFACTUAL_FIXTURES):
+            # The Chromium Review acceptance is run immediately after this
+            # test and intentionally renders the MOVE proposal.  Keep the
+            # transport assertions for every operation, but make the final
+            # active snapshot explicit rather than implicitly relying on the
+            # fixture declaration order.
+            fixtures = tuple(
+                fixture
+                for fixture in COUNTERFACTUAL_FIXTURES
+                if fixture.mutation != "MISASSIGNED_MEMBER"
+            ) + tuple(
+                fixture
+                for fixture in COUNTERFACTUAL_FIXTURES
+                if fixture.mutation == "MISASSIGNED_MEMBER"
+            )
+            for index, fixture in enumerate(fixtures):
                 package, review, artifact_fingerprint = await _run_case(
                     client, fixture, base + timedelta(minutes=index)
                 )
                 result = review["result"]
                 assert result["recommendation_status"] == "AVAILABLE"
-                recommendation = result["recommendations"][0]
+                # Review contract v1 deliberately keeps recommendations as
+                # lightweight candidate references.  Assertions about an
+                # operation belong to the canonical evaluated-candidate
+                # registry, filtered by the selected frontier references.
+                selected_ids = {
+                    item["candidate_id"] for item in result["recommendations"]
+                }
+                recommendations = [
+                    item
+                    for item in result["evaluated_candidates"]
+                    if item["candidate_id"] in selected_ids
+                ]
+                assert recommendations
                 if fixture.mutation == "MISASSIGNED_MEMBER":
                     matching = [
                         item
-                        for item in result["recommendations"]
+                        for item in recommendations
                         if item["operation"] == "MOVE_MEMBER"
-                        and item["member_ids"] == ["SYN-MOVE-MISASSIGNED"]
-                        and item["source_chain_id"] == "SYN-CHAIN-MOVE-SOURCE"
-                        and item["target_chain_id"] == "SYN-CHAIN-MOVE-TARGET"
-                        and item["status"]
-                        in {"BETTER_SUPPORTED", "EXTERNALLY_SUPPORTED"}
+                        and item["operation_specific_evidence"]["alarm_id"]
+                        == "SYN-MOVE-MISASSIGNED"
+                        and item["operation_specific_evidence"]["source_chain_id"]
+                        == "SYN-CHAIN-MOVE-SOURCE"
+                        and item["operation_specific_evidence"]["target_chain_id"]
+                        == "SYN-CHAIN-MOVE-TARGET"
+                        and item["hard_gate_result"]["status"] == "PASSED"
+                        and item["pareto_state"] == "FRONTIER_SELECTED"
                     ]
                     assert matching, "expected MOVE_MEMBER absent from frontier"
                 elif fixture.mutation == "UNDER_MERGE":
                     matching = [
                         item
-                        for item in result["recommendations"]
+                        for item in recommendations
                         if item["operation"] == "MERGE_CHAINS"
-                        and item["merged_chain_ids"]
+                        and item["operation_specific_evidence"]["merged_chain_ids"]
                         == ["SYN-CHAIN-MERGE-LEFT", "SYN-CHAIN-MERGE-RIGHT"]
-                        and item["status"]
-                        in {"BETTER_SUPPORTED", "EXTERNALLY_SUPPORTED"}
+                        and item["hard_gate_result"]["status"] == "PASSED"
+                        and item["pareto_state"] == "FRONTIER_SELECTED"
                     ]
                     assert matching, "expected MERGE_CHAINS absent from frontier"
                     assert matching[0]["edit_cost"]["membership_reassignments"] == 0
-                    assert matching[0]["merge_evidence"]["cross_audit_edge_count"] >= 1
+                    assert (
+                        matching[0]["operation_specific_evidence"]
+                        ["cross_chain_evidence"]["cross_audit_edge_count"]
+                        >= 1
+                    )
                 else:
                     expected_operation = (
                         "REMOVE_MEMBER"
                         if fixture.mutation == "EXTRA_MEMBER"
                         else "SPLIT_CHAIN"
                     )
-                    assert recommendation["operation"] == expected_operation
+                    assert recommendations[0]["operation"] == expected_operation
                 assert result["identity"]["snapshot_id"] == package.snapshot.snapshot_id
                 assert result["identity"]["config_version"] == (
                     "synthetic-counterfactual-v1"

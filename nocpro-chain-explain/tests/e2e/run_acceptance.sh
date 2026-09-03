@@ -27,6 +27,20 @@ trap cleanup EXIT
 docker compose down --volumes --remove-orphans
 docker compose up -d --build api web
 
+wait_for_postgres() {
+  local deadline=$((SECONDS + 60))
+  until docker compose exec -T postgres pg_isready -U nocpro -d nocpro >/dev/null; do
+    if (( SECONDS >= deadline )); then
+      docker compose logs --no-color postgres migrate api
+      echo "PostgreSQL did not become ready for host-side migration acceptance" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+}
+
+wait_for_postgres
+
 NOCPRO_RUN_DOCKER_E2E=1 PYTHONPATH="../nocpro-mock/src" \
   .venv/bin/python -m pytest tests/e2e/test_postgres_migrations_runtime.py -q
 

@@ -296,6 +296,8 @@ export type CounterfactualCandidate = {
     after_blocks_supported: number
   } | null
   semantic_effects: string[]
+  evaluation_status?: string
+  debug_source_ref?: string
   before_metrics?: CounterfactualMetricVector | null
   after_metrics?: CounterfactualMetricVector | null
   structural_facts?: {

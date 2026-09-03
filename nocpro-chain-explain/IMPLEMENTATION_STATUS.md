@@ -20,20 +20,20 @@ It separates **capability** from evidence that the capability was exercised;
 
 | Capability | Implementation | Unit/regression | Synthetic | Docker/runtime | Production | Boundary / evidence needed |
 | --- | --- | --- | --- | --- | --- | --- |
-| Kafka chunk + `SNAPSHOT_COMPLETE` barrier, PostgreSQL ingest, Tier-1A | `READY` | `PASS` | `PASS` | `NOT_RUN` | `BLOCKED_BY_DATA_AVAILABILITY` for production delta validation | Docker acceptance stack is not active; sequential production snapshots are absent. |
-| Tier-1B lazy indexed analysis and cache | `READY` | `PASS` | `PASS` | `NOT_RUN` | `READY` for available primitive evidence only | Chain size 1072 is an anti-dense regression gate; Tier-1B may not use a dense pairwise fallback. |
+| Kafka chunk + `SNAPSHOT_COMPLETE` barrier, PostgreSQL ingest, Tier-1A | `READY` | `PASS` | `PASS` | `PASS` synthetic Docker stack | `BLOCKED_BY_DATA_AVAILABILITY` for production delta validation | The 2026-09-03 acceptance run covered Kafka, PostgreSQL READY and restart paths; raw production replay is skipped because `alarm_data.csv` is absent. |
+| Tier-1B lazy indexed analysis and cache | `READY` | `PASS` | `PASS` | `PASS` synthetic Docker stack | `READY` for available primitive evidence only | Chain size 1072 is an anti-dense regression gate; Tier-1B may not use a dense pairwise fallback. |
 | Pair WHY API/UI | `READY` | `PASS` | `PASS` | `NOT_RUN` | Input-dependent | A Pair WHY result can be `UNAVAILABLE` without changing Tier-1B availability. |
 | Historical `H` Pair WHY | `READY` | `PASS` | `PASS` | `NOT_RUN` | `BLOCKED_BY_DATA_AVAILABILITY` | Requires authoritative taxonomy and verified historical/lineage corpus; no inference from `alarm_name`. |
 | `T_delay` frozen model/training semantics | `READY` | `PASS` | `PASS` | `NOT_RUN` | `BLOCKED_BY_DATA_AVAILABILITY` | Strict prefix, directed local-mass model, immutable persistence, and oracle tests exist. Production taxonomy/configuration is not established. |
 | `T_delay` Pair WHY runtime/API/UI | `READY` | `PASS` | `PASS` | `NOT_RUN` | `UNAVAILABLE` / `NOT_CALIBRATED` | Production `v1.yaml` lacks required model-selection/fallback configuration and production lacks authoritative taxonomy. |
 | `T_delay` full-chain indexed Role contribution | `UNAVAILABLE` | `PASS` fail-closed | N/A | N/A | `UNAVAILABLE` | `NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH`. Dense pairwise fallback is forbidden. |
 | `T_delay` full-chain indexed Audit contribution | `UNAVAILABLE` | `PASS` fail-closed | N/A | N/A | `UNAVAILABLE` | `NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH`. Eligibility metadata does not manufacture an exact indexed statistic. |
-| Structural Audit, attribution, deletion evaluation | `READY` under exact ceilings | `PASS` | `PASS` | `NOT_RUN` | Input/config-dependent | Ceiling exceedance is component `UNAVAILABLE`, not a fabricated approximation or a failed Tier-2 job. |
+| Structural Audit, attribution, deletion evaluation | `READY` under exact ceilings | `PASS` | `PASS` | `PASS` synthetic Docker stack for Audit/Review | Input/config-dependent | Ceiling exceedance is component `UNAVAILABLE`, not a fabricated approximation or a failed Tier-2 job. |
 | Similar Chains | `READY` | `PASS` | `PASS` | `NOT_RUN` | Degraded / input-dependent | Alarm taxonomy is `UNAVAILABLE` on the current production export; no taxonomy is inferred from `alarm_name`. |
-| Evolution v1 persisted lineage projection | `READY` | `PASS` | `PASS` | `NOT_RUN` | `BLOCKED_BY_DATA_AVAILABILITY` | Synthetic verified sequences are visible as `SYNTHETIC_TEST`; production evolution requires verified sequential production snapshots. |
-| Topology P2 semantics | `READY` only for compatible synthetic inputs | `PASS` | `PASS` | `NOT_RUN` | `UNAVAILABLE` | Real `topoIP` is structural-only: current export has no exact alarm-resource mapping or authoritative direction/path semantics. |
-| Counterfactual `REMOVE_MEMBER`, `SPLIT_CHAIN`, `MOVE_MEMBER`, connector annotation | `READY` | `PASS` | `PASS` | `NOT_RUN` | `NOT_CALIBRATED` | Proposal-only; production recommendation policy requires operator corrections/calibration. |
-| Counterfactual `MERGE_CHAINS` | `READY` | `PASS` | `PASS` | `NOT_RUN` | `NOT_CALIBRATED` | Docker/restart/Chromium MERGE acceptance is prepared but has not run because the stack is inactive. |
+| Evolution v1 persisted lineage projection | `READY` | `PASS` | `PASS` | `PASS` synthetic Docker stack | `BLOCKED_BY_DATA_AVAILABILITY` | Synthetic verified sequences are visible as `SYNTHETIC_TEST`; production evolution requires verified sequential production snapshots. |
+| Topology P2 semantics | `READY` only for compatible synthetic inputs | `PASS` | `PASS` | `PASS` synthetic Docker stack | `UNAVAILABLE` | Real `topoIP` is structural-only: current export has no exact alarm-resource mapping or authoritative direction/path semantics. |
+| Counterfactual `REMOVE_MEMBER`, `SPLIT_CHAIN`, `MOVE_MEMBER`, connector annotation | `READY` | `PASS` | `PASS` | `PASS` synthetic Docker stack | `NOT_CALIBRATED` | Proposal-only; production recommendation policy requires operator corrections/calibration. |
+| Counterfactual `MERGE_CHAINS` | `READY` | `PASS` | `PASS` | `PASS` synthetic Docker stack | `NOT_CALIBRATED` | Exact cross-chain evidence, persisted Review reload and Chromium Review acceptance passed; production policy remains uncalibrated. |
 | Counterfactual `ADD_MEMBER` | `BLOCKED` | N/A | N/A | N/A | `BLOCKED` | `UNKNOWN_UPSTREAM_SEMANTICS`: first-class zero-membership alarms have not been verified upstream. |
 
 ## T_delay boundary
@@ -82,8 +82,14 @@ synthetic_temporal_topology_v1
 `run_acceptance.sh` runs the explicit T_delay synthetic model/Pair WHY suite
 with its authoritative test adapter alongside the Kafka/PostgreSQL stages.
 It deliberately does **not** make the container's production-shaped baseline
-invent taxonomy; that baseline remains fail-closed. The overall runtime
-evidence state is still `NOT_RUN`, not `PASS`.
+invent taxonomy; that baseline remains fail-closed. The synthetic Docker
+acceptance run passed on 2026-09-03: migration/runtime failure tests (6), P2
+Kafka tests (3), Evolution Chromium (1), H/T_delay model tests (18),
+Counterfactual Kafka/PostgreSQL/restart (1), and Counterfactual Chromium (1).
+The raw-export replay stage was explicitly skipped because
+`nocpro-mock/datasets/raw/alarm_data.csv` is unavailable. H/T_delay Pair WHY
+through the production-shaped service/API remains `NOT_RUN`; the model suite
+does not establish that separate capability.
 
 ## Production evidence still required
 

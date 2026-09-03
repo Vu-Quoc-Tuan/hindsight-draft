@@ -26,15 +26,34 @@ function metricValue(name: keyof CounterfactualMetricVector, vector: Counterfact
   return Number.isInteger(metric.value) ? String(metric.value) : metric.value.toFixed(3)
 }
 
+function evidenceString(candidate: CounterfactualCandidate, key: string): string | undefined {
+  const value = candidate.operation_specific_evidence?.[key]
+  return typeof value === 'string' ? value : undefined
+}
+
+function evidenceStrings(candidate: CounterfactualCandidate, key: string): string[] | undefined {
+  const value = candidate.operation_specific_evidence?.[key]
+  return Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : undefined
+}
+
 function CandidateCard({ candidate, recommended }: { candidate: CounterfactualCandidate; recommended: boolean }) {
+  const status = candidate.evaluation_status ?? candidate.status ?? 'NOT_EVALUATED'
+  const sourceRef = candidate.debug_source_ref ?? candidate.source_ref
+  const memberIds = candidate.member_ids?.length
+    ? candidate.member_ids
+    : evidenceString(candidate, 'alarm_id') ? [evidenceString(candidate, 'alarm_id')!] : []
+  const sourceChainId = candidate.source_chain_id ?? evidenceString(candidate, 'source_chain_id')
+  const targetChainId = candidate.target_chain_id ?? evidenceString(candidate, 'target_chain_id')
+  const mergedChainIds = candidate.merged_chain_ids ?? evidenceStrings(candidate, 'merged_chain_ids')
+  const mergeEvidence = candidate.merge_evidence ?? candidate.operation_specific_evidence?.cross_chain_evidence as { cross_audit_edge_count?: number } | undefined
   return (
     <article className={`review-candidate ${recommended ? 'review-candidate--recommended' : ''}`}>
       <header>
         <div>
           <span className="review-operation">{candidate.operation}</span>
-          <strong>{candidate.member_ids?.join(' · ') || 'Partition proposal'}</strong>
+          <strong>{memberIds.join(' · ') || 'Partition proposal'}</strong>
         </div>
-        <span className={`review-state review-state--${candidate.status.toLowerCase()}`}>{candidate.status}</span>
+        <span className={`review-state review-state--${status.toLowerCase()}`}>{status}</span>
       </header>
       <div className="review-partition" aria-label="Before and after partition">
         <div><small>Current</small>{candidate.partition_delta.before.map(([id, members]) => <p key={id}><strong>{id}</strong><span>{members.length} members</span></p>)}</div>
@@ -52,9 +71,9 @@ function CandidateCard({ candidate, recommended }: { candidate: CounterfactualCa
         ))}
       </div>
       <footer>
-        <span>Exact bounded evaluation{candidate.source_ref ? ` · ${candidate.source_ref}` : ''}</span>
-        {candidate.operation === 'MOVE_MEMBER' && candidate.source_chain_id && candidate.target_chain_id ? <span>Transfer {candidate.source_chain_id} → {candidate.target_chain_id}</span> : null}
-        {candidate.operation === 'MERGE_CHAINS' && candidate.merged_chain_ids && candidate.merge_evidence ? <span>Merge {candidate.merged_chain_ids.join(' + ')} · {candidate.merge_evidence.cross_audit_edge_count} exact cross Audit edges</span> : null}
+        <span>Exact bounded evaluation{sourceRef ? ` · ${sourceRef}` : ''}</span>
+        {candidate.operation === 'MOVE_MEMBER' && sourceChainId && targetChainId ? <span>Transfer {sourceChainId} → {targetChainId}</span> : null}
+        {candidate.operation === 'MERGE_CHAINS' && mergedChainIds && mergeEvidence ? <span>Merge {mergedChainIds.join(' + ')} · {mergeEvidence.cross_audit_edge_count} exact cross Audit edges</span> : null}
         {recommended && candidate.semantic_effects.includes('BECOMES_CONNECTOR') && (candidate.structural_facts ?? candidate.move_structural_facts) ? <span>Reason: becomes a connector after the move · {(candidate.structural_facts ?? candidate.move_structural_facts)!.after_blocks_supported} supported blocks</span> : null}
         <span>{candidate.materially_improved_metrics.length} material improvements</span>
       </footer>
