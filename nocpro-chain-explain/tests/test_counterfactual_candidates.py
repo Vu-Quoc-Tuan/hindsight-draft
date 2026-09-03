@@ -234,6 +234,29 @@ def test_split_reuses_exact_cuts_orders_by_phi_and_deduplicates_complement() -> 
         ("C::split::0", ("A", "B", "D")),
         ("C::split::1", ("C", "E", "F")),
     )
+    assert batch.candidates[0].edit_cost.operation_count == 1
+    assert batch.candidates[0].edit_cost.membership_reassignments == 0
+    assert batch.candidates[0].edit_cost.affected_member_count == 6
+
+
+def test_unbalanced_split_is_structural_not_member_reassignments() -> None:
+    batch = generate_split_candidates(
+        IDENTITY,
+        chain_id="C",
+        members=("A", "B", "C", "D", "E", "F"),
+        structural_audit=_audit(_scored("two-four", {"A", "B"}, 0.1)),
+        config=CONFIG,
+    )
+
+    assert len(batch.candidates) == 1
+    candidate = batch.candidates[0]
+    assert candidate.partition_delta.after == (
+        ("C::split::0", ("A", "B")),
+        ("C::split::1", ("C", "D", "E", "F")),
+    )
+    assert candidate.edit_cost.operation_count == 1
+    assert candidate.edit_cost.membership_reassignments == 0
+    assert candidate.edit_cost.affected_member_count == 6
 
 
 def test_two_member_chain_has_no_nontrivial_split() -> None:

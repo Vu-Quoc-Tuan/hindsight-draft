@@ -262,10 +262,12 @@ Edit cost is a structured deterministic tuple, not a weighted score:
 (operation_count, membership_reassignments, affected_member_count)
 ```
 
-Both P0 operations have one operation. A removal has one membership
-reassignment. A split has `min(|S|, |C-S|)` membership reassignments. Edit cost
-is used only after evidence comparison for preference and deterministic output;
-it cannot rescue an evidence-inferior candidate.
+Both P0 operations have one operation. A removal has one member-level
+reassignment. A split has zero member-level reassignments: it is a structural
+block edit from `C` to `S, C-S`, and counterfactual after-chain IDs do not turn
+their members into individual transfers. Its affected-member count is `|C|`.
+Edit cost is used only after evidence comparison for preference and
+deterministic output; it cannot rescue an evidence-inferior candidate.
 
 ## 10. Hard gates and Pareto semantics
 

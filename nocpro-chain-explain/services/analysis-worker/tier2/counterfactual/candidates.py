@@ -432,7 +432,10 @@ def generate_split_candidates(
                 candidate_id=_candidate_id(identity, Operation.SPLIT_CHAIN, delta),
                 operation=Operation.SPLIT_CHAIN,
                 partition_delta=delta,
-                edit_cost=EditCost(1, min(len(left), len(right)), len(canonical_members)),
+                # SPLIT is a structural block edit, just like MERGE. Both
+                # after-block identities are counterfactual representations;
+                # neither side is an individual member-level reassignment.
+                edit_cost=EditCost(1, 0, len(canonical_members)),
                 source_ref=f"audit-cut:{label}:phi={phi:.12g}",
                 member_ids=min(left, right),
             )

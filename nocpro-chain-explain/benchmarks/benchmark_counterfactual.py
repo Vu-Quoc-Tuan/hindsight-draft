@@ -148,7 +148,7 @@ def run(repetitions: int = 5) -> dict:
     latencies = []
     ari_values = []
     ami_values = []
-    edit_distances = []
+    member_level_reassignments = []
     for name in ("counterfactual_remove", "counterfactual_split"):
         payload, expected = _fixture(name)
         runs = []
@@ -184,18 +184,18 @@ def run(repetitions: int = 5) -> dict:
         ami = adjusted_mutual_info(truth_labels, predicted_labels)
         ari_values.append(ari)
         ami_values.append(ami)
-        edit_distance = (
+        member_level_reassignment_count = (
             recommendation.candidate.edit_cost.membership_reassignments
             if recommendation is not None
             else 0
         )
-        edit_distances.append(edit_distance)
+        member_level_reassignments.append(member_level_reassignment_count)
         cases.append({
             "fixture": name,
             "detected": detected,
             "repair_exact": exact,
             "operation": recommendation.candidate.operation.value if recommendation else None,
-            "edit_distance": edit_distance,
+            "member_level_reassignments": member_level_reassignment_count,
             "ari": ari,
             "ami": ami,
             "latency_seconds": runs,
@@ -215,7 +215,9 @@ def run(repetitions: int = 5) -> dict:
         "repair_accuracy": repairs_exact / 2,
         "false_recommendation_rate": 0.0 if clean_abstained else 1.0,
         "clean_abstention_rate": 1.0 if clean_abstained else 0.0,
-        "mean_edit_distance": statistics.mean(edit_distances),
+        "mean_member_level_reassignments": statistics.mean(
+            member_level_reassignments
+        ),
         "mean_ari": statistics.mean(ari_values),
         "mean_ami": statistics.mean(ami_values),
         "latency_p50_seconds": statistics.median(latencies),
