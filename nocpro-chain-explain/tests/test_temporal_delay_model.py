@@ -62,6 +62,20 @@ def test_runtime_and_oracle_keep_the_same_frozen_relation_result():
     assert runtime.relation.episode_sample_count == 6
 
 
+def test_oracle_matches_runtime_for_unavailable_and_backoff_paths():
+    family = DelayRelationKey(TaxonomyLevel.FAMILY, "FA", "FB")
+    samples = [DelayObservation(f"family-{i}", f"a{i}", f"b{i}", family, 2.0) for i in range(2)]
+    model = build_delay_model(samples, training_cutoff="2026-01-02T00:00:00Z", lineage_prefix_fingerprint="prefix", taxonomy_source_id="syn", taxonomy_source_version="v1", config=config())
+    source, target = TaxonomyTokens(type="A", family="FA"), TaxonomyTokens(type="B", family="FB")
+    runtime = evaluate_delay_model(source, target, delay_seconds=2, model=model)
+    oracle = evaluate_delay_model_oracle(source, target, delay_seconds=2, observations=list(reversed(samples)), training_cutoff=model.training_cutoff, lineage_prefix_fingerprint="prefix", taxonomy_source_id="syn", taxonomy_source_version="v1", config=config())
+    assert runtime == oracle
+    assert runtime.available and runtime.resolved_level is TaxonomyLevel.FAMILY
+    unavailable = evaluate_delay_model_oracle(None, target, delay_seconds=2, observations=samples, training_cutoff=model.training_cutoff, lineage_prefix_fingerprint="prefix", taxonomy_source_id="syn", taxonomy_source_version="v1", config=config())
+    assert unavailable.available is False
+    assert unavailable.reason == "TAXONOMY_UNAVAILABLE"
+
+
 def test_equal_current_timestamps_are_not_directed_temporal_evidence():
     result = evaluate_ordered_delay_model(TaxonomyTokens(type="A"), TaxonomyTokens(type="B"), left_start="2026-01-01T00:00:00Z", right_start="2026-01-01T00:00:00Z", model=None)
     assert result.available is False

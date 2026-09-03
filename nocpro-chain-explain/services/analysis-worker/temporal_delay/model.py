@@ -329,7 +329,12 @@ def evaluate_delay_model_oracle(
     lineage_prefix_fingerprint: str, taxonomy_source_id: str, taxonomy_source_version: str,
     config: DelayModelConfig,
 ) -> DelayLookup:
-    """Reference path which reconstructs a model from an unsorted raw corpus."""
+    """Reference path which rebuilds from raw observations and evaluates directly.
+
+    This intentionally does not delegate to :func:`evaluate_delay_model`: the
+    oracle repeats common-level resolution and unavailable-state handling so a
+    regression in the indexed/frozen lookup path remains observable.
+    """
     # The production path receives an already frozen indexed relation map.  The
     # oracle deliberately begins with raw observations and independently applies
     # canonical identity deduplication before invoking the deterministic fitter.
@@ -345,4 +350,28 @@ def evaluate_delay_model_oracle(
         taxonomy_source_id=taxonomy_source_id, taxonomy_source_version=taxonomy_source_version,
         config=config,
     )
-    return evaluate_delay_model(source, target, delay_seconds=delay_seconds, model=frozen)
+    if source is None or target is None:
+        return DelayLookup(False, "TAXONOMY_UNAVAILABLE", None, None, None, None, None, None, 0.0)
+    backoff_reason = None
+    for level in (TaxonomyLevel.TYPE, TaxonomyLevel.FAMILY, TaxonomyLevel.CATEGORY):
+        left, right = source.at(level), target.at(level)
+        if left is None or right is None:
+            continue
+        key = DelayRelationKey(level, left, right)
+        relation = frozen.relations.get(key)
+        if relation is None:
+            if key in frozen.unavailable_relations:
+                return DelayLookup(False, frozen.unavailable_relations[key], level, key, delay_seconds, None, None, None, 0.0)
+            backoff_reason = f"INSUFFICIENT_{level.value}_TEMPORAL_HISTORY"
+            continue
+        local_mass = relation.local_mass(delay_seconds)
+        peak_mass = relation.normalizing_peak_mass()
+        return DelayLookup(
+            True, None, level, key, delay_seconds, relation, local_mass,
+            peak_mass, local_mass / peak_mass if peak_mass else 0.0,
+            backoff_reason,
+        )
+    return DelayLookup(
+        False, "INSUFFICIENT_TEMPORAL_HISTORY", None, None, delay_seconds,
+        None, None, None, 0.0, backoff_reason,
+    )
