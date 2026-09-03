@@ -116,3 +116,48 @@ class ResourceMapper:
             topology_layer=self.topology_layer,
             source_version=self.source_version,
         )
+
+    def map_real_alarm(
+        self,
+        alarm_id: str,
+        *,
+        device_code: str | None = None,
+        node_reference: str | None = None,
+        device_ip: str | None = None,
+        component: str | None = None,
+    ) -> AlarmResourceMapping:
+        """Map real alarm using full priority chain: device_code -> IP -> component -> node_ref."""
+        identifiers_to_try = [device_code, node_reference]
+        if device_ip:
+            clean_ip = device_ip.strip().split("/")[0]
+            identifiers_to_try.append(clean_ip)
+            identifiers_to_try.append(f"it:instance:{clean_ip}")
+        if component:
+            identifiers_to_try.append(component.strip())
+            identifiers_to_try.append(f"it:service:{component.strip()}")
+
+        for ident in identifiers_to_try:
+            if not ident:
+                continue
+            res_id, status, method, conf = self.map_identifier(ident)
+            if res_id is not None:
+                return AlarmResourceMapping(
+                    alarm_id=alarm_id,
+                    resource_id=res_id,
+                    mapping_status=status,
+                    mapping_method=method,
+                    mapping_confidence=conf,
+                    topology_layer=self.topology_layer,
+                    source_version=self.source_version,
+                )
+
+        return AlarmResourceMapping(
+            alarm_id=alarm_id,
+            resource_id=None,
+            mapping_status=MappingStatus.UNMAPPED,
+            mapping_method=MappingMethod.NONE,
+            mapping_confidence=None,
+            topology_layer=self.topology_layer,
+            source_version=self.source_version,
+        )
+

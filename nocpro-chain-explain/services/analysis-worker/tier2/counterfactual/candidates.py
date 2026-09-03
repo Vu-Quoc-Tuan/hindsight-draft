@@ -490,3 +490,54 @@ def generate_split_candidates(
         candidates=tuple(candidates),
         canonical_remove_member_ids=tuple(sorted(canonical_remove)),
     )
+
+
+def generate_add_candidates(
+    identity: ReviewIdentity,
+    *,
+    chain_id: str,
+    members: tuple[str, ...],
+    singleton_members: Mapping[str, str],
+    limit: int = 10,
+) -> CandidateBatch:
+    """Generate ADD_MEMBER candidates by drawing from singleton chains in the snapshot."""
+    canonical_members = tuple(sorted(members))
+    candidates: list[CounterfactualCandidate] = []
+
+    sorted_singletons = sorted(singleton_members.items(), key=lambda item: item[0])
+    for single_chain_id, alarm_id in sorted_singletons:
+        if alarm_id in canonical_members:
+            continue
+        new_members = tuple(sorted(canonical_members + (alarm_id,)))
+        delta = PartitionDelta(
+            before=((chain_id, canonical_members), (single_chain_id, (alarm_id,))),
+            after=((chain_id, new_members),),
+        )
+        cand_id = _candidate_id(identity, Operation.ADD_MEMBER, delta)
+        candidates.append(
+            CounterfactualCandidate(
+                candidate_id=cand_id,
+                operation=Operation.ADD_MEMBER,
+                partition_delta=delta,
+                edit_cost=EditCost(1, 1, 1),
+                source_ref=f"singleton:{single_chain_id}:{alarm_id}",
+                member_ids=(alarm_id,),
+                source_chain_id=single_chain_id,
+                target_chain_id=chain_id,
+                operation_evidence={
+                    "added_alarm_id": alarm_id,
+                    "source_singleton_chain_id": single_chain_id,
+                    "target_chain_id": chain_id,
+                },
+            )
+        )
+        if len(candidates) >= limit:
+            break
+
+    return CandidateBatch(
+        operation=Operation.ADD_MEMBER,
+        discovered_count=len(sorted_singletons),
+        evaluated_count=len(candidates),
+        candidate_limit=limit,
+        candidates=tuple(candidates),
+    )

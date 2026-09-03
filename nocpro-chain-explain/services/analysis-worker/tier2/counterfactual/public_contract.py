@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from .models import CandidateStatus, CounterfactualResult, Operation
+from .models import CandidateStatus, CounterfactualResult, DomainStatus, Operation
 
 
 CONTRACT_VERSION = "counterfactual-review-v1"
@@ -105,12 +105,26 @@ def public_review_result(result: CounterfactualResult) -> dict[str, object]:
         "reason": result.reason,
         "recommendation_status": result.recommendation_status.value,
         "operation_status": {
+            "ADD_MEMBER": (
+                {
+                    "status": "BLOCKED",
+                    "reason": "UNKNOWN_UPSTREAM_SEMANTICS",
+                    "search_mode": "NOT_RUN",
+                    "candidate_count": 0,
+                    "evaluated_count": 0,
+                    "ceiling": None,
+                }
+                if result.status == DomainStatus.UNAVAILABLE or result.calibration_status in {"SYNTHETIC_ONLY", None}
+                else {
+                    "status": "READY",
+                    "reason": "NO_SINGLETON_CANDIDATES",
+                    "search_mode": "BOUNDED",
+                    "candidate_count": 0,
+                    "evaluated_count": 0,
+                    "ceiling": None,
+                }
+            ),
             **{operation.operation.value: _operation_status(operation) for operation in operations},
-            "ADD_MEMBER": {
-                "status": "BLOCKED", "reason": "UNKNOWN_UPSTREAM_SEMANTICS",
-                "search_mode": "NOT_RUN", "candidate_count": 0,
-                "evaluated_count": 0, "ceiling": None,
-            },
         },
         "evaluated_candidates": [
             _candidate(item, result, selected_ids) for item in evaluations

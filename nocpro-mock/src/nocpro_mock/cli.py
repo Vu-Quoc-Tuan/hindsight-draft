@@ -320,6 +320,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("directory")
     p_run.set_defaults(func=_cmd_run_sequence)
 
+    p_slice = sub.add_parser(
+        "slice-sequence",
+        help="slice a real alarm CSV into consecutive snapshot packages over sliding time windows",
+    )
+    p_slice.add_argument("--alarm-csv", default=DEFAULT_ALARM_CSV)
+    p_slice.add_argument("--output-dir", required=True)
+    p_slice.add_argument("--scenario-id", default="real_alarm_evolution_v1")
+    p_slice.add_argument("--snapshots", type=int, default=5)
+    p_slice.add_argument("--step-minutes", type=int, default=5)
+    p_slice.add_argument("--window-minutes", type=int, default=15)
+    p_slice.add_argument("--max-chains", type=int, default=None)
+    p_slice.set_defaults(func=_cmd_slice_sequence)
+
     p_ui = sub.add_parser("ui", help="start interactive web UI and Kafka dispatcher")
     p_ui.add_argument("--host", default="0.0.0.0", help="host interface to bind (default 0.0.0.0)")
     p_ui.add_argument("--port", type=int, default=8085, help="HTTP port (default 8085)")
@@ -327,6 +340,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_ui.set_defaults(func=_cmd_ui)
 
     return parser
+
+
+def _cmd_slice_sequence(args: argparse.Namespace) -> int:
+    from .replay.sequence_slicer import slice_alarm_sequence
+
+    summary = slice_alarm_sequence(
+        alarm_csv_path=args.alarm_csv,
+        output_dir=args.output_dir,
+        scenario_id=args.scenario_id,
+        num_snapshots=args.snapshots,
+        step_minutes=args.step_minutes,
+        window_minutes=args.window_minutes,
+        max_chains_per_snapshot=args.max_chains,
+    )
+    print(f"Successfully sliced {summary.snapshot_count} consecutive snapshots into {summary.output_dir}")
+    print(f"Time range: {summary.start_time} -> {summary.end_time}")
+    print(f"Distinct alarms: {summary.total_distinct_alarms}, Distinct chains: {summary.total_distinct_chains}")
+    return 0
 
 
 def _cmd_ui(args: argparse.Namespace) -> int:

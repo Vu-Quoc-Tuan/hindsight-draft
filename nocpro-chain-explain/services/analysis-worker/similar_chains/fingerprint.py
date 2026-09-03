@@ -111,6 +111,16 @@ def _family_term(
     if alarm_type is not None:
         return AlarmTaxonomyTerm(value=alarm_type, level=TaxonomyLevel.TYPE_FALLBACK)
 
+    # Real data fallback: use group_name if present
+    group = (alarm.raw.get("group_name") or "").strip() or None
+    if group is not None:
+        return AlarmTaxonomyTerm(value=group, level=TaxonomyLevel.FAMILY)
+
+    # Real data fallback: use fault_id if present
+    fault_id = str(alarm.raw.get("fault_id") or "").strip() or None
+    if fault_id:
+        return AlarmTaxonomyTerm(value=f"FAULT_{fault_id}", level=TaxonomyLevel.TYPE_FALLBACK)
+
     # Neither resolves: no term. Never guessed from alarm_name/device_code.
     return None
 

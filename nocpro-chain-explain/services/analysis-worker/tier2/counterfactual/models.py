@@ -14,6 +14,7 @@ class Operation(str, Enum):
     SPLIT_CHAIN = "SPLIT_CHAIN"
     MOVE_MEMBER = "MOVE_MEMBER"
     MERGE_CHAINS = "MERGE_CHAINS"
+    ADD_MEMBER = "ADD_MEMBER"
 
 
 class DomainStatus(str, Enum):
