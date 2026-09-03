@@ -72,6 +72,15 @@ class SimilarChainsPolicy:
 
 
 @dataclass(frozen=True)
+class HistoricalEvidencePolicy:
+    """Optional until an explicit, versioned lift cap is supplied."""
+
+    min_support: ConfiguredValue
+    lambda_h: ConfiguredValue
+    lift_cap: ConfiguredValue
+
+
+@dataclass(frozen=True)
 class ConfiguredValue:
     path: str
     value: int | float
@@ -257,6 +266,8 @@ class AnalysisConfig:
     incremental_snapshot: IncrementalSnapshotPolicy
     chunk_retention: ChunkRetentionPolicy
     similar_chains: SimilarChainsPolicy
+    historical_evidence: HistoricalEvidencePolicy | None
+    historical_evidence_reason: str | None
     p2_topology: P2TopologyConfig
     attribution_evaluation: AttributionEvaluationConfig | None = None
     attribution_evaluation_reason: str | None = None
@@ -452,6 +463,29 @@ def _load_optional_attribution_evaluation(
         )
     except AnalysisConfigError:
         return None, "ATTRIBUTION_EVALUATION_CONFIG_INCOMPLETE"
+
+
+def _load_optional_historical_evidence(
+    document: dict[str, Any], parameters: dict[str, ConfiguredValue]
+) -> tuple[HistoricalEvidencePolicy | None, str | None]:
+    """Do not invent ``lift_cap`` merely because older configs lack it."""
+    try:
+        lift_cap = _load_p2_configured_value(
+            document,
+            "history.lift_cap",
+            _ParameterRule(float, 1.0, inclusive_minimum=False),
+            configured_path="history.lift_cap",
+        )
+        return (
+            HistoricalEvidencePolicy(
+                min_support=parameters["history.min_support"],
+                lambda_h=parameters["history.lambda_h"],
+                lift_cap=lift_cap,
+            ),
+            None,
+        )
+    except (AnalysisConfigError, KeyError):
+        return None, "HISTORY_CONFIG_INCOMPLETE"
 
 
 def _counterfactual_number(
@@ -677,6 +711,9 @@ def load_analysis_config(
         exclude_same_lineage=True,
     )
     p2_topology = _load_optional_p2_topology(document)
+    historical_evidence, historical_evidence_reason = _load_optional_historical_evidence(
+        document, parameters
+    )
     (
         attribution_evaluation,
         attribution_evaluation_reason,
@@ -690,6 +727,8 @@ def load_analysis_config(
         incremental_snapshot=incremental_snapshot,
         chunk_retention=chunk_retention,
         similar_chains=similar_chains,
+        historical_evidence=historical_evidence,
+        historical_evidence_reason=historical_evidence_reason,
         p2_topology=p2_topology,
         attribution_evaluation=attribution_evaluation,
         attribution_evaluation_reason=attribution_evaluation_reason,

@@ -17,6 +17,11 @@ from similar_chains import (
     materialize_similarity_index,
 )
 from configuration import ChunkRetentionMode
+from history import (
+    HistoricalEvidenceConfig,
+    build_historical_model,
+    episodes_from_lineage_prefix,
+)
 
 from .persistence import SnapshotRepository
 
@@ -134,6 +139,11 @@ class Tier1ACoordinator:
             if index is not None:
                 lineages = await self.repository.canonical_lineages(*identity)
                 self.workspace.attach_similarity(index, lineages)
+        if self.workspace.historical_model is None:
+            historical = await self.repository.load_historical_evidence_model(*identity)
+            if historical is not None:
+                model, taxonomy = historical
+                self.workspace.attach_historical_model(model, taxonomy)
         return precompute
 
     async def run_lineage_pending_once(self):
@@ -272,7 +282,67 @@ class Tier1ACoordinator:
                 claim.snapshot_version,
             ):
                 self.workspace.attach_similarity(index, lineage_by_chain)
+            await self.build_historical_model_for_snapshot(
+                package=package,
+                dag=dag,
+            )
             return claim.snapshot_id, claim.snapshot_version
         except Exception as exc:
             await self.repository.release_similarity(claim, str(exc))
             raise
+
+    async def build_historical_model_for_snapshot(self, *, package, dag) -> bool:
+        """Materialize H from the strict lineage prefix when capability exists.
+
+        H is deliberately independent from Similar Chains semantically.  This
+        call is merely scheduled after lineage/similarity in the existing
+        recovery loop, where the verified DAG is already available.  Missing
+        taxonomy or incomplete configuration is a domain capability absence,
+        never a fallback to free-text inference.
+        """
+        policy = self.workspace.config.historical_evidence
+        taxonomy = self.workspace.historical_taxonomy_source
+        if policy is None or taxonomy is None:
+            return False
+        existing = await self.repository.load_historical_evidence_model(
+            package.snapshot.snapshot_id,
+            package.snapshot.snapshot_version,
+        )
+        if existing is None:
+            cutoff = package.snapshot.snapshot_time
+            cutoff_time = datetime.fromisoformat(cutoff.replace("Z", "+00:00"))
+            if cutoff_time.tzinfo is None:
+                cutoff_time = cutoff_time.replace(tzinfo=timezone.utc)
+            packages = await self.repository.load_historical_packages(cutoff=cutoff_time)
+            episodes, prefix_fingerprint = episodes_from_lineage_prefix(
+                packages,
+                dag=dag,
+                cutoff=cutoff,
+                taxonomy=taxonomy,
+            )
+            model = build_historical_model(
+                episodes,
+                training_cutoff=cutoff,
+                lineage_prefix_fingerprint=prefix_fingerprint,
+                taxonomy=taxonomy,
+                config=HistoricalEvidenceConfig(
+                    config_version=self.workspace.config.config_version,
+                    min_support=int(policy.min_support.value),
+                    lambda_h=float(policy.lambda_h.value),
+                    lift_cap=float(policy.lift_cap.value),
+                ),
+            )
+            await self.repository.persist_historical_evidence_model(
+                snapshot_id=package.snapshot.snapshot_id,
+                snapshot_version=package.snapshot.snapshot_version,
+                model=model,
+                taxonomy=taxonomy,
+            )
+        else:
+            model, taxonomy = existing
+        if self.workspace.active_identity() == (
+            package.snapshot.snapshot_id,
+            package.snapshot.snapshot_version,
+        ):
+            self.workspace.attach_historical_model(model, taxonomy)
+        return True

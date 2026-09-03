@@ -115,7 +115,7 @@ export type PairEvidence = {
   dependency_semantic: string | null
   state: string
   score: number | null
-  threshold: number
+  threshold: number | null
   negative_score: number | null
   detail: string | null
   derivation_tag: string
@@ -126,6 +126,7 @@ export type PairEvidence = {
   source_version: string | null
   scenario_id: string | null
   generator_version: string | null
+  evidence_metadata: Record<string, unknown> | null
 }
 
 export type PairWhy = {

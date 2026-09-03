@@ -108,7 +108,7 @@ class PairEvidenceView(ApiModel):
     dependency_semantic: str | None
     state: str
     score: float | None
-    threshold: float
+    threshold: float | None
     negative_score: float | None
     detail: str | None
     derivation_tag: str
@@ -119,6 +119,7 @@ class PairEvidenceView(ApiModel):
     source_version: str | None
     scenario_id: str | None
     generator_version: str | None
+    evidence_metadata: dict[str, Any] | None = None
 
 
 class SystemPairFactView(ApiModel):

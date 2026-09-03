@@ -14,7 +14,12 @@ from .evidence import (
     build_historical_model,
     evaluate_historical_evidence,
     evaluate_historical_oracle,
+    model_from_dict,
+    model_to_dict,
+    taxonomy_from_dict,
+    taxonomy_to_dict,
 )
+from .bootstrap import episodes_from_lineage_prefix
 
 __all__ = [
     "HISTORICAL_CHANNEL",
@@ -30,4 +35,9 @@ __all__ = [
     "build_historical_model",
     "evaluate_historical_evidence",
     "evaluate_historical_oracle",
+    "episodes_from_lineage_prefix",
+    "model_from_dict",
+    "model_to_dict",
+    "taxonomy_from_dict",
+    "taxonomy_to_dict",
 ]

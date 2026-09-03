@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 
 from libs.provenance import ProvenanceClass, ProvenanceSubtype
 
@@ -39,7 +40,7 @@ class ChannelValue:
     provenance_class: ProvenanceClass
     availability: bool
     positive_score: float
-    threshold: float
+    threshold: float | None
     negative_score: float = 0.0
     provenance_subtype: ProvenanceSubtype | None = None
     detail: str | None = None
@@ -53,6 +54,9 @@ class ChannelValue:
     source_version: str | None = None
     scenario_id: str | None = None
     generator_version: str | None = None
+    evidence_metadata: dict[str, Any] | None = None
+    #: Used only where frozen semantics cannot be expressed as ``score >= theta``.
+    support_override: bool | None = None
 
     def __post_init__(self) -> None:
         # Normalized channels are contractually bounded; raw SYSTEM_FACT values
@@ -72,6 +76,12 @@ class ChannelValue:
     def state(self) -> EvidenceState:
         if not self.availability:
             return EvidenceState.UNAVAILABLE
+        if self.support_override is not None:
+            return EvidenceState.SUPPORT if self.support_override else EvidenceState.NEUTRAL
+        if self.threshold is None:
+            raise ValueError(
+                f"{self.channel_id}: available channel needs threshold or support_override"
+            )
         return (
             EvidenceState.SUPPORT
             if self.positive_score >= self.threshold

@@ -10,6 +10,7 @@ from threading import RLock
 from typing import Any
 
 from channels import evaluate_pair_channels
+from history import HistoricalEvidenceModel, HistoricalTaxonomy
 from configuration import AnalysisConfig, load_analysis_config
 from libs.contracts import IngestedPackage, load_validated_package
 from tier1a import CacheTier, SnapshotPrecompute, Tier1Cache, precompute_snapshot
@@ -53,6 +54,13 @@ class Workspace:
         self.coordinator = None
         self.similarity_index = None
         self.lineage_by_chain: dict[str, str] = {}
+        self.historical_model: HistoricalEvidenceModel | None = None
+        self.historical_taxonomy: HistoricalTaxonomy | None = None
+        # This is deliberately separate from the snapshot-bound frozen model.
+        # An operator/integration may attach an authoritative taxonomy source
+        # once; each H model still persists the exact version it consumed.
+        self.historical_taxonomy_source: HistoricalTaxonomy | None = None
+        self.historical_unavailable_reason = self.config.historical_evidence_reason
         self._persistence_loop = None
         self._review_persistence_futures: list[Future] = []
         self._audit_persistence_futures: list[Future] = []
@@ -173,11 +181,35 @@ class Workspace:
             self.precompute = result
             self.similarity_index = None
             self.lineage_by_chain = {}
+            self.historical_model = None
+            self.historical_taxonomy = None
+            self.historical_unavailable_reason = self.config.historical_evidence_reason
 
     def attach_similarity(self, index, lineage_by_chain: dict[str, str]) -> None:
         with self._lock:
             self.similarity_index = index
             self.lineage_by_chain = dict(lineage_by_chain)
+
+    def attach_historical_model(
+        self,
+        model: HistoricalEvidenceModel,
+        taxonomy: HistoricalTaxonomy,
+    ) -> None:
+        """Attach an already-frozen H artifact for Pair WHY only."""
+        with self._lock:
+            self.historical_model = model
+            self.historical_taxonomy = taxonomy
+            self.historical_taxonomy_source = taxonomy
+            self.historical_unavailable_reason = None
+
+    def set_historical_taxonomy_source(self, taxonomy: HistoricalTaxonomy) -> None:
+        """Attach an authoritative taxonomy source for future frozen H builds.
+
+        This does not make H available for the current snapshot: availability
+        still requires a persisted model whose cutoff and provenance match.
+        """
+        with self._lock:
+            self.historical_taxonomy_source = taxonomy
 
     def list_chains(self):
         self.require_package()
@@ -228,6 +260,10 @@ class Workspace:
             silent_gap_seconds=int(
                 self.config.value("temporal.burst.gap_seconds")
             ),
+            historical_model=self.historical_model,
+            historical_taxonomy=self.historical_taxonomy,
+            historical_unavailable_reason=self.historical_unavailable_reason,
+            include_historical=True,
         )
 
     def submit_deep_dive(self, chain_id: str):

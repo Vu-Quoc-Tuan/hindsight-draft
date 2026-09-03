@@ -283,6 +283,24 @@ def test_pair_why_serializes_channel_family_and_dependency_semantic():
     assert {item["generator_version"] for item in dependencies} == {None}
 
 
+def test_pair_why_exposes_history_as_config_incomplete_without_changing_other_channels():
+    async def exercise(client: httpx2.AsyncClient):
+        loaded = await client.post("/api/v1/snapshots", json=_payload())
+        assert loaded.status_code == 201
+        return await client.get("/api/v1/chains/C1/pairs/a1/a2")
+
+    response = run_api_test(exercise)
+
+    assert response.status_code == 200
+    history = next(
+        item for item in response.json()["evidence"] if item["channel_family"] == "H"
+    )
+    assert history["state"] == "UNAVAILABLE"
+    assert history["detail"] == "HISTORY_CONFIG_INCOMPLETE"
+    assert history["threshold"] is None
+    assert history["provenance_class"] == "BEHAVIORAL"
+
+
 def test_pair_why_keeps_snapshot_available_but_disables_unversioned_topology():
     payload = _payload()
     payload["snapshot"]["topology_version"] = "must-not-be-a-fallback"

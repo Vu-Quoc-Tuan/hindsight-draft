@@ -29,6 +29,14 @@ from similar_chains import (
     model_from_dict,
     model_to_dict,
 )
+from history import (
+    HistoricalEvidenceModel,
+    HistoricalTaxonomy,
+    model_from_dict as historical_model_from_dict,
+    model_to_dict as historical_model_to_dict,
+    taxonomy_from_dict as historical_taxonomy_from_dict,
+    taxonomy_to_dict as historical_taxonomy_to_dict,
+)
 from tier2.audit_artifact import (
     ReviewAuditArtifact,
     audit_artifact_from_dict,
@@ -52,6 +60,7 @@ from .models import (
     SimilarityFingerprint,
     SimilarityIndexEntry,
     SimilarityModelRecord,
+    HistoricalEvidenceModelRecord,
 )
 
 
@@ -1372,6 +1381,29 @@ class SnapshotRepository:
             )
         return history
 
+    async def load_historical_packages(self, *, cutoff: datetime) -> list[IngestedPackage]:
+        """Load the verified logical prefix used to build one immutable H model."""
+        async with self.sessions() as session:
+            payloads = list(
+                (
+                    await session.scalars(
+                        select(SnapshotIngest.canonical_payload)
+                        .where(
+                            SnapshotIngest.tier1a_status == "READY",
+                            SnapshotIngest.lineage_status == "READY",
+                            SnapshotIngest.logical_snapshot_time < cutoff,
+                        )
+                        .order_by(
+                            SnapshotIngest.logical_snapshot_time,
+                            SnapshotIngest.completed_at,
+                            SnapshotIngest.snapshot_id,
+                            SnapshotIngest.snapshot_version,
+                        )
+                    )
+                ).all()
+            )
+        return [load_validated_package(payload) for payload in payloads if payload is not None]
+
     async def finish_similarity(
         self,
         claim: SimilarityClaim,
@@ -1466,6 +1498,52 @@ class SnapshotRepository:
             for row in entry_rows
         )
         return VersionedSimilarityIndex(model=model, entries=entries)
+
+    async def persist_historical_evidence_model(
+        self,
+        *,
+        snapshot_id: str,
+        snapshot_version: str,
+        model: HistoricalEvidenceModel,
+        taxonomy: HistoricalTaxonomy,
+    ) -> None:
+        """Insert one frozen H model; never mutate an existing snapshot model."""
+        if (taxonomy.source_id, taxonomy.source_version) != (
+            model.taxonomy_source_id,
+            model.taxonomy_source_version,
+        ):
+            raise ValueError("historical taxonomy does not match model provenance")
+        statement = pg_insert(HistoricalEvidenceModelRecord).values(
+            model_version=model.model_version,
+            snapshot_id=snapshot_id,
+            snapshot_version=snapshot_version,
+            training_cutoff=_logical_time(model.training_cutoff),
+            model_payload=historical_model_to_dict(model),
+            taxonomy_payload=historical_taxonomy_to_dict(taxonomy),
+        )
+        async with self.sessions.begin() as session:
+            await session.execute(statement.on_conflict_do_nothing())
+
+    async def load_historical_evidence_model(
+        self, snapshot_id: str, snapshot_version: str
+    ) -> tuple[HistoricalEvidenceModel, HistoricalTaxonomy] | None:
+        async with self.sessions() as session:
+            row = await session.scalar(
+                select(HistoricalEvidenceModelRecord).where(
+                    HistoricalEvidenceModelRecord.snapshot_id == snapshot_id,
+                    HistoricalEvidenceModelRecord.snapshot_version == snapshot_version,
+                )
+            )
+        if row is None:
+            return None
+        model = historical_model_from_dict(row.model_payload)
+        taxonomy = historical_taxonomy_from_dict(row.taxonomy_payload)
+        if (model.taxonomy_source_id, model.taxonomy_source_version) != (
+            taxonomy.source_id,
+            taxonomy.source_version,
+        ):
+            raise RuntimeError("persisted historical model/taxonomy provenance mismatch")
+        return model, taxonomy
 
     async def canonical_lineages(
         self, snapshot_id: str, snapshot_version: str

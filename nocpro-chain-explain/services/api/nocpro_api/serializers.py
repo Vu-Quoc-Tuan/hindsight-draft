@@ -367,6 +367,7 @@ def pair_evidence_view(value: ChannelValue) -> PairEvidenceView:
         source_version=value.source_version,
         scenario_id=value.scenario_id,
         generator_version=value.generator_version,
+        evidence_metadata=value.evidence_metadata,
     )
 
 

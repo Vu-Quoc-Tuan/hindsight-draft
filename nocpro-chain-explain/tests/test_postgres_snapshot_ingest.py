@@ -14,6 +14,14 @@ from nocpro_api.persistence import Database, SnapshotRepository
 from nocpro_api.tier1a_coordinator import Tier1ACoordinator
 from nocpro_api.workspace import Workspace
 from evolution import LineageNodeKey
+from history import (
+    HistoricalChainState,
+    HistoricalEpisode,
+    HistoricalEvidenceConfig,
+    HistoricalTaxonomy,
+    TaxonomyTokens,
+    build_historical_model,
+)
 from similar_chains import build_fingerprint, find_similar_chains
 from sqlalchemy import func, select
 from nocpro_api.persistence.models import SnapshotChunk, SnapshotIngest
@@ -69,6 +77,76 @@ def _payload(snapshot_id: str, *, snapshot_time: str = "2026-08-29T00:00:00Z") -
             for alarm_id in ("a1", "a2")
         ],
     }
+
+
+def _historical_model():
+    taxonomy = HistoricalTaxonomy(
+        "synthetic-taxonomy", "v1", {"A": TaxonomyTokens(type="A"), "B": TaxonomyTokens(type="B")}
+    )
+    a, b, x, y = (TaxonomyTokens(type=value) for value in "ABXY")
+    episodes = (
+        HistoricalEpisode("e1", (HistoricalChainState("s1", "1", "2026-01-01T00:00:00Z", ((a, b),)),)),
+        HistoricalEpisode("e2", (HistoricalChainState("s2", "1", "2026-01-01T00:01:00Z", ((a, b),)),)),
+        HistoricalEpisode("e3", (HistoricalChainState("s3", "1", "2026-01-01T00:02:00Z", ((a, b),)),)),
+        HistoricalEpisode("e4", (HistoricalChainState("s4", "1", "2026-01-01T00:03:00Z", ((a, x),)),)),
+        HistoricalEpisode("e5", (HistoricalChainState("s5", "1", "2026-01-01T00:04:00Z", ((b, y),)),)),
+        HistoricalEpisode("e6", (HistoricalChainState("s6", "1", "2026-01-01T00:05:00Z", ((x, y),)),)),
+        HistoricalEpisode("e7", (HistoricalChainState("s7", "1", "2026-01-01T00:06:00Z", ((x, y),)),)),
+    )
+    return (
+        build_historical_model(
+            episodes,
+            training_cutoff="2026-08-29T00:00:00Z",
+            lineage_prefix_fingerprint="test-prefix",
+            taxonomy=taxonomy,
+            config=HistoricalEvidenceConfig("synthetic-history", 3, 4.0, 4.0),
+        ),
+        taxonomy,
+    )
+
+
+def test_historical_model_persists_and_hydrates_after_workspace_restart():
+    database_url = os.environ.get("TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("TEST_DATABASE_URL is not configured")
+
+    async def exercise():
+        database = Database(database_url)
+        repository = SnapshotRepository(database.sessions)
+        snapshot_id = f"pg-history-{uuid4().hex}"
+        payload = _payload(snapshot_id)
+        payload["alarms"][0]["alarm_name"] = "A"
+        payload["alarms"][1]["alarm_name"] = "B"
+        try:
+            await repository.ingest_direct(payload)
+            first_workspace = Workspace()
+            first_coordinator = Tier1ACoordinator(repository, first_workspace)
+            assert await first_coordinator.run(snapshot_id, "1") is not None
+            model, taxonomy = _historical_model()
+            await repository.persist_historical_evidence_model(
+                snapshot_id=snapshot_id,
+                snapshot_version="1",
+                model=model,
+                taxonomy=taxonomy,
+            )
+            # A fresh workspace simulates API/process restart: no in-memory H.
+            restarted_workspace = Workspace()
+            restarted_coordinator = Tier1ACoordinator(repository, restarted_workspace)
+            assert await restarted_coordinator.hydrate_active() is not None
+            values = restarted_workspace.pair_why("c1", "a1", "a2")
+            history = next(value for value in values if value.channel_id == "H")
+            assert history.availability is True
+            assert history.supports is True
+            assert history.source_ref == model.model_version
+            assert history.evidence_metadata["training_cutoff"] == model.training_cutoff
+            first_workspace.close()
+            restarted_workspace.close()
+        finally:
+            await database.close()
+
+    import asyncio
+
+    asyncio.run(exercise())
 
 
 def _lineage_payload(

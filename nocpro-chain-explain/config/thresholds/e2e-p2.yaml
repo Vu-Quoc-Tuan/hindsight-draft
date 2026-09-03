@@ -20,6 +20,7 @@ dependency:
 history:
   min_support: {value: 5, source: DOCUMENTED_DEFAULT}
   lambda_h: {value: 10.0, source: DOCUMENTED_DEFAULT}
+  lift_cap: {value: 4.0, source: FROZEN_SPEC}
 
 role:
   c_min: {value: 0.5, source: DOCUMENTED_DEFAULT}

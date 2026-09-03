@@ -16,8 +16,14 @@ from history import (
     build_historical_model,
     evaluate_historical_evidence,
     evaluate_historical_oracle,
+    episodes_from_lineage_prefix,
+    model_from_dict,
+    model_to_dict,
+    taxonomy_from_dict,
+    taxonomy_to_dict,
 )
-from libs.contracts import IngestedAlarm
+from evolution import GlobalEpisodeDag, LineageConfig
+from libs.contracts import IngestedAlarm, load_package
 
 
 def alarm(alarm_id: str, name: str) -> IngestedAlarm:
@@ -85,6 +91,52 @@ def model(*, cutoff: str = "2026-01-02T00:00:00Z", min_support: int = 3):
         lineage_prefix_fingerprint="lineage-prefix-syn-v1",
         taxonomy=taxonomy(),
         config=config(min_support),
+    )
+
+
+def _lineage_package(
+    snapshot_id: str,
+    snapshot_time: str,
+    chains: dict[str, list[tuple[str, str]]],
+):
+    alarms = []
+    memberships = []
+    seen: set[str] = set()
+    for chain_id, members in chains.items():
+        for alarm_id, alarm_name in members:
+            if alarm_id not in seen:
+                alarms.append(
+                    {
+                        "alarm_id": alarm_id,
+                        "snapshot_id": snapshot_id,
+                        "alarm_name": alarm_name,
+                        "raw": {},
+                    }
+                )
+                seen.add(alarm_id)
+            memberships.append(
+                {"snapshot_id": snapshot_id, "chain_id": chain_id, "alarm_id": alarm_id}
+            )
+    return load_package(
+        {
+            "schema_version": "v1",
+            "snapshot": {
+                "snapshot_id": snapshot_id,
+                "snapshot_version": "1",
+                "snapshot_time": snapshot_time,
+                "status": "COMPLETE",
+                "source": "synthetic-h",
+                "source_kind": "SYNTHETIC_TEST",
+                "produced_at": snapshot_time,
+                "schema_version": "v1",
+            },
+            "alarms": alarms,
+            "chains": [
+                {"snapshot_id": snapshot_id, "chain_id": chain_id, "member_count": len(members)}
+                for chain_id, members in chains.items()
+            ],
+            "memberships": memberships,
+        }
     )
 
 
@@ -209,3 +261,66 @@ def test_indexed_model_and_pairwise_oracle_are_equivalent():
     assert indexed.reliability == pytest.approx(oracle.reliability)
     assert indexed.positive_score == pytest.approx(oracle.positive_score)
     assert indexed.supports == oracle.supports
+
+
+def test_frozen_model_and_taxonomy_round_trip_without_changing_pair_result():
+    frozen = model()
+    restored_model = model_from_dict(model_to_dict(frozen))
+    restored_taxonomy = taxonomy_from_dict(taxonomy_to_dict(taxonomy()))
+    original = evaluate_historical_evidence(
+        alarm("a", "current-a"), alarm("b", "current-b"), model=frozen, taxonomy=taxonomy()
+    )
+    restored = evaluate_historical_evidence(
+        alarm("a", "current-a"),
+        alarm("b", "current-b"),
+        model=restored_model,
+        taxonomy=restored_taxonomy,
+    )
+    assert restored_model == frozen
+    assert restored_taxonomy == taxonomy()
+    assert restored == original
+
+
+def test_lineage_prefix_episodes_ignore_future_merge_aliases():
+    """A future merge cannot retroactively combine H training episodes."""
+    first = _lineage_package(
+        "s1",
+        "2026-01-01T00:00:00Z",
+        {"left": [("a1", "A"), ("b1", "B")], "right": [("c1", "C"), ("d1", "D")]},
+    )
+    second = _lineage_package(
+        "s2",
+        "2026-01-01T00:01:00Z",
+        {"left2": [("a1", "A"), ("b1", "B")], "right2": [("c1", "C"), ("d1", "D")]},
+    )
+    future_merge = _lineage_package(
+        "s3",
+        "2026-01-01T00:02:00Z",
+        {"merged": [("a1", "A"), ("b1", "B"), ("c1", "C"), ("d1", "D")]},
+    )
+    dag = GlobalEpisodeDag()
+    lineage_config = LineageConfig(config_version="h-prefix", m_min=1)
+    dag.apply_snapshot(first, previous=None, config=lineage_config)
+    dag.apply_snapshot(second, previous=first, config=lineage_config)
+    dag.apply_snapshot(future_merge, previous=second, config=lineage_config)
+
+    authoritative = HistoricalTaxonomy(
+        "synthetic-taxonomy",
+        "prefix-v1",
+        {name: TaxonomyTokens(type=name) for name in "ABCD"},
+    )
+    episodes, prefix = episodes_from_lineage_prefix(
+        [first, second, future_merge],
+        dag=dag,
+        cutoff="2026-01-01T00:02:00Z",
+        taxonomy=authoritative,
+    )
+
+    assert len(episodes) == 2
+    assert all(len(item.states) == 2 for item in episodes)
+    assert len(prefix) == 64
+    assert all(
+        state.snapshot_id != "s3"
+        for item in episodes
+        for state in item.states
+    )

@@ -56,6 +56,8 @@ from .temporal import (
     evaluate_delay_channel,
     segment_bursts,
 )
+from history import HistoricalEvidenceModel, HistoricalTaxonomy
+from history.channel import evaluate_historical_channel
 
 #: Default cap on **stored pair detail**, not on statistics.
 DEFAULT_PAIR_DETAIL_LIMIT = 20_000
@@ -234,6 +236,10 @@ def evaluate_pair_channels(
     lambda_dep: float = DEFAULT_LAMBDA_DEP,
     common_dependency_threshold: float = DEFAULT_THETA_CD,
     silent_gap_seconds: int = DEFAULT_SILENT_GAP_SECONDS,
+    historical_model: HistoricalEvidenceModel | None = None,
+    historical_taxonomy: HistoricalTaxonomy | None = None,
+    historical_unavailable_reason: str | None = None,
+    include_historical: bool = False,
 ) -> list[ChannelValue]:
     """Evaluate the full WHY detail for one explicitly requested chain pair."""
     members = set(package.members_of(chain_id))
@@ -255,7 +261,7 @@ def evaluate_pair_channels(
         lambda_dep=lambda_dep,
         theta=common_dependency_threshold,
     )
-    return _evaluate_pair(
+    values = _evaluate_pair(
         package.alarms[alarm_a],
         package.alarms[alarm_b],
         taxonomy=taxonomy,
@@ -267,6 +273,20 @@ def evaluate_pair_channels(
         d_max=d_max,
         dependency_providers=dependency_providers,
     )
+    # H is behavioural Pair WHY only.  It must not enter Tier-1 statistics,
+    # Membership/Role or G*_audit, all of which reuse _evaluate_pair.  The
+    # default preserves the exact reference-matrix primitive for oracle tests.
+    if include_historical:
+        values.append(
+            evaluate_historical_channel(
+                package.alarms[alarm_a],
+                package.alarms[alarm_b],
+                model=historical_model,
+                taxonomy=historical_taxonomy,
+                unavailable_reason=historical_unavailable_reason,
+            )
+        )
+    return values
 
 
 __all__ = [

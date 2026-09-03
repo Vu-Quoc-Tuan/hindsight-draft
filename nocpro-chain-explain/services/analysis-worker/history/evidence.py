@@ -184,6 +184,91 @@ class HistoricalEvidenceValue:
         return self.available and self.positive_score > 0.0
 
 
+def taxonomy_to_dict(value: HistoricalTaxonomy) -> dict:
+    return {
+        "source_id": value.source_id,
+        "source_version": value.source_version,
+        "tokens_by_alarm_name": {
+            name: {"type": tokens.type, "family": tokens.family, "category": tokens.category}
+            for name, tokens in sorted(value.tokens_by_alarm_name.items())
+        },
+    }
+
+
+def taxonomy_from_dict(value: Mapping) -> HistoricalTaxonomy:
+    return HistoricalTaxonomy(
+        source_id=str(value["source_id"]),
+        source_version=str(value["source_version"]),
+        tokens_by_alarm_name={
+            str(name): TaxonomyTokens(
+                type=raw.get("type"),
+                family=raw.get("family"),
+                category=raw.get("category"),
+            )
+            for name, raw in dict(value["tokens_by_alarm_name"]).items()
+        },
+    )
+
+
+def model_to_dict(value: HistoricalEvidenceModel) -> dict:
+    return {
+        "model_version": value.model_version,
+        "training_cutoff": value.training_cutoff,
+        "corpus_fingerprint": value.corpus_fingerprint,
+        "lineage_prefix_fingerprint": value.lineage_prefix_fingerprint,
+        "taxonomy_source_id": value.taxonomy_source_id,
+        "taxonomy_source_version": value.taxonomy_source_version,
+        "config": {
+            "config_version": value.config.config_version,
+            "min_support": value.config.min_support,
+            "lambda_h": value.config.lambda_h,
+            "lift_cap": value.config.lift_cap,
+        },
+        "statistics": {
+            level.value: {
+                "episode_population_count": stats.episode_population_count,
+                "marginal_count": dict(stats.marginal_count),
+                "co_group_episode_count": [
+                    [left, right, count]
+                    for (left, right), count in sorted(stats.co_group_episode_count.items())
+                ],
+            }
+            for level, stats in value.statistics.items()
+        },
+    }
+
+
+def model_from_dict(value: Mapping) -> HistoricalEvidenceModel:
+    config_raw = dict(value["config"])
+    statistics: dict[TaxonomyLevel, LevelStatistics] = {}
+    for raw_level, raw_stats in dict(value["statistics"]).items():
+        level = TaxonomyLevel(raw_level)
+        payload = dict(raw_stats)
+        statistics[level] = LevelStatistics(
+            episode_population_count=int(payload["episode_population_count"]),
+            marginal_count={str(k): int(v) for k, v in dict(payload["marginal_count"]).items()},
+            co_group_episode_count={
+                (str(left), str(right)): int(count)
+                for left, right, count in payload["co_group_episode_count"]
+            },
+        )
+    return HistoricalEvidenceModel(
+        model_version=str(value["model_version"]),
+        training_cutoff=str(value["training_cutoff"]),
+        corpus_fingerprint=str(value["corpus_fingerprint"]),
+        lineage_prefix_fingerprint=str(value["lineage_prefix_fingerprint"]),
+        taxonomy_source_id=str(value["taxonomy_source_id"]),
+        taxonomy_source_version=str(value["taxonomy_source_version"]),
+        config=HistoricalEvidenceConfig(
+            config_version=str(config_raw["config_version"]),
+            min_support=int(config_raw["min_support"]),
+            lambda_h=float(config_raw["lambda_h"]),
+            lift_cap=float(config_raw["lift_cap"]),
+        ),
+        statistics=statistics,
+    )
+
+
 def _pair_key(left: str, right: str) -> tuple[str, str]:
     return tuple(sorted((left, right)))  # type: ignore[return-value]
 
@@ -332,12 +417,15 @@ def evaluate_historical_evidence(
     *,
     model: HistoricalEvidenceModel | None,
     taxonomy: HistoricalTaxonomy | None,
+    unavailable_reason: str | None = None,
 ) -> HistoricalEvidenceValue:
     """Evaluate H by exact count lookup in one immutable model."""
-    if model is None:
-        return _unavailable("HISTORY_MODEL_UNAVAILABLE")
+    if unavailable_reason is not None:
+        return _unavailable(unavailable_reason, model=model)
     if taxonomy is None:
         return _unavailable("TAXONOMY_UNAVAILABLE", model=model)
+    if model is None:
+        return _unavailable("HISTORY_MODEL_UNAVAILABLE")
     if (taxonomy.source_id, taxonomy.source_version) != (
         model.taxonomy_source_id,
         model.taxonomy_source_version,

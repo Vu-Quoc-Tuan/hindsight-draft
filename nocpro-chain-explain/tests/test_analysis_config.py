@@ -64,6 +64,22 @@ def test_shipped_config_keeps_p2_fail_closed():
         config.p2_topology.dependency_scope_reason
         == "DEPENDENCY_SCOPE_CONFIG_INCOMPLETE"
     )
+    assert config.historical_evidence is None
+    assert config.historical_evidence_reason == "HISTORY_CONFIG_INCOMPLETE"
+
+
+def test_synthetic_history_requires_explicit_lift_cap(tmp_path: Path):
+    text = SHIPPED_CONFIG.read_text(encoding="utf-8").replace(
+        "  lambda_h: {value: 10.0, source: DOCUMENTED_DEFAULT}\n",
+        "  lambda_h: {value: 10.0, source: DOCUMENTED_DEFAULT}\n"
+        "  lift_cap: {value: 4.0, source: FROZEN_SPEC}\n",
+        1,
+    )
+    config = load_analysis_config(_write(tmp_path, text))
+
+    assert config.historical_evidence is not None
+    assert config.historical_evidence.lift_cap.value == 4.0
+    assert config.historical_evidence.lift_cap.source is ParameterSource.FROZEN_SPEC
 
 
 def test_synthetic_e2e_config_enables_p2_without_changing_production_default():
