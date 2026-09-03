@@ -216,6 +216,14 @@ def extract_package_summary(package: MockSnapshotPackage, chunk_target_bytes: in
     }
 
 
+def _integer(value: str | None, default: int, *, minimum: int, maximum: int) -> int:
+    try:
+        result = int(value) if value is not None else default
+    except ValueError:
+        return default
+    return min(max(result, minimum), maximum)
+
+
 class MockUIRequestHandler(SimpleHTTPRequestHandler):
     """Custom request handler for NocPro Mock UI and API."""
 
@@ -237,7 +245,10 @@ class MockUIRequestHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(raw)))
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
-        self.wfile.write(raw)
+        try:
+            self.wfile.write(raw)
+        except BrokenPipeError:
+            return
 
     def _read_body_json(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", 0))
@@ -307,6 +318,31 @@ class MockUIRequestHandler(SimpleHTTPRequestHandler):
                     "sequences": sequences,
                 },
             )
+            return
+
+        if path == "/api/topology/profiles":
+            self._send_json(HTTPStatus.OK, {"profiles": [profile.__dict__ for profile in dataset_profiles()]})
+            return
+
+        if path == "/api/topology/projection":
+            parsed = urlparse(self.path)
+            query = parse_qs(parsed.query)
+            profile = query.get("profile_id", [None])[0] or query.get("profile", [None])[0]
+            if profile is None:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "profile_id is required"})
+                return
+            try:
+                payload = projection_payload(
+                    profile,
+                    root_id=query.get("root_id", [None])[0],
+                    source_root=getattr(self.server, "source_root", None),
+                    max_depth=_integer(query.get("depth", [None])[0], 3, minimum=0, maximum=8),
+                    max_children=_integer(query.get("child_limit", [None])[0], 50, minimum=1, maximum=200),
+                )
+            except ValueError as exc:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                return
+            self._send_json(HTTPStatus.OK, payload)
             return
 
         self.send_error(HTTPStatus.NOT_FOUND, f"Endpoint not found: {path}")
@@ -414,9 +450,12 @@ def create_server(
     host: str = "0.0.0.0",
     port: int = 8085,
     default_kafka: str = "localhost:9092",
+    *,
+    source_root: str | Path | None = None,
 ) -> ThreadingHTTPServer:
     server = ThreadingHTTPServer((host, port), MockUIRequestHandler)
     server.default_kafka = default_kafka  # type: ignore[attr-defined]
+    server.source_root = str(source_root) if source_root is not None else None  # type: ignore[attr-defined]
     return server
 
 
@@ -424,8 +463,10 @@ def run_server(
     host: str = "0.0.0.0",
     port: int = 8085,
     default_kafka: str = "localhost:9092",
+    *,
+    source_root: str | Path | None = None,
 ) -> None:
-    server = create_server(host, port, default_kafka=default_kafka)
+    server = create_server(host, port, default_kafka=default_kafka, source_root=source_root)
     url = f"http://{('127.0.0.1' if host == '0.0.0.0' else host)}:{port}"
     print(f"==================================================")
     print(f"🚀 NocPro Mock Web UI running at:")
@@ -445,9 +486,11 @@ def start_server_in_thread(
     host: str = "127.0.0.1",
     port: int = 0,
     default_kafka: str = "localhost:9092",
+    *,
+    source_root: str | Path | None = None,
 ) -> tuple[ThreadingHTTPServer, str]:
     """Start server in background thread, useful for tests."""
-    server = create_server(host, port, default_kafka=default_kafka)
+    server = create_server(host, port, default_kafka=default_kafka, source_root=source_root)
     actual_port = server.server_port
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

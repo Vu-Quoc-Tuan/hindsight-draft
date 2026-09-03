@@ -156,3 +156,32 @@ def test_api_publish_unreachable_kafka(ui_server: str):
     assert status == 500
     assert data["ok"] is False
     assert "kafka publish failed" in data["error"].lower()
+
+
+def test_api_topology_profiles(ui_server: str):
+    status, data = _request_json(f"{ui_server}/api/topology/profiles")
+    assert status == 200
+    assert "profiles" in data
+    assert len(data["profiles"]) == 3
+    profile_ids = {p["profile_id"] for p in data["profiles"]}
+    assert "ALARM_ONLY" in profile_ids
+    assert "IP_NETWORK" in profile_ids
+    assert "IT_SERVICES" in profile_ids
+
+
+def test_api_topology_projection(ui_server: str):
+    # Test with profile_id
+    status, data = _request_json(f"{ui_server}/api/topology/projection?profile_id=ALARM_ONLY")
+    assert status == 200
+    assert data["status"] == "UNAVAILABLE"
+    assert data["reason"] == "TOPOLOGY_NOT_PROVIDED_BY_DATASET_PROFILE"
+
+    # Test with profile parameter alias
+    status, data = _request_json(f"{ui_server}/api/topology/projection?profile=ALARM_ONLY")
+    assert status == 200
+    assert data["status"] == "UNAVAILABLE"
+
+    # Test missing profile parameter
+    status, data = _request_json(f"{ui_server}/api/topology/projection")
+    assert status == 400
+    assert "required" in data["error"].lower()
