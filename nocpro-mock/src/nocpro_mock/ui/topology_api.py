@@ -6,7 +6,7 @@ for source navigation and cannot be consumed by Explain dependency/P2 code.
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 import hashlib
 from pathlib import Path
 from typing import Any
@@ -15,6 +15,16 @@ from ..data_profiles import DatasetProfile, resolve_dataset_profile
 from ..loaders.topology_ip_csv import TopoIPLoader
 from ..loaders.topology_it_csv import ITTopologyLoader, TopologyRelationNode
 from .topology_projection import NavigationRelationEdge, TopologyTreeProjection, project_adjacency_tree, project_relation_tree
+
+
+@dataclass(frozen=True)
+class _CachedTopologyGraph:
+    nodes: tuple[TopologyRelationNode, ...]
+    edges: tuple[Any, ...]
+    source_version: str
+
+
+_GRAPH_CACHE: dict[tuple[str, str, tuple[tuple[str, int, int], ...]], _CachedTopologyGraph] = {}
 
 
 def _mock_root() -> Path:
@@ -31,6 +41,46 @@ def _content_version(path: Path) -> str:
         for chunk in iter(lambda: fh.read(1024 * 1024), b""):
             digest.update(chunk)
     return f"sha256:{digest.hexdigest()}"
+
+
+def _source_signature(profile: DatasetProfile, path: Path) -> tuple[tuple[str, int, int], ...]:
+    files = (path / name for name in ("service_module_server.csv", "module_database.csv", "database.csv", "storage.csv")) if profile.profile_id == "IT_SERVICES" else (path,)
+    return tuple((str(file), file.stat().st_size, file.stat().st_mtime_ns) for file in files)
+
+
+def _cached_graph(profile: DatasetProfile, path: Path) -> _CachedTopologyGraph:
+    signature = _source_signature(profile, path)
+    key = (profile.profile_id, str(path.resolve()), signature)
+    cached = _GRAPH_CACHE.get(key)
+    if cached is not None:
+        return cached
+    # A changed source must invalidate all older cached models for that profile.
+    for old_key in tuple(_GRAPH_CACHE):
+        if old_key[:2] == key[:2] and old_key != key:
+            del _GRAPH_CACHE[old_key]
+    if profile.profile_id == "IT_SERVICES":
+        graph = ITTopologyLoader(path).load_graph()
+        cached = _CachedTopologyGraph(graph.nodes, graph.edges, graph.source_version)
+    else:
+        relations = TopoIPLoader(path).load()
+        source_version = _content_version(path)
+        labels: dict[str, str] = {}
+        adjacency: list[NavigationRelationEdge] = []
+        seen_pairs: set[tuple[str, str]] = set()
+        for relation in relations:
+            if not relation.device_code or not relation.device_code_relation or relation.device_code == relation.device_code_relation:
+                continue
+            pair = tuple(sorted((relation.device_code, relation.device_code_relation)))
+            if pair in seen_pairs:
+                continue
+            seen_pairs.add(pair)
+            labels.setdefault(relation.device_code, relation.device_code)
+            labels.setdefault(relation.device_code_relation, relation.device_code_relation)
+            adjacency.append(NavigationRelationEdge(relation.device_code, relation.device_code_relation, "ADJACENT_TO", "topoIP.csv", source_version))
+        nodes = tuple(TopologyRelationNode(resource_id, "DEVICE", label, ("topoIP.csv",)) for resource_id, label in sorted(labels.items()))  # type: ignore[arg-type]
+        cached = _CachedTopologyGraph(nodes, tuple(adjacency), source_version)
+    _GRAPH_CACHE[key] = cached
+    return cached
 
 
 def projection_payload(
@@ -74,29 +124,13 @@ def projection_payload(
 
 
 def _build_projection(profile: DatasetProfile, path: Path, root_id: str | None, max_depth: int, max_children: int) -> TopologyTreeProjection:
+    graph = _cached_graph(profile, path)
     if profile.profile_id == "IT_SERVICES":
-        graph = ITTopologyLoader(path).load_graph()
         chosen = root_id or next((node.resource_id for node in graph.nodes if node.resource_type == "SERVICE"), None)
         if chosen is None:
             raise ValueError("topoIT graph contains no SERVICE node for default projection root")
         return project_relation_tree(graph.nodes, graph.edges, root_id=chosen, max_depth=max_depth, max_children=max_children)
-    relations = TopoIPLoader(path).load()
-    source_version = _content_version(path)
-    labels: dict[str, str] = {}
-    adjacency: list[NavigationRelationEdge] = []
-    seen_pairs: set[tuple[str, str]] = set()
-    for relation in relations:
-        if not relation.device_code or not relation.device_code_relation or relation.device_code == relation.device_code_relation:
-            continue
-        pair = tuple(sorted((relation.device_code, relation.device_code_relation)))
-        if pair in seen_pairs:
-            continue
-        seen_pairs.add(pair)
-        labels.setdefault(relation.device_code, relation.device_code)
-        labels.setdefault(relation.device_code_relation, relation.device_code_relation)
-        adjacency.append(NavigationRelationEdge(relation.device_code, relation.device_code_relation, "ADJACENT_TO", "topoIP.csv", source_version))
-    nodes = tuple(TopologyRelationNode(resource_id, "DEVICE", label, ("topoIP.csv",)) for resource_id, label in sorted(labels.items()))  # type: ignore[arg-type]
-    chosen = root_id or next(iter(labels), None)
+    chosen = root_id or next((node.resource_id for node in graph.nodes), None)
     if chosen is None:
         raise ValueError("topoIP graph contains no usable adjacency node")
-    return project_adjacency_tree(nodes, adjacency, root_id=chosen, max_depth=max_depth, max_children=max_children)
+    return project_adjacency_tree(graph.nodes, graph.edges, root_id=chosen, max_depth=max_depth, max_children=max_children)  # type: ignore[arg-type]

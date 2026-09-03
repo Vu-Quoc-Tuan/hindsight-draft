@@ -4,10 +4,12 @@ import csv
 import json
 from contextlib import redirect_stdout
 from io import StringIO
+from urllib.request import urlopen
 
 from nocpro_mock.loaders.topology_it_csv import TopologyRelationEdge, TopologyRelationNode
 from nocpro_mock.ui.topology_projection import project_relation_tree
 from nocpro_mock.ui.topology_api import projection_payload
+from nocpro_mock.ui.server import start_topology_server_in_thread
 from nocpro_mock.cli import main
 
 
@@ -112,3 +114,36 @@ def test_adjacency_projection_deduplicates_repeated_endpoint_pairs(monkeypatch, 
     payload = topology_api.projection_payload("IP_NETWORK", source_root=tmp_path, max_depth=1)
     assert [child["resource_id"] for child in payload["tree"]["children"]] == ["B"]
     assert payload["source_version"].startswith("sha256:")
+
+
+def test_projection_reuses_cached_graph_until_source_signature_changes(monkeypatch, tmp_path) -> None:
+    from nocpro_mock.ui import topology_api
+    from nocpro_mock.data_profiles import DatasetProfile
+
+    profile = DatasetProfile("IP_NETWORK", "fixture", "alarm.csv", "topo.csv", "UNDIRECTED_ADJACENCY", "NONE", "UNVERIFIED")
+    monkeypatch.setattr(topology_api, "resolve_dataset_profile", lambda _: profile)
+    topology_api._GRAPH_CACHE.clear()
+    topo = tmp_path / "topo.csv"
+    topo.write_text("id,device_code,device_code_relation,network_class_name,network_class_name_relation,interface_port,interface_port_relation,update_time_vipa\n1,A,B,,,,,\n", encoding="utf-8")
+    calls = 0
+    original = topology_api.TopoIPLoader.load
+    def counted_load(loader):
+        nonlocal calls
+        calls += 1
+        return original(loader)
+    monkeypatch.setattr(topology_api.TopoIPLoader, "load", counted_load)
+    topology_api.projection_payload("IP_NETWORK", source_root=tmp_path)
+    topology_api.projection_payload("IP_NETWORK", source_root=tmp_path)
+    assert calls == 1
+
+
+def test_read_only_topology_http_endpoint_requires_profile_id() -> None:
+    server, base = start_topology_server_in_thread()
+    try:
+        with urlopen(f"{base}/api/topology/projection?profile_id=ALARM_ONLY") as response:  # noqa: S310 - local test server
+            payload = json.loads(response.read())
+        assert payload["status"] == "UNAVAILABLE"
+        assert payload["reason"] == "TOPOLOGY_NOT_PROVIDED_BY_DATASET_PROFILE"
+    finally:
+        server.shutdown()
+        server.server_close()
