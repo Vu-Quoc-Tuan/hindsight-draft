@@ -1,25 +1,17 @@
-"""Topology Hierarchy and Directionality Normalizer.
+"""Display-only topology hierarchy helpers.
 
-Transforms undirected adjacency sources (like topoIP) and multi-table IT relations
-into hierarchical directed representations for P2 propagation and dominator analysis.
+The functions in this module provide deterministic *visual ordering* for the
+topology navigation tree.  They are not dependency direction, routing truth,
+active-path truth, or causal/RCA evidence.  In particular, topology classes
+and a source-relation arrow MUST NOT be promoted into P2 inference inputs.
 
-Network hierarchy levels for IP:
-  0: CORE / BACKBONE
-  1: AGG_DISTRICT / AGGREGATION / METRO
-  2: SITE_ROUTER / ACCESS / SWITCH / CLIENT
-
-Service hierarchy levels for IT:
-  0: SERVICE
-  1: MODULE
-  2: INSTANCE
-  3: DATABASE / STORAGE
+P2 promotion requires its separate authoritative business semantics,
+alarm-resource mapping, and versioned provenance/configuration contract.
 """
 
 from __future__ import annotations
 
-from typing import Literal, Mapping
-
-IP_NETWORK_CLASS_RANKS: dict[str, int] = {
+IP_DISPLAY_LEVELS: dict[str, int] = {
     "CORE": 0,
     "IP_CORE": 0,
     "BACKBONE": 0,
@@ -32,7 +24,7 @@ IP_NETWORK_CLASS_RANKS: dict[str, int] = {
     "CLIENT": 3,
 }
 
-IT_RESOURCE_TYPE_RANKS: dict[str, int] = {
+IT_DISPLAY_LEVELS: dict[str, int] = {
     "SERVICE": 0,
     "MODULE": 1,
     "INSTANCE": 2,
@@ -41,45 +33,19 @@ IT_RESOURCE_TYPE_RANKS: dict[str, int] = {
 }
 
 
-def ip_device_rank(network_class_name: str | None) -> int:
-    """Return numeric hierarchy rank for an IP device (lower is closer to core)."""
+def ip_display_level(network_class_name: str | None) -> int:
+    """Return a display sorting level; it carries no upstream/downstream meaning."""
     if not network_class_name:
-        return 2  # default to access/edge
+        return 2
     upper = network_class_name.strip().upper()
-    for key, rank in IP_NETWORK_CLASS_RANKS.items():
+    for key, rank in IP_DISPLAY_LEVELS.items():
         if key in upper:
             return rank
     return 2
 
 
-def orient_ip_edge(
-    source_device: str,
-    source_class: str | None,
-    target_device: str,
-    target_class: str | None,
-) -> tuple[str, str, bool]:
-    """Orient an edge between two IP devices based on network hierarchy.
-
-    Returns:
-        (upstream_device, downstream_device, is_hierarchical)
-        If both have same rank, returns (source, target, False) representing peer adjacency.
-    """
-    rank_src = ip_device_rank(source_class)
-    rank_tgt = ip_device_rank(target_class)
-
-    if rank_src < rank_tgt:
-        # source is upstream (e.g. CORE -> AGG)
-        return source_device, target_device, True
-    elif rank_tgt < rank_src:
-        # target is upstream (e.g. AGG -> SITE_ROUTER)
-        return target_device, source_device, True
-    else:
-        # Peer connection at same tier
-        return source_device, target_device, False
-
-
-def it_resource_rank(resource_type: str | None) -> int:
-    """Return numeric hierarchy rank for IT resource."""
+def it_display_level(resource_type: str | None) -> int:
+    """Return a display sorting level; it carries no dependency semantics."""
     if not resource_type:
         return 2
-    return IT_RESOURCE_TYPE_RANKS.get(resource_type.strip().upper(), 2)
+    return IT_DISPLAY_LEVELS.get(resource_type.strip().upper(), 2)

@@ -28,7 +28,7 @@ def test_extract_taxonomy_tokens_from_real_records() -> None:
     assert extracted is not None
     name, tokens = extracted
     assert name == "Interface down"
-    assert tokens.type == "FAULT_47933128"
+    assert tokens.type == "47933128"
     assert tokens.family == "Cảnh báo event Core"
     assert tokens.category == "AGG_DISTRICT"
 
@@ -97,6 +97,21 @@ def test_historical_taxonomy_token_lookup() -> None:
     assert "Pod has been in a non-ready state" in hist_tax.tokens_by_alarm_name
     tokens = hist_tax.resolve(alarm_it)
     assert tokens is not None
-    assert tokens.at(TaxonomyLevel.TYPE) == "FAULT_45058986"
+    assert tokens.at(TaxonomyLevel.TYPE) == "45058986"
     assert tokens.at(TaxonomyLevel.FAMILY) == "Cảnh báo UDCNTT_VCLOUD"
     assert tokens.at(TaxonomyLevel.CATEGORY) == "Cảnh báo VCLOUD"
+
+
+def test_missing_taxonomy_fields_remain_missing_without_fabricated_tokens() -> None:
+    alarm = IngestedAlarm(
+        alarm_id="A_MISSING",
+        snapshot_id="S1",
+        alarm_name="Observed name only",
+        raw={"group_id": "123", "network_class_name": ""},
+    )
+    extracted = extract_taxonomy_tokens_from_alarm(alarm)
+    assert extracted is not None
+    _, tokens = extracted
+    assert tokens.type is None
+    assert tokens.family is None
+    assert tokens.category is None

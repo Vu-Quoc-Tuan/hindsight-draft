@@ -1,55 +1,29 @@
-"""Test real topology mapping and hierarchy orientation."""
+"""Test exact mapping and display-only topology hierarchy helpers."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from nocpro_mock.normalize.resource_mapping import ResourceMapper
 from nocpro_mock.normalize.topology_hierarchy import (
-    ip_device_rank,
-    it_resource_rank,
-    orient_ip_edge,
+    ip_display_level,
+    it_display_level,
 )
 from nocpro_mock.contract import MappingStatus, MappingMethod
 
 
-def test_ip_device_rank_and_edge_orientation() -> None:
-    assert ip_device_rank("CORE") == 0
-    assert ip_device_rank("IP_CORE") == 0
-    assert ip_device_rank("AGG_DISTRICT") == 1
-    assert ip_device_rank("SITE_ROUTER") == 2
-
-    # Core -> Aggregation
-    upstream, downstream, is_hier = orient_ip_edge(
-        "CORE_R1", "IP_CORE",
-        "AGG_R1", "AGG_DISTRICT"
-    )
-    assert upstream == "CORE_R1"
-    assert downstream == "AGG_R1"
-    assert is_hier is True
-
-    # Reversed order: Aggregation -> Core
-    upstream2, downstream2, is_hier2 = orient_ip_edge(
-        "AGG_R1", "AGG_DISTRICT",
-        "CORE_R1", "IP_CORE"
-    )
-    assert upstream2 == "CORE_R1"
-    assert downstream2 == "AGG_R1"
-    assert is_hier2 is True
-
-    # Peer: Aggregation <-> Aggregation
-    _, _, is_hier_peer = orient_ip_edge(
-        "AGG_1", "AGG_DISTRICT",
-        "AGG_2", "AGG_DISTRICT"
-    )
-    assert is_hier_peer is False
+def test_ip_display_level_has_no_orientation_api() -> None:
+    assert ip_display_level("CORE") == 0
+    assert ip_display_level("IP_CORE") == 0
+    assert ip_display_level("AGG_DISTRICT") == 1
+    assert ip_display_level("SITE_ROUTER") == 2
 
 
-def test_it_resource_rank() -> None:
-    assert it_resource_rank("SERVICE") == 0
-    assert it_resource_rank("MODULE") == 1
-    assert it_resource_rank("INSTANCE") == 2
-    assert it_resource_rank("DATABASE") == 3
-    assert it_resource_rank("STORAGE") == 3
+def test_it_display_level_has_no_dependency_semantics() -> None:
+    assert it_display_level("SERVICE") == 0
+    assert it_display_level("MODULE") == 1
+    assert it_display_level("INSTANCE") == 2
+    assert it_display_level("DATABASE") == 3
+    assert it_display_level("STORAGE") == 3
 
 
 def test_resource_mapper_map_real_alarm() -> None:

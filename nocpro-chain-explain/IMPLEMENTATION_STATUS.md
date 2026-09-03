@@ -23,21 +23,29 @@ It separates **capability** from evidence that the capability was exercised;
 | Kafka chunk + `SNAPSHOT_COMPLETE` barrier, PostgreSQL ingest, Tier-1A | `READY` | `PASS` | `PASS` | `PASS` synthetic Docker stack | `BLOCKED_BY_DATA_AVAILABILITY` for production delta validation | The 2026-09-03 acceptance run covered Kafka, PostgreSQL READY and restart paths; raw production replay is skipped because `alarm_data.csv` is absent. |
 | Tier-1B lazy indexed analysis and cache | `READY` | `PASS` | `PASS` | `PASS` synthetic Docker stack | `READY` for available primitive evidence only | Chain size 1072 is an anti-dense regression gate; Tier-1B may not use a dense pairwise fallback. |
 | Pair WHY API/UI | `READY` | `PASS` | `PASS` | `NOT_RUN` | Input-dependent | A Pair WHY result can be `UNAVAILABLE` without changing Tier-1B availability. |
-| Historical `H` Pair WHY | `READY` | `PASS` | `PASS` | `NOT_RUN` | `READY` with real taxonomy adapter | `real_taxonomy.py` extracts Type from `fault_id`/`alarm_name`, Family from `group_name`, Category from `network_class_name`. Verified without heuristic guessing. |
-| `T_delay` frozen model/training semantics | `READY` | `PASS` | `PASS` | `NOT_RUN` | `READY` with real taxonomy | Real taxonomy adapter bridges production exports; model training can run on consecutive sliced snapshots. |
-| `T_delay` Pair WHY runtime/API/UI | `READY` | `PASS` | `PASS` | `NOT_RUN` | `READY` with real taxonomy | Enabled when real taxonomy adapter is provided. |
+| Historical `H` Pair WHY | `READY` | `PASS` | `PASS` | `NOT_RUN` | `BLOCKED_BY_DATA_AVAILABILITY` | The raw-field adapter is a `DERIVED_REPLAY` utility, not authoritative taxonomy. Production requires a business-owned, versioned taxonomy and verified historical lineage corpus. |
+| `T_delay` frozen model/training semantics | `READY` | `PASS` | `PASS` | `NOT_RUN` | `BLOCKED_BY_DATA_AVAILABILITY` | The raw-field adapter and sequence slicer support test/replay only; production requires authoritative taxonomy, verified sequential snapshots, and calibrated configuration. |
+| `T_delay` Pair WHY runtime/API/UI | `READY` | `PASS` | `PASS` | `NOT_RUN` | `UNAVAILABLE` / `NOT_CALIBRATED` | No production taxonomy/model/calibration has been established. |
 | `T_delay` full-chain indexed Role contribution | `UNAVAILABLE` | `PASS` fail-closed | N/A | N/A | `UNAVAILABLE` | `NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH`. Dense pairwise fallback is forbidden. |
 | `T_delay` full-chain indexed Audit contribution | `UNAVAILABLE` | `PASS` fail-closed | N/A | N/A | `UNAVAILABLE` | `NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH`. Eligibility metadata does not manufacture an exact indexed statistic. |
 | Structural Audit, attribution, deletion evaluation | `READY` under exact ceilings | `PASS` | `PASS` | `PASS` synthetic Docker stack for Audit/Review | Input/config-dependent | Ceiling exceedance is component `UNAVAILABLE`, not a fabricated approximation or a failed Tier-2 job. |
-| Similar Chains | `READY` | `PASS` | `PASS` | `NOT_RUN` | `READY` with real taxonomy | `group_name` provides 100% filled `alarm_family` in real export, unblocking full 5/5 block cosine similarity. |
-| Evolution v1 persisted lineage projection | `READY` | `PASS` | `PASS` | `PASS` synthetic Docker stack | `READY` with sequence slicer | `nocpro-mock slice-sequence` slices 30-day continuous real alarm streams into sliding-window snapshot sequences. |
-| Topology P2 semantics | `READY` only for compatible synthetic inputs | `PASS` | `PASS` | `PASS` synthetic Docker stack | `READY` for mapped subsets | High-coverage mapping (66.1% IP, 75.5% IT) + hierarchy orientation (`orient_ip_edge`, `ip_device_rank`) provides directed Core->Agg->Access propagation. |
+| Similar Chains | `READY` | `PASS` | `PASS` | `NOT_RUN` | Degraded / input-dependent | Raw `group_name` can be used only as an observed source field; it does not establish authoritative production taxonomy. |
+| Evolution v1 persisted lineage projection | `READY` | `PASS` | `PASS` | `PASS` synthetic Docker stack | `BLOCKED_BY_DATA_AVAILABILITY` | The sequence slicer creates `DERIVED_REPLAY` windows from one export; production evolution requires verified sequential upstream snapshots. |
+| Topology P2 semantics | `READY` only for compatible synthetic inputs | `PASS` | `PASS` | `PASS` synthetic Docker stack | `UNAVAILABLE` | IP is structural adjacency and IT is unverified source relation. Display hierarchy never supplies dependency direction, active paths, dominators, propagation, or failure domains. |
 | Real topology navigation read model | `READY` | `PASS` | N/A | `PASS` local mock endpoint + Chromium tree preview | `READY` for source-record navigation only | `ALARM_ONLY` has no topology; IP is undirected adjacency; IT is `DIRECTED_SOURCE_RELATIONS`, not verified dependency. Tree primary paths are technical projection only. The full Explain snapshot workflow remains separately input-dependent. |
 | Real IT/IP topology contribution to Explain P2 | `UNAVAILABLE` | `PASS` fail-closed | N/A | N/A | `UNAVAILABLE` | `SOURCE_RELATION` / `UNVERIFIED` IT records and IP adjacency must not enable dependency, ancestor, dominator, propagation, scope, or failure-domain semantics. |
 | Synthetic operator-feedback fixture | `READY` | `PASS` | `PASS` | N/A | `NOT_CALIBRATED` | Typed accepted/rejected labels exercise empirical-evaluation input only. It is `SYNTHETIC_TEST` and explicitly cannot serve as production ground truth. |
 | Counterfactual `REMOVE_MEMBER`, `SPLIT_CHAIN`, `MOVE_MEMBER`, connector annotation | `READY` | `PASS` | `PASS` | `PASS` synthetic Docker stack | `NOT_CALIBRATED` | Proposal-only; production recommendation policy requires operator corrections/calibration. |
 | Counterfactual `MERGE_CHAINS` | `READY` | `PASS` | `PASS` | `PASS` synthetic Docker stack | `NOT_CALIBRATED` | Exact cross-chain evidence, persisted Review reload and Chromium Review acceptance passed; production policy remains uncalibrated. |
-| Counterfactual `ADD_MEMBER` | `READY` | `PASS` | `PASS` | `PASS` | `READY` | Unblocked via singleton chain candidates ($|C|=1$) in snapshot; public contract reports `READY` under bounded search. |
+| Counterfactual `ADD_MEMBER` | `BLOCKED` | N/A | N/A | N/A | `BLOCKED` | `UNKNOWN_UPSTREAM_SEMANTICS`: first-class zero-membership alarms have not been verified upstream. A singleton-source transfer is canonical `MOVE_MEMBER`, never ADD. |
+
+## Topology hierarchy boundary
+
+`topology_hierarchy.py` supplies display ordering only for `STRUCTURAL_NAVIGATION`.
+It is forbidden from supplying P2/RCA dependency direction, common ancestor,
+dominator, active-path, propagation, scope-overlap, or failure-domain inputs.
+Promotion into P2 requires a separate authoritative business semantics source,
+verified alarm-resource mappings, and versioned provenance/configuration.
 
 ## T_delay boundary
 

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import yaml
 import pytest
 
 from nocpro_mock.cli import main
-from nocpro_mock.replay.sequence_slicer import slice_alarm_sequence
+from nocpro_mock.replay.sequence_slicer import DERIVED_REPLAY_SOURCE, slice_alarm_sequence
+from nocpro_mock.contract import parse_package
 
 
 @pytest.fixture
@@ -47,7 +49,14 @@ def test_slice_alarm_sequence_creates_valid_sequence(tmp_path: Path, sample_alar
         manifest = yaml.safe_load(f)
     assert manifest["scenario_id"] == "test_slice_v1"
     assert manifest["sequence_type"] == "EVOLUTION"
+    assert manifest["derivation_kind"] == "DERIVED_REPLAY"
+    assert manifest["production_validation"] == "NOT_ESTABLISHED"
     assert len(manifest["snapshots"]) == 4
+
+    package = parse_package(json.loads((out_dir / "snapshot_000.json").read_text(encoding="utf-8")))
+    assert package.snapshot.source == DERIVED_REPLAY_SOURCE
+    assert package.snapshot.source_kind.value == "REAL_EXPORT_REPLAY"
+    assert "PRODUCTION_EVOLUTION_VALIDATION_NOT_ESTABLISHED" in package.provenance_manifest.notes
 
 
 def test_cli_slice_sequence(tmp_path: Path, sample_alarm_csv: Path) -> None:

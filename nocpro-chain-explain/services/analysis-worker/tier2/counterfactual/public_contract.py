@@ -105,26 +105,15 @@ def public_review_result(result: CounterfactualResult) -> dict[str, object]:
         "reason": result.reason,
         "recommendation_status": result.recommendation_status.value,
         "operation_status": {
-            "ADD_MEMBER": (
-                {
-                    "status": "BLOCKED",
-                    "reason": "UNKNOWN_UPSTREAM_SEMANTICS",
-                    "search_mode": "NOT_RUN",
-                    "candidate_count": 0,
-                    "evaluated_count": 0,
-                    "ceiling": None,
-                }
-                if result.status == DomainStatus.UNAVAILABLE or result.calibration_status in {"SYNTHETIC_ONLY", None}
-                else {
-                    "status": "READY",
-                    "reason": "NO_SINGLETON_CANDIDATES",
-                    "search_mode": "BOUNDED",
-                    "candidate_count": 0,
-                    "evaluated_count": 0,
-                    "ceiling": None,
-                }
-            ),
             **{operation.operation.value: _operation_status(operation) for operation in operations},
+            "ADD_MEMBER": {
+                "status": "BLOCKED",
+                "reason": "UNKNOWN_UPSTREAM_SEMANTICS",
+                "search_mode": "NOT_RUN",
+                "candidate_count": 0,
+                "evaluated_count": 0,
+                "ceiling": None,
+            },
         },
         "evaluated_candidates": [
             _candidate(item, result, selected_ids) for item in evaluations
@@ -137,4 +126,3 @@ def public_review_result(result: CounterfactualResult) -> dict[str, object]:
         },
         "parameter_provenance": dict(result.parameter_provenance),
     }
-

@@ -2,8 +2,9 @@
 
 Slices real-world 30-day alarm exports (e.g. alarmIP.csv, alarmIT.csv) into
 consecutive canonical MockSnapshotPackages over sliding time windows. This
-produces realistic EVOLUTION sequences with genuine NEW, CLEARED, GROW, SHRINK,
-SPLIT, and MERGE dynamics for delta-drift calibration.
+produces derived replay windows for local Evolution/H/T_delay testing.  It does
+not turn one export into verified upstream sequential snapshots and therefore
+must never establish production Evolution validation.
 """
 
 from __future__ import annotations
@@ -28,6 +29,9 @@ from ..contract import (
 )
 from ..loaders.alarm_csv import AlarmCsvLoader, AlarmRecord
 from ..normalize.alarms import build_chains, normalize_alarm
+
+
+DERIVED_REPLAY_SOURCE = "nocpro-mock-derived-replay-slicer"
 
 
 @dataclass(frozen=True)
@@ -156,7 +160,7 @@ def slice_alarm_sequence(
                 snapshot_version="1",
                 snapshot_time=snap_time_str,
                 status=SnapshotStatus.COMPLETE,
-                source="nocpro-mock-sequence-slicer",
+                source=DERIVED_REPLAY_SOURCE,
                 source_kind=source_kind,
                 produced_at=datetime.now(timezone.utc).isoformat(),
             ),
@@ -168,6 +172,11 @@ def slice_alarm_sequence(
             provenance_manifest=ProvenanceManifest(
                 sources=tuple(sources),
                 unavailable_capabilities=("TOPOLOGY_NOT_LOADED",),
+                notes=(
+                    "DERIVED_REPLAY: time windows were generated from a single "
+                    "real export and are not verified upstream snapshots.",
+                    "PRODUCTION_EVOLUTION_VALIDATION_NOT_ESTABLISHED",
+                ),
             ),
         )
 
@@ -180,6 +189,8 @@ def slice_alarm_sequence(
     manifest = {
         "scenario_id": scenario_id,
         "sequence_type": "EVOLUTION",
+        "derivation_kind": "DERIVED_REPLAY",
+        "production_validation": "NOT_ESTABLISHED",
         "step_minutes": step_minutes,
         "window_minutes": window_minutes,
         "start_time": t_base.isoformat(),

@@ -5,8 +5,10 @@ Extracts structured, ground-truth taxonomy from NocPro production records:
 - Family: derived from ``group_name`` (e.g., 'Cảnh báo power Core', 'Cảnh báo UDCNTT_VCLOUD').
 - Category: derived from ``network_class_name`` or ``monitor_type_name``.
 
-This adapter bridges actual Viettel NocPro data exports into canonical
-``AlarmTaxonomy`` and ``HistoricalTaxonomy`` without heuristic string guessing.
+This adapter exposes populated raw taxonomy-like fields as optional tokens.  It
+does not establish that a production taxonomy is authoritative: that requires a
+separately versioned business-owned taxonomy source.  Missing values stay
+missing; this module never invents fallback labels.
 """
 
 from __future__ import annotations
@@ -30,31 +32,26 @@ def extract_taxonomy_tokens_from_alarm(alarm: IngestedAlarm | Mapping[str, Any])
         raw = alarm
 
     if not name:
-        # Fallback to fault_id or chaining_name if alarm_name is missing
-        fault_id = str(raw.get("fault_id") or "").strip()
-        if fault_id:
-            name = f"FAULT_{fault_id}"
-        else:
-            return None
+        # HistoricalTaxonomy is keyed by canonical alarm_name.  A fault ID is
+        # not a substitute join key, so do not fabricate one.
+        return None
 
-    # 1. Type: fault_id or alarm_type_name or the clean alarm_name itself
+    # These are direct source-field values only.  No alarm-name, group-ID, or
+    # generic fallback may manufacture a token at a missing level.
     alarm_type = (
         str(raw.get("alarm_type_name") or "").strip()
-        or (f"FAULT_{raw['fault_id']}" if raw.get("fault_id") else None)
-        or name
+        or str(raw.get("fault_id") or "").strip()
+        or None
     )
 
-    # 2. Family: group_name or group_id
-    group_name = str(raw.get("group_name") or "").strip()
-    if not group_name and raw.get("group_id"):
-        group_name = f"GROUP_{raw['group_id']}"
-    family = group_name or "GENERAL_ALARM"
+    family = str(raw.get("group_name") or "").strip() or None
 
-    # 3. Category: network_class_name or monitor_type_name
+    # Some exports populate one of these raw fields; neither missing case is
+    # a license to manufacture a generic NETWORK category.
     category = (
         str(raw.get("network_class_name") or "").strip()
         or str(raw.get("monitor_type_name") or "").strip()
-        or "NETWORK"
+        or None
     )
 
     tokens = TaxonomyTokens(type=alarm_type, family=family, category=category)

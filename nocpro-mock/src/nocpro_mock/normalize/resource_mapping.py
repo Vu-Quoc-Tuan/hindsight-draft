@@ -116,7 +116,6 @@ class ResourceMapper:
             topology_layer=self.topology_layer,
             source_version=self.source_version,
         )
-
     def map_real_alarm(
         self,
         alarm_id: str,
@@ -160,4 +159,3 @@ class ResourceMapper:
             topology_layer=self.topology_layer,
             source_version=self.source_version,
         )
-

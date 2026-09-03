@@ -162,6 +162,29 @@ class StoredEvolution:
     edges: tuple[StoredEvolutionEdge, ...] = ()
 
 
+DERIVED_REPLAY_SNAPSHOT_SOURCES = frozenset({
+    "nocpro-mock-derived-replay-slicer",
+})
+
+
+def _sequence_production_validation(snapshot_rows) -> str:
+    """Return production eligibility without promoting derived replay windows.
+
+    ``REAL_EXPORT_REPLAY`` records may be real observations, but time windows
+    derived locally from one export are not verified sequential upstream
+    snapshots.  The source marker is persisted with each snapshot so a restart
+    cannot silently promote the derived sequence later.
+    """
+    source_kinds = {row.source_kind for row in snapshot_rows}
+    sources = {row.source for row in snapshot_rows}
+    if (
+        source_kinds <= {"REAL_LIVE", "REAL_EXPORT_REPLAY"}
+        and not sources.intersection(DERIVED_REPLAY_SNAPSHOT_SOURCES)
+    ):
+        return "ELIGIBLE"
+    return "NOT_ESTABLISHED"
+
+
 def _logical_time(value: str) -> datetime:
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
@@ -322,19 +345,7 @@ class SnapshotRepository:
                     )
                 ).all()
             )
-        source_by_snapshot = {
-            (row.snapshot_id, row.snapshot_version): row.source_kind
-            for row in snapshot_rows
-        }
-        source_kinds = {
-            source_by_snapshot.get((row.snapshot_id, row.snapshot_version))
-            for row in node_rows
-        }
-        production_validation = (
-            "ELIGIBLE"
-            if source_kinds <= {"REAL_LIVE", "REAL_EXPORT_REPLAY"}
-            else "NOT_ESTABLISHED"
-        )
+        production_validation = _sequence_production_validation(snapshot_rows)
         return StoredEvolution(
             status="AVAILABLE",
             reason=None,
