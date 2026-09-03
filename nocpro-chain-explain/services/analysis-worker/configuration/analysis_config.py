@@ -104,6 +104,8 @@ class CounterfactualConfig:
     pareto_tolerance: float
     max_move_candidates: int | None = None
     move_reason: str | None = None
+    max_merge_candidates: int | None = None
+    merge_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -491,6 +493,14 @@ def _load_optional_counterfactual(
             # not disable the already-calibrated REMOVE/SPLIT P0 operations.
             max_move_candidates = None
             move_reason = "MOVE_POLICY_NOT_CALIBRATED"
+        try:
+            max_merge_candidates = int(
+                _counterfactual_number(raw, "merge.max_candidates", _POSITIVE_INT)
+            )
+            merge_reason = None
+        except AnalysisConfigError:
+            max_merge_candidates = None
+            merge_reason = "MERGE_POLICY_NOT_CALIBRATED"
         return (
             CounterfactualConfig(
                 config_version=raw_version.strip(),
@@ -530,6 +540,8 @@ def _load_optional_counterfactual(
                 ),
                 max_move_candidates=max_move_candidates,
                 move_reason=move_reason,
+                max_merge_candidates=max_merge_candidates,
+                merge_reason=merge_reason,
             ),
             None,
         )

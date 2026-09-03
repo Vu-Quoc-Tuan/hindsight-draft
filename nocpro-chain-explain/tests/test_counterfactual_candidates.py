@@ -8,8 +8,10 @@ from audit.conductance import AuditVerdict
 from audit.verdict import StructuralAuditResult
 from configuration import CalibrationStatus, CounterfactualConfig
 from descriptor.contrastive import BlockingCandidate
+from channels.cross_chain import CrossChainEvidence
 from tier2.counterfactual import Operation, ReviewIdentity
 from tier2.counterfactual.candidates import (
+    generate_merge_candidates,
     generate_move_candidates,
     generate_remove_candidates,
     generate_split_candidates,
@@ -71,6 +73,17 @@ def _blocking(chain_id: str, overlap: int) -> BlockingCandidate:
         shared_key="location_code",
         shared_value="loc-1",
         overlap=overlap,
+    )
+
+
+def _cross_evidence(*, edges: int, union_pairs: int, pair_count: int) -> CrossChainEvidence:
+    return CrossChainEvidence(
+        left_chain_id="C",
+        right_chain_id="T",
+        cross_pair_count=pair_count,
+        groups=(),
+        cross_audit_edge_count=edges,
+        cross_evidence_union_pair_count=union_pairs,
     )
 
 
@@ -329,3 +342,67 @@ def test_move_pre_ceiling_ranking_uses_frozen_margin_states_then_overlap() -> No
         "T3",
         "T4",
     ]
+
+
+def test_merge_uses_local_candidates_exact_cross_edges_and_block_level_cost(
+    monkeypatch,
+) -> None:
+    package = _Package(
+        {
+            "C": ("A", "B"),
+            "T1": ("C", "D"),
+            "T2": ("E", "F"),
+            "S": ("X",),
+        }
+    )
+
+    def cross(_package, left, right):
+        assert tuple(sorted((left, right))) in {("C", "T1"), ("C", "T2")}
+        return _cross_evidence(
+            edges=2 if right == "T1" else 1,
+            union_pairs=4,
+            pair_count=4,
+        )
+
+    monkeypatch.setattr("tier2.counterfactual.candidates.exact_cross_chain_evidence", cross)
+    batch = generate_merge_candidates(
+        IDENTITY,
+        review_chain_id="C",
+        local_candidates=(_blocking("T2", 50), _blocking("S", 99), _blocking("T1", 1)),
+        package=package,
+        config=replace(CONFIG, max_merge_candidates=2),
+    )
+
+    assert batch.discovered_count == 2
+    assert [candidate.merged_chain_ids for candidate in batch.candidates] == [
+        ("C", "T1"),
+        ("C", "T2"),
+    ]
+    candidate = batch.candidates[0]
+    assert candidate.operation is Operation.MERGE_CHAINS
+    assert candidate.source_chain_id is None and candidate.target_chain_id is None
+    assert candidate.edit_cost.operation_count == 1
+    assert candidate.edit_cost.membership_reassignments == 0
+    assert candidate.edit_cost.affected_member_count == 4
+    assert candidate.partition_delta.after[0][0].startswith("CF-MERGE-")
+    assert candidate.partition_delta.after[0][1] == ("A", "B", "C", "D")
+
+
+def test_merge_requires_at_least_one_cross_audit_edge_and_never_falls_back_to_singleton_move(
+    monkeypatch,
+) -> None:
+    package = _Package({"C": ("A", "B"), "T": ("C", "D"), "S": ("X",)})
+    monkeypatch.setattr(
+        "tier2.counterfactual.candidates.exact_cross_chain_evidence",
+        lambda *_args, **_kwargs: _cross_evidence(edges=0, union_pairs=4, pair_count=4),
+    )
+    batch = generate_merge_candidates(
+        IDENTITY,
+        review_chain_id="C",
+        local_candidates=(_blocking("T", 4), _blocking("S", 4)),
+        package=package,
+        config=replace(CONFIG, max_merge_candidates=2),
+    )
+
+    assert batch.candidates == ()
+    assert batch.discovered_count == 0

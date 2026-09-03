@@ -94,6 +94,32 @@ class CrossChainEvidence:
     def cross_supported_group_count(self) -> int:
         return sum(group.support_count > 0 for group in self.groups)
 
+    def as_payload(self) -> dict[str, object]:
+        """Return the stable persisted/API representation of this evidence.
+
+        Persisting the dataclass field layout would leak implementation-only
+        ``EffectiveGroupKey`` nesting into a restart-loaded Review result. The
+        public payload records the descriptive cross-chain statistics exposed
+        by the MERGE contract instead.
+        """
+        return {
+            "cross_pair_count": self.cross_pair_count,
+            "cross_available_counts_by_group": [
+                {
+                    "derivation_tag": group.key.derivation_tag,
+                    "provenance_class": group.key.provenance_class.value,
+                    "available_count": group.available_count,
+                    "support_count": group.support_count,
+                    "cross_fit": group.cross_fit,
+                }
+                for group in self.groups
+            ],
+            "cross_audit_edge_count": self.cross_audit_edge_count,
+            "cross_audit_edge_coverage": self.cross_audit_edge_coverage,
+            "cross_supported_group_count": self.cross_supported_group_count,
+            "cross_evidence_union_coverage": self.cross_evidence_union_coverage,
+        }
+
 
 def exact_cross_chain_evidence(
     package: IngestedPackage,

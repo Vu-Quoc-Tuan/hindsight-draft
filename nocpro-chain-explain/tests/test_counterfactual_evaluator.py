@@ -237,6 +237,54 @@ def test_move_recomputes_both_affected_chains_before_and_after() -> None:
     ]
 
 
+def test_merge_recomputes_exact_two_before_to_one_after_without_member_reassignment() -> None:
+    package = _package()
+    package.memberships["C"] = ["A", "B"]
+    package.memberships["U"] = ["C", "X"]
+    package.chains["C"] = replace(package.chains["C"], member_count=2)
+    package.chains["U"] = replace(package.chains["U"], member_count=2)
+    candidate = CounterfactualCandidate(
+        candidate_id="merge-C-U",
+        operation=Operation.MERGE_CHAINS,
+        partition_delta=PartitionDelta(
+            before=(("C", ("A", "B")), ("U", ("C", "X"))),
+            after=(("CF-MERGE-test", ("A", "B", "C", "X")),),
+        ),
+        edit_cost=EditCost(1, 0, 4),
+        source_ref="cross-audit:edges=1",
+        member_ids=(),
+        merged_chain_ids=("C", "U"),
+    )
+    calls: list[tuple[str, ...]] = []
+
+    def compute(_package, chain_ids):
+        calls.append(chain_ids)
+        return (
+            _metrics()
+            if len(chain_ids) == 2
+            else _metrics(
+                weak=1,
+                membership=0.4,
+                coverage=0.6,
+                components=1,
+                conductance=0.3,
+                severity=0,
+            )
+        )
+
+    result = evaluate_candidate(
+        package,
+        candidate,
+        analysis_config=object(),
+        config=CONFIG,
+        metric_computer=compute,
+    )
+
+    assert result.status is CandidateStatus.BETTER_SUPPORTED
+    assert calls == [("C", "U"), ("CF-MERGE-test",)]
+    assert candidate.edit_cost == EditCost(1, 0, 4)
+
+
 def test_exact_move_records_connector_fact_and_effect_after_hard_gate_passes(
     monkeypatch,
 ) -> None:

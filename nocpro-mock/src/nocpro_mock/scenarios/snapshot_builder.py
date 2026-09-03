@@ -119,6 +119,12 @@ def build_synthetic_snapshot(
                 raw["alarm_name"] = str(alarm_name)
             if node_reference:
                 raw["node_reference"] = str(node_reference)
+            location_code = profile.get("location_code")
+            if location_code:
+                raw["location_code"] = str(location_code)
+            remote_node = profile.get("remote_node")
+            if remote_node:
+                raw["remote_node"] = str(remote_node)
             alarms.append(
                 Alarm(
                     alarm_id=alarm_id,

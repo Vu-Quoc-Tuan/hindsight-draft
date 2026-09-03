@@ -5,6 +5,8 @@ from types import SimpleNamespace
 
 from configuration import CalibrationStatus
 from groups import AuditGraphMode
+from channels.cross_chain import CrossChainEvidence
+from descriptor.contrastive import BlockingCandidate
 from tier2.counterfactual import (
     CandidateStatus,
     DomainStatus,
@@ -249,3 +251,74 @@ def test_production_calibrated_policy_can_recommend_real_source() -> None:
         metric_computer=_metric_computer,
     )
     assert result.recommendation_status is RecommendationStatus.AVAILABLE
+
+
+def test_synthetic_merge_enters_exact_evaluation_and_pareto_frontier(monkeypatch) -> None:
+    package = _package()
+    package.memberships["C"] = ["A", "B"]
+    package.memberships["U"] = ["C", "X"]
+    package.chains["C"] = replace(package.chains["C"], member_count=2)
+    package.chains["U"] = replace(package.chains["U"], member_count=2)
+    tier1b = SimpleNamespace(
+        members={"A": _member(), "B": _member()},
+        local_candidates=(
+            BlockingCandidate(
+                chain_id="U",
+                shared_key="location_code",
+                shared_value="SITE-A",
+                overlap=2,
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        "tier2.counterfactual.candidates.exact_cross_chain_evidence",
+        lambda *_args, **_kwargs: CrossChainEvidence(
+            left_chain_id="C",
+            right_chain_id="U",
+            cross_pair_count=4,
+            groups=(),
+            cross_audit_edge_count=1,
+            cross_evidence_union_pair_count=4,
+        ),
+    )
+
+    def metric_computer(_package, chain_ids):
+        if len(chain_ids) == 2:
+            return _metrics(
+                weak=2,
+                membership=0.2,
+                coverage=0.4,
+                components=2,
+                conductance=0.1,
+                severity=1,
+            )
+        return _metrics(
+            weak=1,
+            membership=0.4,
+            coverage=0.6,
+            components=1,
+            conductance=0.3,
+            severity=0,
+        )
+
+    result = analyze_counterfactual_review(
+        package,
+        "C",
+        identity=IDENTITY,
+        tier1b_artifact=tier1b,
+        audit_artifact=None,
+        analysis_config=object(),
+        config=replace(CONFIG, max_move_candidates=None, max_merge_candidates=1),
+        metric_computer=metric_computer,
+    )
+
+    assert result.merge.status is DomainStatus.AVAILABLE
+    assert result.merge.evaluated_candidate_count == 1
+    matching = [
+        evaluation
+        for evaluation in result.recommendations
+        if evaluation.candidate.operation.value == "MERGE_CHAINS"
+    ]
+    assert matching
+    assert matching[0].candidate.merged_chain_ids == ("C", "U")
+    assert matching[0].candidate.edit_cost.membership_reassignments == 0

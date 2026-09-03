@@ -253,10 +253,25 @@ export type CounterfactualMetricVector = {
 
 export type CounterfactualCandidate = {
   candidate_id: string
-  operation: 'REMOVE_MEMBER' | 'SPLIT_CHAIN' | 'MOVE_MEMBER'
+  operation: 'REMOVE_MEMBER' | 'SPLIT_CHAIN' | 'MOVE_MEMBER' | 'MERGE_CHAINS'
   member_ids: string[]
   source_chain_id: string | null
   target_chain_id: string | null
+  merged_chain_ids: string[] | null
+  merge_evidence: {
+    cross_pair_count: number
+    cross_available_counts_by_group: Array<{
+      derivation_tag: string
+      provenance_class: string
+      available_count: number
+      support_count: number
+      cross_fit: number | null
+    }>
+    cross_audit_edge_count: number
+    cross_audit_edge_coverage: number
+    cross_supported_group_count: number
+    cross_evidence_union_coverage: number
+  } | null
   source_ref: string
   status: string
   reason: string | null
@@ -282,7 +297,7 @@ export type CounterfactualCandidate = {
 }
 
 export type CounterfactualOperation = {
-  operation: 'REMOVE_MEMBER' | 'SPLIT_CHAIN' | 'MOVE_MEMBER'
+  operation: 'REMOVE_MEMBER' | 'SPLIT_CHAIN' | 'MOVE_MEMBER' | 'MERGE_CHAINS'
   status: 'AVAILABLE' | 'UNAVAILABLE' | 'NOT_APPLICABLE'
   reason: string | null
   search_mode: 'BOUNDED' | 'NOT_RUN'
@@ -312,6 +327,7 @@ export type CounterfactualResult = {
   remove: CounterfactualOperation
   split: CounterfactualOperation
   move: CounterfactualOperation
+  merge: CounterfactualOperation
   recommendations: CounterfactualCandidate[]
   frontier_count_before_limit: number
   frontier_truncated: boolean

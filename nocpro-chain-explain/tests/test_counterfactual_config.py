@@ -38,6 +38,8 @@ def test_synthetic_config_loads_every_required_field() -> None:
     assert review.max_split_candidates > 0
     assert review.max_move_candidates is not None
     assert review.max_move_candidates > 0
+    assert review.max_merge_candidates is not None
+    assert review.max_merge_candidates > 0
     assert review.max_recommendations > 0
 
 
@@ -50,6 +52,17 @@ def test_missing_move_config_only_disables_move(tmp_path: Path) -> None:
     assert config.counterfactual is not None
     assert config.counterfactual.max_move_candidates is None
     assert config.counterfactual.move_reason == "MOVE_POLICY_NOT_CALIBRATED"
+
+
+def test_missing_merge_config_only_disables_merge(tmp_path: Path) -> None:
+    text = SYNTHETIC_CONFIG.read_text(encoding="utf-8")
+    config = load_analysis_config(
+        _write(tmp_path, text.replace("  merge:\n    max_candidates: 10\n", "", 1))
+    )
+
+    assert config.counterfactual is not None
+    assert config.counterfactual.max_merge_candidates is None
+    assert config.counterfactual.merge_reason == "MERGE_POLICY_NOT_CALIBRATED"
 
 
 @pytest.mark.parametrize(

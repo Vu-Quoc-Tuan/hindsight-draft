@@ -66,14 +66,62 @@ def _metric_vector_view(vector):
     }
 
 
+def _merge_evidence_view(evidence):
+    """Keep live and restart-loaded Review payloads structurally identical."""
+    if evidence is None:
+        return None
+    if isinstance(evidence, dict):
+        if "cross_available_counts_by_group" in evidence:
+            return evidence
+        groups = evidence.get("groups") or ()
+        return {
+            "cross_pair_count": evidence.get("cross_pair_count"),
+            "cross_available_counts_by_group": [
+                {
+                    "derivation_tag": (group.get("key") or {}).get("derivation_tag"),
+                    "provenance_class": (group.get("key") or {}).get("provenance_class"),
+                    "available_count": group.get("available_count"),
+                    "support_count": group.get("support_count"),
+                    "cross_fit": (
+                        group["support_count"] / group["available_count"]
+                        if group.get("available_count", 0) > 0
+                        else None
+                    ),
+                }
+                for group in groups
+            ],
+            "cross_audit_edge_count": evidence.get("cross_audit_edge_count"),
+            "cross_audit_edge_coverage": (
+                evidence["cross_audit_edge_count"] / evidence["cross_pair_count"]
+                if evidence.get("cross_pair_count", 0) > 0
+                else 0.0
+            ),
+            "cross_supported_group_count": sum(
+                group.get("support_count", 0) > 0 for group in groups
+            ),
+            "cross_evidence_union_coverage": (
+                evidence.get("cross_evidence_union_pair_count", 0)
+                / evidence["cross_pair_count"]
+                if evidence.get("cross_pair_count", 0) > 0
+                else 0.0
+            ),
+        }
+    return evidence.as_payload()
+
+
 def _candidate_view(evaluation):
     candidate = evaluation.candidate
+    merge_evidence = candidate.merge_evidence
     return {
         "candidate_id": candidate.candidate_id,
         "operation": candidate.operation.value,
         "member_ids": list(candidate.member_ids),
         "source_chain_id": candidate.source_chain_id,
         "target_chain_id": candidate.target_chain_id,
+        "merged_chain_ids": list(candidate.merged_chain_ids)
+        if candidate.merged_chain_ids is not None
+        else None,
+        "merge_evidence": _merge_evidence_view(merge_evidence),
         "source_ref": candidate.source_ref,
         "status": evaluation.status.value,
         "reason": evaluation.reason,
@@ -125,6 +173,7 @@ def counterfactual_result_view(result):
         "remove": _operation_view(result.remove),
         "split": _operation_view(result.split),
         "move": _operation_view(result.move),
+        "merge": _operation_view(result.merge),
         "recommendations": [
             _candidate_view(item) for item in result.recommendations
         ],

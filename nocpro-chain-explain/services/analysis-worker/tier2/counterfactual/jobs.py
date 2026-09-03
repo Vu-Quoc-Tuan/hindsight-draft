@@ -12,6 +12,7 @@ from threading import RLock
 from typing import Any, Callable
 from uuid import uuid4
 
+from channels.cross_chain import CrossChainEvidence
 from libs.contracts import IngestedPackage
 from tier2.jobs import JobStatus
 
@@ -19,10 +20,12 @@ from .analysis import analyze_counterfactual_review
 from .models import ExternalValidationArtifact, ReviewIdentity
 
 
-ENGINE_VERSION = "counterfactual-p0-v1"
+ENGINE_VERSION = "counterfactual-p1-v1"
 
 
 def _jsonable(value: Any) -> Any:
+    if isinstance(value, CrossChainEvidence):
+        return value.as_payload()
     if is_dataclass(value):
         return {
             item.name: _jsonable(getattr(value, item.name))

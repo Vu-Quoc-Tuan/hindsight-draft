@@ -431,6 +431,8 @@ class CounterfactualCandidateView(ApiModel):
     member_ids: list[str]
     source_chain_id: str | None
     target_chain_id: str | None
+    merged_chain_ids: list[str] | None
+    merge_evidence: dict[str, object] | None
     source_ref: str
     status: str
     reason: str | None
@@ -463,6 +465,7 @@ class CounterfactualResultView(ApiModel):
     remove: CounterfactualOperationView
     split: CounterfactualOperationView
     move: CounterfactualOperationView
+    merge: CounterfactualOperationView
     recommendations: list[CounterfactualCandidateView]
     frontier_count_before_limit: int
     frontier_truncated: bool

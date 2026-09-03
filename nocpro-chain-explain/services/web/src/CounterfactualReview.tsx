@@ -54,6 +54,7 @@ function CandidateCard({ candidate, recommended }: { candidate: CounterfactualCa
       <footer>
         <span>Exact bounded evaluation · {candidate.source_ref}</span>
         {candidate.operation === 'MOVE_MEMBER' && candidate.source_chain_id && candidate.target_chain_id ? <span>Transfer {candidate.source_chain_id} → {candidate.target_chain_id}</span> : null}
+        {candidate.operation === 'MERGE_CHAINS' && candidate.merged_chain_ids && candidate.merge_evidence ? <span>Merge {candidate.merged_chain_ids.join(' + ')} · {candidate.merge_evidence.cross_audit_edge_count} exact cross Audit edges</span> : null}
         {recommended && candidate.semantic_effects.includes('BECOMES_CONNECTOR') && candidate.move_structural_facts ? <span>Reason: becomes a connector after the move · {candidate.move_structural_facts.after_blocks_supported} supported blocks</span> : null}
         <span>{candidate.materially_improved_metrics.length} material improvements</span>
       </footer>
@@ -144,6 +145,7 @@ export function CounterfactualReview({ chainId, initialJob = null }: { chainId: 
         <OperationSection operation={result.remove} recommendationIds={recommendationIds} />
         <OperationSection operation={result.split} recommendationIds={recommendationIds} />
         <OperationSection operation={result.move} recommendationIds={recommendationIds} />
+        <OperationSection operation={result.merge} recommendationIds={recommendationIds} />
       </div>
       <footer className="review-provenance">
         <span>Snapshot {result.identity.snapshot_id}@{result.identity.snapshot_version}</span>

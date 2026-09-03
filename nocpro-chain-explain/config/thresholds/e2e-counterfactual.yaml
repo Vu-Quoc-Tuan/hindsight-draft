@@ -92,6 +92,8 @@ counterfactual:
     max_recommendations: 5
   move:
     max_candidates: 10
+  merge:
+    max_candidates: 10
   remove_triggers:
     membership_support_below: 0.3
     representativeness_below: 0.3

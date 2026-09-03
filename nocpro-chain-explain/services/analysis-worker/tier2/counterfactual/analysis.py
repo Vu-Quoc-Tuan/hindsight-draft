@@ -8,6 +8,7 @@ from groups import AuditGraphMode
 from libs.contracts import IngestedPackage
 
 from .candidates import (
+    generate_merge_candidates,
     generate_move_candidates,
     generate_remove_candidates,
     generate_split_candidates,
@@ -122,6 +123,7 @@ def analyze_counterfactual_review(
             remove=_operation_unavailable(Operation.REMOVE_MEMBER, reason, None),
             split=_operation_unavailable(Operation.SPLIT_CHAIN, reason, None),
             move=_operation_unavailable(Operation.MOVE_MEMBER, reason, None),
+            merge=_operation_unavailable(Operation.MERGE_CHAINS, reason, None),
         )
 
     if chain.member_count > config.max_chain_members:
@@ -139,6 +141,9 @@ def analyze_counterfactual_review(
             ),
             move=_operation_unavailable(
                 Operation.MOVE_MEMBER, reason, config.max_move_candidates
+            ),
+            merge=_operation_unavailable(
+                Operation.MERGE_CHAINS, reason, config.max_merge_candidates
             ),
         )
 
@@ -176,6 +181,17 @@ def analyze_counterfactual_review(
             config=config,
         )
         if config.max_move_candidates is not None
+        else None
+    )
+    merge_batch = (
+        generate_merge_candidates(
+            identity,
+            review_chain_id=chain_id,
+            local_candidates=tier1b_artifact.local_candidates,
+            package=package,
+            config=config,
+        )
+        if config.max_merge_candidates is not None
         else None
     )
 
@@ -216,6 +232,9 @@ def analyze_counterfactual_review(
     move_evaluations = (
         evaluate(move_batch, baseline_metrics=None) if move_batch is not None else ()
     )
+    merge_evaluations = (
+        evaluate(merge_batch, baseline_metrics=None) if merge_batch is not None else ()
+    )
     if chain.member_count == 1:
         remove_result = _operation_not_applicable(
             Operation.REMOVE_MEMBER, "SINGLETON_CHAIN", config.max_remove_candidates
@@ -254,8 +273,19 @@ def analyze_counterfactual_review(
             None,
         )
     )
+    merge_result = (
+        _evaluated_operation(Operation.MERGE_CHAINS, merge_batch, merge_evaluations)
+        if merge_batch is not None
+        else _operation_unavailable(
+            Operation.MERGE_CHAINS,
+            config.merge_reason or "MERGE_POLICY_NOT_CALIBRATED",
+            None,
+        )
+    )
 
-    all_evaluations = remove_evaluations + split_evaluations + move_evaluations
+    all_evaluations = (
+        remove_evaluations + split_evaluations + move_evaluations + merge_evaluations
+    )
     synthetic_allowed = (
         package.snapshot.source_kind == "SYNTHETIC_TEST"
         and config.calibration_status is CalibrationStatus.SYNTHETIC_ONLY
@@ -291,6 +321,10 @@ def analyze_counterfactual_review(
             move_result,
             candidates=tuple(uncalibrated(item) for item in move_result.candidates),
         )
+        merge_result = replace(
+            merge_result,
+            candidates=tuple(uncalibrated(item) for item in merge_result.candidates),
+        )
         return CounterfactualResult(
             identity=identity,
             status=DomainStatus.AVAILABLE,
@@ -299,6 +333,7 @@ def analyze_counterfactual_review(
             remove=remove_result,
             split=split_result,
             move=move_result,
+            merge=merge_result,
         )
 
     frontier = select_frontier(all_evaluations, config)
@@ -315,6 +350,7 @@ def analyze_counterfactual_review(
         remove=remove_result,
         split=split_result,
         move=move_result,
+        merge=merge_result,
         recommendations=frontier.items,
         frontier_count_before_limit=frontier.count_before_limit,
         frontier_truncated=frontier.truncated,

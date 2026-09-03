@@ -237,7 +237,7 @@ async def _run_case(client, fixture, logical_time):
     return package, review, artifact["artifact_fingerprint"]
 
 
-def test_counterfactual_remove_and_split_survive_real_transport_and_persistence():
+def test_counterfactual_review_operations_survive_real_transport_and_persistence():
     async def exercise() -> None:
         base = await _next_logical_time()
         async with httpx2.AsyncClient(base_url=API_URL, timeout=15) as client:
@@ -260,6 +260,19 @@ def test_counterfactual_remove_and_split_survive_real_transport_and_persistence(
                         in {"BETTER_SUPPORTED", "EXTERNALLY_SUPPORTED"}
                     ]
                     assert matching, "expected MOVE_MEMBER absent from frontier"
+                elif fixture.mutation == "UNDER_MERGE":
+                    matching = [
+                        item
+                        for item in result["recommendations"]
+                        if item["operation"] == "MERGE_CHAINS"
+                        and item["merged_chain_ids"]
+                        == ["SYN-CHAIN-MERGE-LEFT", "SYN-CHAIN-MERGE-RIGHT"]
+                        and item["status"]
+                        in {"BETTER_SUPPORTED", "EXTERNALLY_SUPPORTED"}
+                    ]
+                    assert matching, "expected MERGE_CHAINS absent from frontier"
+                    assert matching[0]["edit_cost"]["membership_reassignments"] == 0
+                    assert matching[0]["merge_evidence"]["cross_audit_edge_count"] >= 1
                 else:
                     expected_operation = (
                         "REMOVE_MEMBER"

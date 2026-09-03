@@ -10,6 +10,7 @@ from audit.graph import _channel_representatives
 from channels import evaluate_chain_channels, exact_cross_chain_evidence
 from libs.contracts import IngestedChain, load_package
 from libs.provenance import build_derivation_groups
+from tier2.counterfactual.jobs import _jsonable
 
 
 def _package():
@@ -147,6 +148,28 @@ def test_exact_cross_chain_statistics_match_pairwise_merged_chain_oracle():
     for group in result.groups:
         expected = None if available[group.key] == 0 else support[group.key] / available[group.key]
         assert group.cross_fit == expected
+
+
+def test_cross_chain_evidence_persistence_payload_is_the_public_stable_shape():
+    result = exact_cross_chain_evidence(_package(), "C1", "C2")
+
+    assert _jsonable(result) == result.as_payload()
+    payload = result.as_payload()
+    assert set(payload) == {
+        "cross_pair_count",
+        "cross_available_counts_by_group",
+        "cross_audit_edge_count",
+        "cross_audit_edge_coverage",
+        "cross_supported_group_count",
+        "cross_evidence_union_coverage",
+    }
+    remote = next(
+        item
+        for item in payload["cross_available_counts_by_group"]
+        if item["derivation_tag"] == "remote"
+    )
+    assert remote["available_count"] == 0
+    assert remote["cross_fit"] is None
 
 
 def test_cross_chain_evidence_rejects_overlapping_memberships():

@@ -24,7 +24,7 @@ const job: CounterfactualJob = {
   identity: {
     snapshot_id: 's1', snapshot_version: '1', chain_id: 'C1',
     alarm_universe_fingerprint: 'alarms', analysis_version: 'analysis-v1',
-    engine_version: 'counterfactual-p0-v1', config_version: 'synthetic-review-v1',
+    engine_version: 'counterfactual-p1-v1', config_version: 'synthetic-review-v1',
     tier1b_artifact_fingerprint: 'tier1b', structural_audit_artifact_fingerprint: null,
     external_validation_artifact_fingerprint: null,
   },
@@ -32,7 +32,7 @@ const job: CounterfactualJob = {
     identity: {
       snapshot_id: 's1', snapshot_version: '1', chain_id: 'C1',
       alarm_universe_fingerprint: 'alarms', analysis_version: 'analysis-v1',
-      engine_version: 'counterfactual-p0-v1', config_version: 'synthetic-review-v1',
+      engine_version: 'counterfactual-p1-v1', config_version: 'synthetic-review-v1',
       tier1b_artifact_fingerprint: 'tier1b', structural_audit_artifact_fingerprint: null,
       external_validation_artifact_fingerprint: null,
     },
@@ -46,6 +46,7 @@ const job: CounterfactualJob = {
       candidates: [{
         candidate_id: 'remove-X', operation: 'REMOVE_MEMBER', member_ids: ['X'],
         source_chain_id: null, target_chain_id: null,
+        merged_chain_ids: null, merge_evidence: null,
         source_ref: 'trigger-union', status: 'BETTER_SUPPORTED', reason: null,
         edit_cost: { operation_count: 1, membership_reassignments: 1, affected_member_count: 1 },
         partition_delta: { before: [['C1', ['A', 'B', 'X']]], after: [['C1', ['A', 'B']], ['singleton:X', ['X']]] },
@@ -66,6 +67,11 @@ const job: CounterfactualJob = {
       search_mode: 'NOT_RUN', discovered_candidate_count: 0, evaluated_candidate_count: 0,
       rejected_candidate_count: 0, candidate_limit: null, candidates: [],
     },
+    merge: {
+      operation: 'MERGE_CHAINS', status: 'UNAVAILABLE', reason: 'MERGE_POLICY_NOT_CALIBRATED',
+      search_mode: 'NOT_RUN', discovered_candidate_count: 0, evaluated_candidate_count: 0,
+      rejected_candidate_count: 0, candidate_limit: null, candidates: [],
+    },
     recommendations: [],
     frontier_count_before_limit: 1,
     frontier_truncated: false,
@@ -82,6 +88,7 @@ describe('CounterfactualReview', () => {
     expect(html).toContain('REMOVE_MEMBER')
     expect(html).toContain('SPLIT_CHAIN')
     expect(html).toContain('MOVE_MEMBER')
+    expect(html).toContain('MERGE_CHAINS')
     expect(html).toContain('MOVE_POLICY_NOT_CALIBRATED')
     expect(html).toContain('STRUCTURAL_AUDIT_UNAVAILABLE')
     expect(html).toContain('Exact before and after metrics')
@@ -101,6 +108,7 @@ describe('CounterfactualReview', () => {
         remove: { ...job.result.remove, status: 'UNAVAILABLE', reason: 'COUNTERFACTUAL_CONFIG_INCOMPLETE', candidates: [] },
         split: { ...job.result.split, reason: 'COUNTERFACTUAL_CONFIG_INCOMPLETE' },
         move: { ...job.result.move, reason: 'COUNTERFACTUAL_CONFIG_INCOMPLETE' },
+        merge: { ...job.result.merge, reason: 'COUNTERFACTUAL_CONFIG_INCOMPLETE' },
       } : null,
     }
     const html = renderToStaticMarkup(<CounterfactualReview chainId="C1" initialJob={unavailable} />)
@@ -114,6 +122,7 @@ describe('CounterfactualReview', () => {
     const move: CounterfactualCandidate = {
       candidate_id: 'move-B', operation: 'MOVE_MEMBER' as const, member_ids: ['B'],
       source_chain_id: 'C2', target_chain_id: 'C1', source_ref: 'move-trigger:WEAK',
+      merged_chain_ids: null, merge_evidence: null,
       status: 'BETTER_SUPPORTED', reason: null,
       edit_cost: { operation_count: 1, membership_reassignments: 1, affected_member_count: 3 },
       partition_delta: { before: [['C2', ['B']], ['C1', ['A', 'C']]], after: [['C1', ['A', 'B', 'C']]] },

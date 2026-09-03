@@ -238,8 +238,67 @@ COUNTERFACTUAL_MOVE = CounterfactualFixture(
     additional_chains=(("SYN-CHAIN-MOVE-TARGET", tuple(_MOVE_TARGET)),),
 )
 
+
+def _merge_profiles(
+    prefix: str,
+    *,
+    devices: tuple[str, str],
+    locations: tuple[str, str],
+    remote_nodes: tuple[str | None, str | None],
+    offsets: range,
+) -> dict[str, dict[str, object]]:
+    """Two reference blocks, with one semantic term shared globally.
+
+    The left chain remains split because its reference/device blocks only share
+    semantic evidence. The right chain bridges those blocks through a common
+    remote-node and semantic signal, while matching reference/device/site/burst
+    values provide exact multi-view cross-chain support. This creates a
+    deterministic under-merge fixture without treating
+    a blocking relation itself as merge proof.
+    """
+    return {
+        f"SYN-{prefix}-{index:02d}": {
+            "device_code": devices[0] if index <= 4 else devices[1],
+            "node_reference": "SYN-REF-MERGE-A" if index <= 4 else "SYN-REF-MERGE-B",
+            "location_code": locations[0] if index <= 4 else locations[1],
+            "remote_node": remote_nodes[0] if index <= 4 else remote_nodes[1],
+            "alarm_name": "SYN-MERGE",
+            "start_offset_seconds": offsets[index - 1],
+        }
+        for index in range(1, 9)
+    }
+
+
+_MERGE_LEFT = _merge_profiles(
+    "MERGE-LEFT",
+    devices=("SYN-DEVICE-MERGE-LEFT-A", "SYN-DEVICE-MERGE-LEFT-B"),
+    locations=("SYN-SITE-MERGE-LEFT-A", "SYN-SITE-MERGE-LEFT-B"),
+    remote_nodes=(None, None),
+    offsets=range(0, 8),
+)
+_MERGE_RIGHT = _merge_profiles(
+    "MERGE-RIGHT",
+    devices=("SYN-DEVICE-MERGE-LEFT-A", "SYN-DEVICE-MERGE-LEFT-B"),
+    locations=("SYN-SITE-MERGE-LEFT-A", "SYN-SITE-MERGE-LEFT-B"),
+    remote_nodes=("SYN-REMOTE-MERGE-RIGHT", "SYN-REMOTE-MERGE-RIGHT"),
+    offsets=range(20, 28),
+)
+COUNTERFACTUAL_MERGE = CounterfactualFixture(
+    scenario_id="synthetic_counterfactual_merge_v1",
+    directory="counterfactual_merge",
+    chain_id="SYN-CHAIN-MERGE-LEFT",
+    members=tuple(_MERGE_LEFT),
+    alarm_profiles={**_MERGE_LEFT, **_MERGE_RIGHT},
+    truth_partition=(
+        ("SYN-CHAIN-MERGE-TRUTH", (*_MERGE_LEFT, *_MERGE_RIGHT)),
+    ),
+    mutation="UNDER_MERGE",
+    additional_chains=(("SYN-CHAIN-MERGE-RIGHT", tuple(_MERGE_RIGHT)),),
+)
+
 COUNTERFACTUAL_FIXTURES = (
     COUNTERFACTUAL_REMOVE,
     COUNTERFACTUAL_SPLIT,
     COUNTERFACTUAL_MOVE,
+    COUNTERFACTUAL_MERGE,
 )

@@ -56,7 +56,12 @@ def run_fixture(name: str):
 
 @pytest.mark.parametrize(
     "name",
-    ["counterfactual_remove", "counterfactual_split", "counterfactual_move"],
+    [
+        "counterfactual_remove",
+        "counterfactual_split",
+        "counterfactual_move",
+        "counterfactual_merge",
+    ],
 )
 def test_fixture_contract_is_explicitly_synthetic(name: str) -> None:
     payload = json.loads((MOCK_SYNTHETIC / name / "snapshot_000.json").read_text())
@@ -110,6 +115,25 @@ def test_misassigned_member_move_is_an_accepted_pareto_recommendation() -> None:
         chain_id: tuple(sorted(members))
         for chain_id, members in expected["truth_partition"].items()
     }
+
+
+def test_undermerge_mutation_is_an_accepted_pareto_merge_recommendation() -> None:
+    result, expected = run_fixture("counterfactual_merge")
+    review = expected["expected_review"]
+    matching = [
+        evaluation
+        for evaluation in result.recommendations
+        if evaluation.candidate.operation.value == review["operation"]
+        and list(evaluation.candidate.merged_chain_ids or ())
+        == review["merged_chain_ids"]
+    ]
+
+    assert matching, "expected MERGE_CHAINS was absent from the Pareto frontier"
+    candidate = matching[0]
+    assert candidate.status.value in {"BETTER_SUPPORTED", "EXTERNALLY_SUPPORTED"}
+    assert candidate.candidate.edit_cost.membership_reassignments == 0
+    assert candidate.candidate.merge_evidence is not None
+    assert candidate.candidate.merge_evidence.cross_audit_edge_count >= 1
 
 
 def test_clean_truth_partition_abstains() -> None:

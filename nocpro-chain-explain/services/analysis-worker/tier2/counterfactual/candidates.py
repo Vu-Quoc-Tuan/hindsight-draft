@@ -8,6 +8,7 @@ from math import inf
 from typing import Any, Mapping
 
 from audit import StructuralAuditResult
+from channels import exact_cross_chain_evidence
 
 from .config import CounterfactualConfig
 from .models import (
@@ -264,6 +265,108 @@ def generate_move_candidates(
         candidate_limit=limit,
         candidates=selected,
     )
+
+
+def generate_merge_candidates(
+    identity: ReviewIdentity,
+    *,
+    review_chain_id: str,
+    local_candidates: tuple[Any, ...],
+    package,
+    config: CounterfactualConfig,
+) -> CandidateBatch:
+    """Generate bounded unordered MERGE candidates from local retrieval only.
+
+    ``local_candidates`` is a retrieval artifact, not merge evidence.  A pair
+    only enters the batch after the exact cross-chain primitive finds at least
+    one canonical audit edge.  Singleton pairs are intentionally filtered: the
+    canonical operation for them remains MOVE_MEMBER.
+    """
+    limit = config.max_merge_candidates
+    if limit is None:
+        return CandidateBatch(Operation.MERGE_CHAINS, 0, 0, 0, ())
+
+    discovered: list[tuple[tuple[Any, ...], CounterfactualCandidate]] = []
+    seen_pairs: set[tuple[str, str]] = set()
+    for destination in local_candidates:
+        candidate_chain_id = getattr(destination, "chain_id", None)
+        if (
+            not isinstance(candidate_chain_id, str)
+            or candidate_chain_id == review_chain_id
+            or candidate_chain_id not in package.chains
+        ):
+            continue
+        left_chain_id, right_chain_id = sorted((review_chain_id, candidate_chain_id))
+        pair = (left_chain_id, right_chain_id)
+        if pair in seen_pairs:
+            continue
+        seen_pairs.add(pair)
+        left = tuple(sorted(package.members_of(left_chain_id)))
+        right = tuple(sorted(package.members_of(right_chain_id)))
+        if not left or not right or min(len(left), len(right)) == 1:
+            continue
+        merged_members = tuple(sorted((*left, *right)))
+        if len(merged_members) > config.max_chain_members:
+            continue
+
+        evidence = exact_cross_chain_evidence(package, left_chain_id, right_chain_id)
+        if evidence.cross_audit_edge_count < 1:
+            continue
+        merged_chain_id = f"CF-MERGE-{_candidate_id_for_merge(identity, pair)}"
+        delta = PartitionDelta(
+            before=((left_chain_id, left), (right_chain_id, right)),
+            after=((merged_chain_id, merged_members),),
+        )
+        candidate = CounterfactualCandidate(
+            candidate_id=_candidate_id(identity, Operation.MERGE_CHAINS, delta),
+            operation=Operation.MERGE_CHAINS,
+            partition_delta=delta,
+            # Merge is a block-level edit.  New counterfactual chain identity
+            # never turns its member rows into member-level reassignments.
+            edit_cost=EditCost(1, 0, len(merged_members)),
+            source_ref=(
+                "cross-audit:"
+                f"edges={evidence.cross_audit_edge_count};"
+                f"coverage={evidence.cross_audit_edge_coverage:.12g}"
+            ),
+            member_ids=(),
+            merged_chain_ids=pair,
+            merge_evidence=evidence,
+        )
+        discovered.append(
+            (
+                (
+                    -evidence.cross_audit_edge_coverage,
+                    -evidence.cross_supported_group_count,
+                    -evidence.cross_evidence_union_coverage,
+                    -int(getattr(destination, "overlap", 0)),
+                    left_chain_id,
+                    right_chain_id,
+                ),
+                candidate,
+            )
+        )
+    ordered = sorted(discovered, key=lambda item: item[0])
+    selected = tuple(item[1] for item in ordered[:limit])
+    return CandidateBatch(
+        operation=Operation.MERGE_CHAINS,
+        discovered_count=len(ordered),
+        evaluated_count=len(selected),
+        candidate_limit=limit,
+        candidates=selected,
+    )
+
+
+def _candidate_id_for_merge(
+    identity: ReviewIdentity, pair: tuple[str, str]
+) -> str:
+    """Stable synthetic after-chain suffix without choosing a surviving source."""
+    payload = json.dumps(
+        [identity.cache_tuple(), Operation.MERGE_CHAINS.value, pair],
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+    return sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
 def generate_split_candidates(

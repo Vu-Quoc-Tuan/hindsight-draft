@@ -1,0 +1,26 @@
+scenario_id: synthetic_counterfactual_merge_v1
+source_kind: SYNTHETIC_TEST
+mutation: UNDER_MERGE
+mutated_chain_id: SYN-CHAIN-MERGE-LEFT
+truth_partition:
+  SYN-CHAIN-MERGE-TRUTH:
+    - SYN-MERGE-LEFT-01
+    - SYN-MERGE-LEFT-02
+    - SYN-MERGE-LEFT-03
+    - SYN-MERGE-LEFT-04
+    - SYN-MERGE-LEFT-05
+    - SYN-MERGE-LEFT-06
+    - SYN-MERGE-LEFT-07
+    - SYN-MERGE-LEFT-08
+    - SYN-MERGE-RIGHT-01
+    - SYN-MERGE-RIGHT-02
+    - SYN-MERGE-RIGHT-03
+    - SYN-MERGE-RIGHT-04
+    - SYN-MERGE-RIGHT-05
+    - SYN-MERGE-RIGHT-06
+    - SYN-MERGE-RIGHT-07
+    - SYN-MERGE-RIGHT-08
+expected_review:
+  operation: MERGE_CHAINS
+  merged_chain_ids: [SYN-CHAIN-MERGE-LEFT, SYN-CHAIN-MERGE-RIGHT]
+validation_scope: SYNTHETIC_CORRECTNESS_ONLY

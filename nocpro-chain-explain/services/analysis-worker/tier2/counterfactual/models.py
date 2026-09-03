@@ -6,11 +6,14 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TypeAlias
 
+from channels.cross_chain import CrossChainEvidence
+
 
 class Operation(str, Enum):
     REMOVE_MEMBER = "REMOVE_MEMBER"
     SPLIT_CHAIN = "SPLIT_CHAIN"
     MOVE_MEMBER = "MOVE_MEMBER"
+    MERGE_CHAINS = "MERGE_CHAINS"
 
 
 class DomainStatus(str, Enum):
@@ -206,6 +209,8 @@ class CounterfactualCandidate:
     member_ids: tuple[str, ...]
     source_chain_id: str | None = None
     target_chain_id: str | None = None
+    merged_chain_ids: tuple[str, str] | None = None
+    merge_evidence: CrossChainEvidence | None = None
 
 
 @dataclass(frozen=True)
@@ -262,6 +267,7 @@ class CounterfactualResult:
     remove: OperationResult
     split: OperationResult
     move: OperationResult
+    merge: OperationResult
     recommendations: tuple[CandidateEvaluation, ...] = ()
     frontier_count_before_limit: int = 0
     frontier_truncated: bool = False

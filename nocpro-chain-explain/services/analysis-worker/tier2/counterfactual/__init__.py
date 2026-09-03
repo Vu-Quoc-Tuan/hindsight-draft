@@ -30,7 +30,7 @@ from .evaluator import (
 )
 from .pareto import FrontierResult, dominates, select_frontier
 from .analysis import analyze_counterfactual_review
-from .candidates import generate_move_candidates
+from .candidates import generate_merge_candidates, generate_move_candidates
 from .jobs import (
     CounterfactualJobManager,
     CounterfactualJobView,
@@ -70,6 +70,7 @@ __all__ = [
     "select_frontier",
     "analyze_counterfactual_review",
     "generate_move_candidates",
+    "generate_merge_candidates",
     "CounterfactualJobManager",
     "CounterfactualJobView",
     "CounterfactualSubmission",
