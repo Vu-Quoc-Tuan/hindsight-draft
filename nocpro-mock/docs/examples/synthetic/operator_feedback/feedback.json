@@ -1,0 +1,40 @@
+{
+  "contract_version": "synthetic-operator-feedback-v1",
+  "fixture_id": "synthetic_operator_feedback_v1",
+  "source_kind": "SYNTHETIC_TEST",
+  "eligible_as_production_ground_truth": false,
+  "records": [
+    {
+      "feedback_id": "FB-SYN-REMOVE-001",
+      "scenario_id": "synthetic_counterfactual_remove_v1",
+      "snapshot_id": "synthetic_counterfactual_remove_v1:snapshot_000",
+      "snapshot_version": "1",
+      "chain_id": "SYN-CHAIN-REMOVE-MUTATED",
+      "operation": "REMOVE_MEMBER",
+      "verdict": "ACCEPTED",
+      "member_ids": ["SYN-REMOVE-EXTRA"]
+    },
+    {
+      "feedback_id": "FB-SYN-MOVE-001",
+      "scenario_id": "synthetic_counterfactual_move_v1",
+      "snapshot_id": "synthetic_counterfactual_move_v1:snapshot_000",
+      "snapshot_version": "1",
+      "chain_id": "SYN-CHAIN-MOVE-SOURCE",
+      "operation": "MOVE_MEMBER",
+      "verdict": "ACCEPTED",
+      "member_ids": ["SYN-MOVE-MISASSIGNED"],
+      "source_chain_id": "SYN-CHAIN-MOVE-SOURCE",
+      "target_chain_id": "SYN-CHAIN-MOVE-TARGET"
+    },
+    {
+      "feedback_id": "FB-SYN-MERGE-REJECTED-001",
+      "scenario_id": "synthetic_counterfactual_merge_v1",
+      "snapshot_id": "synthetic_counterfactual_merge_v1:snapshot_000",
+      "snapshot_version": "1",
+      "chain_id": "SYN-CHAIN-MERGE-LEFT",
+      "operation": "MERGE_CHAINS",
+      "verdict": "REJECTED",
+      "merged_chain_ids": ["SYN-CHAIN-MERGE-LEFT", "SYN-CHAIN-MERGE-RIGHT"]
+    }
+  ]
+}

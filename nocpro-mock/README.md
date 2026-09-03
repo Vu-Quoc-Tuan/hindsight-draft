@@ -23,6 +23,7 @@ Design docs live in `docs/`. Start with `docs/README.md` and
 | Exact-identity / verified-alias mapping (fail closed) | done |
 | Synthetic directed hierarchy / active path / failure domain | done |
 | Synthetic operational context | done |
+| Synthetic operator-feedback ground-truth fixture | done, synthetic-only |
 | System pair metadata (explicit + deterministic generator) | done |
 | History / evolution sequences via manifest + step mode | done |
 | Kafka chunk + completion-barrier producer | done |
@@ -70,6 +71,15 @@ nocpro-mock build-sequences
 nocpro-mock run-sequence docs/examples/synthetic/history_positive_lift
 nocpro-mock run-sequence docs/examples/synthetic/evolution_split_merge
 ```
+
+## Synthetic operator feedback
+
+`docs/examples/synthetic/operator_feedback/feedback.json` is a typed mock of
+operator acceptance/rejection labels for the existing REMOVE/MOVE/MERGE
+fixtures.  It exercises future empirical-evaluation plumbing, but it is
+explicitly `SYNTHETIC_TEST` and
+`eligible_as_production_ground_truth=false`; it must never calibrate or validate
+production recommendations.
 
 Kafka publication serializes canonical JSON, calculates the whole-snapshot
 SHA-256 checksum, compresses it once with zstd, then emits idempotent
@@ -137,6 +147,10 @@ topoIP           201,977 rows / 16 columns, SITE_ROUTER source 90.3860%
   and cycle/reference badges; the primary path is not ownership semantics.
 - Real IT source relations do not enable `Dep_upstream`, ancestor, dominator,
   propagation, scope-overlap, or any other P2 dependency capability.
+- Every topology-navigation response carries a first-class profile capability
+  artifact. `ALARM_ONLY` is unavailable; IP exposes only undirected adjacency;
+  IT exposes directed source relations with `dependency_semantics=UNVERIFIED`.
+  `alarm_resource_mapping` is `UNAVAILABLE` for both real topology sources.
 - Alarm-to-IT-resource mapping is still `UNAVAILABLE` until a source-backed,
   exact and unambiguous mapping contract is supplied; names and prefixes are
   never used as a heuristic bridge.

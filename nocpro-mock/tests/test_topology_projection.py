@@ -80,6 +80,8 @@ def test_alarm_only_profile_is_explicitly_unavailable() -> None:
     payload = projection_payload("ALARM_ONLY")
     assert payload["status"] == "UNAVAILABLE"
     assert payload["reason"] == "TOPOLOGY_NOT_PROVIDED_BY_DATASET_PROFILE"
+    assert payload["dataset_profile"] == "ALARM_ONLY"
+    assert payload["topology"] == {"availability": "UNAVAILABLE"}
 
 
 def test_it_profile_payload_keeps_source_relation_boundary(tmp_path) -> None:
@@ -89,6 +91,13 @@ def test_it_profile_payload_keeps_source_relation_boundary(tmp_path) -> None:
     assert payload["status"] == "AVAILABLE"
     assert payload["direction_kind"] == "SOURCE_RELATION"
     assert payload["dependency_semantics"] == "UNVERIFIED"
+    assert payload["topology"] == {
+        "availability": "AVAILABLE",
+        "relation_model": "DIRECTED_SOURCE_RELATIONS",
+        "direction_kind": "SOURCE_RELATION",
+        "dependency_semantics": "UNVERIFIED",
+        "alarm_resource_mapping": "UNAVAILABLE",
+    }
 
 
 def test_cli_emits_alarm_only_unavailable_payload() -> None:
@@ -114,6 +123,13 @@ def test_adjacency_projection_deduplicates_repeated_endpoint_pairs(monkeypatch, 
     payload = topology_api.projection_payload("IP_NETWORK", source_root=tmp_path, max_depth=1)
     assert [child["resource_id"] for child in payload["tree"]["children"]] == ["B"]
     assert payload["source_version"].startswith("sha256:")
+    assert payload["topology"] == {
+        "availability": "AVAILABLE",
+        "relation_model": "UNDIRECTED_ADJACENCY",
+        "direction_kind": "NONE",
+        "dependency_semantics": "UNAVAILABLE",
+        "alarm_resource_mapping": "UNAVAILABLE",
+    }
 
 
 def test_projection_reuses_cached_graph_until_source_signature_changes(monkeypatch, tmp_path) -> None:

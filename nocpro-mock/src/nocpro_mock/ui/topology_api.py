@@ -35,6 +35,29 @@ def _path(profile: DatasetProfile, root: Path) -> Path | None:
     return root / profile.topology_path if profile.topology_path else None
 
 
+def _capability_artifact(profile: DatasetProfile, *, topology_available: bool) -> dict[str, str]:
+    """Describe this profile's topology boundary without deriving it from a path.
+
+    The artifact is deliberately independent of the navigation projection.  In
+    particular, a directed *source* relation is not operational dependency
+    evidence and an available raw topology never establishes an alarm mapping.
+    """
+    if not topology_available:
+        return {"availability": "UNAVAILABLE"}
+    if profile.profile_id == "IT_SERVICES":
+        dependency_semantics = "UNVERIFIED"
+    else:
+        # IP rows state adjacency only; they do not provide dependency meaning.
+        dependency_semantics = "UNAVAILABLE"
+    return {
+        "availability": "AVAILABLE",
+        "relation_model": profile.topology_kind,
+        "direction_kind": profile.direction_kind or "NONE",
+        "dependency_semantics": dependency_semantics,
+        "alarm_resource_mapping": "UNAVAILABLE",
+    }
+
+
 def _content_version(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as fh:
@@ -100,23 +123,29 @@ def projection_payload(
             "status": "UNAVAILABLE",
             "reason": "TOPOLOGY_NOT_PROVIDED_BY_DATASET_PROFILE",
             "profile": profile.profile_id,
+            "dataset_profile": profile.profile_id,
             "topology_kind": profile.topology_kind,
+            "topology": _capability_artifact(profile, topology_available=False),
         }
     if not topology_path.exists():
         return {
             "status": "UNAVAILABLE",
             "reason": "TOPOLOGY_SOURCE_FILE_MISSING",
             "profile": profile.profile_id,
+            "dataset_profile": profile.profile_id,
             "topology_kind": profile.topology_kind,
+            "topology": _capability_artifact(profile, topology_available=False),
             "topology_path": str(topology_path),
         }
     projection = _build_projection(profile, topology_path, root_id, max_depth, max_children)
     return {
         "status": "AVAILABLE",
         "profile": profile.profile_id,
+        "dataset_profile": profile.profile_id,
         "topology_kind": profile.topology_kind,
         "direction_kind": projection.direction_kind,
         "dependency_semantics": projection.dependency_semantics,
+        "topology": _capability_artifact(profile, topology_available=True),
         "semantic_notice": projection.semantic_notice,
         "source_version": projection.source_version,
         "tree": asdict(projection.root),
