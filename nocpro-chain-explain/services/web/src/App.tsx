@@ -1,20 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Component, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from 'react'
 
 import { api, ApiError } from './api'
-import { compactTime, duration, humanize, percent } from './format'
+import { duration, humanize, percent } from './format'
 import { TopologyHypotheses } from './TopologyHypotheses'
 import { EvidenceAttribution } from './EvidenceAttribution'
 import { CounterfactualReview } from './CounterfactualReview'
 import { EvolutionPanel } from './EvolutionPanel'
+import { ChainTree } from './ChainTree'
 import type { ChainAnalysis, ChainList, Job, Member, PairEvidence, PairWhy } from './types'
 import './App.css'
 
-type Tab = 'why' | 'members' | 'structure' | 'review' | 'evolution'
+type Tab = 'tree' | 'members' | 'why' | 'structure' | 'review' | 'evolution'
 type EvidenceLayer = 'ALL' | PairEvidence['provenance_class']
 
 const tabs: Array<{ id: Tab; label: string; eyebrow: string }> = [
-  { id: 'why', label: 'Why grouped', eyebrow: 'Tier 1B' },
-  { id: 'members', label: 'Members', eyebrow: 'Role map' },
+  { id: 'tree', label: 'Chain Tree', eyebrow: 'Hierarchy' },
+  { id: 'members', label: 'All Alarms', eyebrow: 'Table' },
+  { id: 'why', label: 'Why Grouped', eyebrow: 'Tier 1B' },
   { id: 'structure', label: 'Structure', eyebrow: 'Tier 2' },
   { id: 'review', label: 'Review', eyebrow: 'What-if' },
   { id: 'evolution', label: 'Evolution', eyebrow: 'Snapshots' },
@@ -47,6 +49,42 @@ function statusTone(value: string) {
 
 function Pill({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: string }) {
   return <span className={`pill pill--${tone}`}>{children}</span>
+}
+
+class ErrorBoundary extends Component<{ children: ReactNode; fallbackTitle?: string }, { hasError: boolean; error: Error | null }> {
+  constructor(props: { children: ReactNode; fallbackTitle?: string }) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('UI Render Error caught by boundary:', error, errorInfo)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <section className="error-banner" style={{ margin: '1rem 0' }}>
+          <strong>{this.props.fallbackTitle ?? 'An error occurred while rendering this section.'}</strong>
+          <p style={{ margin: '0.5rem 0 0', fontSize: '0.75rem', fontFamily: 'var(--mono)' }}>
+            {this.state.error?.message ?? 'Unknown rendering error'}
+          </p>
+          <button
+            className="primary-action"
+            style={{ marginTop: '0.75rem', padding: '0.4rem 0.8rem', minHeight: 'auto' }}
+            onClick={() => this.setState({ hasError: false, error: null })}
+          >
+            Retry
+          </button>
+        </section>
+      )
+    }
+    return this.props.children
+  }
 }
 
 function EmptyWorkspace({ apiStatus, loading, error, onUpload }: {
@@ -82,70 +120,162 @@ function EmptyWorkspace({ apiStatus, loading, error, onUpload }: {
   )
 }
 
-function Timeline({ members, selected, onSelect }: { members: Member[]; selected: string[]; onSelect: (member: Member) => void }) {
-  const shown = members.slice(0, 18)
+function MemberInspectorCard({
+  member,
+  onClose,
+  onToggleCompare,
+  isCompared,
+}: {
+  member: Member
+  onClose: () => void
+  onToggleCompare: () => void
+  isCompared: boolean
+}) {
   return (
-    <section className="timeline-card" aria-label="Bounded member timeline">
-      <header className="section-heading">
-        <div><p className="kicker">Bounded visualization</p><h2>Alarm sequence</h2></div>
-        <span>{shown.length} / {members.length} members</span>
-      </header>
-      <div className="timeline-track">
-        {shown.map((member, index) => (
-          <button key={member.alarm_id} className={`timeline-node timeline-node--${member.role.toLowerCase()} ${selected.includes(member.alarm_id) ? 'is-selected' : ''}`} onClick={() => onSelect(member)} aria-pressed={selected.includes(member.alarm_id)} title={`${member.alarm_name ?? member.alarm_id} · ${member.role}`}>
-            <span className="node-index">{String(index + 1).padStart(2, '0')}</span>
-            <span className="node-name">{member.alarm_name ?? member.alarm_id}</span>
-            <span className="node-time">{compactTime(member.canonical_start_time)}</span>
-          </button>
-        ))}
+    <aside className="evidence-rail member-inspector-rail" aria-label="Alarm Details">
+      <div className="rail-top-bar">
+        <div>
+          <p className="kicker">Selected Alarm</p>
+          <h2 style={{ fontSize: '1.1rem' }}>{member.alarm_name || member.alarm_id}</h2>
+        </div>
+        <button type="button" className="close-rail-btn" onClick={onClose} aria-label="Close inspector">
+          ×
+        </button>
       </div>
-      {members.length > shown.length && <p className="bounded-note">Pair materialization remains bounded. Use the member table for all {members.length} alarms.</p>}
-    </section>
+
+      <div className="inspector-meta-row">
+        <Pill tone={statusTone(member.role)}>{member.role}</Pill>
+        {member.device_code && <Pill>{member.device_code}</Pill>}
+        {member.node_reference && <Pill>{member.node_reference}</Pill>}
+      </div>
+
+      <div className="system-card" style={{ marginTop: '0.8rem' }}>
+        <span>Alarm Identifier</span>
+        <strong style={{ fontFamily: 'var(--mono)', fontSize: '0.9rem' }}>{member.alarm_id}</strong>
+        {member.canonical_start_time && (
+          <small>Event Start: {member.canonical_start_time}</small>
+        )}
+      </div>
+
+      <dl className="mini-grid" style={{ margin: '0.8rem 0' }}>
+        <div>
+          <dt>membership support</dt>
+          <dd>{percent(member.membership_support)}</dd>
+        </div>
+        <div>
+          <dt>availability coverage</dt>
+          <dd>{percent(member.availability_coverage)}</dd>
+        </div>
+        <div>
+          <dt>computable groups</dt>
+          <dd>{member.computable_groups}</dd>
+        </div>
+        <div>
+          <dt>representativeness</dt>
+          <dd>{member.representativeness != null ? percent(member.representativeness) : '—'}</dd>
+        </div>
+      </dl>
+
+      {member.failure_domains && member.failure_domains.length > 0 && (
+        <div className="inspector-block">
+          <span className="kicker" style={{ fontSize: '0.65rem' }}>Failure Domains</span>
+          <div className="tag-list">
+            {member.failure_domains.map((fd) => (
+              <span key={fd} className="pill pill--neutral" style={{ fontSize: '0.72rem' }}>{fd}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {member.group_fits && member.group_fits.length > 0 && (
+        <div className="inspector-block" style={{ marginTop: '0.75rem' }}>
+          <span className="kicker" style={{ fontSize: '0.65rem' }}>Group Fit</span>
+          <div className="group-fit-table">
+            {member.group_fits.map((gf, idx) => (
+              <div key={idx} className="group-fit-row">
+                <span>{gf.derivation_tag}</span>
+                <strong>{gf.fit != null ? percent(gf.fit) : '⊥'}</strong>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <button
+        type="button"
+        className={`primary-action ${isCompared ? 'inspector-btn-active' : ''}`}
+        onClick={onToggleCompare}
+        style={{ marginTop: '1rem', width: '100%' }}
+      >
+        {isCompared ? '✓ Selected for Pair WHY' : '+ Compare with Another Alarm'}
+      </button>
+    </aside>
   )
 }
 
-function PairEvidenceRail({ analysis, selected, pair, loading, layer }: {
-  analysis: ChainAnalysis
+function PairEvidenceRail({ selected, pair, loading, layer, onClose, onClear }: {
   selected: string[]
   pair: PairWhy | null
   loading: boolean
   layer: EvidenceLayer
+  onClose: () => void
+  onClear: () => void
 }) {
   const visible = pair?.evidence.filter((item) => layer === 'ALL' || item.provenance_class === layer) ?? []
-  if (selected.length < 2) {
-    return (
-      <aside className="evidence-rail">
-        <p className="kicker">Pair WHY · on demand</p>
-        <h2>Select two alarms</h2>
-        <p className="rail-intro">Choose two nodes or table rows. No dense pair graph is built in Tier‑1B.</p>
-        <div className="evidence-placeholder"><span>01</span><i /><span>02</span></div>
-        <div className="system-card"><span>Analysis mode</span><strong>{analysis.graybox.mode}</strong><small>{analysis.graybox.pair_facts} supplied pair facts</small></div>
-      </aside>
-    )
-  }
+
   return (
-    <aside className="evidence-rail">
-      <p className="kicker">Pair WHY · {selected[0]} ↔ {selected[1]}</p>
-      <h2>{loading ? 'Evaluating evidence…' : `${visible.length} evidence channels`}</h2>
-      {pair && <div className="system-card"><span>System fact</span><strong>{pair.system_fact.status}</strong><small>{pair.system_fact.semantic ?? 'No pair semantic supplied'}</small></div>}
+    <aside className="evidence-rail" aria-label="Pair Evidence Rail">
+      <div className="rail-top-bar">
+        <div>
+          <p className="kicker">Pair WHY Comparison</p>
+          <h2 style={{ fontSize: '1rem' }}>{selected[0]} ↔ {selected[1]}</h2>
+        </div>
+        <div className="rail-top-actions">
+          <button type="button" className="text-action-btn" onClick={onClear}>Clear</button>
+          <button type="button" className="close-rail-btn" onClick={onClose} aria-label="Close pair comparison">×</button>
+        </div>
+      </div>
+
+      <div className="system-card" style={{ margin: '0.75rem 0' }}>
+        <span>System Fact Assessment</span>
+        <strong>{pair?.system_fact.status ?? 'EVALUATING'}</strong>
+        <small>{pair?.system_fact.semantic ?? 'Evaluating pair relationship…'}</small>
+      </div>
+
+      <div className="rail-evidence-subheading">
+        <span className="kicker" style={{ margin: 0 }}>
+          {loading ? 'Evaluating evidence…' : `${visible.length} evidence channels`}
+        </span>
+      </div>
+
       <div className="evidence-list">
         {visible.map((item, index) => (
           <article className="evidence-item" key={`${item.provider_id ?? item.channel_family}-${index}`}>
             <div className="evidence-spine"><span>{String(index + 1).padStart(2, '0')}</span></div>
             <div>
-              <div className="evidence-title"><strong>{item.channel_family}</strong><Pill tone={statusTone(item.state)}>{item.state}</Pill></div>
+              <div className="evidence-title">
+                <strong>{item.channel_family}</strong>
+                <Pill tone={statusTone(item.state)}>{item.state}</Pill>
+              </div>
               {item.dependency_semantic && <p>{humanize(item.dependency_semantic)}</p>}
-              <dl className="mini-grid"><div><dt>score</dt><dd>{percent(item.score)}</dd></div><div><dt>{item.threshold == null ? 'support gate' : 'threshold'}</dt><dd>{item.threshold == null ? 'strictly positive' : percent(item.threshold)}</dd></div></dl>
+              <dl className="mini-grid">
+                <div><dt>score</dt><dd>{percent(item.score)}</dd></div>
+                <div><dt>{item.threshold == null ? 'support gate' : 'threshold'}</dt><dd>{item.threshold == null ? 'strictly positive' : percent(item.threshold)}</dd></div>
+              </dl>
               <small>{item.derivation_tag}</small>
-              {item.channel_family === 'H' && item.evidence_metadata && <small>history model · {String(item.evidence_metadata.history_model_id ?? 'UNAVAILABLE')} · cutoff {String(item.evidence_metadata.training_cutoff ?? 'UNAVAILABLE')} · level {String(item.evidence_metadata.resolved_level ?? 'UNAVAILABLE')}</small>}
-              {item.channel_family === 'T_delay' && item.evidence_metadata && <small>historical temporal pattern · {String(item.evidence_metadata.direction ?? 'UNAVAILABLE')} · observed {String(item.evidence_metadata.delay_seconds ?? 'UNAVAILABLE')}s · {String(item.evidence_metadata.estimator ?? 'UNAVAILABLE')} · episodes {String(item.evidence_metadata.episode_sample_count ?? 'UNAVAILABLE')}</small>}
-              {(item.source_id || item.source_version) && <small>topology source · {item.source_id ?? 'UNAVAILABLE'} @ {item.source_version ?? 'UNAVAILABLE'}</small>}
-              {(item.scenario_id || item.generator_version) && <small>synthetic generation · {item.scenario_id ?? 'UNAVAILABLE'} · {item.generator_version ?? 'UNAVAILABLE'}</small>}
+              {item.channel_family === 'H' && item.evidence_metadata && (
+                <small>history model · {String(item.evidence_metadata.history_model_id ?? 'UNAVAILABLE')}</small>
+              )}
+              {item.channel_family === 'T_delay' && item.evidence_metadata && (
+                <small>observed delay {String(item.evidence_metadata.delay_seconds ?? 'UNAVAILABLE')}s</small>
+              )}
               {item.detail && <p className="evidence-detail">{item.detail}</p>}
             </div>
           </article>
         ))}
-        {!loading && pair && visible.length === 0 && <p className="rail-intro">No channel belongs to this evidence layer.</p>}
+        {!loading && pair && visible.length === 0 && (
+          <p className="rail-intro">No channel belongs to this evidence layer.</p>
+        )}
       </div>
     </aside>
   )
@@ -178,19 +308,60 @@ function WhyPanel({ analysis }: { analysis: ChainAnalysis }) {
   )
 }
 
-function MemberTable({ members, selected, onSelect }: { members: Member[]; selected: string[]; onSelect: (member: Member) => void }) {
+function MemberTable({ members, selected, onSelect, onInspect }: {
+  members: Member[]
+  selected: string[]
+  onSelect: (member: Member) => void
+  onInspect: (member: Member) => void
+}) {
   return (
     <section className="table-card">
-      <header className="section-heading"><div><p className="kicker">All alarms</p><h2>Member diagnostics</h2></div><span>Select two for pair WHY</span></header>
+      <header className="section-heading">
+        <div><p className="kicker">Tabular list</p><h2>Member diagnostics</h2></div>
+        <span>Click row to inspect · Check to compare</span>
+      </header>
       <div className="member-table" role="table">
-        <div className="table-row table-head" role="row"><span>ID / alarm</span><span>device</span><span>role</span><span>support</span><span>coverage</span><span>groups</span></div>
-        {members.map((member) => (
-          <button className={`table-row ${selected.includes(member.alarm_id) ? 'is-selected' : ''}`} role="row" key={member.alarm_id} onClick={() => onSelect(member)}>
-            <span><strong>{member.alarm_id}</strong><small>{member.alarm_name ?? 'unnamed alarm'}</small></span>
-            <span>{member.device_code ?? '⊥'}<small>{member.node_reference ?? 'unmapped'}</small></span>
-            <span><Pill tone={statusTone(member.role)}>{member.role}</Pill></span><span>{percent(member.membership_support)}</span><span>{percent(member.availability_coverage)}</span><span>{member.computable_groups}</span>
-          </button>
-        ))}
+        <div className="table-row table-head" role="row">
+          <span>Compare</span>
+          <span>ID / alarm</span>
+          <span>device</span>
+          <span>role</span>
+          <span>support</span>
+          <span>coverage</span>
+          <span>groups</span>
+        </div>
+        {members.map((member) => {
+          const isSelected = selected.includes(member.alarm_id)
+          return (
+            <div
+              className={`table-row ${isSelected ? 'is-selected' : ''}`}
+              role="row"
+              key={member.alarm_id}
+              onClick={() => onInspect(member)}
+              style={{ cursor: 'pointer' }}
+            >
+              <span>
+                <button
+                  type="button"
+                  className={`node-compare-btn ${isSelected ? 'is-active' : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onSelect(member)
+                  }}
+                  style={{ minWidth: '60px' }}
+                >
+                  {isSelected ? '✓' : '+'}
+                </button>
+              </span>
+              <span><strong>{member.alarm_id}</strong><small>{member.alarm_name ?? 'unnamed alarm'}</small></span>
+              <span>{member.device_code ?? '⊥'}<small>{member.node_reference ?? 'unmapped'}</small></span>
+              <span><Pill tone={statusTone(member.role)}>{member.role}</Pill></span>
+              <span>{percent(member.membership_support)}</span>
+              <span>{percent(member.availability_coverage)}</span>
+              <span>{member.computable_groups}</span>
+            </div>
+          )
+        })}
       </div>
     </section>
   )
@@ -209,10 +380,12 @@ function StructurePanel({ job, onRun, submitting }: { job: Job | null; onRun: ()
           <p>{result.structural_audit.reason}</p>
           <dl className="metric-row"><div><dt>best cut</dt><dd>{result.structural_audit.best_cut_label ?? 'none'}</dd></div><div><dt>conductance</dt><dd>{result.structural_audit.best_cut_phi?.toFixed(3) ?? '⊥'}</dd></div><div><dt>over-merge</dt><dd>{humanize(result.over_merge_strength)}</dd></div></dl>
           <p className="audit-narrative">{result.over_merge_narrative}</p>
-          <EvidenceAttribution
-            result={result.evidence_attribution}
-            evaluation={result.evidence_attribution_evaluation}
-          />
+          {result.evidence_attribution && (
+            <EvidenceAttribution
+              result={result.evidence_attribution}
+              evaluation={result.evidence_attribution_evaluation}
+            />
+          )}
           <section className="similar-results" aria-label="Similar chains">
             <header><div><p className="kicker">Different incidents</p><h3>Similar chains</h3></div><Pill tone={statusTone(result.similarity_status)}>{result.similarity_status}</Pill></header>
             {result.similarity_status === 'UNAVAILABLE' ? (
@@ -252,9 +425,10 @@ function App() {
   const [loadingSnapshot, setLoadingSnapshot] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [tab, setTab] = useState<Tab>('why')
+  const [tab, setTab] = useState<Tab>('tree')
   const [layer, setLayer] = useState<EvidenceLayer>('ALL')
   const [selectedMembers, setSelectedMembers] = useState<string[]>([])
+  const [inspectMember, setInspectMember] = useState<Member | null>(null)
   const [pairWhy, setPairWhy] = useState<PairWhy | null>(null)
   const [job, setJob] = useState<Job | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -328,6 +502,7 @@ function App() {
       setChainList(chains)
       setChainId(chains.chains[0]?.chain_id ?? '')
       setSelectedMembers([])
+      setInspectMember(null)
       setPairWhy(null)
       setJob(null)
       setApiStatus('online')
@@ -338,12 +513,16 @@ function App() {
     }
   }
 
-  function selectMember(member: Member) {
+  function toggleSelectMember(member: Member) {
     setSelectedMembers((current) => {
       if (current.includes(member.alarm_id)) return current.filter((id) => id !== member.alarm_id)
       if (current.length >= 2) return [current[1], member.alarm_id]
       return [...current, member.alarm_id]
     })
+  }
+
+  function handleInspectMember(member: Member) {
+    setInspectMember((prev) => (prev?.alarm_id === member.alarm_id ? null : member))
   }
 
   async function runDeepDive() {
@@ -369,48 +548,206 @@ function App() {
   const visiblePair = pairMatchesSelection ? pairWhy : null
   const visibleJob = job?.chain_id === chainId ? job : null
 
+  // Determine whether inspector side panel is visible
+  const isPairActive = selectedMembers.length === 2
+  const showSidePanel = isPairActive || inspectMember !== null
+
   return (
     <div className="app-shell">
+      {/* Clean, Modern Top Bar */}
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="NocPro Chain Explain home"><span><Icon name="pulse" /></span><strong>NocPro</strong><i>Chain Explain</i></a>
-        <div className="snapshot-chip"><span className="connection-dot connection-dot--online" />snapshot <strong>{chainList.snapshot_id}</strong></div>
-        <label className="chain-search"><Icon name="search" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter chains" aria-label="Filter chains" /></label>
-        <select value={chainId} onChange={(event) => {
-          setSelectedMembers([])
-          setPairWhy(null)
-          setJob(null)
-          setError(null)
-          setChainId(event.target.value)
-        }} aria-label="Select alarm chain">{filteredChains.map((chain) => <option value={chain.chain_id} key={chain.chain_id}>{chain.chain_id} · {chain.member_count} alarms</option>)}</select>
-        <label className="upload-compact"><input type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadSnapshot(file); event.target.value = '' }} /><Icon name="upload" /><span>Replace</span></label>
+        <a className="brand" href="#top" aria-label="NocPro Chain Explain home">
+          <span><Icon name="pulse" /></span>
+          <strong>NocPro</strong>
+          <i>Chain Explain</i>
+        </a>
+
+        <div className="topbar-center">
+          <div className="chain-selector-pill">
+            <label className="chain-search" title="Filter chains list">
+              <Icon name="search" />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter…" aria-label="Filter chains" />
+            </label>
+            <select
+              value={chainId}
+              onChange={(event) => {
+                setSelectedMembers([])
+                setInspectMember(null)
+                setPairWhy(null)
+                setJob(null)
+                setError(null)
+                setChainId(event.target.value)
+              }}
+              aria-label="Select alarm chain"
+            >
+              {filteredChains.map((chain) => (
+                <option value={chain.chain_id} key={chain.chain_id}>
+                  {chain.chain_id} · {chain.member_count} alarms ({chain.title})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="topbar-actions">
+          <div className="snapshot-chip">
+            <span className="connection-dot connection-dot--online" />
+            <span>{chainList.snapshot_id}</span>
+          </div>
+          <label className="upload-compact" title="Load another snapshot JSON file">
+            <input
+              type="file"
+              accept="application/json,.json"
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                if (file) void uploadSnapshot(file)
+                event.target.value = ''
+              }}
+            />
+            <Icon name="upload" />
+            <span>Load JSON</span>
+          </label>
+        </div>
       </header>
 
+      {/* Clean Tab Bar */}
       <nav className="tabbar" aria-label="Analysis views">
-        {tabs.map((item) => <button key={item.id} className={tab === item.id ? 'is-active' : ''} onClick={() => setTab(item.id)}><small>{item.eyebrow}</small>{item.label}</button>)}
-        <div className="layer-switcher"><label htmlFor="layer">Evidence layer</label><select id="layer" value={layer} onChange={(event) => setLayer(event.target.value as EvidenceLayer)}>{evidenceLayers.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}</select></div>
+        <div className="tabbar-items">
+          {tabs.map((item) => (
+            <button
+              key={item.id}
+              className={`tab-btn-item ${tab === item.id ? 'is-active' : ''}`}
+              onClick={() => setTab(item.id)}
+            >
+              <small>{item.eyebrow}</small>
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="layer-switcher">
+          <label htmlFor="layer">Evidence</label>
+          <select id="layer" value={layer} onChange={(event) => setLayer(event.target.value as EvidenceLayer)}>
+            {evidenceLayers.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}
+          </select>
+        </div>
       </nav>
 
-      {error && <div className="error-banner workspace-error" role="alert">{error}<button onClick={() => setError(null)} aria-label="Dismiss error">×</button></div>}
-      {!analysis || analysis.chain_id !== chainId ? <main className="loading-state"><span /><p>Computing exact indexed statistics…</p></main> : (
+      {/* Comparison floating hint if 1 member selected */}
+      {selectedMembers.length === 1 && (
+        <aside className="comparison-hint-banner" aria-label="Pair selection status">
+          <span>
+            Selected <strong>{selectedMembers[0]}</strong>. Click <code>+ Compare</code> on another alarm in the tree to view Pair WHY.
+          </span>
+          <button type="button" className="text-action-btn" onClick={() => setSelectedMembers([])}>
+            Cancel selection
+          </button>
+        </aside>
+      )}
+
+      {error && (
+        <div className="error-banner workspace-error" role="alert">
+          {error}
+          <button onClick={() => setError(null)} aria-label="Dismiss error">×</button>
+        </div>
+      )}
+
+      {!analysis || analysis.chain_id !== chainId ? (
+        <main className="loading-state">
+          <span />
+          <p>Computing exact indexed statistics…</p>
+        </main>
+      ) : (
         <main className="workspace" id="top">
-          <section className="chain-hero">
-            <div><p className="kicker">Chain {analysis.chain_id}</p><h1>{analysis.title}</h1><p>{analysis.member_count} alarms · {analysis.singleton ? 'singleton path' : 'multi-member chain'} · {analysis.graybox.mode}</p></div>
-            <div className="hero-metrics"><div><span>statistics</span><strong>{humanize(analysis.statistics_mode)}</strong></div><div><span>pair detail</span><strong>{humanize(analysis.pair_materialization)}</strong></div><div><span>Tier‑1B</span><strong>{duration(Object.values(analysis.phase_durations).reduce((sum, value) => sum + value, 0))}</strong></div></div>
+          {/* Streamlined Chain Summary */}
+          <section className="chain-hero-compact">
+            <div className="chain-hero-info">
+              <div className="chain-hero-badges">
+                <span className="hero-id-tag">Chain {analysis.chain_id}</span>
+                <Pill tone={analysis.singleton ? 'muted' : 'positive'}>
+                  {analysis.member_count} {analysis.member_count === 1 ? 'alarm' : 'alarms'}
+                </Pill>
+                <Pill tone="neutral">{analysis.singleton ? 'Singleton' : 'Correlated Cluster'}</Pill>
+                <Pill tone="muted">{analysis.graybox.mode}</Pill>
+              </div>
+              <h1 className="chain-hero-title">{analysis.title}</h1>
+            </div>
+
+            <div className="chain-hero-kpis">
+              <div className="kpi-block">
+                <span>Total Duration</span>
+                <strong>{duration(Object.values(analysis.phase_durations).reduce((sum, value) => sum + value, 0))}</strong>
+              </div>
+              <div className="kpi-block">
+                <span>Statistical Mode</span>
+                <strong>{humanize(analysis.statistics_mode)}</strong>
+              </div>
+              <div className="kpi-block">
+                <span>Active Basis</span>
+                <strong>{humanize(analysis.pair_materialization)}</strong>
+              </div>
+            </div>
           </section>
 
-          <div className="workspace-grid">
-            <div className="primary-column">
-              <Timeline members={analysis.members} selected={selectedMembers} onSelect={selectMember} />
-              {tab === 'why' && <WhyPanel analysis={analysis} />}
-              {tab === 'members' && <MemberTable members={analysis.members} selected={selectedMembers} onSelect={selectMember} />}
-              {tab === 'structure' && <>
-                <StructurePanel job={visibleJob} onRun={() => void runDeepDive()} submitting={submitting} />
-                {visibleJob?.result && <TopologyHypotheses topology_hypotheses={visibleJob.result.topology_hypotheses} />}
-              </>}
-              {tab === 'review' && <CounterfactualReview key={chainId} chainId={chainId} />}
-              {tab === 'evolution' && <EvolutionPanel chainId={chainId} />}
+          {/* Main Layout Grid (Expands to full width when side panel is closed!) */}
+          <div className={`workspace-layout ${showSidePanel ? 'has-side-panel' : 'is-full-width'}`}>
+            <div className="main-content-column">
+              <ErrorBoundary fallbackTitle="Could not display tab contents">
+                {tab === 'tree' && (
+                  <ChainTree
+                    members={analysis.members}
+                    selectedMembers={selectedMembers}
+                    activeInspectId={inspectMember?.alarm_id}
+                    onSelectMember={toggleSelectMember}
+                    onInspectMember={handleInspectMember}
+                  />
+                )}
+                {tab === 'members' && (
+                  <MemberTable
+                    members={analysis.members}
+                    selected={selectedMembers}
+                    onSelect={toggleSelectMember}
+                    onInspect={handleInspectMember}
+                  />
+                )}
+                {tab === 'why' && <WhyPanel analysis={analysis} />}
+                {tab === 'structure' && (
+                  <>
+                    <StructurePanel job={visibleJob} onRun={() => void runDeepDive()} submitting={submitting} />
+                    {visibleJob?.result?.topology_hypotheses && (
+                      <TopologyHypotheses topology_hypotheses={visibleJob.result.topology_hypotheses} />
+                    )}
+                  </>
+                )}
+                {tab === 'review' && <CounterfactualReview key={chainId} chainId={chainId} />}
+                {tab === 'evolution' && <EvolutionPanel chainId={chainId} />}
+              </ErrorBoundary>
             </div>
-            <PairEvidenceRail analysis={analysis} selected={selectedMembers} pair={visiblePair} loading={selectedMembers.length === 2 && !pairMatchesSelection} layer={layer} />
+
+            {/* Sliding Context-Aware Inspector Side Panel */}
+            {showSidePanel && (
+              <div className="side-inspector-drawer">
+                {isPairActive ? (
+                  <PairEvidenceRail
+                    selected={selectedMembers}
+                    pair={visiblePair}
+                    loading={selectedMembers.length === 2 && !pairMatchesSelection}
+                    layer={layer}
+                    onClose={() => setSelectedMembers([])}
+                    onClear={() => setSelectedMembers([])}
+                  />
+                ) : (
+                  inspectMember && (
+                    <MemberInspectorCard
+                      member={inspectMember}
+                      onClose={() => setInspectMember(null)}
+                      onToggleCompare={() => toggleSelectMember(inspectMember)}
+                      isCompared={selectedMembers.includes(inspectMember.alarm_id)}
+                    />
+                  )
+                )}
+              </div>
+            )}
           </div>
         </main>
       )}

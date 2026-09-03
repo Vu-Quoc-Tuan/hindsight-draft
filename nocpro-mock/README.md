@@ -63,6 +63,9 @@ nocpro-mock replay \
 nocpro-mock build-sequences
 nocpro-mock run-sequence docs/examples/synthetic/history_positive_lift
 nocpro-mock run-sequence docs/examples/synthetic/evolution_split_merge
+
+# Launch the interactive Web UI with explicit 'Push to Kafka' button
+nocpro-mock ui --port 8085
 ```
 
 Kafka publication serializes canonical JSON, calculates the whole-snapshot

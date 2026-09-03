@@ -1,0 +1,2240 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Trình trực quan hóa toàn diện Topology NOC Pro: Giải thích chi tiết lý do kết nối giữa các Instance, Topo IT đa tầng dịch vụ và Topo Mạng truyền dẫn IP">
+  <title>NOC Pro — Interactive Topology & Instance Connection Explorer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #0a0d14;
+      --bg-surface: #101622;
+      --bg-card: rgba(20, 27, 43, 0.85);
+      --bg-card-hover: rgba(28, 38, 59, 0.95);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-accent: rgba(56, 189, 248, 0.3);
+      --text-primary: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      
+      --color-critical: #ef4444;
+      --color-critical-glow: rgba(239, 68, 68, 0.35);
+      --color-warning: #f59e0b;
+      --color-warning-glow: rgba(245, 158, 11, 0.3);
+      --color-healthy: #10b981;
+      --color-healthy-glow: rgba(16, 185, 129, 0.25);
+      --color-info: #38bdf8;
+      --color-info-glow: rgba(56, 189, 248, 0.25);
+      --color-gold: #fbbf24;
+      --color-purple: #a855f7;
+      
+      --sidebar-width: 420px;
+      --header-height: 64px;
+      --font-main: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-main);
+      background-color: var(--bg-base);
+      color: var(--text-primary);
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+    }
+
+    /* HEADER */
+    header {
+      height: var(--header-height);
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      z-index: 50;
+      backdrop-filter: blur(12px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-logo {
+      width: 38px;
+      height: 38px;
+      background: linear-gradient(135deg, #0284c7, #6366f1);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
+    }
+
+    .brand-title h1 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      background: linear-gradient(to right, #fff, #93c5fd);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-title p {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+
+    /* TABS */
+    .nav-tabs {
+      display: flex;
+      gap: 6px;
+      background: rgba(0, 0, 0, 0.4);
+      padding: 4px;
+      border-radius: 10px;
+      border: 1px solid var(--border-subtle);
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      padding: 8px 18px;
+      border-radius: 7px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .tab-btn.active {
+      color: #fff;
+      background: #2563eb;
+      box-shadow: 0 0 16px rgba(37, 99, 235, 0.5);
+    }
+
+    /* CONTROLS IN HEADER */
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .action-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-primary);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+
+    .action-btn:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--color-info);
+      box-shadow: 0 0 12px var(--color-info-glow);
+    }
+
+    .action-btn.active {
+      background: rgba(56, 189, 248, 0.2);
+      border-color: var(--color-info);
+      color: var(--color-info);
+    }
+
+    .action-btn.danger {
+      background: rgba(239, 68, 68, 0.15);
+      border-color: var(--color-critical);
+      color: #fca5a5;
+    }
+
+    .action-btn.danger:hover {
+      background: rgba(239, 68, 68, 0.3);
+      box-shadow: 0 0 16px var(--color-critical-glow);
+    }
+
+    /* MAIN CONTAINER */
+    .main-layout {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - var(--header-height));
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* CANVAS AREA */
+    .viewport {
+      flex: 1;
+      position: relative;
+      background: radial-gradient(circle at 50% 50%, #111827 0%, #090d16 100%);
+      overflow: hidden;
+      cursor: grab;
+    }
+
+    .viewport:active {
+      cursor: grabbing;
+    }
+
+    /* GRID BACKGROUND */
+    .grid-bg {
+      position: absolute;
+      inset: 0;
+      background-size: 40px 40px;
+      background-image: 
+        linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      pointer-events: none;
+    }
+
+    /* FLOATING TOOLBAR */
+    .floating-toolbar {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 6px;
+      display: flex;
+      gap: 6px;
+      z-index: 20;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    }
+
+    .tool-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .tool-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-primary);
+    }
+
+    /* LEGEND BADGES */
+    .topology-legend {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 12px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 20;
+      font-size: 0.8rem;
+    }
+
+    .legend-title {
+      font-weight: 700;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      font-size: 0.7rem;
+      letter-spacing: 0.05em;
+      margin-bottom: 2px;
+    }
+
+    .legend-items {
+      display: flex;
+      gap: 16px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .dot-critical { background: var(--color-critical); box-shadow: 0 0 10px var(--color-critical); }
+    .dot-warning { background: var(--color-warning); box-shadow: 0 0 8px var(--color-warning); }
+    .dot-healthy { background: var(--color-healthy); box-shadow: 0 0 8px var(--color-healthy); }
+    .dot-neutral { background: var(--text-muted); }
+
+    /* SVG CONTAINER FOR TOPOLOGY */
+    #topo-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* NODE STYLES */
+    .node-group {
+      cursor: pointer;
+      transition: transform 0.15s ease-out;
+    }
+
+    .node-group:hover {
+      filter: drop-shadow(0 0 14px rgba(56, 189, 248, 0.6));
+    }
+
+    .node-group.selected .node-card {
+      stroke: var(--color-gold) !important;
+      stroke-width: 2.5px !important;
+      filter: drop-shadow(0 0 16px rgba(251, 191, 36, 0.7));
+    }
+
+    .node-card {
+      rx: 12;
+      ry: 12;
+      transition: all 0.2s;
+    }
+
+    .node-title {
+      font-family: var(--font-main);
+      font-size: 12px;
+      font-weight: 600;
+      fill: #fff;
+    }
+
+    .node-sub {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      fill: #94a3b8;
+    }
+
+    .node-badge {
+      font-family: var(--font-main);
+      font-size: 9px;
+      font-weight: 700;
+      fill: #fff;
+    }
+
+    /* EDGES / LINKS */
+    .edge-hitbox {
+      stroke: transparent;
+      stroke-width: 16px;
+      cursor: pointer;
+      fill: none;
+    }
+
+    .edge-hitbox:hover + .edge-line {
+      stroke: var(--color-gold) !important;
+      stroke-width: 3.5px !important;
+      filter: drop-shadow(0 0 8px var(--color-gold));
+    }
+
+    .edge-line {
+      stroke-width: 2px;
+      transition: stroke 0.2s, stroke-width 0.2s;
+      pointer-events: none;
+    }
+
+    .edge-line.normal {
+      stroke: rgba(148, 163, 184, 0.3);
+    }
+
+    .edge-line.active-fault {
+      stroke: #ef4444;
+      stroke-width: 3px;
+      stroke-dasharray: 6, 6;
+      animation: dash 1s linear infinite;
+    }
+
+    .edge-line.selected {
+      stroke: var(--color-gold) !important;
+      stroke-width: 4px !important;
+      filter: drop-shadow(0 0 12px var(--color-gold));
+    }
+
+    .edge-label-tag {
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      font-weight: 600;
+      fill: #cbd5e1;
+      pointer-events: none;
+    }
+
+    .edge-label-bg {
+      fill: rgba(15, 23, 42, 0.85);
+      stroke: rgba(255, 255, 255, 0.1);
+      rx: 4;
+      ry: 4;
+    }
+
+    @keyframes dash {
+      to {
+        stroke-dashoffset: -24;
+      }
+    }
+
+    /* SIDEBAR / INSPECTOR */
+    .inspector-panel {
+      width: var(--sidebar-width);
+      background: var(--bg-surface);
+      border-left: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      z-index: 30;
+      box-shadow: -10px 0 30px rgba(0, 0, 0, 0.4);
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .inspector-panel.collapsed {
+      transform: translateX(100%);
+    }
+
+    .panel-header {
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .panel-header h2 {
+      font-size: 1rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .close-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 1.2rem;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+    }
+
+    .close-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-primary);
+    }
+
+    .panel-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .panel-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+
+    .panel-card.highlight {
+      border-color: rgba(251, 191, 36, 0.4);
+      background: rgba(251, 191, 36, 0.05);
+    }
+
+    .card-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .prop-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      font-size: 0.82rem;
+      gap: 12px;
+    }
+
+    .prop-row:last-child {
+      border-bottom: none;
+    }
+
+    .prop-name {
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .prop-val {
+      font-family: var(--font-mono);
+      color: var(--text-primary);
+      font-weight: 500;
+      text-align: right;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+
+    .badge.critical {
+      background: rgba(239, 68, 68, 0.2);
+      color: #fca5a5;
+      border: 1px solid rgba(239, 68, 68, 0.4);
+    }
+
+    .badge.warning {
+      background: rgba(245, 158, 11, 0.2);
+      color: #fcd34d;
+      border: 1px solid rgba(245, 158, 11, 0.4);
+    }
+
+    .badge.healthy {
+      background: rgba(16, 185, 129, 0.2);
+      color: #6ee7b7;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+
+    .badge.gold {
+      background: rgba(251, 191, 36, 0.2);
+      color: #fde68a;
+      border: 1px solid rgba(251, 191, 36, 0.4);
+    }
+
+    /* CONNECTION REASON BOX */
+    .reason-box {
+      background: rgba(0, 0, 0, 0.35);
+      border-left: 3px solid var(--color-gold);
+      padding: 10px 12px;
+      border-radius: 0 8px 8px 0;
+      margin-top: 6px;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      color: #e2e8f0;
+    }
+
+    .reason-box.danger {
+      border-left-color: var(--color-critical);
+      background: rgba(239, 68, 68, 0.08);
+      color: #fca5a5;
+    }
+
+    /* CONNECTED INSTANCE ITEM IN NODE INSPECTION */
+    .link-item {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .link-item:hover {
+      background: rgba(56, 189, 248, 0.1);
+      border-color: var(--color-info);
+    }
+
+    .link-item-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+
+    .link-item-title {
+      font-weight: 600;
+      font-size: 0.82rem;
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .link-item-proto {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      background: rgba(0, 0, 0, 0.4);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .link-item-reason {
+      font-size: 0.76rem;
+      color: var(--text-secondary);
+      line-height: 1.4;
+    }
+
+    /* SIMULATION BANNER */
+    .sim-banner {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid #38bdf8;
+      box-shadow: 0 0 25px rgba(56, 189, 248, 0.3);
+      backdrop-filter: blur(12px);
+      padding: 8px 24px;
+      border-radius: 30px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      z-index: 25;
+      font-size: 0.85rem;
+      animation: fadeInDown 0.3s ease;
+    }
+
+    @keyframes fadeInDown {
+      from { opacity: 0; transform: translate(-50%, -15px); }
+      to { opacity: 1; transform: translate(-50%, 0); }
+    }
+
+    .sim-banner .dot-pulse {
+      width: 10px;
+      height: 10px;
+      background: #ef4444;
+      border-radius: 50%;
+      box-shadow: 0 0 0 rgba(239, 68, 68, 0.7);
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+      70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+
+    /* TOOLTIP */
+    .topo-tooltip {
+      position: absolute;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-accent);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: #fff;
+      font-size: 0.78rem;
+      pointer-events: none;
+      z-index: 100;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+      display: none;
+      max-width: 320px;
+      line-height: 1.45;
+    }
+
+    .topo-tooltip strong {
+      display: block;
+      color: var(--color-info);
+      font-size: 0.85rem;
+      margin-bottom: 4px;
+    }
+
+    /* INSTRUCTION BANNER */
+    .hint-chip {
+      position: absolute;
+      top: 20px;
+      right: calc(var(--sidebar-width) + 20px);
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid var(--border-subtle);
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      z-index: 20;
+      backdrop-filter: blur(10px);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* SCROLLBAR */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div class="brand">
+      <div class="brand-logo">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M3 12h3m12 0h3M12 3v3m0 12v3"></path>
+          <path d="m5.6 5.6 2.1 2.1m8.6 8.6 2.1 2.1M5.6 18.4l2.1-2.1m8.6-8.6 2.1-2.1"></path>
+        </svg>
+      </div>
+      <div class="brand-title">
+        <h1>NOC Pro — Topology & Instance Connection Explorer</h1>
+        <p>Bản đồ trực quan hóa & lý do kết nối phụ thuộc giữa các Instance hệ thống</p>
+      </div>
+    </div>
+
+    <!-- TABS SELECTOR -->
+    <div class="nav-tabs" role="tablist">
+      <button class="tab-btn active" id="tab-topo-it" onclick="switchTopology('IT')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+          <line x1="8" y1="21" x2="16" y2="21"></line>
+          <line x1="12" y1="17" x2="12" y2="21"></line>
+        </svg>
+        Topo IT Đa tầng (VOFFICE 2.0)
+      </button>
+
+      <button class="tab-btn" id="tab-topo-ip" onclick="switchTopology('IP')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="2" width="6" height="6" rx="1"></rect>
+          <rect x="16" y="2" width="6" height="6" rx="1"></rect>
+          <rect x="9" y="16" width="6" height="6" rx="1"></rect>
+          <path d="M5 8v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"></path>
+          <line x1="12" y1="13" x2="12" y2="16"></line>
+        </svg>
+        Topo Mạng IP (Core / Agg / Site)
+      </button>
+
+      <button class="tab-btn" id="tab-topo-louvain" onclick="switchTopology('LOUVAIN')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="18" cy="5" r="3"></circle>
+          <circle cx="6" cy="12" r="3"></circle>
+          <circle cx="18" cy="19" r="3"></circle>
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+        </svg>
+        Cơ chế Gom nhóm Louvain Chaining
+      </button>
+    </div>
+
+    <!-- ACTIONS -->
+    <div class="header-actions">
+      <button class="action-btn" id="btn-toggle-labels" onclick="toggleEdgeLabels()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+          <line x1="7" y1="7" x2="7.01" y2="7"></line>
+        </svg>
+        Ẩn/Hiện Nhãn Kết Nối
+      </button>
+
+      <button class="action-btn danger" id="btn-simulate-cascade" onclick="toggleSimulation()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+        </svg>
+        Mô phỏng Lan truyền sự cố
+      </button>
+
+      <button class="action-btn" onclick="resetZoom()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+          <path d="M3 3v5h5"></path>
+        </svg>
+        Reset
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN WORKSPACE -->
+  <div class="main-layout">
+    
+    <!-- FLOATING TOOLBAR -->
+    <div class="floating-toolbar">
+      <button class="tool-btn" title="Phóng to" onclick="zoomIn()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          <line x1="11" y1="8" x2="11" y2="14"></line>
+          <line x1="8" y1="11" x2="14" y2="11"></line>
+        </svg>
+      </button>
+      <button class="tool-btn" title="Thu nhỏ" onclick="zoomOut()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          <line x1="8" y1="11" x2="14" y2="11"></line>
+        </svg>
+      </button>
+      <button class="tool-btn" title="Vừa màn hình" onclick="resetZoom()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+        </svg>
+      </button>
+    </div>
+
+    <!-- HINT CHIP -->
+    <div class="hint-chip">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="16" x2="12" y2="12"></line>
+        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+      </svg>
+      Mẹo: Click vào bất kỳ <strong>đường nối (dây liên kết)</strong> để xem lý do vì sao 2 instance nối với nhau!
+    </div>
+
+    <!-- SIMULATION BANNER -->
+    <div class="sim-banner" id="sim-banner" style="display: none;">
+      <div class="dot-pulse"></div>
+      <div>
+        <strong>Đang chạy mô phỏng sự cố:</strong> Hỏng tủ đĩa SAN vật lý lan truyền lên Oracle RAC &rarr; Server &rarr; Web VTStore &rarr; Gián đoạn VOFFICE 2.0
+      </div>
+    </div>
+
+    <!-- CANVAS VIEWPORT -->
+    <div class="viewport" id="viewport">
+      <div class="grid-bg"></div>
+      
+      <svg id="topo-svg">
+        <defs>
+          <!-- GLOW FILTERS -->
+          <filter id="glow-red" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur stdDeviation="6" result="blur" />
+            <feComposite in="SourceGraphic" in2="blur" operator="over" />
+          </filter>
+          
+          <filter id="glow-blue" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur stdDeviation="5" result="blur" />
+            <feComposite in="SourceGraphic" in2="blur" operator="over" />
+          </filter>
+
+          <!-- GRADIENTS -->
+          <linearGradient id="grad-root" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#0284c7" />
+            <stop offset="100%" stop-color="#2563eb" />
+          </linearGradient>
+
+          <linearGradient id="grad-critical" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#7f1d1d" />
+            <stop offset="100%" stop-color="#b91c1c" />
+          </linearGradient>
+
+          <linearGradient id="grad-normal" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#1e293b" />
+            <stop offset="100%" stop-color="#0f172a" />
+          </linearGradient>
+
+          <linearGradient id="grad-cluster" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#1e1b4b" />
+            <stop offset="100%" stop-color="#312e81" />
+          </linearGradient>
+        </defs>
+
+        <g id="transform-group">
+          <!-- Dynamic edges and nodes will be drawn here -->
+          <g id="edges-layer"></g>
+          <g id="edge-labels-layer"></g>
+          <g id="nodes-layer"></g>
+        </g>
+      </svg>
+    </div>
+
+    <!-- BOTTOM LEGEND -->
+    <div class="topology-legend">
+      <div class="legend-title">Trạng thái Cảnh báo (NOC Pro Alarms)</div>
+      <div class="legend-items">
+        <div class="legend-item">
+          <div class="status-dot dot-critical"></div>
+          <span>Critical / Root Cause (Có cảnh báo đỏ)</span>
+        </div>
+        <div class="legend-item">
+          <div class="status-dot dot-warning"></div>
+          <span>Major / Warning</span>
+        </div>
+        <div class="legend-item">
+          <div class="status-dot dot-healthy"></div>
+          <span>Bình thường (Healthy)</span>
+        </div>
+        <div class="legend-item">
+          <div class="status-dot dot-neutral"></div>
+          <span>Group gom cụm</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- INSPECTOR SIDEBAR -->
+    <aside class="inspector-panel" id="inspector-panel">
+      <div class="panel-header">
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+          <span id="insp-title">Chi tiết</span>
+        </h2>
+        <button class="close-btn" onclick="closeInspector()">&times;</button>
+      </div>
+
+      <div class="panel-content" id="insp-content">
+        <!-- Filled dynamically -->
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- TOOLTIP -->
+  <div class="topo-tooltip" id="tooltip"></div>
+
+  <script>
+    // ==========================================
+    // DATASETS WITH DETAILED "WHY CONNECTED" SEMANTICS
+    // ==========================================
+
+    // 1. IT Multi-layer Topology (from real image-djskfq...png)
+    const itTopologyData = {
+      nodes: [
+        { id: "app-voffice", label: "VOFFICE 2.0", sub: "Core Business Service", type: "service", status: "critical", x: 700, y: 70, level: 0, alarms: 18, ip: "10.240.0.1", desc: "Hệ thống quản lý văn bản điều hành toàn tập đoàn (Giao diện người dùng cuối)" },
+        
+        { id: "lb-01", label: "192.168.178.83", sub: "Load Balancer Flow A", type: "lb", status: "healthy", x: 550, y: 190, level: 1, alarms: 0, ip: "192.168.178.83", desc: "Cụm F5 BIG-IP Traffic Manager L7 tiếp nhận HTTP/HTTPS từ Web Browser" },
+        { id: "lb-02", label: "10.80.101.246", sub: "Load Balancer Flow B", type: "lb", status: "healthy", x: 850, y: 190, level: 1, alarms: 0, ip: "10.80.101.246", desc: "Cụm F5 BIG-IP VIP Gateway L4 dành cho Mobile App & API nội bộ" },
+        
+        { id: "web-vtstore", label: "WEB VTSTORE", sub: "Frontend Application", type: "app", status: "critical", x: 300, y: 320, level: 2, alarms: 12, ip: "10.80.101.12", desc: "Phân hệ ký duyệt & mua sắm thiết bị nội bộ VTStore (Giao diện Web)" },
+        { id: "grp-healthy", label: "Cụm group không cảnh báo", sub: "Auxiliary Microservices", type: "cluster", status: "healthy", x: 700, y: 320, level: 2, alarms: 0, ip: "10.80.102.0/24", desc: "Các dịch vụ bổ trợ: Notification Push, Xác thực OAuth2, Preview File" },
+        { id: "elk", label: "ELASTICSEARCH", sub: "Search & Log Engine", type: "app", status: "critical", x: 1100, y: 320, level: 2, alarms: 8, ip: "10.80.101.50", desc: "Cụm Elasticsearch tìm kiếm nhanh toàn văn (Full-text Search) công văn" },
+
+        { id: "srv-red-cluster", label: "(5) 10.80.101.x", sub: "5 App Servers (Cảnh báo)", type: "server-cluster", status: "critical", x: 480, y: 460, level: 3, alarms: 14, ip: "10.80.101.x", desc: "Cụm 5 máy chủ Tomcat/Spring Boot xử lý luồng văn bản nghiệp vụ chính" },
+        { id: "srv-healthy-cluster", label: "(33) Cụm server không cảnh báo", sub: "33 Worker Servers", type: "server-cluster", status: "healthy", x: 880, y: 460, level: 3, alarms: 0, ip: "10.80.103.x", desc: "Cụm 33 máy chủ xử lý tác vụ ngầm (Batch worker, nén file PDF, OCR)" },
+
+        { id: "subnet-30", label: "(30) 10.211.214.x", sub: "App Pool Subnet A", type: "subnet", status: "healthy", x: 260, y: 590, level: 4, alarms: 0, ip: "10.211.214.0/24", desc: "Dải mạng nội bộ phân chia tải cho 30 tiến trình xử lý văn bản song song" },
+        { id: "subnet-3", label: "(3) 10.255.205.x", sub: "API Gateway Subnet", type: "subnet", status: "healthy", x: 420, y: 590, level: 4, alarms: 0, ip: "10.255.205.0/24", desc: "Dải mạng định tuyến gọi API giữa các hệ thống thành phần" },
+        { id: "node-app-core", label: "10.254.182.1", sub: "Core Worker Node", type: "server", status: "healthy", x: 570, y: 590, level: 4, alarms: 0, ip: "10.254.182.1", desc: "Máy chủ xác thực chứng thư số HSM và ký số token cơ yếu" },
+        { id: "subnet-5", label: "(5) 10.240.211.x", sub: "Cache Cluster Subnet", type: "subnet", status: "healthy", x: 720, y: 590, level: 4, alarms: 0, ip: "10.240.211.0/24", desc: "Cụm Redis Cluster 5 nodes lưu trữ session đăng nhập và token" },
+        { id: "leaf-switch", label: "HLC8207_CLOUD_NX93180_LEAF_68", sub: "Cisco Nexus 93180 Leaf", type: "switch", status: "healthy", x: 950, y: 590, level: 4, alarms: 1, ip: "10.254.1.68", desc: "Switch Leaf trung tâm dữ liệu Hòa Lạc kết nối máy chủ vật lý vào mạng DC" },
+
+        { id: "sw-gom", label: "HLC105.HP5900.GOM.01", sub: "HP 5900 Switch Gom DC", type: "switch", status: "healthy", x: 570, y: 720, level: 5, alarms: 0, ip: "10.254.1.105", desc: "Switch gom mạng trung tâm truyền tải lưu lượng Storage Fabric" },
+        { id: "sw-backup", label: "GVM104.BL.DB.AG01_IP_C3750", sub: "Switch Dự phòng mạng DB", type: "switch", status: "healthy", x: 860, y: 720, level: 5, alarms: 0, ip: "10.254.2.104", desc: "Cisco Catalyst 3750 đảm bảo đường mạng dự phòng nóng (Failover)" },
+
+        { id: "db-grp-1", label: "(4) 80008281-VOFFICE2", sub: "Oracle RAC Primary Cluster", type: "db-cluster", status: "critical", x: 600, y: 860, level: 6, alarms: 15, ip: "10.254.138.0/24", desc: "Cụm 4 node Oracle RAC lưu trữ toàn bộ văn bản, công văn, metadata điều hành" },
+        { id: "db-grp-2", label: "(4) 80008806-VOFFICE2", sub: "Oracle DataGuard Standby", type: "db-cluster", status: "warning", x: 950, y: 860, level: 6, alarms: 4, ip: "10.254.139.0/24", desc: "Cụm 4 node CSDL dự phòng nóng đồng bộ qua Oracle DataGuard" },
+
+        { id: "san-01", label: "hlc7f-unity880xt-oracledb-san-01", sub: "ROOT CAUSE: Dell Unity 880XT SAN", type: "san", status: "critical", x: 460, y: 1000, level: 7, alarms: 23, ip: "10.254.140.10", desc: "TỦ ĐĨA LƯU TRỮ SAN: Hỏng cổng quang DPE khiến toàn bộ I/O của Oracle RAC bị treo (I/O Hang)!" },
+        { id: "san-02", label: "hlc7f-unity880xt-oracledb-san-02-DPE", sub: "Dell Unity 880XT Enclosure 02", type: "san", status: "healthy", x: 650, y: 1000, level: 7, alarms: 0, ip: "10.254.140.11", desc: "Khay mở rộng đĩa SAS số 2 chứa dữ liệu văn bản lưu trữ quá khứ" },
+        { id: "blade-1", label: "V8P G700 - 10.254.138.39", sub: "Blade Server Oracle DB 01", type: "blade", status: "warning", x: 830, y: 1000, level: 7, alarms: 3, ip: "10.254.138.39", desc: "Máy chủ HP Blade G700 Node 1 chạy Oracle Database Instance 1" },
+        { id: "blade-2", label: "V8P G700 - 10.254.138.48", sub: "Blade Server Oracle DB 02", type: "blade", status: "warning", x: 1000, y: 1000, level: 7, alarms: 2, ip: "10.254.138.48", desc: "Máy chủ HP Blade G700 Node 2 chạy Oracle Database Instance 2" },
+        { id: "blade-3", label: "V8P E580H - 10.208.81.82", sub: "Blade Server Backup DB", type: "blade", status: "healthy", x: 1170, y: 1000, level: 7, alarms: 0, ip: "10.208.81.82", desc: "Máy chủ HP Blade E580H Standby nhận Redo Log từ Primary" }
+      ],
+      edges: [
+        {
+          from: "app-voffice", to: "lb-01",
+          protocol: "HTTPS / TLS v1.3", port: "Port 443",
+          linkType: "DNS / L7 Traffic Gateway",
+          label: "HTTPS 443 (F5 VIP)",
+          reason: "Người dùng truy cập tên miền 'voffice.viettel.vn' được phân giải DNS trỏ về Virtual IP (VIP) của F5 Load Balancer để chia tải vào các máy chủ web.",
+          impact: "Nếu đứt kết nối: Người dùng trên toàn quốc không thể mở trang web VOFFICE.",
+          chainingLogic: "Top-level Service Dependency: Khi các tầng dưới nổ lỗi, tầng này sinh cảnh báo gián đoạn dịch vụ người dùng.",
+          isFault: true
+        },
+        {
+          from: "app-voffice", to: "lb-02",
+          protocol: "TCP VIP / HTTPS", port: "Port 8443",
+          linkType: "Mobile Gateway VIP",
+          label: "HTTPS 8443 (App VIP)",
+          reason: "Cổng định tuyến riêng dành cho ứng dụng di động VOffice Mobile App truy cập qua mạng APN nội bộ Viettel.",
+          impact: "Nếu đứt: Người dùng trên điện thoại không đăng nhập được.",
+          chainingLogic: "Phụ thuộc tầng ứng dụng người dùng.",
+          isFault: false
+        },
+        {
+          from: "app-voffice", to: "web-vtstore",
+          protocol: "HTTP Micro-Frontend / REST", port: "Port 8080",
+          linkType: "Service Integration (Iframe / API)",
+          label: "HTTP 8080 (Sub-app)",
+          reason: "Hệ thống nhúng phân hệ mua sắm & ký duyệt văn phòng phẩm VTStore trực tiếp vào giao diện làm việc chính của VOFFICE.",
+          impact: "Nếu đứt: Chức năng trình ký VTStore trên thanh menu bị trắng trang, báo lỗi 504 Gateway Timeout.",
+          chainingLogic: "Cùng chia sẻ người dùng cuối và phụ thuộc logic vào cùng hệ sinh thái ứng dụng.",
+          isFault: true
+        },
+        {
+          from: "app-voffice", to: "elk",
+          protocol: "REST HTTP JSON", port: "Port 9200",
+          linkType: "Search Engine Query",
+          label: "REST 9200 (Search)",
+          reason: "Khung tìm kiếm nhanh trên header VOFFICE: Người dùng gõ mã văn bản sẽ gọi trực tiếp Elasticsearch Cluster để tìm kiếm full-text.",
+          impact: "Nếu đứt: Mọi thao tác tìm kiếm công văn bị quay vòng tròn và báo lỗi máy chủ.",
+          chainingLogic: "Elasticsearch phụ thuộc vào Database để lấy nguồn dữ liệu lập chỉ mục (index).",
+          isFault: true
+        },
+        {
+          from: "lb-01", to: "grp-healthy",
+          protocol: "HTTP Reverse Proxy", port: "Port 8081",
+          linkType: "L7 Upstream Pool",
+          label: "HTTP 8081 (Proxy)",
+          reason: "F5 Load Balancer chuyển tiếp các request tiện ích phụ (Notification, Preview File PDF, Xác thực OAuth2) vào cụm microservices độc lập.",
+          impact: "Không ảnh hưởng đến luồng ký duyệt chính.",
+          chainingLogic: "Cụm này hoạt động bình thường, không sinh cảnh báo trong snapshot hiện tại.",
+          isFault: false
+        },
+        {
+          from: "lb-02", to: "grp-healthy",
+          protocol: "HTTP Reverse Proxy", port: "Port 8081",
+          linkType: "Mobile Upstream Pool",
+          label: "HTTP 8081",
+          reason: "F5 chuyển tiếp các tác vụ phụ từ Mobile App vào cụm Microservices.",
+          impact: "Bình thường.",
+          chainingLogic: "Không có cảnh báo.",
+          isFault: false
+        },
+        {
+          from: "web-vtstore", to: "srv-red-cluster",
+          protocol: "Spring Cloud REST / gRPC", port: "Port 8080 / 8443",
+          linkType: "Backend Service Call",
+          label: "REST/gRPC 8080",
+          reason: "Frontend Web VTStore nhận lệnh người dùng và gọi các API nghiệp vụ nặng (tạo phiếu, duyệt công văn) xuống cụm 5 máy chủ Backend Java/Tomcat.",
+          impact: "Khi Backend bị nghẽn (do DB treo), connection pool cạn kiệt khiến Web VTStore không nhận được phản hồi, sinh lỗi HTTP 504 Gateway Timeout!",
+          chainingLogic: "Direct RPC Dependency (Quan hệ gọi trực tiếp): NOC Pro phát hiện 2 cảnh báo này có cùng TimeWindow và độ tương đồng gọi API cao.",
+          isFault: true
+        },
+        {
+          from: "web-vtstore", to: "srv-healthy-cluster",
+          protocol: "Async Task Queue (RabbitMQ)", port: "Port 5672",
+          linkType: "Message Queue",
+          label: "AMQP 5672",
+          reason: "Gửi các tác vụ không cần phản hồi ngay (gửi email thông báo, tạo file nén báo cáo) vào hàng đợi để 33 worker server xử lý ngầm.",
+          impact: "Hàng đợi đệm giúp worker không bị sập theo luồng chính.",
+          chainingLogic: "Nhóm worker ngầm này khỏe mạnh.",
+          isFault: false
+        },
+        {
+          from: "elk", to: "srv-red-cluster",
+          protocol: "Logstash / Beats Agent", port: "Port 5044",
+          linkType: "Log & Index Sync",
+          label: "TCP 5044 (Log/Sync)",
+          reason: "Cụm 5 App Server gửi log truy cập và đồng bộ các văn bản vừa tạo sang Elasticsearch để đánh chỉ mục tìm kiếm.",
+          impact: "Khi App Server bị treo do nghẽn DB, tiến trình Logstash bị kẹt hàng đợi, Elasticsearch báo trạng thái CLUSTER_RED.",
+          chainingLogic: "Cùng chịu ảnh hưởng bởi sự cố đóng băng dữ liệu từ tầng dưới.",
+          isFault: true
+        },
+        {
+          from: "srv-red-cluster", to: "subnet-30",
+          protocol: "VLAN 214 Trunking", port: "VLAN 214",
+          linkType: "Subnet Routing",
+          label: "VLAN 214",
+          reason: "Định tuyến lưu lượng nội bộ giữa 5 máy chủ App chính và cụm 30 tiến trình xử lý văn bản song song.",
+          impact: "Bình thường.",
+          chainingLogic: "Kết nối mạng nội bộ trung tâm dữ liệu.",
+          isFault: false
+        },
+        {
+          from: "srv-red-cluster", to: "subnet-3",
+          protocol: "Internal API Routing", port: "VLAN 205",
+          linkType: "Subnet Routing",
+          label: "VLAN 205",
+          reason: "Định tuyến gọi dịch vụ API Gateway nội bộ giữa các phân hệ.",
+          impact: "Bình thường.",
+          chainingLogic: "Liên kết kề cận IP Adjacency.",
+          isFault: false
+        },
+        {
+          from: "srv-red-cluster", to: "node-app-core",
+          protocol: "PKCS#11 / TCP", port: "Port 9000",
+          linkType: "HSM Digital Signature",
+          label: "TCP 9000 (HSM)",
+          reason: "5 App Server kết nối tới Node 10.254.182.1 để thực thi thuật toán ký số bảo mật điện tử cho công văn trước khi lưu vào CSDL.",
+          impact: "Node ký số vẫn hoạt động nhưng bị nghẽn chờ do tầng DB không lưu được kết quả.",
+          chainingLogic: "Chỉ số tương đồng dịch vụ Core Chaining.",
+          isFault: false
+        },
+        {
+          from: "srv-red-cluster", to: "subnet-5",
+          protocol: "Redis RESP Protocol", port: "Port 6379",
+          linkType: "Distributed Cache",
+          label: "Redis 6379",
+          reason: "5 App Server đọc/ghi cache dữ liệu danh mục phòng ban và session người dùng trên cụm Redis 5 nodes.",
+          impact: "Cụm Redis hoạt động trên RAM nên không bị sập theo ổ đĩa SAN.",
+          chainingLogic: "Tầng Cache bảo vệ bớt tải cho CSDL.",
+          isFault: false
+        },
+        {
+          from: "srv-healthy-cluster", to: "leaf-switch",
+          protocol: "LACP 802.3ad Bonding", port: "Dual 25GE",
+          linkType: "Network Physical Uplink",
+          label: "Dual 25GE",
+          reason: "Các máy chủ worker cắm 2 dây mạng 25Gbps vào Cisco Nexus Leaf Switch để có đường truyền dự phòng.",
+          impact: "Bình thường.",
+          chainingLogic: "Hạ tầng mạng kết nối vật lý.",
+          isFault: false
+        },
+        {
+          from: "leaf-switch", to: "sw-backup",
+          protocol: "VPC / 40G Fiber Trunk", port: "40Gbps QSFP",
+          linkType: "Inter-Switch Link",
+          label: "40GE Trunk",
+          reason: "Đường truyền quang chuyển mạch tốc độ cao giữa Switch Leaf 93180 và Switch gom DC dự phòng.",
+          impact: "Bình thường.",
+          chainingLogic: "Topo Adjacency mức Switch.",
+          isFault: false
+        },
+        {
+          from: "node-app-core", to: "sw-gom",
+          protocol: "10G Base-T Ethernet", port: "10Gbps Copper",
+          linkType: "Switch Access Port",
+          label: "10GE Uplink",
+          reason: "Cổng mạng cắm thẳng vào Switch HP 5900 Gom để định tuyến lưu lượng vào mạng CSDL.",
+          impact: "Bình thường.",
+          chainingLogic: "Topology Adjacency.",
+          isFault: false
+        },
+        {
+          from: "sw-gom", to: "db-grp-1",
+          protocol: "Oracle Net (TNS Listener / SQL*Net)", port: "Port 1521",
+          linkType: "Database JDBC Connection Pool",
+          label: "Oracle TNS 1521",
+          reason: "Tầng mạng chuyển mạch truyền tải hàng nghìn kết nối JDBC Connection Pool từ App Server vào 4 node Oracle RAC Database để thực thi câu lệnh SQL đọc/ghi công văn.",
+          impact: "KHI TỦ ĐĨA SAN BỊ TREO: Mọi câu lệnh SQL bị nghẽn ở trạng thái 'db file sequential read' hoặc 'log file sync', làm nghẽn toàn bộ cổng 1521 và tràn RAM App Server!",
+          chainingLogic: "Trọng yếu: Kết nối JDBC là huyết mạch nối giữa tầng Ứng dụng và CSDL. NOC Pro dùng thuộc tính này để xâu chuỗi App với Database.",
+          isFault: true
+        },
+        {
+          from: "sw-backup", to: "db-grp-1",
+          protocol: "Redundant Management IP", port: "Port 1521",
+          linkType: "Backup Management Route",
+          label: "Backup 1521",
+          reason: "Đường mạng dự phòng quản trị từ xa cụm Oracle RAC.",
+          impact: "Không bị ảnh hưởng.",
+          chainingLogic: "Dự phòng hạ tầng.",
+          isFault: false
+        },
+        {
+          from: "sw-backup", to: "db-grp-2",
+          protocol: "Oracle DataGuard Redo Transport", port: "Port 1521",
+          linkType: "Database Replication",
+          label: "DataGuard 1521",
+          reason: "Đồng bộ liên tục các file Redo Log từ cụm CSDL chính (Primary) sang cụm dự phòng nóng (Standby).",
+          impact: "Khi Primary bị treo I/O, tiến trình gửi log bị gián đoạn, cụm Standby nổ cảnh báo DataGuard Desynchronized.",
+          chainingLogic: "Replication Dependency: Giúp NOC Pro gom cảnh báo của cụm Standby vào chung chuỗi sự cố.",
+          isFault: false
+        },
+        {
+          from: "db-grp-1", to: "san-01",
+          protocol: "Fibre Channel (FC-16G / SCSI-FCP)", port: "FC HBA 16Gbps",
+          linkType: "SAN Storage Fabric / LUN Mapping",
+          label: "FC 16G (LUN Data)",
+          reason: "ĐÂY LÀ KẾT NỐI SỐNG CÒN: 4 máy chủ Oracle RAC mount trực tiếp các LUN ổ đĩa quang từ tủ SAN Dell Unity 880XT qua switch SAN Fabric để lưu trữ ASM Datafiles, Redo Log, Undo Tablespace.",
+          impact: "NGUYÊN NHÂN GỐC CỦA THẢM HỌA: Hỏng cổng quang DPE trên tủ SAN khiến toàn bộ yêu cầu đọc/ghi I/O của Oracle Database bị đóng băng (IO Hang), kích hoạt phản ứng dây chuyền làm sập toàn bộ hệ thống VOFFICE trên toàn quốc!",
+          chainingLogic: "Root Cause Node: Mọi cảnh báo phía trên đều là triệu chứng (symptom) phát sinh do đường kết nối SAN Fabric này bị gián đoạn.",
+          isFault: true
+        },
+        {
+          from: "db-grp-1", to: "san-02",
+          protocol: "SAS Expansion Daisy-Chain", port: "12Gbps SAS",
+          linkType: "Disk Enclosure Interlink",
+          label: "12G SAS Chain",
+          reason: "Cáp kết nối mở rộng từ khay điều khiển DPE sang khay đĩa thứ 2.",
+          impact: "Khay đĩa 2 vẫn có tín hiệu nhưng không ghi được do khay 1 mất kết nối quang.",
+          chainingLogic: "Phần cứng lưu trữ.",
+          isFault: false
+        },
+        {
+          from: "db-grp-2", to: "blade-1",
+          protocol: "PCIe Mezzanine / 10GE", port: "Host Bus 10GE",
+          linkType: "Hardware Host Binding",
+          label: "Blade Bus",
+          reason: "Máy chủ HP Blade G700 Node 1 cắm trên khung Chassis chạy Oracle Instance 1.",
+          impact: "Báo lỗi IO timeout do không nhận được block dữ liệu.",
+          chainingLogic: "Hardware mapping.",
+          isFault: false
+        },
+        {
+          from: "db-grp-2", to: "blade-2",
+          protocol: "PCIe Mezzanine / 10GE", port: "Host Bus 10GE",
+          linkType: "Hardware Host Binding",
+          label: "Blade Bus",
+          reason: "Máy chủ HP Blade G700 Node 2 cắm trên khung Chassis chạy Oracle Instance 2.",
+          impact: "Báo lỗi tương tự Node 1.",
+          chainingLogic: "Hardware mapping.",
+          isFault: false
+        },
+        {
+          from: "db-grp-2", to: "blade-3",
+          protocol: "10GE Trunking", port: "Host Bus 10GE",
+          linkType: "Hardware Host Binding",
+          label: "Blade Bus",
+          reason: "Máy chủ Blade E580H nhận dữ liệu Standby.",
+          impact: "Bình thường.",
+          chainingLogic: "Hardware mapping.",
+          isFault: false
+        }
+      ]
+    };
+
+    // 2. Telecom IP Mesh Topology (from real topoIP-8zjkidh613ffzdck7jca5j6bdc.csv)
+    const ipTopologyData = {
+      nodes: [
+        { id: "core-01", label: "HNI0001COR01", sub: "CORE_AREA (Hà Nội)", type: "router", status: "healthy", x: 500, y: 100, level: 0, alarms: 0, ip: "10.0.0.1", desc: "Core Router Trung tâm Viễn thông Miền Bắc, dung lượng 400G (Cisco ASR 9922)" },
+        { id: "core-02", label: "HCM0001COR01", sub: "CORE_AREA (TP.HCM)", type: "router", status: "healthy", x: 900, y: 100, level: 0, alarms: 0, ip: "10.0.0.2", desc: "Core Router Trung tâm Viễn thông Miền Nam, dung lượng 400G (Juniper PTX10008)" },
+
+        { id: "prov-nbh", label: "NBH0001COR01", sub: "CORE_PROVINCE (Ninh Bình)", type: "router", status: "critical", x: 400, y: 280, level: 1, alarms: 16, ip: "10.35.0.1", desc: "Router Core Tỉnh Ninh Bình (Bị sự cố mất nguồn trạm trung tâm do sấm sét)" },
+        { id: "prov-vlg", label: "VLG0001COR01", sub: "CORE_PROVINCE (Vĩnh Long)", type: "router", status: "healthy", x: 700, y: 280, level: 1, alarms: 0, ip: "10.70.0.1", desc: "Router Core Tỉnh Vĩnh Long hoạt động ổn định" },
+        { id: "prov-gli", label: "GLI0001COR01", sub: "CORE_PROVINCE (Gia Lai)", type: "router", status: "healthy", x: 1000, y: 280, level: 1, alarms: 0, ip: "10.81.0.1", desc: "Router Core Tỉnh Gia Lai hoạt động ổn định" },
+
+        { id: "agg-nbh-01", label: "NBH0003AGG01", sub: "AGG_DISTRICT (Gom Huyện NBH)", type: "router", status: "critical", x: 300, y: 460, level: 2, alarms: 9, ip: "10.35.3.1", desc: "Router Aggregation huyện Hoa Lư, gom toàn bộ lưu lượng BTS khu vực" },
+        { id: "agg-nbh-02", label: "NBH0004AGG02", sub: "AGG_DISTRICT (Gom Huyện NBH)", type: "router", status: "warning", x: 500, y: 460, level: 2, alarms: 4, ip: "10.35.4.1", desc: "Router Aggregation huyện Tam Điệp (Tải tăng vọt do nhận lưu lượng chuyển hướng)" },
+        { id: "agg-vlg-01", label: "VLG0002AGG01", sub: "AGG_DISTRICT (Vĩnh Long)", type: "router", status: "healthy", x: 700, y: 460, level: 2, alarms: 0, ip: "10.70.2.1", desc: "Router Aggregation Huyện Long Hồ" },
+        { id: "agg-gli-01", label: "GLI0193AGG01", sub: "AGG_DISTRICT (Gia Lai)", type: "router", status: "healthy", x: 1000, y: 460, level: 2, alarms: 0, ip: "10.81.193.1", desc: "Router Aggregation Huyện Pleiku" },
+
+        { id: "srt-nbh-138", label: "NBH0138SRT02", sub: "SITE_ROUTER (Trạm BTS Hoa Lư)", type: "site-router", status: "critical", x: 220, y: 640, level: 3, alarms: 5, ip: "10.35.138.2", desc: "Router trạm BTS NBH0138 (Cổng XGigabitEthernet0/1/1 link down mất kết nối trạm gom)" },
+        { id: "srt-nbh-139", label: "NBH0139SRT01", sub: "SITE_ROUTER (Trạm BTS Tam Điệp)", type: "site-router", status: "critical", x: 380, y: 640, level: 3, alarms: 7, ip: "10.35.139.1", desc: "Router trạm BTS NBH0139 (Mất đường truyền chính, nghẽn đường Ring)" },
+        { id: "srt-vlg-314", label: "VLG0314SRT01", sub: "SITE_ROUTER (Trạm BTS Vĩnh Long)", type: "site-router", status: "healthy", x: 620, y: 640, level: 3, alarms: 0, ip: "10.70.314.1", desc: "Router trạm BTS VLG0314 (Cổng XGigabitEthernet0/1/1)" },
+        { id: "srt-vlg-440", label: "VLG0440SRT01", sub: "SITE_ROUTER (Trạm BTS Vĩnh Long)", type: "site-router", status: "healthy", x: 780, y: 640, level: 3, alarms: 0, ip: "10.70.440.1", desc: "Router trạm BTS VLG0440 (Cổng XGigabitEthernet0/1/2)" },
+        { id: "srt-gli-193", label: "GLI0193SRT05", sub: "SITE_ROUTER (Trạm BTS Pleiku)", type: "site-router", status: "healthy", x: 920, y: 640, level: 3, alarms: 0, ip: "10.81.193.5", desc: "Router trạm BTS GLI0193 (Cổng 25GE0/2/22)" },
+        { id: "srt-gli-194", label: "GLI0194SRT05", sub: "SITE_ROUTER (Trạm BTS Pleiku)", type: "site-router", status: "healthy", x: 1080, y: 640, level: 3, alarms: 0, ip: "10.81.194.5", desc: "Router trạm BTS GLI0194 (Cổng 25GE0/2/23)" },
+
+        { id: "gpon-01", label: "NBH_GPON_OLT_01", sub: "GPON OLT Internet cố định", type: "gpon", status: "critical", x: 300, y: 780, level: 4, alarms: 8, ip: "10.35.200.1", desc: "Thiết bị GPON OLT cung cấp cáp quang FTTH cho 2.500 thuê bao internet cố định" },
+        { id: "gpon-02", label: "VLG_GPON_OLT_01", sub: "GPON OLT Vĩnh Long", type: "gpon", status: "healthy", x: 700, y: 780, level: 4, alarms: 0, ip: "10.70.200.1", desc: "Thiết bị GPON OLT trạm Vĩnh Long" }
+      ],
+      edges: [
+        {
+          from: "core-01", to: "core-02",
+          protocol: "MPLS / BGP EVPN", port: "400Gbps WDM",
+          linkType: "National Backbone Trunk",
+          label: "400G Backbone",
+          reason: "Tuyến cáp quang đường trục quốc gia kết nối 2 trung tâm điều hành viễn thông lớn nhất (Hà Nội <-> TP.HCM).",
+          impact: "Nếu đứt: Lưu lượng Bắc - Nam phải đảo tuyến biển hoặc tuyến cáp đất liền dự phòng.",
+          chainingLogic: "Đường trục chính, kết nối phân cấp Core cao nhất.",
+          isFault: false
+        },
+        {
+          from: "core-01", to: "prov-nbh",
+          protocol: "100GE Fiber Optic (OSPF Area 0)", port: "Port 100GE-0/1/0",
+          linkType: "Provincial Core Uplink",
+          label: "100GE Primary",
+          reason: "Đường cáp quang truyền dẫn chính cấp tỉnh: Chuyển toàn bộ dữ liệu viễn thông từ Trung tâm Quốc gia về Tổng trạm Ninh Bình.",
+          impact: "Sự cố mất điện trạm Ninh Bình khiến tuyến này bị gián đoạn, kích hoạt phản ứng nổ cảnh báo dây chuyền xuống toàn tỉnh.",
+          chainingLogic: "Causal Ancestor: Router Tỉnh là nút thắt cổ chai điều phối toàn bộ các huyện phía dưới.",
+          isFault: true
+        },
+        {
+          from: "core-01", to: "prov-vlg",
+          protocol: "100GE Fiber Optic", port: "Port 100GE-0/2/0",
+          linkType: "Provincial Core Uplink",
+          label: "100GE Fiber",
+          reason: "Tuyến quang truyền dẫn về trạm Vĩnh Long.",
+          impact: "Bình thường.",
+          chainingLogic: "Phân cấp mạng.",
+          isFault: false
+        },
+        {
+          from: "core-02", to: "prov-vlg",
+          protocol: "100GE Fiber Optic", port: "Port 100GE-0/3/0",
+          linkType: "Provincial Core Redundant",
+          label: "100GE Backup",
+          reason: "Tuyến bảo vệ thứ 2 cho Vĩnh Long kết nối vào Core TP.HCM để chống đứt cáp đơn điểm.",
+          impact: "Bình thường.",
+          chainingLogic: "Mạng lưới bảo vệ Dual-homing.",
+          isFault: false
+        },
+        {
+          from: "core-02", to: "prov-gli",
+          protocol: "100GE Fiber Optic", port: "Port 100GE-0/4/0",
+          linkType: "Provincial Core Uplink",
+          label: "100GE Fiber",
+          reason: "Tuyến truyền dẫn về trạm Gia Lai.",
+          impact: "Bình thường.",
+          chainingLogic: "Phân cấp mạng.",
+          isFault: false
+        },
+        {
+          from: "prov-nbh", to: "agg-nbh-01",
+          protocol: "10GE Optical Ring", port: "10GE-1/0/1",
+          linkType: "District Aggregation Ring",
+          label: "10GE Trunk NBH-01",
+          reason: "Đường cáp quang gom dữ liệu từ các huyện về trạm tỉnh. Trạm NBH0003AGG01 phụ trách toàn bộ huyện Hoa Lư.",
+          impact: "Khi Core tỉnh chập chờn, Router huyện mất peering BGP, dẫn tới mất liên lạc hàng loạt trạm BTS con.",
+          chainingLogic: "Hierarchy Dominator: Trạm Agg là cha trực tiếp của các Site Router BTS.",
+          isFault: true
+        },
+        {
+          from: "prov-nbh", to: "agg-nbh-02",
+          protocol: "10GE Optical Ring", port: "10GE-1/0/2",
+          linkType: "District Aggregation Ring",
+          label: "10GE Trunk NBH-02",
+          reason: "Tuyến gom lưu lượng khu vực Tam Điệp.",
+          impact: "Nhận lưu lượng trôi về nên tải CPU tăng vọt, báo cảnh báo warning.",
+          chainingLogic: "NOC Pro gom 2 router huyện này vào chung một cụm sự cố tỉnh.",
+          isFault: false
+        },
+        {
+          from: "prov-vlg", to: "agg-vlg-01",
+          protocol: "10GE Optical Ring", port: "10GE-2/0/1",
+          linkType: "District Aggregation Ring",
+          label: "10GE Ring",
+          reason: "Tuyến quang gom huyện Long Hồ.",
+          impact: "Bình thường.",
+          chainingLogic: "Adjacency mạng viễn thông.",
+          isFault: false
+        },
+        {
+          from: "prov-gli", to: "agg-gli-01",
+          protocol: "10GE Optical Ring", port: "10GE-3/0/1",
+          linkType: "District Aggregation Ring",
+          label: "10GE Ring",
+          reason: "Tuyến quang gom Pleiku.",
+          impact: "Bình thường.",
+          chainingLogic: "Adjacency mạng viễn thông.",
+          isFault: false
+        },
+        {
+          from: "agg-nbh-01", to: "srt-nbh-138",
+          protocol: "1GE/10GE IP Adjacency (Bảng topoIP thật)", port: "GigabitEthernet3/0/4 <-> XGigabitEthernet0/1/1",
+          linkType: "Cell Site Uplink (BTS)",
+          label: "GE3/0/4 <-> XGE0/1/1",
+          reason: "ĐÂY LÀ DÒNG DỮ LIỆU THẬT TRONG FILE topoIP.csv: Cáp quang nối trực tiếp cổng GigabitEthernet3/0/4 của Router Gom huyện tới cổng XGigabitEthernet0/1/1 của Router Trạm phát sóng BTS Hoa Lư (NBH0138SRT02).",
+          impact: "Cổng quang bị down làm đứt toàn bộ sóng di động 4G/5G và mạng internet cáp quang FTTH của người dân trạm NBH0138!",
+          chainingLogic: "Exact Topo Adjacency: Trong bảng topoIP, 2 node này kề nhau 1 hop trực tiếp, Attribute Type 5 TopologySimilarity đạt điểm 1.0 tối đa!",
+          isFault: true
+        },
+        {
+          from: "agg-nbh-01", to: "srt-nbh-139",
+          protocol: "10GE Optical Ring", port: "GE3/0/5 <-> XGE0/1/1",
+          linkType: "Cell Site Uplink (BTS)",
+          label: "10GE Ring NBH",
+          reason: "Tuyến cáp quang tới trạm BTS lân cận NBH0139.",
+          impact: "Bị nghẽn do mất tuyến chính.",
+          chainingLogic: "Cùng trạm gom huyện.",
+          isFault: true
+        },
+        {
+          from: "agg-nbh-02", to: "srt-nbh-139",
+          protocol: "Backup Fiber Route", port: "GE1/0/1",
+          linkType: "Cell Site Protection Route",
+          label: "Dự phòng Tam Điệp",
+          reason: "Tuyến cáp quang dự phòng từ huyện Tam Điệp nối sang trạm NBH0139.",
+          impact: "Bình thường, tự động gánh tải.",
+          chainingLogic: "Bảo vệ mạng lưới vòng Ring.",
+          isFault: false
+        },
+        {
+          from: "srt-nbh-138", to: "srt-nbh-139",
+          protocol: "ERPS G.8032 Ring Protection", port: "XGE0/1/2 <-> XGE0/1/2",
+          linkType: "Inter-Site Protection Ring",
+          label: "Vòng Ring bảo vệ",
+          reason: "Cáp quang ngầm chôn dọc đường nối trực tiếp giữa 2 trạm BTS liền kề để tạo vòng Ring khép kín: khi một trạm bị đứt đường lên huyện, dữ liệu tự động 'nhảy' sang trạm bên cạnh.",
+          impact: "Cả 2 trạm đều gặp sự cố nên vòng Ring bị chia cắt (Ring Split).",
+          chainingLogic: "Adjacency giữa các Site Router kề cận trong bảng topoIP.",
+          isFault: true
+        },
+        {
+          from: "agg-vlg-01", to: "srt-vlg-314",
+          protocol: "IP Adjacency (topoIP)", port: "XGigabitEthernet0/1/1",
+          linkType: "Cell Site Uplink",
+          label: "GE Port VLG",
+          reason: "Kết nối trạm BTS Vĩnh Long.",
+          impact: "Bình thường.",
+          chainingLogic: "topoIP thật.",
+          isFault: false
+        },
+        {
+          from: "srt-vlg-314", to: "srt-vlg-440",
+          protocol: "IP Adjacency (Dòng 1 trong topoIP.csv)", port: "XGigabitEthernet0/1/1 <-> XGigabitEthernet0/1/2",
+          linkType: "Inter-Site Router Link",
+          label: "XGE0/1/1 <-> XGE0/1/2",
+          reason: "DÒNG ĐẦU TIÊN TRONG FILE topoIP.csv CỦA HỆ THỐNG: Cổng XGigabitEthernet0/1/1 của VLG0314SRT01 kết nối trực tiếp với XGigabitEthernet0/1/2 của VLG0440SRT01 để tạo liên kết kề cận SITE_ROUTER.",
+          impact: "Hoạt động bình thường 100%.",
+          chainingLogic: "Cặp Adjacency chuẩn xác thực tế từ hệ thống NOC Pro.",
+          isFault: false
+        },
+        {
+          from: "agg-gli-01", to: "srt-gli-193",
+          protocol: "25GE Optical Link", port: "25GE0/2/22",
+          linkType: "Cell Site Uplink",
+          label: "25GE Trunk GLI",
+          reason: "Đường truyền tốc độ cao cho trạm 5G Pleiku.",
+          impact: "Bình thường.",
+          chainingLogic: "topoIP thật.",
+          isFault: false
+        },
+        {
+          from: "srt-gli-193", to: "srt-gli-194",
+          protocol: "IP Adjacency (Dòng 2 trong topoIP.csv)", port: "25GE0/2/22 <-> 25GE0/2/23",
+          linkType: "Inter-Site Router Link",
+          label: "25GE0/2/22 <-> 25GE0/2/23",
+          reason: "DÒNG SỐ 2 TRONG FILE topoIP.csv: Cổng 25GE0/2/22 của GLI0193SRT05 kết nối sang cổng 25GE0/2/23 của GLI0194SRT05.",
+          impact: "Hoạt động bình thường.",
+          chainingLogic: "Cặp liên kết thực tế đã kiểm chứng trong cơ sở dữ liệu.",
+          isFault: false
+        },
+        {
+          from: "srt-nbh-138", to: "gpon-01",
+          protocol: "10GE Uplink / VLAN 1000", port: "Port 10GE Uplink",
+          linkType: "Fixed Broadband Access Link",
+          label: "Uplink FTTH OLT",
+          reason: "Router trạm BTS Hoa Lư cung cấp đường truyền IP Internet cho thiết bị GPON OLT đặt ngay dưới chân trạm để phân phối cáp quang đến từng hộ dân.",
+          impact: "Router trạm mất mạng khiến toàn bộ 2.500 hộ gia đình cắm cáp quang OLT bị mất mạng Internet (Loss of Signal)!",
+          chainingLogic: "Causal Chain: Cảnh báo mất sóng di động kéo theo cảnh báo đứt mạng cố định FTTH, được Louvain gom chung thành một chùm sự cố địa bàn Hoa Lư.",
+          isFault: true
+        },
+        {
+          from: "srt-vlg-314", to: "gpon-02",
+          protocol: "10GE Uplink", port: "Port 10GE",
+          linkType: "Fixed Broadband Access Link",
+          label: "Uplink FTTH VLG",
+          reason: "Cung cấp internet FTTH cho khu vực Vĩnh Long.",
+          impact: "Bình thường.",
+          chainingLogic: "Access network.",
+          isFault: false
+        }
+      ]
+    };
+
+    // 3. Louvain Clustering Representation (How NOC Pro groups them into Chains)
+    const louvainData = {
+      nodes: [
+        { id: "c1-san", label: "hlc7f-unity880xt-san-01", sub: "Alarm: DPE_FIBER_DOWN", type: "alarm-node", status: "critical", x: 420, y: 220, level: 0, cluster: "Chain 2214039 (58 Alarms)", ip: "10.254.140.10" },
+        { id: "c1-db1", label: "80008281-VOFFICE2 (RAC)", sub: "Alarm: ORA-01115 IO_ERROR", type: "alarm-node", status: "critical", x: 300, y: 380, level: 0, cluster: "Chain 2214039 (58 Alarms)", ip: "10.254.138.10" },
+        { id: "c1-db2", label: "80008806-VOFFICE2 (Stdby)", sub: "Alarm: ORA-16014 DG_HANG", type: "alarm-node", status: "warning", x: 540, y: 380, level: 0, cluster: "Chain 2214039 (58 Alarms)", ip: "10.254.139.10" },
+        { id: "c1-app", label: "10.80.101.x (5 App Servers)", sub: "Alarm: POOL_EXHAUSTED", type: "alarm-node", status: "critical", x: 420, y: 520, level: 0, cluster: "Chain 2214039 (58 Alarms)", ip: "10.80.101.x" },
+        { id: "c1-web", label: "WEB VTSTORE", sub: "Alarm: HTTP_504_GATEWAY", type: "alarm-node", status: "critical", x: 260, y: 650, level: 0, cluster: "Chain 2214039 (58 Alarms)", ip: "10.80.101.12" },
+        { id: "c1-elk", label: "ELASTICSEARCH", sub: "Alarm: CLUSTER_RED", type: "alarm-node", status: "critical", x: 560, y: 650, level: 0, cluster: "Chain 2214039 (58 Alarms)", ip: "10.80.101.50" },
+
+        { id: "c2-prov", label: "NBH0001COR01", sub: "Alarm: POWER_LOSS_SUBSTATION", type: "alarm-node", status: "critical", x: 980, y: 220, level: 1, cluster: "Chain 6907125 (43 Alarms)", ip: "10.35.0.1" },
+        { id: "c2-agg", label: "NBH0003AGG01", sub: "Alarm: BGP_NEIGHBOR_DOWN", type: "alarm-node", status: "critical", x: 860, y: 390, level: 1, cluster: "Chain 6907125 (43 Alarms)", ip: "10.35.3.1" },
+        { id: "c2-srt1", label: "NBH0138SRT02", sub: "Alarm: LINK_DOWN_ETH0/1/1", type: "alarm-node", status: "critical", x: 1100, y: 390, level: 1, cluster: "Chain 6907125 (43 Alarms)", ip: "10.35.138.2" },
+        { id: "c2-srt2", label: "NBH0139SRT01", sub: "Alarm: TRUNCATED_TRAFFIC", type: "alarm-node", status: "critical", x: 880, y: 560, level: 1, cluster: "Chain 6907125 (43 Alarms)", ip: "10.35.139.1" },
+        { id: "c2-gpon", label: "NBH_GPON_OLT_01", sub: "Alarm: LOS_LOSS_OF_SIGNAL", type: "alarm-node", status: "critical", x: 1080, y: 560, level: 1, cluster: "Chain 6907125 (43 Alarms)", ip: "10.35.200.1" }
+      ],
+      edges: [
+        {
+          from: "c1-san", to: "c1-db1",
+          protocol: "Attribute Score Vector", port: "Weight A_ij = 0.94",
+          linkType: "Louvain Graph Edge",
+          label: "simi: 0.94 (Topo + Time)",
+          reason: "Cặp SAN và Oracle DB nổ cảnh báo cách nhau chỉ 2 giây (TimeWindow = 1.0) và kề nhau trực tiếp trên sơ đồ SAN Fabric (Topology = 1.0).",
+          impact: "Louvain gắn kết 2 đỉnh này bằng trọng số cạnh A_ij cực cao.",
+          chainingLogic: "Tối ưu Modularity Q đưa cả 2 về chung cộng đồng Chain 2214039.",
+          isFault: true
+        },
+        {
+          from: "c1-san", to: "c1-db2",
+          protocol: "Attribute Score Vector", port: "Weight A_ij = 0.88",
+          linkType: "Louvain Graph Edge",
+          label: "simi: 0.88",
+          reason: "Cụm Standby DB nổ cảnh báo DataGuard trễ hơn 8 giây do không nhận được Redo log từ Primary.",
+          impact: "Được kéo vào chung nhóm với SAN-01.",
+          chainingLogic: "Attribute Type 3 (TimeWindow < 600s) thỏa mãn.",
+          isFault: true
+        },
+        {
+          from: "c1-db1", to: "c1-app",
+          protocol: "Attribute Score Vector", port: "Weight A_ij = 0.96",
+          linkType: "Louvain Graph Edge",
+          label: "simi: 0.96 (Direct Call)",
+          reason: "Cảnh báo cạn kiệt Connection Pool trên App Server xảy ra sau 12 giây kể từ khi DB nổ lỗi I/O Hang. Hai thực thể có quan hệ khách - chủ (Client - Server).",
+          impact: "Trọng số tương đồng rất cao, khóa chặt App Server vào chuỗi sự cố cơ sở dữ liệu.",
+          chainingLogic: "Rule CORE_CHAINING_DEFAULT kết nối vai trò connector.",
+          isFault: true
+        },
+        {
+          from: "c1-db2", to: "c1-app",
+          protocol: "Attribute Score Vector", port: "Weight A_ij = 0.82",
+          linkType: "Louvain Graph Edge",
+          label: "simi: 0.82",
+          reason: "Phụ thuộc thứ cấp trên cấu hình ứng dụng.",
+          impact: "Gia cố thêm độ bền vững của cụm (Cluster Density).",
+          chainingLogic: "Tăng hàm Modularity Q.",
+          isFault: true
+        },
+        {
+          from: "c1-app", to: "c1-web",
+          protocol: "Attribute Score Vector", port: "Weight A_ij = 0.95",
+          linkType: "Louvain Graph Edge",
+          label: "simi: 0.95 (HTTP 504)",
+          reason: "Cảnh báo Web 504 Gateway Timeout xuất hiện sau 18 giây, là hệ quả tất yếu khi App Server ngừng phản hồi.",
+          impact: "Hút toàn bộ cảnh báo tầng Web vào chuỗi.",
+          chainingLogic: "Nhóm cảnh báo triệu chứng (Symptoms).",
+          isFault: true
+        },
+        {
+          from: "c1-app", to: "c1-elk",
+          protocol: "Attribute Score Vector", port: "Weight A_ij = 0.91",
+          linkType: "Louvain Graph Edge",
+          label: "simi: 0.91 (Log Hang)",
+          reason: "Đồng bộ lỗi log trong cùng chu kỳ snapshot.",
+          impact: "Gom cụm Elasticsearch vào Chain 2214039.",
+          chainingLogic: "TimeWindow & Prefix Delimiter Similarity.",
+          isFault: true
+        },
+
+        {
+          from: "c2-prov", to: "c2-agg",
+          protocol: "Attribute Score Vector", port: "Weight A_ij = 0.97",
+          linkType: "Louvain Graph Edge",
+          label: "simi: 0.97 (Power Loss)",
+          reason: "Trạm nguồn điện Ninh Bình mất điện kéo theo sập cổng Router Gom cấp Huyện trong vòng 3 giây.",
+          impact: "Cặp cảnh báo xuất hiện đồng thời, khoảng cách địa lý trùng khớp.",
+          chainingLogic: "Attribute Type 2 (Prefix Delimiter 'NBH_') cho điểm 2.0 tối đa!",
+          isFault: true
+        },
+        {
+          from: "c2-prov", to: "c2-srt1",
+          protocol: "Attribute Score Vector", port: "Weight A_ij = 0.89",
+          linkType: "Louvain Graph Edge",
+          label: "simi: 0.89",
+          reason: "Lan truyền mất điện từ Core Tỉnh xuống Site Router.",
+          impact: "Gom vào chuỗi mất điện Ninh Bình.",
+          chainingLogic: "Attribute Type 4 History Co-occurrence cao.",
+          isFault: true
+        },
+        {
+          from: "c2-agg", to: "c2-srt1",
+          protocol: "Attribute Score Vector", port: "Weight A_ij = 0.98",
+          linkType: "Louvain Graph Edge",
+          label: "simi: 0.98 (Adjacency)",
+          reason: "Hai thiết bị kề nhau trực tiếp trên bảng topoIP thật (cổng GE3/0/4 và XGE0/1/1). Cả 2 cùng mất link.",
+          impact: "Điểm tương đồng topo tuyệt đối.",
+          chainingLogic: "TopologySimilarity = 1.0, TimeWindow = 1.0.",
+          isFault: true
+        },
+        {
+          from: "c2-agg", to: "c2-srt2",
+          protocol: "Attribute Score Vector", port: "Weight A_ij = 0.95",
+          linkType: "Louvain Graph Edge",
+          label: "simi: 0.95",
+          reason: "Trạm BTS kề bên trong cùng huyện Tam Điệp.",
+          impact: "Kéo trạm NBH0139 vào chuỗi.",
+          chainingLogic: "Louvain Community Detection.",
+          isFault: true
+        },
+        {
+          from: "c2-srt1", to: "c2-gpon",
+          protocol: "Attribute Score Vector", port: "Weight A_ij = 0.99",
+          linkType: "Louvain Graph Edge",
+          label: "simi: 0.99 (Optical LOS)",
+          reason: "Router trạm mất nguồn khiến thiết bị GPON OLT cắm dưới trạm sập nguồn ngay tức khắc (cách nhau 0.5s).",
+          impact: "Cặp điểm số cao nhất trong chuỗi 6907125.",
+          chainingLogic: "TimeWindow tuyệt đối + Kề cận vật lý trạm.",
+          isFault: true
+        }
+      ]
+    };
+
+    // Current State
+    let currentMode = 'IT';
+    let currentDataset = itTopologyData;
+    let isSimulating = false;
+    let simInterval = null;
+    let showEdgeLabels = true;
+    let selectedEdgeId = null;
+    let selectedNodeId = null;
+
+    // Viewport transform state
+    let scale = 0.85;
+    let panX = 40;
+    let panY = 20;
+    let isDragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+
+    const viewport = document.getElementById('viewport');
+    const transformGroup = document.getElementById('transform-group');
+    const edgesLayer = document.getElementById('edges-layer');
+    const edgeLabelsLayer = document.getElementById('edge-labels-layer');
+    const nodesLayer = document.getElementById('nodes-layer');
+    const tooltip = document.getElementById('tooltip');
+
+    // ==========================================
+    // RENDER FUNCTIONS
+    // ==========================================
+    function renderTopology() {
+      edgesLayer.innerHTML = '';
+      edgeLabelsLayer.innerHTML = '';
+      nodesLayer.innerHTML = '';
+
+      const nodeMap = new Map();
+      currentDataset.nodes.forEach(n => nodeMap.set(n.id, n));
+
+      // Draw Edges
+      currentDataset.edges.forEach((edge, idx) => {
+        const u = nodeMap.get(edge.from);
+        const v = nodeMap.get(edge.to);
+        if (!u || !v) return;
+
+        const edgeId = `edge-${edge.from}-${edge.to}`;
+        const isSelected = (selectedEdgeId === edgeId);
+
+        // Curved Bezier calculation
+        const dx = v.x - u.x;
+        const dy = v.y - u.y;
+        const cx1 = u.x;
+        const cy1 = u.y + dy * 0.5;
+        const cx2 = v.x;
+        const cy2 = v.y - dy * 0.5;
+        const d = `M ${u.x} ${u.y} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${v.x} ${v.y}`;
+
+        // Invisible thick hit area for easy clicking
+        const hitArea = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        hitArea.setAttribute("d", d);
+        hitArea.setAttribute("class", "edge-hitbox");
+        hitArea.onclick = (e) => {
+          e.stopPropagation();
+          selectEdge(edge, u, v);
+        };
+        hitArea.onmouseenter = (e) => showEdgeTooltip(e, edge, u, v);
+        hitArea.onmouseleave = hideTooltip;
+        edgesLayer.appendChild(hitArea);
+
+        // Visible Line
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", d);
+        let edgeClass = `edge-line ${edge.isFault ? 'active-fault' : 'normal'}`;
+        if (isSelected) edgeClass += ' selected';
+        path.setAttribute("class", edgeClass);
+        path.setAttribute("id", edgeId);
+        path.setAttribute("fill", "none");
+        edgesLayer.appendChild(path);
+
+        // Edge label if enabled
+        if (showEdgeLabels && edge.label) {
+          const midX = (u.x + v.x) / 2;
+          const midY = (u.y + v.y) / 2;
+
+          const gLabel = document.createElementNS("http://www.w3.org/2000/svg", "g");
+          gLabel.setAttribute("transform", `translate(${midX}, ${midY})`);
+          gLabel.style.cursor = "pointer";
+          gLabel.onclick = (e) => {
+            e.stopPropagation();
+            selectEdge(edge, u, v);
+          };
+
+          const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          text.setAttribute("text-anchor", "middle");
+          text.setAttribute("y", 3.5);
+          text.setAttribute("class", "edge-label-tag");
+          text.textContent = edge.label;
+
+          // Background box behind label
+          const bboxWidth = edge.label.length * 6.5 + 10;
+          const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          rect.setAttribute("x", -bboxWidth / 2);
+          rect.setAttribute("y", -8);
+          rect.setAttribute("width", bboxWidth);
+          rect.setAttribute("height", 16);
+          rect.setAttribute("class", "edge-label-bg");
+
+          gLabel.appendChild(rect);
+          gLabel.appendChild(text);
+          edgeLabelsLayer.appendChild(gLabel);
+        }
+      });
+
+      // Draw Nodes
+      currentDataset.nodes.forEach(node => {
+        const isSelected = (selectedNodeId === node.id);
+
+        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        let nodeClass = "node-group";
+        if (isSelected) nodeClass += " selected";
+        g.setAttribute("class", nodeClass);
+        g.setAttribute("transform", `translate(${node.x}, ${node.y})`);
+        g.setAttribute("id", `node-${node.id}`);
+        g.onclick = (e) => {
+          e.stopPropagation();
+          selectNode(node);
+        };
+        g.onmouseenter = (e) => showTooltip(e, node);
+        g.onmouseleave = hideTooltip;
+
+        // Card dimensions
+        const width = 180;
+        const height = 62;
+        const rx = -width / 2;
+        const ry = -height / 2;
+
+        // Card Base
+        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rect.setAttribute("x", rx);
+        rect.setAttribute("y", ry);
+        rect.setAttribute("width", width);
+        rect.setAttribute("height", height);
+        rect.setAttribute("class", "node-card");
+        
+        let strokeColor = "rgba(255, 255, 255, 0.12)";
+        let fillColor = "url(#grad-normal)";
+
+        if (node.status === "critical") {
+          strokeColor = "#ef4444";
+          fillColor = "url(#grad-critical)";
+          rect.setAttribute("filter", "url(#glow-red)");
+        } else if (node.type === "service") {
+          strokeColor = "#38bdf8";
+          fillColor = "url(#grad-root)";
+          rect.setAttribute("filter", "url(#glow-blue)");
+        } else if (node.type === "cluster" || node.type === "server-cluster") {
+          fillColor = "url(#grad-cluster)";
+        }
+
+        rect.setAttribute("fill", fillColor);
+        rect.setAttribute("stroke", strokeColor);
+        rect.setAttribute("stroke-width", node.status === "critical" ? "2" : "1.2");
+        g.appendChild(rect);
+
+        // Icon circle
+        const iconCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        iconCircle.setAttribute("cx", rx + 22);
+        iconCircle.setAttribute("cy", 0);
+        iconCircle.setAttribute("r", 14);
+        iconCircle.setAttribute("fill", node.status === "critical" ? "#ef4444" : "rgba(255, 255, 255, 0.1)");
+        g.appendChild(iconCircle);
+
+        // Status symbol inside circle
+        const iconText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        iconText.setAttribute("x", rx + 22);
+        iconText.setAttribute("y", 4);
+        iconText.setAttribute("text-anchor", "middle");
+        iconText.setAttribute("font-size", "11px");
+        iconText.setAttribute("fill", "#fff");
+        iconText.textContent = getNodeSymbol(node.type, node.status);
+        g.appendChild(iconText);
+
+        // Label Title
+        const title = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        title.setAttribute("x", rx + 44);
+        title.setAttribute("y", -6);
+        title.setAttribute("class", "node-title");
+        title.textContent = truncateText(node.label, 16);
+        g.appendChild(title);
+
+        // Label Subtitle
+        const sub = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        sub.setAttribute("x", rx + 44);
+        sub.setAttribute("y", 12);
+        sub.setAttribute("class", "node-sub");
+        sub.textContent = truncateText(node.sub, 20);
+        g.appendChild(sub);
+
+        // Alarm count badge if critical
+        if (node.alarms > 0) {
+          const badgeG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+          badgeG.setAttribute("transform", `translate(${rx + width - 18}, ${ry + 8})`);
+
+          const bCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          bCircle.setAttribute("r", 10);
+          bCircle.setAttribute("fill", "#ef4444");
+          badgeG.appendChild(bCircle);
+
+          const bText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          bText.setAttribute("text-anchor", "middle");
+          bText.setAttribute("y", 3.5);
+          bText.setAttribute("class", "node-badge");
+          bText.textContent = node.alarms;
+          badgeG.appendChild(bText);
+
+          g.appendChild(badgeG);
+        }
+
+        nodesLayer.appendChild(g);
+      });
+
+      updateTransform();
+    }
+
+    function getNodeSymbol(type, status) {
+      if (status === "critical") return "!";
+      switch(type) {
+        case 'service': return "App";
+        case 'lb': return "LB";
+        case 'server': return "Srv";
+        case 'server-cluster': return "Grp";
+        case 'switch': return "Sw";
+        case 'router': return "Rt";
+        case 'site-router': return "SR";
+        case 'db-cluster': return "DB";
+        case 'san': return "SAN";
+        case 'gpon': return "OLT";
+        default: return "●";
+      }
+    }
+
+    function truncateText(str, max) {
+      return (str.length > max) ? str.substring(0, max - 1) + '…' : str;
+    }
+
+    // ==========================================
+    // INTERACTION & ZOOM/PAN
+    // ==========================================
+    function updateTransform() {
+      transformGroup.setAttribute("transform", `translate(${panX}, ${panY}) scale(${scale})`);
+    }
+
+    function zoomIn() {
+      scale = Math.min(2.2, scale + 0.15);
+      updateTransform();
+    }
+
+    function zoomOut() {
+      scale = Math.max(0.35, scale - 0.15);
+      updateTransform();
+    }
+
+    function resetZoom() {
+      scale = 0.85;
+      panX = 60;
+      panY = 30;
+      updateTransform();
+    }
+
+    function toggleEdgeLabels() {
+      showEdgeLabels = !showEdgeLabels;
+      const btn = document.getElementById('btn-toggle-labels');
+      btn.classList.toggle('active', showEdgeLabels);
+      renderTopology();
+    }
+
+    viewport.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const zoomFactor = e.deltaY < 0 ? 1.08 : 0.92;
+      scale = Math.max(0.3, Math.min(2.5, scale * zoomFactor));
+      updateTransform();
+    });
+
+    viewport.addEventListener('mousedown', (e) => {
+      if (e.target.closest('.node-group') || e.target.closest('.edge-hitbox')) return;
+      isDragging = true;
+      dragStartX = e.clientX - panX;
+      dragStartY = e.clientY - panY;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      panX = e.clientX - dragStartX;
+      panY = e.clientY - dragStartY;
+      updateTransform();
+    });
+
+    window.addEventListener('mouseup', () => {
+      isDragging = false;
+    });
+
+    // ==========================================
+    // TAB SWITCHING
+    // ==========================================
+    function switchTopology(mode) {
+      currentMode = mode;
+      selectedEdgeId = null;
+      selectedNodeId = null;
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+
+      const btnCascade = document.getElementById('btn-simulate-cascade');
+      if (mode === 'IT') {
+        document.getElementById('tab-topo-it').classList.add('active');
+        currentDataset = itTopologyData;
+        btnCascade.style.display = 'flex';
+      } else if (mode === 'IP') {
+        document.getElementById('tab-topo-ip').classList.add('active');
+        currentDataset = ipTopologyData;
+        btnCascade.style.display = 'none';
+      } else {
+        document.getElementById('tab-topo-louvain').classList.add('active');
+        currentDataset = louvainData;
+        btnCascade.style.display = 'none';
+      }
+
+      renderTopology();
+      if (currentDataset.nodes.length > 0) {
+        selectNode(currentDataset.nodes[0]);
+      }
+    }
+
+    // ==========================================
+    // INSPECTOR: SELECT EDGE (WHY CONNECTED?)
+    // ==========================================
+    function selectEdge(edge, u, v) {
+      selectedEdgeId = `edge-${edge.from}-${edge.to}`;
+      selectedNodeId = null;
+      renderTopology();
+
+      const panel = document.getElementById('inspector-panel');
+      panel.classList.remove('collapsed');
+
+      document.getElementById('insp-title').textContent = "Chi tiết Liên kết Instance";
+
+      const faultHtml = edge.isFault ? `
+        <div class="panel-card highlight">
+          <div class="card-label">
+            <span>Trạng thái lan truyền sự cố</span>
+            <span class="badge critical">ĐƯỜNG GÂY NGHẼN CHÍNH</span>
+          </div>
+          <div class="reason-box danger">
+            ⚠️ <strong>Lan truyền lỗi (Fault Cascading):</strong> Sự cố từ <code>${u.label}</code> đang lan truyền trực tiếp sang <code>${v.label}</code> qua liên kết này!
+          </div>
+        </div>
+      ` : `
+        <div class="panel-card">
+          <div class="card-label">
+            <span>Trạng thái đường truyền</span>
+            <span class="badge healthy">BÌNH THƯỜNG</span>
+          </div>
+          <p style="font-size: 0.8rem; color: #94a3b8;">Đường truyền logic/vật lý giữa 2 instance đang hoạt động ổn định.</p>
+        </div>
+      `;
+
+      document.getElementById('insp-content').innerHTML = `
+        <div class="panel-card highlight">
+          <div class="card-label">
+            <span>Liên kết giữa 2 Instance</span>
+            <span class="badge gold">${edge.linkType || 'DEPENDENCY'}</span>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between; margin: 10px 0; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px;">
+            <div style="font-weight: 600; font-size: 0.85rem; color: #38bdf8;">${u.label}</div>
+            <div style="color: #fbbf24; font-size: 1.1rem;">&rarr;</div>
+            <div style="font-weight: 600; font-size: 0.85rem; color: #a78bfa;">${v.label}</div>
+          </div>
+          <div class="prop-row">
+            <span class="prop-name">Giao thức (Protocol):</span>
+            <span class="prop-val" style="color: #fbbf24;">${edge.protocol}</span>
+          </div>
+          <div class="prop-row">
+            <span class="prop-name">Cổng / Giao tiếp:</span>
+            <span class="prop-val">${edge.port}</span>
+          </div>
+        </div>
+
+        <div class="panel-card">
+          <div class="card-label">💡 VÌ SAO 2 INSTANCE NÀY LẠI NỐI VỚI NHAU?</div>
+          <div class="reason-box">
+            ${edge.reason}
+          </div>
+        </div>
+
+        <div class="panel-card">
+          <div class="card-label">💥 HẬU QUẢ NẾU ĐỨT LIÊN KẾT NÀY</div>
+          <div style="font-size: 0.8rem; color: #fca5a5; line-height: 1.45; margin-top: 4px;">
+            ${edge.impact}
+          </div>
+        </div>
+
+        <div class="panel-card">
+          <div class="card-label">🔗 Ý NGHĨA TRONG NOC PRO CHAINING</div>
+          <div style="font-size: 0.78rem; color: #94a3b8; line-height: 1.45;">
+            ${edge.chainingLogic}
+          </div>
+        </div>
+
+        ${faultHtml}
+      `;
+    }
+
+    // ==========================================
+    // INSPECTOR: SELECT NODE (AND SHOW ITS LINKS)
+    // ==========================================
+    function selectNode(node) {
+      selectedNodeId = node.id;
+      selectedEdgeId = null;
+      renderTopology();
+
+      const panel = document.getElementById('inspector-panel');
+      panel.classList.remove('collapsed');
+
+      document.getElementById('insp-title').textContent = node.label;
+
+      const nodeMap = new Map();
+      currentDataset.nodes.forEach(n => nodeMap.set(n.id, n));
+
+      // Find all connected edges
+      const incomingEdges = currentDataset.edges.filter(e => e.to === node.id);
+      const outgoingEdges = currentDataset.edges.filter(e => e.from === node.id);
+
+      let linksHtml = '';
+      if (incomingEdges.length > 0 || outgoingEdges.length > 0) {
+        let itemsHtml = '';
+        
+        // Outgoing
+        outgoingEdges.forEach(e => {
+          const target = nodeMap.get(e.to);
+          itemsHtml += `
+            <div class="link-item" onclick="selectEdgeById('${e.from}', '${e.to}')">
+              <div class="link-item-header">
+                <span class="link-item-title">&rarr; Kết nối tới: ${target ? target.label : e.to}</span>
+                <span class="link-item-proto">${e.protocol}</span>
+              </div>
+              <div class="link-item-reason">${truncateText(e.reason, 95)}</div>
+            </div>
+          `;
+        });
+
+        // Incoming
+        incomingEdges.forEach(e => {
+          const source = nodeMap.get(e.from);
+          itemsHtml += `
+            <div class="link-item" onclick="selectEdgeById('${e.from}', '${e.to}')">
+              <div class="link-item-header">
+                <span class="link-item-title" style="color: #a78bfa;">&larr; Được gọi từ: ${source ? source.label : e.from}</span>
+                <span class="link-item-proto">${e.protocol}</span>
+              </div>
+              <div class="link-item-reason">${truncateText(e.reason, 95)}</div>
+            </div>
+          `;
+        });
+
+        linksHtml = `
+          <div class="panel-card">
+            <div class="card-label">
+              <span>Các Instance nối trực tiếp (${incomingEdges.length + outgoingEdges.length})</span>
+              <span class="badge gold">CLICK ĐỂ XEM LÝ DO</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              ${itemsHtml}
+            </div>
+          </div>
+        `;
+      }
+
+      let alarmsHtml = '';
+      if (node.status === 'critical') {
+        alarmsHtml = `
+          <div class="panel-card">
+            <div class="card-label">
+              <span>Cảnh báo kích hoạt (${node.alarms})</span>
+              <span class="badge critical">CRITICAL</span>
+            </div>
+            <div class="alarm-item">
+              <div class="alarm-title">HARDWARE_FAULT / IO_HANG</div>
+              <div class="alarm-desc">Mất tín hiệu điều khiển phần cứng hoặc timeout kết nối qua Storage Fabric.</div>
+              <div class="alarm-time">2026-09-03 14:30:02 • Severity: Fatal</div>
+            </div>
+            <div class="alarm-item">
+              <div class="alarm-title">SERVICE_RESPONSE_DEGRADED</div>
+              <div class="alarm-desc">Độ trễ vượt ngưỡng 5000ms, hàng đợi I/O nghẽn 100%.</div>
+              <div class="alarm-time">2026-09-03 14:30:14 • Severity: Critical</div>
+            </div>
+          </div>
+        `;
+      } else {
+        alarmsHtml = `
+          <div class="panel-card">
+            <div class="card-label">
+              <span>Trạng thái hoạt động</span>
+              <span class="badge healthy">HEALTHY</span>
+            </div>
+            <p style="font-size: 0.8rem; color: #94a3b8;">Thiết bị đang hoạt động ổn định, không ghi nhận cảnh báo bất thường trong chu kỳ snapshot hiện tại.</p>
+          </div>
+        `;
+      }
+
+      // Chaining info
+      let chainingHtml = `
+        <div class="panel-card">
+          <div class="card-label">Thông tin Xâu chuỗi (NOC Pro Chaining)</div>
+          <div class="prop-row">
+            <span class="prop-name">Chaining Rule:</span>
+            <span class="prop-val">CORE_CHAINING_DEFAULT</span>
+          </div>
+          <div class="prop-row">
+            <span class="prop-name">Vai trò (Chaining Role):</span>
+            <span class="prop-val">${node.status === 'critical' ? 'CONNECTOR (Trung tâm)' : 'EXTENDER (Nhánh)'}</span>
+          </div>
+          <div class="prop-row">
+            <span class="prop-name">Gán chuỗi (Chain ID):</span>
+            <span class="prop-val" style="color: #38bdf8;">${node.cluster || 'Chain #2214039'}</span>
+          </div>
+          <div class="prop-row">
+            <span class="prop-name">Điểm TimeWindow:</span>
+            <span class="prop-val">1.0 (Δt &lt; 600s)</span>
+          </div>
+          <div class="prop-row">
+            <span class="prop-name">Louvain Modularity:</span>
+            <span class="prop-val">Q = +0.7842</span>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('insp-content').innerHTML = `
+        <div class="panel-card">
+          <div class="card-label">Thông tin Instance / Node</div>
+          <div class="prop-row">
+            <span class="prop-name">Tên instance:</span>
+            <span class="prop-val">${node.label}</span>
+          </div>
+          <div class="prop-row">
+            <span class="prop-name">Địa chỉ IP / Dải mạng:</span>
+            <span class="prop-val">${node.ip || '10.254.x.x'}</span>
+          </div>
+          <div class="prop-row">
+            <span class="prop-name">Loại phân tầng:</span>
+            <span class="prop-val">${node.type.toUpperCase()}</span>
+          </div>
+          <div class="prop-row">
+            <span class="prop-name">Tầng kiến trúc:</span>
+            <span class="prop-val">Level ${node.level}</span>
+          </div>
+          <div class="prop-row">
+            <span class="prop-name">Mô tả nhiệm vụ:</span>
+            <span class="prop-val" style="text-align: left; font-size: 0.76rem; font-family: var(--font-main);">${node.desc}</span>
+          </div>
+        </div>
+
+        ${linksHtml}
+        ${alarmsHtml}
+        ${chainingHtml}
+      `;
+    }
+
+    function selectEdgeById(fromId, toId) {
+      const nodeMap = new Map();
+      currentDataset.nodes.forEach(n => nodeMap.set(n.id, n));
+      const edge = currentDataset.edges.find(e => e.from === fromId && e.to === toId);
+      if (edge) {
+        selectEdge(edge, nodeMap.get(fromId), nodeMap.get(toId));
+      }
+    }
+
+    function closeInspector() {
+      document.getElementById('inspector-panel').classList.add('collapsed');
+      selectedEdgeId = null;
+      selectedNodeId = null;
+      renderTopology();
+    }
+
+    // ==========================================
+    // TOOLTIPS
+    // ==========================================
+    function showTooltip(e, node) {
+      tooltip.style.display = 'block';
+      tooltip.style.left = (e.clientX + 16) + 'px';
+      tooltip.style.top = (e.clientY + 16) + 'px';
+      tooltip.innerHTML = `
+        <strong>${node.label}</strong>
+        <div>Vai trò: ${node.sub}</div>
+        <div>IP: <code>${node.ip}</code></div>
+        <div style="margin-top: 4px; color: ${node.status === 'critical' ? '#ef4444' : '#10b981'}; font-weight: 600;">
+          ${node.status === 'critical' ? `⚠️ Đang có ${node.alarms} cảnh báo active!` : '✓ Hoạt động bình thường'}
+        </div>
+      `;
+    }
+
+    function showEdgeTooltip(e, edge, u, v) {
+      tooltip.style.display = 'block';
+      tooltip.style.left = (e.clientX + 16) + 'px';
+      tooltip.style.top = (e.clientY + 16) + 'px';
+      tooltip.innerHTML = `
+        <strong style="color: #fbbf24;">🔗 ${u.label} &rarr; ${v.label}</strong>
+        <div><strong>Giao thức:</strong> ${edge.protocol} (${edge.port})</div>
+        <div style="margin-top: 4px; color: #cbd5e1;"><strong>Lý do nối:</strong> ${truncateText(edge.reason, 110)}</div>
+        <div style="margin-top: 4px; font-size: 0.72rem; color: #38bdf8;">👉 Click để xem phân tích chi tiết kết nối</div>
+      `;
+    }
+
+    function hideTooltip() {
+      tooltip.style.display = 'none';
+    }
+
+    // ==========================================
+    // FAULT CASCADE SIMULATION
+    // ==========================================
+    function toggleSimulation() {
+      const banner = document.getElementById('sim-banner');
+      const btn = document.getElementById('btn-simulate-cascade');
+
+      if (isSimulating) {
+        isSimulating = false;
+        banner.style.display = 'none';
+        btn.innerHTML = `
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+          Mô phỏng Lan truyền sự cố
+        `;
+        renderTopology();
+      } else {
+        isSimulating = true;
+        banner.style.display = 'flex';
+        btn.innerHTML = `
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="6" y="4" width="4" height="16"></rect>
+            <rect x="14" y="4" width="4" height="16"></rect>
+          </svg>
+          Dừng Mô phỏng
+        `;
+
+        const steps = [
+          { edge: ["db-grp-1", "san-01"], text: "Bước 1: Tủ SAN hỏng cáp quang FC DPE khiến mọi I/O Oracle Database bị đóng băng!" },
+          { edge: ["sw-gom", "db-grp-1"], text: "Bước 2: Oracle RAC nghẽn cổng TNS 1521, làm kiệt quệ JDBC Connection Pool!" },
+          { edge: ["web-vtstore", "srv-red-cluster"], text: "Bước 3: App Server treo khiến Frontend Web VTStore bị timeout HTTP 504!" },
+          { edge: ["app-voffice", "web-vtstore"], text: "Bước 4: Người dùng truy cập VOFFICE 2.0 báo lỗi gián đoạn dịch vụ trên toàn quốc!" }
+        ];
+
+        let stepIdx = 0;
+        const nodeMap = new Map();
+        itTopologyData.nodes.forEach(n => nodeMap.set(n.id, n));
+
+        const runStep = () => {
+          if (!isSimulating) return;
+          const current = steps[stepIdx];
+          banner.innerHTML = `<div class="dot-pulse"></div><div><strong>Mô phỏng:</strong> ${current.text}</div>`;
+          
+          const fromNode = nodeMap.get(current.edge[0]);
+          const toNode = nodeMap.get(current.edge[1]);
+          const edge = itTopologyData.edges.find(e => (e.from === current.edge[0] && e.to === current.edge[1]) || (e.from === current.edge[1] && e.to === current.edge[0]));
+          if (edge) {
+            selectEdge(edge, fromNode, toNode);
+          }
+
+          stepIdx = (stepIdx + 1) % steps.length;
+        };
+
+        runStep();
+        if (simInterval) clearInterval(simInterval);
+        simInterval = setInterval(runStep, 3200);
+      }
+    }
+
+    // INITIAL SETUP
+    window.addEventListener('load', () => {
+      renderTopology();
+      selectNode(itTopologyData.nodes[0]);
+    });
+  </script>
+</body>
+</html>

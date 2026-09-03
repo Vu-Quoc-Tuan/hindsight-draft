@@ -9,7 +9,8 @@ function decimal(value: number | null) {
   return value === null ? '⊥' : value.toFixed(3)
 }
 
-function DeletionEvaluation({ evaluation }: { evaluation: AttributionDeletionEvaluationResult }) {
+function DeletionEvaluation({ evaluation }: { evaluation?: AttributionDeletionEvaluationResult | null }) {
+  if (!evaluation) return null
   return (
     <section className="deletion-evaluation" aria-label="Attribution deletion evaluation">
       <header>
@@ -43,9 +44,10 @@ export function EvidenceAttribution({
   result,
   evaluation,
 }: {
-  result: EvidenceCoverageAttributionResult
-  evaluation: AttributionDeletionEvaluationResult
+  result?: EvidenceCoverageAttributionResult | null
+  evaluation?: AttributionDeletionEvaluationResult | null
 }) {
+  if (!result) return null
   const available = result.status === 'AVAILABLE'
   return (
     <section className={`attribution ${available ? '' : 'attribution--unavailable'}`} aria-label="Evidence Coverage Attribution">

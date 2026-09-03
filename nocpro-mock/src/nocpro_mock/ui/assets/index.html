@@ -1,0 +1,1551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NocPro Mock Replay & Kafka Dispatcher</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #080c14;
+      --bg-surface: #0d1527;
+      --bg-card: rgba(18, 28, 48, 0.7);
+      --bg-card-hover: rgba(26, 40, 68, 0.85);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-focus: #38bdf8;
+      
+      --accent-primary: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.35);
+      --accent-indigo: #6366f1;
+      --accent-emerald: #10b981;
+      --accent-emerald-glow: rgba(16, 185, 129, 0.35);
+      --accent-rose: #f43f5e;
+      --accent-amber: #f59e0b;
+
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-faint: #64748b;
+
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --radius-full: 9999px;
+
+      --transition-fast: 0.15s ease;
+      --transition-normal: 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background-image: 
+        radial-gradient(circle at 15% 10%, rgba(56, 189, 248, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 85% 90%, rgba(99, 102, 241, 0.08) 0%, transparent 40%);
+      background-attachment: fixed;
+      overflow-x: hidden;
+    }
+
+    /* Header */
+    header {
+      border-bottom: 1px solid var(--border-subtle);
+      backdrop-filter: blur(16px);
+      background: rgba(13, 21, 39, 0.8);
+      padding: 1rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .brand-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: var(--radius-md);
+      background: linear-gradient(135deg, #0284c7, #4f46e5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.35);
+      position: relative;
+    }
+
+    .brand-icon svg {
+      width: 24px;
+      height: 24px;
+      fill: #fff;
+    }
+
+    .brand-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .brand-title span.badge {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 0.2rem 0.5rem;
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent-primary);
+      border-radius: var(--radius-full);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+
+    .brand-subtitle {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .header-status-bar {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.4rem 0.9rem;
+      border-radius: var(--radius-full);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-subtle);
+      font-size: 0.8rem;
+      font-weight: 500;
+      transition: var(--transition-normal);
+    }
+
+    .status-pill:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-faint);
+    }
+
+    .dot.live {
+      background: var(--accent-emerald);
+      box-shadow: 0 0 10px var(--accent-emerald);
+      animation: pulse 2s infinite;
+    }
+
+    .dot.warn {
+      background: var(--accent-amber);
+      box-shadow: 0 0 10px var(--accent-amber);
+    }
+
+    .dot.err {
+      background: var(--accent-rose);
+      box-shadow: 0 0 10px var(--accent-rose);
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.15); }
+    }
+
+    /* Layout */
+    .app-container {
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 1.5rem;
+      padding: 1.5rem 2rem;
+      max-width: 1700px;
+      margin: 0 auto;
+      width: 100%;
+      flex: 1;
+    }
+
+    @media (max-width: 1100px) {
+      .app-container {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Glass Panels */
+    .glass-panel {
+      background: var(--bg-card);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+      position: relative;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.25rem;
+    }
+
+    .panel-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* Mode Navigation Tabs */
+    .tab-group {
+      display: flex;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 0.25rem;
+      gap: 0.25rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 0.55rem 0.5rem;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      border: none;
+      background: transparent;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      transition: var(--transition-fast);
+    }
+
+    .tab-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .tab-btn.active {
+      color: #fff;
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(99, 102, 241, 0.3));
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    /* Form Fields */
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 0.35rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    input[type="text"],
+    input[type="number"],
+    select {
+      width: 100%;
+      background: rgba(10, 16, 30, 0.7);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 0.6rem 0.8rem;
+      color: var(--text-main);
+      font-size: 0.85rem;
+      font-family: inherit;
+      transition: var(--transition-fast);
+      outline: none;
+    }
+
+    input[type="text"]:focus,
+    input[type="number"]:focus,
+    select:focus {
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+      background: rgba(14, 23, 42, 0.9);
+    }
+
+    .input-suffix-btn {
+      position: absolute;
+      right: 6px;
+      padding: 0.3rem 0.5rem;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 0.75rem;
+      transition: var(--transition-fast);
+    }
+
+    .input-suffix-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    /* Toggle Switches */
+    .switch-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.6rem 0.8rem;
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      margin-bottom: 0.75rem;
+      user-select: none;
+    }
+
+    .switch-title {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-main);
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+
+    .switch-desc {
+      font-size: 0.72rem;
+      color: var(--text-faint);
+      font-weight: 400;
+      text-transform: none;
+    }
+
+    .toggle-ui {
+      width: 40px;
+      height: 22px;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: var(--radius-full);
+      position: relative;
+      transition: var(--transition-fast);
+    }
+
+    .toggle-ui::after {
+      content: '';
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #fff;
+      top: 3px;
+      left: 3px;
+      transition: var(--transition-fast);
+    }
+
+    input[type="checkbox"] {
+      display: none;
+    }
+
+    input[type="checkbox"]:checked + .switch-label .toggle-ui {
+      background: var(--accent-primary);
+    }
+
+    input[type="checkbox"]:checked + .switch-label .toggle-ui::after {
+      transform: translateX(18px);
+    }
+
+    /* Section divider */
+    .section-separator {
+      height: 1px;
+      background: var(--border-subtle);
+      margin: 1.25rem 0;
+    }
+
+    /* Action Buttons */
+    .action-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.6rem;
+      padding: 0.75rem 1.25rem;
+      border-radius: var(--radius-md);
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 700;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: var(--transition-normal);
+      user-select: none;
+      text-decoration: none;
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-main);
+      border-color: var(--border-subtle);
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: #ffffff;
+      box-shadow: 0 4px 15px rgba(2, 132, 199, 0.4);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      box-shadow: 0 6px 22px rgba(2, 132, 199, 0.6);
+      transform: translateY(-1px);
+    }
+
+    /* BIG PUSH TO KAFKA BUTTON */
+    .btn-kafka-dispatch {
+      background: linear-gradient(135deg, #059669 0%, #10b981 50%, #06b6d4 100%);
+      color: #ffffff;
+      font-size: 1.05rem;
+      padding: 0.95rem 1.5rem;
+      box-shadow: 0 4px 20px var(--accent-emerald-glow);
+      position: relative;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .btn-kafka-dispatch::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle, rgba(255,255,255,0.2) 0%, transparent 60%);
+      transform: scale(0);
+      transition: transform 0.5s ease-out;
+    }
+
+    .btn-kafka-dispatch:hover:not(:disabled)::before {
+      transform: scale(1);
+    }
+
+    .btn-kafka-dispatch:hover:not(:disabled) {
+      box-shadow: 0 8px 30px rgba(16, 185, 129, 0.55);
+      transform: translateY(-2px);
+    }
+
+    .btn:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      filter: grayscale(0.5);
+    }
+
+    /* Spinner */
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Right Panel: Metrics Overview */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .metric-card {
+      background: rgba(10, 16, 30, 0.6);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .metric-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 3px;
+      height: 100%;
+      background: var(--accent-primary);
+    }
+
+    .metric-card.green::before { background: var(--accent-emerald); }
+    .metric-card.indigo::before { background: var(--accent-indigo); }
+    .metric-card.amber::before { background: var(--accent-amber); }
+
+    .metric-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .metric-value {
+      font-size: 1.6rem;
+      font-weight: 800;
+      color: var(--text-main);
+      font-family: 'JetBrains Mono', monospace;
+      letter-spacing: -0.03em;
+    }
+
+    .metric-sub {
+      font-size: 0.72rem;
+      color: var(--text-faint);
+    }
+
+    /* Snapshot Digest Bar */
+    .digest-banner {
+      background: rgba(14, 23, 42, 0.8);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 0.8rem 1.2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+    }
+
+    .digest-items {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .digest-item {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: var(--text-muted);
+    }
+
+    .digest-item strong {
+      color: var(--text-main);
+    }
+
+    .copy-pill {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-subtle);
+      padding: 0.25rem 0.55rem;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.75rem;
+      color: var(--accent-primary);
+    }
+
+    .copy-pill:hover {
+      background: rgba(56, 189, 248, 0.15);
+    }
+
+    /* Tabs for Content Views */
+    .content-nav {
+      display: flex;
+      border-bottom: 1px solid var(--border-subtle);
+      gap: 1.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .content-tab-btn {
+      padding: 0.6rem 0.2rem;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      position: relative;
+      transition: var(--transition-fast);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .content-tab-btn:hover {
+      color: var(--text-main);
+    }
+
+    .content-tab-btn.active {
+      color: var(--accent-primary);
+    }
+
+    .content-tab-btn.active::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background: var(--accent-primary);
+      box-shadow: 0 0 8px var(--accent-glow);
+    }
+
+    /* Table */
+    .table-container {
+      overflow-x: auto;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      background: rgba(10, 16, 30, 0.4);
+      max-height: 420px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.8rem;
+    }
+
+    th {
+      background: rgba(13, 21, 39, 0.95);
+      padding: 0.75rem 1rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--border-subtle);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    td {
+      padding: 0.65rem 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: var(--text-main);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+    }
+
+    tr:hover td {
+      background: rgba(56, 189, 248, 0.04);
+    }
+
+    .badge-sev {
+      display: inline-block;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .sev-critical { background: rgba(244, 63, 94, 0.2); color: #f43f5e; border: 1px solid rgba(244, 63, 94, 0.4); }
+    .sev-major { background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4); }
+    .sev-minor { background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); }
+    .sev-warning { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.4); }
+
+    /* Live Console / Log Terminal */
+    .console-terminal {
+      background: #050810;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      line-height: 1.6;
+      max-height: 420px;
+      overflow-y: auto;
+      color: #93c5fd;
+    }
+
+    .log-line {
+      display: flex;
+      align-items: baseline;
+      gap: 0.6rem;
+      margin-bottom: 0.3rem;
+    }
+
+    .log-ts {
+      color: var(--text-faint);
+      font-size: 0.72rem;
+      user-select: none;
+    }
+
+    .log-tag {
+      font-weight: 700;
+      padding: 0.05rem 0.35rem;
+      border-radius: 3px;
+      font-size: 0.7rem;
+    }
+
+    .tag-init { background: rgba(99, 102, 241, 0.25); color: #a5b4fc; }
+    .tag-chunk { background: rgba(56, 189, 248, 0.25); color: #7dd3fc; }
+    .tag-comp { background: rgba(16, 185, 129, 0.25); color: #6ee7b7; }
+    .tag-err { background: rgba(244, 63, 94, 0.25); color: #fda4af; }
+    .tag-warn { background: rgba(245, 158, 11, 0.25); color: #fde68a; }
+
+    /* Success / Result Flash Banner */
+    .result-banner {
+      display: none;
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(6, 182, 212, 0.15));
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      border-radius: var(--radius-md);
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+      animation: fadeIn 0.4s ease;
+    }
+
+    .result-banner.active {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+
+    .result-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--accent-emerald);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 1.2rem;
+      box-shadow: 0 0 16px var(--accent-emerald-glow);
+    }
+
+    .result-content {
+      flex: 1;
+    }
+
+    .result-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 0.35rem;
+    }
+
+    .result-desc {
+      font-size: 0.85rem;
+      color: #cbd5e1;
+      line-height: 1.4;
+    }
+
+    /* Toast Notification */
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      padding: 0.8rem 1.4rem;
+      background: #1e293b;
+      color: #fff;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+      font-size: 0.88rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      z-index: 100;
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .toast.success { border-color: var(--accent-emerald); }
+    .toast.error { border-color: var(--accent-rose); background: #33131d; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Header -->
+  <header>
+    <div class="brand-group">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-title">
+          NOCPRO MOCK
+          <span class="badge">CANONICAL V1</span>
+        </div>
+        <div class="brand-subtitle">Interactive Replay & Kafka Dispatch Console</div>
+      </div>
+    </div>
+
+    <div class="header-status-bar">
+      <div class="status-pill" id="pill-datasets">
+        <span class="dot" id="dot-datasets"></span>
+        <span id="text-datasets">Checking Datasets...</span>
+      </div>
+      <div class="status-pill" id="pill-kafka">
+        <span class="dot" id="dot-kafka"></span>
+        <span id="text-kafka">Kafka: Checking...</span>
+        <button class="input-suffix-btn" id="btn-test-kafka" style="position:static; margin-left:4px;">Test</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="app-container">
+
+    <!-- Left Console: Configuration & Trigger -->
+    <section class="glass-panel" aria-label="Replay Configuration">
+      <div class="panel-header">
+        <div class="panel-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 20v-6M6 20V10M18 20V4"/>
+          </svg>
+          Replay Source & Configuration
+        </div>
+      </div>
+
+      <!-- Mode Selector Tabs -->
+      <div class="tab-group" role="tablist">
+        <button class="tab-btn active" id="tab-real" role="tab">
+          📡 Real Export
+        </button>
+        <button class="tab-btn" id="tab-golden" role="tab">
+          🏆 Golden Fixture
+        </button>
+        <button class="tab-btn" id="tab-sequence" role="tab">
+          🧬 Sequences
+        </button>
+      </div>
+
+      <!-- Real Export Form -->
+      <div id="form-real">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="input-real-snap-id">Snapshot ID</label>
+            <div class="input-wrapper">
+              <input type="text" id="input-real-snap-id" value="snapshot_replay_001" placeholder="snapshot_id">
+              <button class="input-suffix-btn" id="btn-random-id" title="Generate New ID">🎲</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="input-real-snap-ver">Snapshot Version</label>
+            <input type="text" id="input-real-snap-ver" value="1">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="input-chain-ids">Chain IDs (Optional)</label>
+            <input type="text" id="input-chain-ids" placeholder="e.g. 6907125, 2214039">
+          </div>
+          <div class="form-group">
+            <label for="input-limit">Record Limit</label>
+            <input type="number" id="input-limit" placeholder="All records" min="1">
+          </div>
+        </div>
+
+        <input type="checkbox" id="check-real-topo">
+        <label for="check-real-topo" class="switch-label">
+          <div class="switch-title">
+            Include Real TopoIP Adjacency
+            <span class="switch-desc">Loads IP adjacency (~200k edges; slower)</span>
+          </div>
+          <div class="toggle-ui"></div>
+        </label>
+      </div>
+
+      <!-- Golden Fixture Form -->
+      <div id="form-golden" style="display: none;">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="input-golden-snap-id">Snapshot ID</label>
+            <input type="text" id="input-golden-snap-id" value="snapshot_golden_2214039" readonly style="opacity:0.8;">
+          </div>
+          <div class="form-group">
+            <label for="input-golden-snap-ver">Version</label>
+            <input type="text" id="input-golden-snap-ver" value="1">
+          </div>
+        </div>
+
+        <input type="checkbox" id="check-golden-topo">
+        <label for="check-golden-topo" class="switch-label">
+          <div class="switch-title">
+            Include TopoIP Device Codes
+            <span class="switch-desc">Asserts exact-identity DEA mapping against real export</span>
+          </div>
+          <div class="toggle-ui"></div>
+        </label>
+      </div>
+
+      <!-- Synthetic Sequence Form -->
+      <div id="form-sequence" style="display: none;">
+        <div class="form-group">
+          <label for="select-sequence">Synthetic Sequence</label>
+          <select id="select-sequence"></select>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="select-seq-snapshot">Sequence Step / Snapshot</label>
+            <select id="select-seq-snapshot"></select>
+          </div>
+          <div class="form-group">
+            <label>Sequence Type</label>
+            <input type="text" id="input-seq-type" readonly style="opacity:0.8;">
+          </div>
+        </div>
+      </div>
+
+      <div class="section-separator"></div>
+
+      <!-- Kafka Broker & Destination -->
+      <div class="panel-header" style="margin-bottom:0.75rem;">
+        <div class="panel-title" style="font-size:0.9rem;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+          </svg>
+          Kafka Destination
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="input-kafka-bootstrap">Bootstrap Broker</label>
+          <input type="text" id="input-kafka-bootstrap" value="localhost:9092">
+        </div>
+        <div class="form-group">
+          <label for="input-kafka-topic">Kafka Topic</label>
+          <input type="text" id="input-kafka-topic" value="nocpro.snapshot.v1">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="input-chunk-bytes">Chunk Target Bytes (Default 2MB)</label>
+        <input type="number" id="input-chunk-bytes" value="2097152" step="65536">
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="action-group">
+        <button class="btn btn-secondary" id="btn-preview">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+          <span>Preview Snapshot</span>
+        </button>
+
+        <!-- THE KEY BUTTON REQUESTED BY USER -->
+        <button class="btn btn-kafka-dispatch" id="btn-push-kafka" title="Validate, chunk, compress and transmit directly into Kafka">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+          </svg>
+          <span id="label-push-kafka">Push to Kafka</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Right Console: Telemetry & Live Dispatch Stream -->
+    <section class="glass-panel" aria-label="Inspection & Live Monitor">
+      
+      <!-- Result Success Banner -->
+      <div class="result-banner" id="banner-success">
+        <div class="result-icon">✓</div>
+        <div class="result-content">
+          <div class="result-title" id="banner-title">Snapshot Successfully Published to Kafka!</div>
+          <div class="result-desc" id="banner-desc">
+            All chunks and final SNAPSHOT_COMPLETE barrier event published.
+          </div>
+        </div>
+      </div>
+
+      <!-- Metrics Grid -->
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-label">Total Alarms</div>
+          <div class="metric-value" id="val-alarms">-</div>
+          <div class="metric-sub" id="sub-alarms">Normalized & Canonical</div>
+        </div>
+        <div class="metric-card indigo">
+          <div class="metric-label">Observed Chains</div>
+          <div class="metric-value" id="val-chains">-</div>
+          <div class="metric-sub" id="sub-chains">Chaining IDs identified</div>
+        </div>
+        <div class="metric-card green">
+          <div class="metric-label">Topology Nodes / Edges</div>
+          <div class="metric-value" id="val-topo">- / -</div>
+          <div class="metric-sub" id="sub-topo">Adjacency layer</div>
+        </div>
+        <div class="metric-card amber">
+          <div class="metric-label">Payload Size / Chunks</div>
+          <div class="metric-value" id="val-size">-</div>
+          <div class="metric-sub" id="sub-size">Zstd chunked transport</div>
+        </div>
+      </div>
+
+      <!-- Digest Bar -->
+      <div class="digest-banner">
+        <div class="digest-items">
+          <div class="digest-item">
+            ID: <strong id="digest-snap-id">none</strong>
+          </div>
+          <div class="digest-item">
+            Ver: <strong id="digest-snap-ver">1</strong>
+          </div>
+          <div class="digest-item">
+            Source: <strong id="digest-source-kind">N/A</strong>
+          </div>
+          <div class="digest-item">
+            Contract: <strong id="digest-contract-status" style="color:var(--text-faint);">Not Evaluated</strong>
+          </div>
+        </div>
+        <div class="copy-pill" id="btn-copy-checksum" title="Copy SHA-256 Checksum">
+          <span id="label-checksum">Checksum: None</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- Content Views Navigation -->
+      <div class="content-nav">
+        <button class="content-tab-btn active" id="btn-view-alarms">
+          📋 Sample Alarms
+        </button>
+        <button class="content-tab-btn" id="btn-view-chains">
+          🔗 Chains & Rules
+        </button>
+        <button class="content-tab-btn" id="btn-view-console">
+          ⚡ Kafka Dispatch Stream
+        </button>
+      </div>
+
+      <!-- View 1: Alarms Table -->
+      <div id="view-alarms" class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Alarm ID</th>
+              <th>Canonical Time</th>
+              <th>Device Code</th>
+              <th>Alarm Name</th>
+              <th>Severity</th>
+              <th>Node Reference</th>
+              <th>Quality Flags</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-alarms">
+            <tr>
+              <td colspan="7" style="text-align:center; color:var(--text-faint); padding:2rem;">
+                Click "Preview Snapshot" or "Push to Kafka" to inspect alarms.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- View 2: Chains Table -->
+      <div id="view-chains" class="table-container" style="display:none;">
+        <table>
+          <thead>
+            <tr>
+              <th>Chain ID</th>
+              <th>Member Count</th>
+              <th>Chain Name</th>
+              <th>Event Span (s)</th>
+              <th>Source Kind</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-chains">
+            <tr>
+              <td colspan="5" style="text-align:center; color:var(--text-faint); padding:2rem;">
+                No chains loaded.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- View 3: Live Terminal / Event Log -->
+      <div id="view-console" class="console-terminal" style="display:none;">
+        <div class="log-line">
+          <span class="log-ts">00:00:00</span>
+          <span class="log-tag tag-init">SYS</span>
+          <span>NocPro Mock Web UI Initialized. Ready to dispatch snapshots.</span>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="toast-notify">
+    <span id="toast-icon">ℹ️</span>
+    <span id="toast-msg">Notification</span>
+  </div>
+
+  <script>
+    // State
+    let currentMode = 'real';
+    let availableSequences = [];
+    let lastPreviewData = null;
+    let fullChecksum = '';
+
+    // Elements
+    const tabReal = document.getElementById('tab-real');
+    const tabGolden = document.getElementById('tab-golden');
+    const tabSeq = document.getElementById('tab-sequence');
+    const formReal = document.getElementById('form-real');
+    const formGolden = document.getElementById('form-golden');
+    const formSeq = document.getElementById('form-sequence');
+
+    const btnPreview = document.getElementById('btn-preview');
+    const btnPushKafka = document.getElementById('btn-push-kafka');
+    const labelPushKafka = document.getElementById('label-push-kafka');
+    const btnTestKafka = document.getElementById('btn-test-kafka');
+    const btnRandomId = document.getElementById('btn-random-id');
+    const btnCopyChecksum = document.getElementById('btn-copy-checksum');
+
+    const btnViewAlarms = document.getElementById('btn-view-alarms');
+    const btnViewChains = document.getElementById('btn-view-chains');
+    const btnViewConsole = document.getElementById('btn-view-console');
+    const viewAlarms = document.getElementById('view-alarms');
+    const viewChains = document.getElementById('view-chains');
+    const viewConsole = document.getElementById('view-console');
+
+    // Tab Switching
+    function setMode(mode) {
+      currentMode = mode;
+      tabReal.classList.toggle('active', mode === 'real');
+      tabGolden.classList.toggle('active', mode === 'golden');
+      tabSeq.classList.toggle('active', mode === 'sequence');
+
+      formReal.style.display = mode === 'real' ? 'block' : 'none';
+      formGolden.style.display = mode === 'golden' ? 'block' : 'none';
+      formSeq.style.display = mode === 'sequence' ? 'block' : 'none';
+    }
+
+    tabReal.addEventListener('click', () => setMode('real'));
+    tabGolden.addEventListener('click', () => setMode('golden'));
+    tabSeq.addEventListener('click', () => setMode('sequence'));
+
+    // Content Tabs
+    function setContentTab(tab) {
+      btnViewAlarms.classList.toggle('active', tab === 'alarms');
+      btnViewChains.classList.toggle('active', tab === 'chains');
+      btnViewConsole.classList.toggle('active', tab === 'console');
+
+      viewAlarms.style.display = tab === 'alarms' ? 'block' : 'none';
+      viewChains.style.display = tab === 'chains' ? 'block' : 'none';
+      viewConsole.style.display = tab === 'console' ? 'block' : 'none';
+    }
+
+    btnViewAlarms.addEventListener('click', () => setContentTab('alarms'));
+    btnViewChains.addEventListener('click', () => setContentTab('chains'));
+    btnViewConsole.addEventListener('click', () => setContentTab('console'));
+
+    // Random ID Generator
+    btnRandomId.addEventListener('click', () => {
+      const rand = Math.floor(1000 + Math.random() * 9000);
+      document.getElementById('input-real-snap-id').value = `snapshot_replay_${rand}`;
+    });
+
+    // Toast
+    function showToast(message, type = 'info') {
+      const toast = document.getElementById('toast-notify');
+      const msgEl = document.getElementById('toast-msg');
+      const iconEl = document.getElementById('toast-icon');
+
+      msgEl.textContent = message;
+      iconEl.textContent = type === 'success' ? '✅' : (type === 'error' ? '❌' : 'ℹ️');
+      toast.className = `toast show ${type}`;
+
+      setTimeout(() => {
+        toast.className = 'toast';
+      }, 3500);
+    }
+
+    // Logger to Console View
+    function logEvent(tag, text, tagClass = 'tag-chunk') {
+      const d = new Date();
+      const ts = d.toTimeString().split(' ')[0] + '.' + String(d.getMilliseconds()).padStart(3, '0');
+      const line = document.createElement('div');
+      line.className = 'log-line';
+      line.innerHTML = `<span class="log-ts">${ts}</span><span class="log-tag ${tagClass}">${tag}</span><span>${text}</span>`;
+      viewConsole.appendChild(line);
+      viewConsole.scrollTop = viewConsole.scrollHeight;
+    }
+
+    // Gather Request Payload
+    function getRequestPayload() {
+      const payload = {
+        mode: currentMode,
+        kafka_bootstrap: document.getElementById('input-kafka-bootstrap').value.trim(),
+        kafka_topic: document.getElementById('input-kafka-topic').value.trim(),
+        chunk_target_bytes: parseInt(document.getElementById('input-chunk-bytes').value, 10) || 2097152,
+      };
+
+      if (currentMode === 'real') {
+        payload.snapshot_id = document.getElementById('input-real-snap-id').value.trim() || 'snapshot_replay_001';
+        payload.snapshot_version = document.getElementById('input-real-snap-ver').value.trim() || '1';
+        payload.with_topology = document.getElementById('check-real-topo').checked;
+        const chainsInput = document.getElementById('input-chain-ids').value.trim();
+        if (chainsInput) {
+          payload.chain_ids = chainsInput.split(',').map(s => s.trim()).filter(Boolean);
+        }
+        const limitVal = document.getElementById('input-limit').value.trim();
+        if (limitVal) {
+          payload.limit = parseInt(limitVal, 10);
+        }
+      } else if (currentMode === 'golden') {
+        payload.snapshot_id = 'snapshot_golden_2214039';
+        payload.snapshot_version = document.getElementById('input-golden-snap-ver').value.trim() || '1';
+        payload.with_topology = document.getElementById('check-golden-topo').checked;
+      } else if (currentMode === 'sequence') {
+        const seqSelect = document.getElementById('select-sequence');
+        const snapSelect = document.getElementById('select-seq-snapshot');
+        const seq = availableSequences.find(s => s.id === seqSelect.value);
+        if (seq) {
+          payload.sequence_path = seq.path;
+          payload.sequence_snapshot = snapSelect.value;
+          payload.snapshot_id = `${seq.id}_${snapSelect.value.replace('.json', '')}`;
+          payload.snapshot_version = '1';
+        }
+      }
+
+      return payload;
+    }
+
+    // Render Preview Data
+    function renderPreview(preview) {
+      lastPreviewData = preview;
+      fullChecksum = preview.sha256_checksum;
+
+      document.getElementById('val-alarms').textContent = preview.counts.alarms.toLocaleString();
+      document.getElementById('val-chains').textContent = preview.counts.chains.toLocaleString();
+      document.getElementById('val-topo').textContent = `${preview.counts.topology_nodes} / ${preview.counts.topology_edges}`;
+      
+      const kb = (preview.size_bytes / 1024).toFixed(1);
+      document.getElementById('val-size').textContent = `${kb} KB (${preview.estimated_chunks} chk)`;
+
+      document.getElementById('digest-snap-id').textContent = preview.snapshot_id;
+      document.getElementById('digest-snap-ver').textContent = preview.snapshot_version;
+      document.getElementById('digest-source-kind').textContent = preview.source_kind;
+
+      const contractEl = document.getElementById('digest-contract-status');
+      if (preview.contract_valid) {
+        contractEl.textContent = '✓ Valid v1';
+        contractEl.style.color = 'var(--accent-emerald)';
+      } else {
+        contractEl.textContent = `✗ Violations (${preview.validation_errors.length})`;
+        contractEl.style.color = 'var(--accent-rose)';
+      }
+
+      document.getElementById('label-checksum').textContent = `SHA256: ${preview.sha256_checksum.slice(0, 10)}...`;
+
+      // Render Alarms Table
+      const tbodyAlarms = document.getElementById('tbody-alarms');
+      if (preview.sample_alarms && preview.sample_alarms.length > 0) {
+        tbodyAlarms.innerHTML = preview.sample_alarms.map(a => {
+          const sevClass = a.severity === 'CRITICAL' ? 'sev-critical' : (a.severity === 'MAJOR' ? 'sev-major' : 'sev-minor');
+          const flags = a.quality_flags && a.quality_flags.length ? a.quality_flags.join(', ') : '-';
+          return `
+            <tr>
+              <td><strong>${a.alarm_id}</strong></td>
+              <td>${a.event_time}</td>
+              <td>${a.device_code || '-'}</td>
+              <td>${a.alarm_name || '-'}</td>
+              <td><span class="badge-sev ${sevClass}">${a.severity}</span></td>
+              <td>${a.node_reference || '-'}</td>
+              <td style="color:var(--text-faint);">${flags}</td>
+            </tr>
+          `;
+        }).join('');
+      } else {
+        tbodyAlarms.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:1.5rem;">No alarms in this package.</td></tr>';
+      }
+
+      // Render Chains Table
+      const tbodyChains = document.getElementById('tbody-chains');
+      if (preview.sample_chains && preview.sample_chains.length > 0) {
+        tbodyChains.innerHTML = preview.sample_chains.map(c => `
+          <tr>
+            <td><strong>${c.chain_id}</strong></td>
+            <td>${c.member_count}</td>
+            <td>${c.chain_name || '-'}</td>
+            <td>${c.event_span_seconds ?? '-'}</td>
+            <td>${c.source_kind || '-'}</td>
+          </tr>
+        `).join('');
+      } else {
+        tbodyChains.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:1.5rem;">No chains found.</td></tr>';
+      }
+    }
+
+    // Preview Action
+    async function doPreview() {
+      const payload = getRequestPayload();
+      btnPreview.disabled = true;
+      btnPreview.innerHTML = `<div class="spinner"></div><span>Building Preview...</span>`;
+      logEvent('PREVIEW', `Building snapshot preview for mode=${payload.mode}...`, 'tag-init');
+
+      try {
+        const resp = await fetch('/api/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const res = await resp.json();
+        if (res.ok) {
+          renderPreview(res.preview);
+          logEvent('PREVIEW', `Built snapshot ${res.preview.snapshot_id} (Alarms: ${res.preview.counts.alarms}, Chains: ${res.preview.counts.chains})`, 'tag-comp');
+          showToast('Snapshot preview generated successfully!', 'success');
+        } else {
+          showToast(res.error || 'Failed to generate preview', 'error');
+          logEvent('ERROR', res.error, 'tag-err');
+        }
+      } catch (err) {
+        showToast(`Preview request failed: ${err.message}`, 'error');
+        logEvent('ERROR', err.message, 'tag-err');
+      } finally {
+        btnPreview.disabled = false;
+        btnPreview.innerHTML = `
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+          </svg>
+          <span>Preview Snapshot</span>
+        `;
+      }
+    }
+    btnPreview.addEventListener('click', doPreview);
+
+    // KEY ACTION: PUSH TO KAFKA
+    async function doPushToKafka() {
+      const payload = getRequestPayload();
+      
+      const confirmMsg = `Push snapshot "${payload.snapshot_id}" directly to Kafka broker ${payload.kafka_bootstrap} (Topic: ${payload.kafka_topic})?`;
+      if (!confirm(confirmMsg)) {
+        return;
+      }
+
+      // Switch to console view immediately to show dispatch stream
+      setContentTab('console');
+
+      btnPushKafka.disabled = true;
+      btnPreview.disabled = true;
+      labelPushKafka.textContent = 'Publishing to Kafka...';
+      btnPushKafka.insertAdjacentHTML('afterbegin', '<div class="spinner" id="push-spinner"></div>');
+
+      logEvent('START', `Initiating dispatch to ${payload.kafka_bootstrap} [${payload.kafka_topic}]`, 'tag-init');
+      logEvent('COMPRESS', `Compressing canonical snapshot with zstd (target chunk: ${payload.chunk_target_bytes} bytes)...`, 'tag-chunk');
+
+      const banner = document.getElementById('banner-success');
+      banner.classList.remove('active');
+
+      try {
+        const resp = await fetch('/api/publish', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const res = await resp.json();
+
+        if (res.ok) {
+          logEvent('SUCCESS', `Snapshot ${res.snapshot_id} (v${res.snapshot_version}) successfully published in ${res.duration_ms}ms!`, 'tag-comp');
+
+          if (res.events && res.events.length) {
+            res.events.forEach(ev => {
+              if (ev.event_type === 'SNAPSHOT_CHUNK') {
+                logEvent('CHUNK', `Sent SNAPSHOT_CHUNK index=${ev.chunk_index + 1}/${ev.chunk_count} (${ev.payload_size} bytes, chk=${ev.chunk_checksum})`, 'tag-chunk');
+              } else if (ev.event_type === 'SNAPSHOT_COMPLETE') {
+                logEvent('BARRIER', `Sent SNAPSHOT_COMPLETE barrier (expected_chunks=${ev.expected_chunk_count}, total_bytes=${ev.total_uncompressed_bytes})`, 'tag-comp');
+              }
+            });
+          }
+
+          document.getElementById('banner-title').textContent = `Snapshot "${res.snapshot_id}" Emitted to Kafka!`;
+          document.getElementById('banner-desc').textContent = 
+            `Published ${res.chunks_published} chunks (${(res.total_uncompressed_bytes/1024).toFixed(1)} KB) to topic "${res.topic}" in ${res.duration_ms} ms. Downstream Explain service will assemble and analyze.`;
+          banner.classList.add('active');
+
+          showToast(`Snapshot pushed to Kafka (${res.chunks_published} chunks)!`, 'success');
+        } else {
+          logEvent('FAILED', res.error || 'Unknown publication failure', 'tag-err');
+          showToast(res.error || 'Kafka publication failed', 'error');
+        }
+      } catch (err) {
+        logEvent('FAILED', `Network/Server error: ${err.message}`, 'tag-err');
+        showToast(`Request failed: ${err.message}`, 'error');
+      } finally {
+        btnPushKafka.disabled = false;
+        btnPreview.disabled = false;
+        labelPushKafka.textContent = 'Push to Kafka';
+        const sp = document.getElementById('push-spinner');
+        if (sp) sp.remove();
+      }
+    }
+    btnPushKafka.addEventListener('click', doPushToKafka);
+
+    // Test Kafka Connection
+    async function testKafka() {
+      const bootstrap = document.getElementById('input-kafka-bootstrap').value.trim();
+      const dot = document.getElementById('dot-kafka');
+      const text = document.getElementById('text-kafka');
+
+      text.textContent = `Testing ${bootstrap}...`;
+      dot.className = 'dot warn';
+
+      try {
+        const resp = await fetch('/api/check-kafka', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kafka_bootstrap: bootstrap }),
+        });
+        const res = await resp.json();
+        if (res.ok) {
+          dot.className = 'dot live';
+          text.textContent = `Kafka: Ready (${bootstrap})`;
+          showToast(`Kafka broker ${bootstrap} is reachable!`, 'success');
+        } else {
+          dot.className = 'dot err';
+          text.textContent = `Kafka: Offline`;
+          showToast(`Cannot reach Kafka (${res.message || 'offline'})`, 'error');
+        }
+      } catch (err) {
+        dot.className = 'dot err';
+        text.textContent = `Kafka: Error`;
+      }
+    }
+    btnTestKafka.addEventListener('click', testKafka);
+
+    // Copy Checksum
+    btnCopyChecksum.addEventListener('click', () => {
+      if (fullChecksum) {
+        navigator.clipboard.writeText(fullChecksum);
+        showToast('SHA-256 Checksum copied to clipboard!', 'success');
+      } else {
+        showToast('No checksum to copy yet.', 'info');
+      }
+    });
+
+    // Initialize System Status
+    async function initStatus() {
+      try {
+        const resp = await fetch('/api/status');
+        const data = await resp.json();
+        if (data.ok) {
+          // Datasets
+          const alarmsOk = data.datasets.alarm_csv.exists;
+          const topoOk = data.datasets.topo_ip.exists;
+          const dotData = document.getElementById('dot-datasets');
+          const textData = document.getElementById('text-datasets');
+
+          if (alarmsOk) {
+            dotData.className = 'dot live';
+            textData.textContent = `Datasets: Ready (${topoOk ? 'Alarm + TopoIP' : 'Alarm only'})`;
+          } else {
+            dotData.className = 'dot warn';
+            textData.textContent = 'Datasets: Raw CSV Missing';
+          }
+
+          // Sequences
+          availableSequences = data.sequences || [];
+          const selectSeq = document.getElementById('select-sequence');
+          selectSeq.innerHTML = availableSequences.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+
+          function updateSeqSnapshots() {
+            const seq = availableSequences.find(s => s.id === selectSeq.value);
+            const selectSnap = document.getElementById('select-seq-snapshot');
+            const inputType = document.getElementById('input-seq-type');
+            if (seq) {
+              selectSnap.innerHTML = seq.snapshots.map(snap => `<option value="${snap}">${snap}</option>`).join('');
+              inputType.value = seq.sequence_type;
+            }
+          }
+          selectSeq.addEventListener('change', updateSeqSnapshots);
+          if (availableSequences.length) {
+            updateSeqSnapshots();
+          }
+
+          // Initial Kafka check
+          testKafka();
+
+          // Auto trigger initial preview for golden to give a rich first impression
+          doPreview();
+        }
+      } catch (err) {
+        console.error('Failed to load status:', err);
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', initStatus);
+  </script>
+</body>
+</html>

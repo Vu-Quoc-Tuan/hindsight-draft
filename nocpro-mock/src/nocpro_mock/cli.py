@@ -290,7 +290,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("directory")
     p_run.set_defaults(func=_cmd_run_sequence)
 
+    p_ui = sub.add_parser("ui", help="start interactive web UI and Kafka dispatcher")
+    p_ui.add_argument("--host", default="0.0.0.0", help="host interface to bind (default 0.0.0.0)")
+    p_ui.add_argument("--port", type=int, default=8085, help="HTTP port (default 8085)")
+    p_ui.add_argument("--kafka-bootstrap", default=None, help="default Kafka bootstrap broker")
+    p_ui.set_defaults(func=_cmd_ui)
+
     return parser
+
+
+def _cmd_ui(args: argparse.Namespace) -> int:
+    from .ui.server import run_server
+
+    run_server(
+        host=args.host,
+        port=args.port,
+        default_kafka=args.kafka_bootstrap or "localhost:9092",
+    )
+    return 0
 
 
 def _add_kafka_options(parser: argparse.ArgumentParser) -> None:

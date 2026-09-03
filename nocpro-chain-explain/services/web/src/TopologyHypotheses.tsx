@@ -132,7 +132,8 @@ function ScopeCard({ result }: { result: DependencyScopeResult }) {
   </article>
 }
 
-export function TopologyHypotheses({ topology_hypotheses }: { topology_hypotheses: TopologyHypothesesResult }) {
+export function TopologyHypotheses({ topology_hypotheses }: { topology_hypotheses?: TopologyHypothesesResult | null }) {
+  if (!topology_hypotheses || !topology_hypotheses.dominator) return null
   return <section className="topology-hypotheses" role="region" aria-labelledby="topology-hypotheses-heading">
     <header className="section-heading topology-section-heading">
       <div><p className="kicker">Tier 2 · independent signals</p><h2 id="topology-hypotheses-heading">Topology hypotheses</h2></div>

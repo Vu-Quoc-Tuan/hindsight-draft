@@ -110,6 +110,7 @@ ValidationResult = contract.ValidationResult
 is_validation_eligible = contract.is_validation_eligible
 package_to_dict = contract.package_to_dict
 package_to_json = contract.package_to_json
+parse_package = contract.parse_package
 validate_package = contract.validate_package
 
 __all__ = [
@@ -158,5 +159,6 @@ __all__ = [
     "is_validation_eligible",
     "package_to_dict",
     "package_to_json",
+    "parse_package",
     "validate_package",
 ]

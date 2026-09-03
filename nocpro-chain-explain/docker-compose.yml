@@ -119,5 +119,28 @@ services:
       kafka-init:
         condition: service_completed_successfully
 
+  mock-ui:
+    build:
+      context: ..
+      dockerfile: nocpro-mock/Dockerfile
+    working_dir: /workspace/nocpro-mock
+    ports: ["${MOCK_UI_PORT:-8085}:8085"]
+    volumes:
+      - ../nocpro-mock/datasets/raw:/workspace/nocpro-mock/datasets/raw:ro
+    command:
+      - .venv/bin/python
+      - -m
+      - nocpro_mock.cli
+      - ui
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8085"
+      - --kafka-bootstrap
+      - kafka:19092
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+
 volumes:
   postgres-data:
