@@ -312,6 +312,25 @@ def test_pair_why_exposes_history_as_config_incomplete_without_changing_other_ch
     assert delay["provenance_class"] == "POST_HOC"
 
 
+def test_chain_analysis_exposes_indexed_t_delay_unavailable_reason():
+    async def exercise(client: httpx2.AsyncClient):
+        loaded = await client.post("/api/v1/snapshots", json=_payload())
+        assert loaded.status_code == 201
+        return await client.get("/api/v1/chains/C1")
+
+    response = run_api_test(exercise)
+    assert response.status_code == 200
+    temporal = next(
+        group
+        for group in response.json()["members"][0]["group_fits"]
+        if group["derivation_tag"] == "temporal_delay"
+    )
+    assert temporal["fit"] is None
+    assert temporal["unavailable_reasons"] == {
+        "T_delay": "NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH"
+    }
+
+
 def test_pair_why_keeps_snapshot_available_but_disables_unversioned_topology():
     payload = _payload()
     payload["snapshot"]["topology_version"] = "must-not-be-a-fallback"

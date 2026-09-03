@@ -251,6 +251,11 @@ def chain_analysis_view(analysis: ChainAnalysis, package) -> ChainAnalysisView:
                         derivation_tag=group.derivation_tag,
                         fit=group.fit,
                         channels=[fit.channel_id for fit in group.channel_fits],
+                        unavailable_reasons={
+                            fit.channel_id: fit.unavailable_reason
+                            for fit in group.channel_fits
+                            if fit.unavailable_reason is not None
+                        },
                     )
                     for group in item.support.group_fits
                 ],

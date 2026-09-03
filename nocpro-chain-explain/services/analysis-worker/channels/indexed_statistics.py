@@ -10,6 +10,7 @@ from libs.provenance import ProvenanceClass, ProvenanceSubtype
 from groups.indexed_statistics import (
     ChannelFitFromIndex,
     IndexedChainStatistics,
+    NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH,
     StatisticsMode,
     SupportIndexSemantics,
 )
@@ -170,12 +171,14 @@ def build_indexed_statistics(
         None,
     )
     for alarm in alarms:
-        statistics.fits[(alarm.alarm_id, "T_delay")] = _entry(
+        statistics.fits[(alarm.alarm_id, "T_delay")] = ChannelFitFromIndex(
             channel_id="T_delay",
             derivation_tag="temporal_delay",
             provenance_class=ProvenanceClass.POST_HOC,
+            fit=None,
             domain_size=0,
             supporting=0,
+            unavailable_reason=NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH,
         )
         statistics.support_peer_bitmaps[(alarm.alarm_id, "T_delay")] = 0
 

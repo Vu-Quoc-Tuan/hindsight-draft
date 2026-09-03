@@ -8,6 +8,13 @@ from enum import Enum
 from libs.provenance import ProvenanceClass, ProvenanceSubtype
 
 
+# Full-chain ``T_delay`` has no exact indexed sufficient-statistics provider.
+# This diagnostic must never trigger a dense pairwise fallback.
+NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH = (
+    "NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH"
+)
+
+
 class StatisticsMode(str, Enum):
     EXACT_INDEXED = "EXACT_INDEXED"
     APPROXIMATED = "APPROXIMATED"
@@ -40,6 +47,8 @@ class ChannelFitFromIndex:
     fit: float | None
     domain_size: int
     supporting: int
+    #: Capability-level reason when ``fit`` is unavailable.
+    unavailable_reason: str | None = None
 
     @property
     def is_unavailable(self) -> bool:

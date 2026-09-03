@@ -42,6 +42,7 @@ def channel_fit_from_index(
         fit=entry.fit,
         domain_size=entry.domain_size,
         supporting=entry.supporting,
+        unavailable_reason=entry.unavailable_reason,
     )
 
 

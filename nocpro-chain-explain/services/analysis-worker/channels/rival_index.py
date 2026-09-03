@@ -16,6 +16,7 @@ from groups.indexed_statistics import (
     AuditGraphMode,
     ChannelFitFromIndex,
     IndexedChainStatistics,
+    NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH,
     PairMaterializationMode,
     StatisticsMode,
 )
@@ -279,6 +280,7 @@ class RivalFitIndex:
             fit=None,
             domain_size=0,
             supporting=0,
+            unavailable_reason=NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH,
         )
         statistics.channel_meta["Dep_hop"] = (
             "dependency_hop",

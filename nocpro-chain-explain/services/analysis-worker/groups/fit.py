@@ -40,6 +40,8 @@ class ChannelFit:
     #: ``|D_k(x,C)|``
     domain_size: int
     supporting: int
+    #: Capability-level reason when this channel fit is unavailable.
+    unavailable_reason: str | None = None
 
     @property
     def is_unavailable(self) -> bool:

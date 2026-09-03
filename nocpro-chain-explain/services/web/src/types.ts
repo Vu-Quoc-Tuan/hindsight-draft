@@ -63,6 +63,7 @@ export type GroupFit = {
   derivation_tag: string
   fit: number | null
   channels: string[]
+  unavailable_reasons: Record<string, string>
 }
 
 export type Member = {

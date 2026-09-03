@@ -52,6 +52,7 @@ class GroupFitView(ApiModel):
     derivation_tag: str
     fit: float | None
     channels: list[str]
+    unavailable_reasons: dict[str, str] = Field(default_factory=dict)
 
 
 class MarginView(ApiModel):
