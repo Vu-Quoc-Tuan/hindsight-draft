@@ -12,6 +12,7 @@ Frozen rules:
 from __future__ import annotations
 
 import dataclasses
+from datetime import datetime
 
 import pytest
 import yaml
@@ -21,8 +22,11 @@ from nocpro_mock.contract import MockSnapshotPackage, SourceKind, validate_packa
 from nocpro_mock.producer import DirectSnapshotProducer
 from nocpro_mock.replay import SequenceRunner, validate_sequence_payloads
 from nocpro_mock.scenarios import (
+    COUNTERFACTUAL_FIXTURES,
     EVOLUTION_SPLIT_MERGE,
     HISTORY_POSITIVE_LIFT,
+    INTEGRATED_TEMPORAL_TOPOLOGY,
+    TEMPORAL_DELAY_PATTERNS,
     EvolutionEvent,
     ScenarioError,
     SequenceType,
@@ -35,6 +39,8 @@ from tests.conftest import REPO_ROOT
 SYNTHETIC_DIR = REPO_ROOT / "docs/examples/synthetic"
 HISTORY_DIR = SYNTHETIC_DIR / "history_positive_lift"
 EVOLUTION_DIR = SYNTHETIC_DIR / "evolution_split_merge"
+TEMPORAL_TOPOLOGY_DIR = SYNTHETIC_DIR / "temporal_topology"
+TEMPORAL_DELAY_DIR = SYNTHETIC_DIR / "temporal_delay_patterns"
 
 
 def _built(directory):
@@ -72,6 +78,15 @@ def test_history_manifest_parses():
     assert manifest.seed == 42
     assert len(manifest.snapshots) == 4
     assert manifest.target_snapshot == "snapshot_003.json"
+
+
+def test_temporal_delay_pattern_manifest_is_strict_history_bootstrap():
+    manifest = load_sequence_manifest(TEMPORAL_DELAY_DIR / "sequence.yaml")
+    assert manifest.scenario_id == "temporal_delay_patterns_v1"
+    assert manifest.sequence_type is SequenceType.HISTORY_BOOTSTRAP
+    assert len(manifest.history_snapshots) == 4
+    assert manifest.target_snapshot == "snapshot_004.json"
+    assert manifest.target_snapshot not in manifest.history_snapshots
 
 
 def test_history_window_excludes_the_target():
@@ -117,6 +132,20 @@ def test_evolution_manifest_parses():
     assert manifest.sequence_type is SequenceType.EVOLUTION
     events = [t.expected_event for t in manifest.expected_transitions]
     assert events == [EvolutionEvent.SPLIT, EvolutionEvent.MERGE]
+
+
+def test_temporal_topology_manifest_covers_required_events():
+    manifest = load_sequence_manifest(TEMPORAL_TOPOLOGY_DIR / "sequence.yaml")
+    assert manifest.scenario_id == "synthetic_temporal_topology_v1"
+    assert manifest.sequence_type is SequenceType.EVOLUTION
+    assert len(manifest.snapshots) == 6
+    assert [item.expected_event for item in manifest.expected_transitions] == [
+        EvolutionEvent.CONTINUE,
+        EvolutionEvent.GROW,
+        EvolutionEvent.SPLIT,
+        EvolutionEvent.MERGE,
+        EvolutionEvent.SHRINK,
+    ]
 
 
 def test_evolution_requires_transitions():
@@ -224,6 +253,22 @@ def test_synthetic_snapshot_is_deterministic():
     assert producer.render(build()) == producer.render(build())
 
 
+def test_synthetic_snapshot_canonical_times_are_timezone_qualified():
+    package = build_synthetic_snapshot(
+        scenario_id="synthetic_temporal_contract_v1",
+        seed=42,
+        generator_version=GENERATOR_VERSION,
+        snapshot_index=0,
+        chains={"SYN-CHAIN-TIME": ["SYN-ALARM-TIME-1", "SYN-ALARM-TIME-2"]},
+    )
+
+    assert datetime.fromisoformat(package.snapshot.snapshot_time).tzinfo is not None
+    assert all(
+        datetime.fromisoformat(alarm.canonical_start_time).tzinfo is not None
+        for alarm in package.alarms
+    )
+
+
 def test_duplicate_member_is_refused():
     with pytest.raises(ValueError, match="lists an alarm twice"):
         build_synthetic_snapshot(
@@ -275,8 +320,37 @@ def test_history_then_target_rejects_evolution_sequences():
 
 
 def test_every_sequence_snapshot_validates():
-    for directory in (HISTORY_DIR, EVOLUTION_DIR):
+    for directory in (HISTORY_DIR, TEMPORAL_DELAY_DIR, EVOLUTION_DIR, TEMPORAL_TOPOLOGY_DIR):
         assert validate_sequence_payloads(_built(directory)) == []
+
+
+def test_temporal_topology_sequence_carries_exact_versioned_capabilities():
+    runner = SequenceRunner(_built(TEMPORAL_TOPOLOGY_DIR))
+    for step in runner.run():
+        topology = step.payload["topology"]
+        assert topology["edges"]
+        assert topology["active_paths"]
+        assert topology["failure_domains"]
+        assert topology["mappings"]
+        assert {
+            mapping["alarm_id"] for mapping in topology["mappings"]
+        } == {alarm["alarm_id"] for alarm in step.payload["alarms"]}
+        assert all(
+            mapping["mapping_status"] == "EXACT"
+            and mapping["mapping_method"] == "EXACT_IDENTITY"
+            and mapping["mapping_confidence"] == 1.0
+            and mapping["source_version"] == "syn-topo-temporal-v1"
+            for mapping in topology["mappings"]
+        )
+        assert all(
+            edge["source_kind"] == "SYNTHETIC_TEST"
+            and edge["source_id"] == "synthetic-topology"
+            and edge["source_version"] == "syn-topo-temporal-v1"
+            for edge in topology["edges"]
+        )
+        assert step.payload["provenance_manifest"]["generator_version"] == (
+            "mockgen-integrated-v1"
+        )
 
 
 def test_each_sequence_file_is_a_single_snapshot_package():
@@ -321,6 +395,21 @@ def test_history_sequence_repeats_the_family_pair():
     assert target_families == {"SYN-FAMILY-A", "SYN-FAMILY-B"}
 
 
+def test_temporal_delay_pattern_sequence_preserves_known_delays_without_scores():
+    runner = SequenceRunner(_built(TEMPORAL_DELAY_DIR))
+    history, target = runner.history_then_target()
+    pairs = []
+    for step in history:
+        by_name = {alarm["alarm_name"]: alarm for alarm in step.payload["alarms"]}
+        if "TD-A" in by_name and "TD-B" in by_name:
+            start_a = datetime.fromisoformat(by_name["TD-A"]["canonical_start_time"])
+            start_b = datetime.fromisoformat(by_name["TD-B"]["canonical_start_time"])
+            pairs.append(int((start_b - start_a).total_seconds()))
+    assert pairs == [2, 3, 99, 101]
+    assert target is not None
+    assert target.payload["snapshot"]["source_kind"] == "SYNTHETIC_TEST"
+
+
 # --------------------------------------------------------------------------
 # Expected assertions files
 # --------------------------------------------------------------------------
@@ -357,8 +446,50 @@ def test_mock_output_never_contains_history_scores():
 def test_fixture_definitions_match_their_manifests():
     for fixture, directory in (
         (HISTORY_POSITIVE_LIFT, HISTORY_DIR),
+        (TEMPORAL_DELAY_PATTERNS, TEMPORAL_DELAY_DIR),
         (EVOLUTION_SPLIT_MERGE, EVOLUTION_DIR),
+        (INTEGRATED_TEMPORAL_TOPOLOGY, TEMPORAL_TOPOLOGY_DIR),
     ):
         manifest = load_sequence_manifest(directory / "sequence.yaml")
         assert fixture.scenario_id == manifest.scenario_id
         assert len(fixture.snapshots) == len(manifest.snapshots)
+
+
+def test_counterfactual_fixtures_are_reproducible_and_truth_is_external() -> None:
+    producer = DirectSnapshotProducer()
+    for fixture in COUNTERFACTUAL_FIXTURES:
+        package = build_synthetic_snapshot(
+            scenario_id=fixture.scenario_id,
+            seed=42,
+            generator_version=GENERATOR_VERSION,
+            snapshot_index=0,
+            chains=fixture.snapshot_chains(),
+            alarm_profiles=fixture.alarm_profiles,
+            generation_rule=f"COUNTERFACTUAL {fixture.mutation} fixture",
+        )
+        materialized = (
+            SYNTHETIC_DIR / fixture.directory / "snapshot_000.json"
+        ).read_text(encoding="utf-8")
+        assert producer.render(package) == materialized.rstrip("\n")
+        assert "truth_partition" not in materialized
+
+
+def test_alarm_profiles_control_only_explicit_synthetic_fields() -> None:
+    package = build_synthetic_snapshot(
+        scenario_id="synthetic_profile_contract_v1",
+        seed=42,
+        generator_version=GENERATOR_VERSION,
+        snapshot_index=0,
+        chains={"SYN-CHAIN-PROFILE": ["SYN-ALARM-PROFILE"]},
+        alarm_profiles={
+            "SYN-ALARM-PROFILE": {
+                "device_code": "SYN-DEVICE-PROFILE",
+                "node_reference": "SYN-REF-PROFILE",
+                "start_offset_seconds": 600,
+            }
+        },
+    )
+    alarm = package.alarms[0]
+    assert alarm.device_code == "SYN-DEVICE-PROFILE"
+    assert alarm.node_reference == "SYN-REF-PROFILE"
+    assert alarm.canonical_start_time.endswith("00:10:00+00:00")

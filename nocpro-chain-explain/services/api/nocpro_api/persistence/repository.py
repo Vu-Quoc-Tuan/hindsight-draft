@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import zstandard
-from sqlalchemy import delete, func, or_, select, tuple_, update
+from sqlalchemy import and_, case, delete, func, or_, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -29,11 +29,27 @@ from similar_chains import (
     model_from_dict,
     model_to_dict,
 )
+from history import (
+    HistoricalEvidenceModel,
+    HistoricalTaxonomy,
+    model_from_dict as historical_model_from_dict,
+    model_to_dict as historical_model_to_dict,
+    taxonomy_from_dict as historical_taxonomy_from_dict,
+    taxonomy_to_dict as historical_taxonomy_to_dict,
+)
+from temporal_delay import FrozenDelayModel, model_from_dict as delay_model_from_dict, model_to_dict as delay_model_to_dict
+from tier2.audit_artifact import (
+    ReviewAuditArtifact,
+    audit_artifact_from_dict,
+    audit_artifact_to_dict,
+)
 
 from ..ingest.wire import SnapshotChunkEvent, SnapshotCompleteEvent, SnapshotWireEvent
 from .models import (
     Alarm,
+    AuditArtifactRecord,
     Chain,
+    CounterfactualJobRecord,
     KafkaInbox,
     LineageComponent,
     LineageEdge,
@@ -45,6 +61,8 @@ from .models import (
     SimilarityFingerprint,
     SimilarityIndexEntry,
     SimilarityModelRecord,
+    HistoricalEvidenceModelRecord,
+    TemporalDelayModelRecord,
 )
 
 
@@ -86,6 +104,64 @@ class SimilarityClaim:
     worker_id: str
 
 
+@dataclass(frozen=True)
+class StoredCounterfactualJob:
+    job_id: str
+    snapshot_id: str
+    snapshot_version: str
+    chain_id: str
+    cache_fingerprint: str
+    status: str
+    progress_percent: int
+    cache_hit: bool
+    identity: dict[str, Any]
+    result: dict[str, Any] | None
+    error: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
+class StoredEvolutionNode:
+    snapshot_id: str
+    snapshot_version: str
+    chain_id: str
+    snapshot_time: datetime
+    lineage_component_id: str
+    branch_id: str
+    source_kind: str | None
+
+
+@dataclass(frozen=True)
+class StoredEvolutionEdge:
+    parent_snapshot_id: str
+    parent_snapshot_version: str
+    parent_chain_id: str
+    child_snapshot_id: str
+    child_snapshot_version: str
+    child_chain_id: str
+    event_type: str
+    overlap_count: int
+    contain_parent: float
+    contain_child: float
+
+
+@dataclass(frozen=True)
+class StoredEvolution:
+    status: str
+    reason: str | None
+    source_kind: str | None
+    sequence_status: str
+    production_validation: str
+    lineage_component_id: str | None
+    branch_id: str | None
+    snapshot_id: str
+    snapshot_version: str
+    chain_id: str
+    nodes: tuple[StoredEvolutionNode, ...] = ()
+    edges: tuple[StoredEvolutionEdge, ...] = ()
+
+
 def _logical_time(value: str) -> datetime:
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
@@ -104,6 +180,404 @@ class SnapshotRepository:
     ) -> None:
         self.sessions = sessions
         self.max_compressed_snapshot_bytes = max_compressed_snapshot_bytes
+
+    async def load_evolution(
+        self,
+        *,
+        snapshot_id: str,
+        snapshot_version: str,
+        chain_id: str,
+    ) -> StoredEvolution:
+        """Project only the verified, persisted episode-DAG artifact.
+
+        This deliberately does not load snapshots or re-run the evolution
+        algorithm at request time.  A lineage node without an edge is one
+        snapshot of state, not a verified sequence.
+        """
+        unavailable = lambda reason, source_kind=None: StoredEvolution(
+            status="UNAVAILABLE",
+            reason=reason,
+            source_kind=source_kind,
+            sequence_status="UNAVAILABLE",
+            production_validation="NOT_ESTABLISHED",
+            lineage_component_id=None,
+            branch_id=None,
+            snapshot_id=snapshot_id,
+            snapshot_version=snapshot_version,
+            chain_id=chain_id,
+        )
+        async with self.sessions() as session:
+            snapshot = await session.get(
+                SnapshotIngest, (snapshot_id, snapshot_version)
+            )
+            if snapshot is None:
+                return unavailable("SNAPSHOT_NOT_PERSISTED")
+            if snapshot.lineage_status != "READY":
+                return unavailable(
+                    "SEQUENTIAL_SNAPSHOTS_NOT_AVAILABLE", snapshot.source_kind
+                )
+            current = await session.get(
+                LineageNode, (snapshot_id, snapshot_version, chain_id)
+            )
+            if current is None:
+                return unavailable(
+                    "SEQUENTIAL_SNAPSHOTS_NOT_AVAILABLE", snapshot.source_kind
+                )
+            component = await session.get(LineageComponent, current.component_id)
+            if component is None:
+                raise ValueError("persisted lineage node has no component")
+            canonical_component_id = component.canonical_component_id
+            component_ids = list(
+                (
+                    await session.scalars(
+                        select(LineageComponent.component_id).where(
+                            LineageComponent.canonical_component_id
+                            == canonical_component_id
+                        )
+                    )
+                ).all()
+            )
+            node_rows = list(
+                (
+                    await session.scalars(
+                        select(LineageNode)
+                        .where(LineageNode.component_id.in_(component_ids))
+                        .order_by(
+                            LineageNode.snapshot_time.asc(),
+                            LineageNode.snapshot_id.asc(),
+                            LineageNode.snapshot_version.asc(),
+                            LineageNode.snapshot_chain_id.asc(),
+                        )
+                    )
+                ).all()
+            )
+            keys = [
+                (row.snapshot_id, row.snapshot_version, row.snapshot_chain_id)
+                for row in node_rows
+            ]
+            edge_rows = list(
+                (
+                    await session.scalars(
+                        select(LineageEdge)
+                        .where(
+                            tuple_(
+                                LineageEdge.parent_snapshot_id,
+                                LineageEdge.parent_snapshot_version,
+                                LineageEdge.parent_chain_id,
+                            ).in_(keys),
+                            tuple_(
+                                LineageEdge.child_snapshot_id,
+                                LineageEdge.child_snapshot_version,
+                                LineageEdge.child_chain_id,
+                            ).in_(keys),
+                        )
+                        .order_by(
+                            LineageEdge.parent_snapshot_id.asc(),
+                            LineageEdge.parent_snapshot_version.asc(),
+                            LineageEdge.parent_chain_id.asc(),
+                            LineageEdge.child_snapshot_id.asc(),
+                            LineageEdge.child_snapshot_version.asc(),
+                            LineageEdge.child_chain_id.asc(),
+                        )
+                    )
+                ).all()
+            )
+            node_time_by_key = {
+                (row.snapshot_id, row.snapshot_version, row.snapshot_chain_id): row.snapshot_time
+                for row in node_rows
+            }
+            edge_rows.sort(
+                key=lambda row: (
+                    node_time_by_key[
+                        (
+                            row.parent_snapshot_id,
+                            row.parent_snapshot_version,
+                            row.parent_chain_id,
+                        )
+                    ],
+                    node_time_by_key[
+                        (
+                            row.child_snapshot_id,
+                            row.child_snapshot_version,
+                            row.child_chain_id,
+                        )
+                    ],
+                    row.parent_chain_id,
+                    row.child_chain_id,
+                )
+            )
+            if not edge_rows:
+                return unavailable(
+                    "SEQUENTIAL_SNAPSHOTS_NOT_AVAILABLE", snapshot.source_kind
+                )
+            snapshot_rows = list(
+                (
+                    await session.scalars(
+                        select(SnapshotIngest).where(
+                            tuple_(
+                                SnapshotIngest.snapshot_id,
+                                SnapshotIngest.snapshot_version,
+                            ).in_([(row.snapshot_id, row.snapshot_version) for row in node_rows])
+                        )
+                    )
+                ).all()
+            )
+        source_by_snapshot = {
+            (row.snapshot_id, row.snapshot_version): row.source_kind
+            for row in snapshot_rows
+        }
+        source_kinds = {
+            source_by_snapshot.get((row.snapshot_id, row.snapshot_version))
+            for row in node_rows
+        }
+        production_validation = (
+            "ELIGIBLE"
+            if source_kinds <= {"REAL_LIVE", "REAL_EXPORT_REPLAY"}
+            else "NOT_ESTABLISHED"
+        )
+        return StoredEvolution(
+            status="AVAILABLE",
+            reason=None,
+            source_kind=snapshot.source_kind,
+            sequence_status="VERIFIED",
+            production_validation=production_validation,
+            lineage_component_id=canonical_component_id,
+            branch_id=current.branch_id,
+            snapshot_id=snapshot_id,
+            snapshot_version=snapshot_version,
+            chain_id=chain_id,
+            nodes=tuple(
+                StoredEvolutionNode(
+                    snapshot_id=row.snapshot_id,
+                    snapshot_version=row.snapshot_version,
+                    chain_id=row.snapshot_chain_id,
+                    snapshot_time=row.snapshot_time,
+                    lineage_component_id=canonical_component_id,
+                    branch_id=row.branch_id,
+                    source_kind=source_by_snapshot.get(
+                        (row.snapshot_id, row.snapshot_version)
+                    ),
+                )
+                for row in node_rows
+            ),
+            edges=tuple(
+                StoredEvolutionEdge(
+                    parent_snapshot_id=row.parent_snapshot_id,
+                    parent_snapshot_version=row.parent_snapshot_version,
+                    parent_chain_id=row.parent_chain_id,
+                    child_snapshot_id=row.child_snapshot_id,
+                    child_snapshot_version=row.child_snapshot_version,
+                    child_chain_id=row.child_chain_id,
+                    event_type=row.edge_type,
+                    overlap_count=row.overlap_count,
+                    contain_parent=row.contain_parent,
+                    contain_child=row.contain_child,
+                )
+                for row in edge_rows
+            ),
+        )
+
+    async def persist_audit_artifact(
+        self, artifact: ReviewAuditArtifact
+    ) -> ReviewAuditArtifact:
+        """Insert one immutable exact artifact; never update an existing run."""
+        payload = audit_artifact_to_dict(artifact)
+        validated = audit_artifact_from_dict(payload)
+        values = {
+            "artifact_id": validated.artifact_id,
+            "artifact_version": validated.artifact_version,
+            "artifact_fingerprint": validated.artifact_fingerprint,
+            "snapshot_id": validated.snapshot_id,
+            "snapshot_version": validated.snapshot_version,
+            "chain_id": validated.chain_id,
+            "chain_fingerprint": validated.chain_fingerprint,
+            "analysis_version": validated.analysis_version,
+            "analysis_config_version": validated.analysis_config_version,
+            "status": validated.status,
+            "mode": validated.mode,
+            "payload": payload,
+            "created_at": _logical_time(validated.created_at),
+        }
+        async with self.sessions.begin() as session:
+            existing = await session.get(AuditArtifactRecord, validated.artifact_id)
+            if existing is not None:
+                if existing.payload != payload:
+                    raise ValueError("Audit artifact identity is immutable")
+                return audit_artifact_from_dict(existing.payload)
+            await session.execute(pg_insert(AuditArtifactRecord).values(**values))
+        return validated
+
+    async def latest_compatible_audit_artifact(
+        self,
+        *,
+        snapshot_id: str,
+        snapshot_version: str,
+        chain_id: str,
+        chain_fingerprint: str,
+        analysis_version: str,
+        analysis_config_version: str,
+    ) -> ReviewAuditArtifact | None:
+        async with self.sessions() as session:
+            row = await session.scalar(
+                select(AuditArtifactRecord)
+                .where(
+                    AuditArtifactRecord.snapshot_id == snapshot_id,
+                    AuditArtifactRecord.snapshot_version == snapshot_version,
+                    AuditArtifactRecord.chain_id == chain_id,
+                    AuditArtifactRecord.chain_fingerprint == chain_fingerprint,
+                    AuditArtifactRecord.analysis_version == analysis_version,
+                    AuditArtifactRecord.analysis_config_version
+                    == analysis_config_version,
+                    AuditArtifactRecord.status == "AVAILABLE",
+                    AuditArtifactRecord.mode == "EXACT",
+                )
+                .order_by(AuditArtifactRecord.created_at.desc())
+                .limit(1)
+            )
+        if row is None:
+            return None
+        artifact = audit_artifact_from_dict(row.payload)
+        if (
+            artifact.artifact_id != row.artifact_id
+            or artifact.artifact_fingerprint != row.artifact_fingerprint
+        ):
+            raise ValueError("persisted Audit artifact columns do not match payload")
+        return artifact
+
+    async def persist_counterfactual_job(
+        self, payload: dict[str, Any]
+    ) -> StoredCounterfactualJob:
+        """Upsert one immutable-identity Review lifecycle snapshot."""
+        status_rank = {"QUEUED": 0, "RUNNING": 1, "SUCCEEDED": 2, "FAILED": 2}
+        if payload["status"] not in status_rank:
+            raise ValueError("unknown counterfactual job status")
+        values = {
+            "job_id": payload["job_id"],
+            "snapshot_id": payload["snapshot_id"],
+            "snapshot_version": payload["snapshot_version"],
+            "chain_id": payload["chain_id"],
+            "cache_fingerprint": payload["cache_fingerprint"],
+            "status": payload["status"],
+            "progress_percent": payload["progress_percent"],
+            "cache_hit": payload["cache_hit"],
+            "identity_payload": payload["identity"],
+            "result_payload": payload.get("result"),
+            "error": payload.get("error"),
+        }
+        async with self.sessions.begin() as session:
+            existing = await session.get(
+                CounterfactualJobRecord, payload["job_id"], with_for_update=True
+            )
+            if existing is not None:
+                immutable = (
+                    existing.snapshot_id,
+                    existing.snapshot_version,
+                    existing.chain_id,
+                    existing.cache_fingerprint,
+                    existing.identity_payload,
+                )
+                proposed = (
+                    values["snapshot_id"],
+                    values["snapshot_version"],
+                    values["chain_id"],
+                    values["cache_fingerprint"],
+                    values["identity_payload"],
+                )
+                if immutable != proposed:
+                    raise ValueError("counterfactual job identity is immutable")
+                if status_rank[existing.status] > status_rank[values["status"]]:
+                    return self._stored_counterfactual(existing)
+                if (
+                    status_rank[existing.status] == 2
+                    and existing.status != values["status"]
+                ):
+                    raise ValueError("counterfactual terminal status is immutable")
+            statement = pg_insert(CounterfactualJobRecord).values(**values)
+            existing_rank = case(
+                (CounterfactualJobRecord.status == "QUEUED", 0),
+                (CounterfactualJobRecord.status == "RUNNING", 1),
+                (CounterfactualJobRecord.status.in_(("SUCCEEDED", "FAILED")), 2),
+                else_=-1,
+            )
+            incoming_rank = case(
+                (statement.excluded.status == "QUEUED", 0),
+                (statement.excluded.status == "RUNNING", 1),
+                (statement.excluded.status.in_(("SUCCEEDED", "FAILED")), 2),
+                else_=-1,
+            )
+            statement = statement.on_conflict_do_update(
+                index_elements=[CounterfactualJobRecord.job_id],
+                set_={
+                    "status": statement.excluded.status,
+                    "progress_percent": statement.excluded.progress_percent,
+                    "cache_hit": statement.excluded.cache_hit,
+                    "result_payload": statement.excluded.result_payload,
+                    "error": statement.excluded.error,
+                    "updated_at": func.now(),
+                },
+                where=or_(
+                    incoming_rank > existing_rank,
+                    and_(
+                        incoming_rank == existing_rank,
+                        CounterfactualJobRecord.status == statement.excluded.status,
+                    ),
+                ),
+            )
+            await session.execute(statement)
+        stored = await self.counterfactual_job(payload["job_id"])
+        if stored is None:
+            raise RuntimeError("persisted counterfactual job is unavailable")
+        return stored
+
+    async def counterfactual_job(
+        self, job_id: str
+    ) -> StoredCounterfactualJob | None:
+        async with self.sessions() as session:
+            row = await session.get(CounterfactualJobRecord, job_id)
+            return self._stored_counterfactual(row) if row is not None else None
+
+    async def latest_compatible_counterfactual_job(
+        self,
+        *,
+        snapshot_id: str,
+        snapshot_version: str,
+        chain_id: str,
+        cache_fingerprint: str,
+    ) -> StoredCounterfactualJob | None:
+        async with self.sessions() as session:
+            row = await session.scalar(
+                select(CounterfactualJobRecord)
+                .where(
+                    CounterfactualJobRecord.snapshot_id == snapshot_id,
+                    CounterfactualJobRecord.snapshot_version == snapshot_version,
+                    CounterfactualJobRecord.chain_id == chain_id,
+                    CounterfactualJobRecord.cache_fingerprint == cache_fingerprint,
+                    CounterfactualJobRecord.status == "SUCCEEDED",
+                )
+                .order_by(CounterfactualJobRecord.updated_at.desc())
+                .limit(1)
+            )
+            return self._stored_counterfactual(row) if row is not None else None
+
+    @staticmethod
+    def _stored_counterfactual(
+        row: CounterfactualJobRecord,
+    ) -> StoredCounterfactualJob:
+        return StoredCounterfactualJob(
+            job_id=row.job_id,
+            snapshot_id=row.snapshot_id,
+            snapshot_version=row.snapshot_version,
+            chain_id=row.chain_id,
+            cache_fingerprint=row.cache_fingerprint,
+            status=row.status,
+            progress_percent=row.progress_percent,
+            cache_hit=row.cache_hit,
+            identity=row.identity_payload,
+            result=row.result_payload,
+            error=row.error,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
 
     async def record_kafka_event(
         self,
@@ -582,26 +1056,29 @@ class SnapshotRepository:
         result: dict[str, Any] | None = None,
         error: str | None = None,
         worker_id: str | None = None,
-    ) -> None:
+        delete_chunks_after_ready: bool = False,
+    ) -> int:
         async with self.sessions.begin() as session:
-            statement = update(SnapshotIngest).where(
-                    SnapshotIngest.snapshot_id == snapshot_id,
-                    SnapshotIngest.snapshot_version == snapshot_version,
-                    SnapshotIngest.tier1a_status == "RUNNING",
-                )
+            statement = select(SnapshotIngest).where(
+                SnapshotIngest.snapshot_id == snapshot_id,
+                SnapshotIngest.snapshot_version == snapshot_version,
+                SnapshotIngest.tier1a_status == "RUNNING",
+            )
             if worker_id is not None:
                 statement = statement.where(SnapshotIngest.worker_id == worker_id)
-            await session.execute(
-                statement.values(
-                    tier1a_status="FAILED" if error else "READY",
-                    tier1a_result=result if error is None else {"error": error},
-                    worker_id=None,
-                    lease_expires_at=None,
-                    heartbeat_at=None,
-                    next_attempt_at=None,
-                    lineage_status="PENDING" if error is None else None,
-                )
-            )
+            row = await session.scalar(statement.with_for_update())
+            if row is None:
+                return 0
+            row.tier1a_status = "FAILED" if error else "READY"
+            row.tier1a_result = result if error is None else {"error": error}
+            row.worker_id = None
+            row.lease_expires_at = None
+            row.heartbeat_at = None
+            row.next_attempt_at = None
+            row.lineage_status = "PENDING" if error is None else None
+            if not delete_chunks_after_ready:
+                return 0
+            return await self._delete_chunks_if_cleanup_eligible(session, row)
 
     async def claim_next_lineage(
         self,
@@ -689,7 +1166,9 @@ class SnapshotRepository:
         }
         nodes = {}
         for row in node_rows:
-            key = LineageNodeKey(row.snapshot_id, row.snapshot_chain_id)
+            key = LineageNodeKey(
+                row.snapshot_id, row.snapshot_version, row.snapshot_chain_id
+            )
             nodes[key] = DomainLineageNode(
                 key=key,
                 snapshot_time=row.snapshot_time.isoformat(),
@@ -698,8 +1177,16 @@ class SnapshotRepository:
             )
         edges = {}
         for row in edge_rows:
-            parent = LineageNodeKey(row.parent_snapshot_id, row.parent_chain_id)
-            child = LineageNodeKey(row.child_snapshot_id, row.child_chain_id)
+            parent = LineageNodeKey(
+                row.parent_snapshot_id,
+                row.parent_snapshot_version,
+                row.parent_chain_id,
+            )
+            child = LineageNodeKey(
+                row.child_snapshot_id,
+                row.child_snapshot_version,
+                row.child_chain_id,
+            )
             edges[(parent, child)] = DomainLineageEdge(
                 parent=parent,
                 child=child,
@@ -738,6 +1225,7 @@ class SnapshotRepository:
             for node in dag.nodes.values():
                 statement = pg_insert(LineageNode).values(
                     snapshot_id=node.key.snapshot_id,
+                    snapshot_version=node.key.snapshot_version,
                     snapshot_chain_id=node.key.snapshot_chain_id,
                     snapshot_time=_logical_time(node.snapshot_time),
                     component_id=node.component_id,
@@ -747,8 +1235,10 @@ class SnapshotRepository:
             for edge in dag.edges.values():
                 statement = pg_insert(LineageEdge).values(
                     parent_snapshot_id=edge.parent.snapshot_id,
+                    parent_snapshot_version=edge.parent.snapshot_version,
                     parent_chain_id=edge.parent.snapshot_chain_id,
                     child_snapshot_id=edge.child.snapshot_id,
+                    child_snapshot_version=edge.child.snapshot_version,
                     child_chain_id=edge.child.snapshot_chain_id,
                     edge_type=edge.edge_type,
                     overlap_count=edge.overlap_count,
@@ -872,7 +1362,9 @@ class SnapshotRepository:
         history = []
         for row in rows:
             canonical = dag.canonical_lineage(
-                LineageNodeKey(row.snapshot_id, row.snapshot_chain_id)
+                LineageNodeKey(
+                    row.snapshot_id, row.snapshot_version, row.snapshot_chain_id
+                )
             )
             if canonical is None:
                 raise RuntimeError("historical fingerprint has no canonical lineage")
@@ -883,10 +1375,36 @@ class SnapshotRepository:
             )
             history.append(
                 TimedChainFingerprint(
-                    fingerprint, row.event_time.isoformat(), row.snapshot_id
+                    fingerprint,
+                    row.event_time.isoformat(),
+                    row.snapshot_id,
+                    row.snapshot_version,
                 )
             )
         return history
+
+    async def load_historical_packages(self, *, cutoff: datetime) -> list[IngestedPackage]:
+        """Load the verified logical prefix used to build one immutable H model."""
+        async with self.sessions() as session:
+            payloads = list(
+                (
+                    await session.scalars(
+                        select(SnapshotIngest.canonical_payload)
+                        .where(
+                            SnapshotIngest.tier1a_status == "READY",
+                            SnapshotIngest.lineage_status == "READY",
+                            SnapshotIngest.logical_snapshot_time < cutoff,
+                        )
+                        .order_by(
+                            SnapshotIngest.logical_snapshot_time,
+                            SnapshotIngest.completed_at,
+                            SnapshotIngest.snapshot_id,
+                            SnapshotIngest.snapshot_version,
+                        )
+                    )
+                ).all()
+            )
+        return [load_validated_package(payload) for payload in payloads if payload is not None]
 
     async def finish_similarity(
         self,
@@ -898,6 +1416,7 @@ class SnapshotRepository:
             model_statement = pg_insert(SimilarityModelRecord).values(
                 model_version=index.model.model_version,
                 snapshot_id=claim.snapshot_id,
+                snapshot_version=claim.snapshot_version,
                 trained_until_exclusive=_logical_time(
                     index.model.trained_until_exclusive
                 ),
@@ -907,7 +1426,8 @@ class SnapshotRepository:
             for entry in current_fingerprints:
                 statement = pg_insert(SimilarityFingerprint).values(
                     snapshot_id=claim.snapshot_id,
-                    snapshot_chain_id=entry.fingerprint.chain_id.split("::", 1)[-1],
+                    snapshot_version=claim.snapshot_version,
+                    snapshot_chain_id=entry.fingerprint.chain_id.rsplit("::", 1)[-1],
                     event_time=_logical_time(entry.event_time),
                     component_id=entry.fingerprint.lineage_component_id,
                     fingerprint_payload=fingerprint_to_dict(entry.fingerprint),
@@ -917,7 +1437,8 @@ class SnapshotRepository:
                 statement = pg_insert(SimilarityIndexEntry).values(
                     model_version=index.model.model_version,
                     snapshot_id=entry.snapshot_id,
-                    snapshot_chain_id=entry.fingerprint.chain_id.split("::", 1)[-1],
+                    snapshot_version=entry.snapshot_version,
+                    snapshot_chain_id=entry.fingerprint.chain_id.rsplit("::", 1)[-1],
                     event_time=_logical_time(entry.event_time),
                     fingerprint_payload=fingerprint_to_dict(entry.fingerprint),
                 )
@@ -941,12 +1462,13 @@ class SnapshotRepository:
                 raise RuntimeError("similarity lease ownership was lost")
 
     async def load_similarity_index(
-        self, snapshot_id: str
+        self, snapshot_id: str, snapshot_version: str
     ) -> VersionedSimilarityIndex | None:
         async with self.sessions() as session:
             model_row = await session.scalar(
                 select(SimilarityModelRecord).where(
-                    SimilarityModelRecord.snapshot_id == snapshot_id
+                    SimilarityModelRecord.snapshot_id == snapshot_id,
+                    SimilarityModelRecord.snapshot_version == snapshot_version,
                 )
             )
             if model_row is None:
@@ -973,17 +1495,96 @@ class SnapshotRepository:
                 fingerprint_from_dict(row.fingerprint_payload),
                 row.event_time.isoformat(),
                 row.snapshot_id,
+                row.snapshot_version,
             )
             for row in entry_rows
         )
         return VersionedSimilarityIndex(model=model, entries=entries)
 
-    async def canonical_lineages(self, snapshot_id: str) -> dict[str, str]:
+    async def persist_historical_evidence_model(
+        self,
+        *,
+        snapshot_id: str,
+        snapshot_version: str,
+        model: HistoricalEvidenceModel,
+        taxonomy: HistoricalTaxonomy,
+    ) -> None:
+        """Insert one frozen H model; never mutate an existing snapshot model."""
+        if (taxonomy.source_id, taxonomy.source_version) != (
+            model.taxonomy_source_id,
+            model.taxonomy_source_version,
+        ):
+            raise ValueError("historical taxonomy does not match model provenance")
+        statement = pg_insert(HistoricalEvidenceModelRecord).values(
+            model_version=model.model_version,
+            snapshot_id=snapshot_id,
+            snapshot_version=snapshot_version,
+            training_cutoff=_logical_time(model.training_cutoff),
+            model_payload=historical_model_to_dict(model),
+            taxonomy_payload=historical_taxonomy_to_dict(taxonomy),
+        )
+        async with self.sessions.begin() as session:
+            await session.execute(statement.on_conflict_do_nothing())
+
+    async def load_historical_evidence_model(
+        self, snapshot_id: str, snapshot_version: str
+    ) -> tuple[HistoricalEvidenceModel, HistoricalTaxonomy] | None:
+        async with self.sessions() as session:
+            row = await session.scalar(
+                select(HistoricalEvidenceModelRecord).where(
+                    HistoricalEvidenceModelRecord.snapshot_id == snapshot_id,
+                    HistoricalEvidenceModelRecord.snapshot_version == snapshot_version,
+                )
+            )
+        if row is None:
+            return None
+        model = historical_model_from_dict(row.model_payload)
+        taxonomy = historical_taxonomy_from_dict(row.taxonomy_payload)
+        if (model.taxonomy_source_id, model.taxonomy_source_version) != (
+            taxonomy.source_id,
+            taxonomy.source_version,
+        ):
+            raise RuntimeError("persisted historical model/taxonomy provenance mismatch")
+        return model, taxonomy
+
+    async def persist_temporal_delay_model(
+        self, *, snapshot_id: str, snapshot_version: str, model: FrozenDelayModel,
+        taxonomy: HistoricalTaxonomy,
+    ) -> None:
+        if (model.taxonomy_source_id, model.taxonomy_source_version) != (taxonomy.source_id, taxonomy.source_version):
+            raise ValueError("temporal delay taxonomy does not match model provenance")
+        statement = pg_insert(TemporalDelayModelRecord).values(
+            model_version=model.model_version, snapshot_id=snapshot_id, snapshot_version=snapshot_version,
+            training_cutoff=_logical_time(model.training_cutoff), model_payload=delay_model_to_dict(model),
+            taxonomy_payload=historical_taxonomy_to_dict(taxonomy),
+        )
+        async with self.sessions.begin() as session:
+            await session.execute(statement.on_conflict_do_nothing())
+
+    async def load_temporal_delay_model(
+        self, snapshot_id: str, snapshot_version: str
+    ) -> tuple[FrozenDelayModel, HistoricalTaxonomy] | None:
+        async with self.sessions() as session:
+            row = await session.scalar(select(TemporalDelayModelRecord).where(
+                TemporalDelayModelRecord.snapshot_id == snapshot_id,
+                TemporalDelayModelRecord.snapshot_version == snapshot_version,
+            ))
+        if row is None:
+            return None
+        model, taxonomy = delay_model_from_dict(row.model_payload), historical_taxonomy_from_dict(row.taxonomy_payload)
+        if (model.taxonomy_source_id, model.taxonomy_source_version) != (taxonomy.source_id, taxonomy.source_version):
+            raise RuntimeError("persisted temporal delay model/taxonomy provenance mismatch")
+        return model, taxonomy
+
+    async def canonical_lineages(
+        self, snapshot_id: str, snapshot_version: str
+    ) -> dict[str, str]:
         dag = await self.load_episode_dag()
         return {
             key.snapshot_chain_id: canonical
             for key in dag.nodes
             if key.snapshot_id == snapshot_id
+            and key.snapshot_version == snapshot_version
             and (canonical := dag.canonical_lineage(key)) is not None
         }
 
@@ -1072,14 +1673,36 @@ class SnapshotRepository:
                 self._invalidate(row, reason)
 
     async def cleanup_chunks(self, snapshot_id: str, snapshot_version: str) -> int:
+        """Delete only chunks whose canonical snapshot has reached Tier-1A READY.
+
+        The operation is idempotent and cannot remove chunks from receiving,
+        invalid, or merely COMPLETE snapshots.
+        """
         async with self.sessions.begin() as session:
-            result = await session.execute(
-                delete(SnapshotChunk).where(
-                    SnapshotChunk.snapshot_id == snapshot_id,
-                    SnapshotChunk.snapshot_version == snapshot_version,
-                )
+            row = await session.get(
+                SnapshotIngest,
+                (snapshot_id, snapshot_version),
+                with_for_update=True,
             )
-            return int(result.rowcount or 0)
+            if row is None:
+                return 0
+            return await self._delete_chunks_if_cleanup_eligible(session, row)
+
+    @staticmethod
+    async def _delete_chunks_if_cleanup_eligible(session, row: SnapshotIngest) -> int:
+        if not (
+            row.status == "COMPLETE"
+            and row.canonical_payload is not None
+            and row.tier1a_status == "READY"
+        ):
+            return 0
+        result = await session.execute(
+            delete(SnapshotChunk).where(
+                SnapshotChunk.snapshot_id == row.snapshot_id,
+                SnapshotChunk.snapshot_version == row.snapshot_version,
+            )
+        )
+        return int(result.rowcount or 0)
 
     async def expire_receiving(
         self,

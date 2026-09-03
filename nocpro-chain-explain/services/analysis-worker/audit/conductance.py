@@ -38,6 +38,8 @@ class AuditVerdict(str, Enum):
     NO_LOW_CONDUCTANCE_CUT = "NO_LOW_CONDUCTANCE_CUT"
     #: The chain is too small for the balance constraint to be meaningful.
     SKIPPED_SMALL_CHAIN = "SKIPPED_SMALL_CHAIN"
+    #: Exact structural audit was intentionally not computed under policy.
+    UNAVAILABLE = "UNAVAILABLE"
 
 
 @dataclass(frozen=True)

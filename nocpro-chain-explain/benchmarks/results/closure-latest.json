@@ -1,0 +1,280 @@
+{
+  "contract": "closure-benchmark-v1",
+  "target_chain_sizes": [
+    58,
+    200,
+    500,
+    1072
+  ],
+  "anti_all_pairs_gate": {
+    "chain_size": 1072,
+    "tier": "Tier-1B",
+    "requirement": "dense_pairwise_fallback_forbidden",
+    "verification": "tests/spec_sanity/test_tier1_execution_boundary.py"
+  },
+  "operations": [
+    {
+      "name": "tier_1a_snapshot_background",
+      "tier": "Tier-1A",
+      "requires_runtime": false,
+      "exact_only": false,
+      "notes": ""
+    },
+    {
+      "name": "tier_1b_cold_on_chain_open",
+      "tier": "Tier-1B",
+      "requires_runtime": false,
+      "exact_only": false,
+      "notes": ""
+    },
+    {
+      "name": "tier_1b_cache_hit_on_chain_open",
+      "tier": "Tier-1B",
+      "requires_runtime": false,
+      "exact_only": false,
+      "notes": ""
+    },
+    {
+      "name": "pair_why",
+      "tier": "Tier-1B",
+      "requires_runtime": false,
+      "exact_only": false,
+      "notes": ""
+    },
+    {
+      "name": "historical_h_pair_why",
+      "tier": "Tier-1B",
+      "requires_runtime": false,
+      "exact_only": false,
+      "notes": ""
+    },
+    {
+      "name": "temporal_delay_pair_why",
+      "tier": "Tier-1B",
+      "requires_runtime": false,
+      "exact_only": false,
+      "notes": ""
+    },
+    {
+      "name": "tier_2_structural_audit",
+      "tier": "Tier-2",
+      "requires_runtime": false,
+      "exact_only": true,
+      "notes": ""
+    },
+    {
+      "name": "evidence_attribution",
+      "tier": "Tier-2",
+      "requires_runtime": false,
+      "exact_only": true,
+      "notes": ""
+    },
+    {
+      "name": "attribution_deletion_curve",
+      "tier": "Tier-2",
+      "requires_runtime": false,
+      "exact_only": true,
+      "notes": ""
+    },
+    {
+      "name": "review_remove_member",
+      "tier": "Review",
+      "requires_runtime": false,
+      "exact_only": true,
+      "notes": ""
+    },
+    {
+      "name": "review_split_chain",
+      "tier": "Review",
+      "requires_runtime": false,
+      "exact_only": true,
+      "notes": ""
+    },
+    {
+      "name": "review_move_member",
+      "tier": "Review",
+      "requires_runtime": false,
+      "exact_only": true,
+      "notes": ""
+    },
+    {
+      "name": "merge_cross_chain_evidence",
+      "tier": "Review",
+      "requires_runtime": false,
+      "exact_only": true,
+      "notes": ""
+    },
+    {
+      "name": "review_merge_chains",
+      "tier": "Review",
+      "requires_runtime": false,
+      "exact_only": true,
+      "notes": ""
+    },
+    {
+      "name": "review_serialization",
+      "tier": "Review",
+      "requires_runtime": false,
+      "exact_only": false,
+      "notes": ""
+    },
+    {
+      "name": "review_persistence",
+      "tier": "Review",
+      "requires_runtime": true,
+      "exact_only": false,
+      "notes": ""
+    },
+    {
+      "name": "review_restart_hydration",
+      "tier": "Review",
+      "requires_runtime": true,
+      "exact_only": false,
+      "notes": ""
+    }
+  ],
+  "result_states": [
+    "MEASURED",
+    "UNAVAILABLE",
+    "NOT_RUN",
+    "SKIPPED_BY_EXACT_CEILING"
+  ],
+  "results": [
+    {
+      "operation": "tier_1a_snapshot_background",
+      "tier": "Tier-1A",
+      "status": "NOT_RUN",
+      "reason": "BENCHMARK_NOT_EXECUTED",
+      "exact_only": false,
+      "requires_runtime": false
+    },
+    {
+      "operation": "tier_1b_cold_on_chain_open",
+      "tier": "Tier-1B",
+      "status": "NOT_RUN",
+      "reason": "BENCHMARK_NOT_EXECUTED",
+      "exact_only": false,
+      "requires_runtime": false
+    },
+    {
+      "operation": "tier_1b_cache_hit_on_chain_open",
+      "tier": "Tier-1B",
+      "status": "NOT_RUN",
+      "reason": "BENCHMARK_NOT_EXECUTED",
+      "exact_only": false,
+      "requires_runtime": false
+    },
+    {
+      "operation": "pair_why",
+      "tier": "Tier-1B",
+      "status": "NOT_RUN",
+      "reason": "BENCHMARK_NOT_EXECUTED",
+      "exact_only": false,
+      "requires_runtime": false
+    },
+    {
+      "operation": "historical_h_pair_why",
+      "tier": "Tier-1B",
+      "status": "NOT_RUN",
+      "reason": "BENCHMARK_NOT_EXECUTED",
+      "exact_only": false,
+      "requires_runtime": false
+    },
+    {
+      "operation": "temporal_delay_pair_why",
+      "tier": "Tier-1B",
+      "status": "NOT_RUN",
+      "reason": "BENCHMARK_NOT_EXECUTED",
+      "exact_only": false,
+      "requires_runtime": false
+    },
+    {
+      "operation": "tier_2_structural_audit",
+      "tier": "Tier-2",
+      "status": "NOT_RUN",
+      "reason": "BENCHMARK_NOT_EXECUTED",
+      "exact_only": true,
+      "requires_runtime": false
+    },
+    {
+      "operation": "evidence_attribution",
+      "tier": "Tier-2",
+      "status": "NOT_RUN",
+      "reason": "BENCHMARK_NOT_EXECUTED",
+      "exact_only": true,
+      "requires_runtime": false
+    },
+    {
+      "operation": "attribution_deletion_curve",
+      "tier": "Tier-2",
+      "status": "NOT_RUN",
+      "reason": "BENCHMARK_NOT_EXECUTED",
+      "exact_only": true,
+      "requires_runtime": false
+    },
+    {
+      "operation": "review_remove_member",
+      "tier": "Review",
+      "status": "NOT_RUN",
+      "reason": "BENCHMARK_NOT_EXECUTED",
+      "exact_only": true,
+      "requires_runtime": false
+    },
+    {
+      "operation": "review_split_chain",
+      "tier": "Review",
+      "status": "NOT_RUN",
+      "reason": "BENCHMARK_NOT_EXECUTED",
+      "exact_only": true,
+      "requires_runtime": false
+    },
+    {
+      "operation": "review_move_member",
+      "tier": "Review",
+      "status": "NOT_RUN",
+      "reason": "BENCHMARK_NOT_EXECUTED",
+      "exact_only": true,
+      "requires_runtime": false
+    },
+    {
+      "operation": "merge_cross_chain_evidence",
+      "tier": "Review",
+      "status": "NOT_RUN",
+      "reason": "BENCHMARK_NOT_EXECUTED",
+      "exact_only": true,
+      "requires_runtime": false
+    },
+    {
+      "operation": "review_merge_chains",
+      "tier": "Review",
+      "status": "NOT_RUN",
+      "reason": "BENCHMARK_NOT_EXECUTED",
+      "exact_only": true,
+      "requires_runtime": false
+    },
+    {
+      "operation": "review_serialization",
+      "tier": "Review",
+      "status": "NOT_RUN",
+      "reason": "BENCHMARK_NOT_EXECUTED",
+      "exact_only": false,
+      "requires_runtime": false
+    },
+    {
+      "operation": "review_persistence",
+      "tier": "Review",
+      "status": "NOT_RUN",
+      "reason": "BENCHMARK_NOT_EXECUTED",
+      "exact_only": false,
+      "requires_runtime": true
+    },
+    {
+      "operation": "review_restart_hydration",
+      "tier": "Review",
+      "status": "NOT_RUN",
+      "reason": "BENCHMARK_NOT_EXECUTED",
+      "exact_only": false,
+      "requires_runtime": true
+    }
+  ]
+}

@@ -7,7 +7,12 @@ import random
 
 from channels import AlarmTaxonomy, evaluate_chain_channels
 from channels.indexed_statistics import build_indexed_statistics
-from groups import RoleThresholds, classify_membership, membership_support
+from groups import (
+    RoleThresholds,
+    SupportIndexSemantics,
+    classify_membership,
+    membership_support,
+)
 from groups.fit_from_index import membership_support_from_index
 from libs.contracts import load_package
 
@@ -97,9 +102,15 @@ def _assert_equivalent(package, *, taxonomy=AlarmTaxonomy({}, {}), d_max=3):
     oracle = evaluate_chain_channels(package, "C1", taxonomy=taxonomy, d_max=d_max)
     indexed = build_indexed_statistics(package, "C1", taxonomy=taxonomy, d_max=d_max)
 
+    assert (
+        indexed.support_index_semantics
+        is SupportIndexSemantics.SYMMETRIC_UNORDERED_PAIRS_V1
+    )
+
     assert set(indexed.channel_ids) == set(oracle.statistics.channel_ids())
     oracle_supports = {}
     indexed_supports = {}
+    positions = {alarm_id: index for index, alarm_id in enumerate(oracle.members)}
     for alarm_id in oracle.members:
         for channel_id in oracle.statistics.channel_ids():
             expected = oracle.statistics.counts_for(alarm_id, channel_id)
@@ -111,6 +122,16 @@ def _assert_equivalent(package, *, taxonomy=AlarmTaxonomy({}, {}), d_max=3):
                 assert actual.fit is None
             else:
                 assert actual.fit == pytest.approx(expected.fit)
+
+            expected_bitmap = 0
+            for (left, right), values in oracle.matrix.values.items():
+                if alarm_id not in {left, right}:
+                    continue
+                value = next(item for item in values if item.channel_id == channel_id)
+                if value.supports:
+                    peer_id = right if left == alarm_id else left
+                    expected_bitmap |= 1 << positions[peer_id]
+            assert indexed.support_bitmap_of(alarm_id, channel_id) == expected_bitmap
 
         expected_support = membership_support(alarm_id, oracle.statistics)
         actual_support = membership_support_from_index(alarm_id, indexed)
@@ -239,16 +260,20 @@ def test_indexed_dep_hop_matches_pairwise_with_mapping_and_sparse_topology():
                 "edge_id": "e12",
                 "source_resource_id": "R1",
                 "target_resource_id": "R2",
-                "relation_type": "IP_ADJACENCY",
-                "directed": False,
-            },
+                    "relation_type": "IP_ADJACENCY",
+                    "directed": False,
+                    "source_id": "inventory",
+                    "source_version": "topology-v1",
+                },
             {
                 "edge_id": "e34",
                 "source_resource_id": "R3",
                 "target_resource_id": "R4",
-                "relation_type": "IP_ADJACENCY",
-                "directed": False,
-            },
+                    "relation_type": "IP_ADJACENCY",
+                    "directed": False,
+                    "source_id": "inventory",
+                    "source_version": "topology-v1",
+                },
         ],
         "mappings": [
             {"alarm_id": "a1", "resource_id": "R1", "mapping_status": "EXACT"},

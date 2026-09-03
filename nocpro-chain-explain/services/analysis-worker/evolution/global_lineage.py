@@ -19,6 +19,7 @@ class OutOfOrderLineageError(ValueError):
 @dataclass(frozen=True, order=True)
 class LineageNodeKey:
     snapshot_id: str
+    snapshot_version: str
     snapshot_chain_id: str
 
 
@@ -50,7 +51,9 @@ class GlobalLineageComponent:
 
 
 def deterministic_component_id(key: LineageNodeKey) -> str:
-    raw = f"{key.snapshot_id}\0{key.snapshot_chain_id}".encode("utf-8")
+    raw = (
+        f"{key.snapshot_id}\0{key.snapshot_version}\0{key.snapshot_chain_id}"
+    ).encode("utf-8")
     return f"lc_{hashlib.sha256(raw).hexdigest()[:24]}"
 
 
@@ -124,7 +127,11 @@ class GlobalEpisodeDag:
     ) -> None:
         current_time = current.snapshot.snapshot_time
         current_keys = {
-            chain_id: LineageNodeKey(current.snapshot.snapshot_id, chain_id)
+            chain_id: LineageNodeKey(
+                current.snapshot.snapshot_id,
+                current.snapshot.snapshot_version,
+                chain_id,
+            )
             for chain_id in current.chains
         }
         if all(key in self.nodes for key in current_keys.values()):
@@ -166,7 +173,9 @@ class GlobalEpisodeDag:
             parent_components: set[str] = set()
             for edge in parents_by_child.get(chain_id, []):
                 parent_key = LineageNodeKey(
-                    previous.snapshot.snapshot_id, edge.parent_chain_id
+                    previous.snapshot.snapshot_id,
+                    previous.snapshot.snapshot_version,
+                    edge.parent_chain_id,
                 )
                 parent_component = self.canonical_lineage(parent_key)
                 if parent_component is None:
@@ -194,7 +203,9 @@ class GlobalEpisodeDag:
 
         for edge in evolution.edges:
             parent = LineageNodeKey(
-                previous.snapshot.snapshot_id, edge.parent_chain_id
+                previous.snapshot.snapshot_id,
+                previous.snapshot.snapshot_version,
+                edge.parent_chain_id,
             )
             child = current_keys[edge.child_chain_id]
             self.edges[(parent, child)] = GlobalLineageEdge(

@@ -29,6 +29,12 @@ from dataclasses import dataclass, field
 
 from libs.contracts import IngestedAlarm, IngestedPackage
 from libs.provenance import ProvenanceClass, ProvenanceSubtype
+from topology_source import (
+    TOPOLOGY_SOURCE_VERSION_MISSING,
+    TopologySourceTrace,
+    consistent_topology_trace,
+    topology_source_trace,
+)
 
 from .base import ChannelValue, unavailable
 from .contracts import (
@@ -172,6 +178,8 @@ def evaluate_shared_ancestor(
     theta: float = DEFAULT_THETA_CD,
     source_ref: str = "unversioned",
     channel_id: str = ANCESTOR_CHANNEL_ID,
+    source_trace: TopologySourceTrace | None = None,
+    unavailable_reason: str | None = None,
 ) -> ChannelValue:
     """``CD_anc(i,j)``: SHARED_ANCESTOR, gated on a valid directed hierarchy."""
 
@@ -190,8 +198,14 @@ def evaluate_shared_ancestor(
             channel_family=ChannelFamily.DEP_UPSTREAM,
             dependency_semantic=DependencySemantic.SHARED_ANCESTOR,
             source_ref=source_ref,
+            source_id=source_trace.source_id if source_trace else None,
+            source_version=source_trace.source_version if source_trace else None,
+            scenario_id=source_trace.scenario_id if source_trace else None,
+            generator_version=source_trace.generator_version if source_trace else None,
         )
 
+    if unavailable_reason is not None:
+        return fail(unavailable_reason)
     if hierarchy is None or not hierarchy.is_valid:
         return fail("no valid directed hierarchy; SHARED_ANCESTOR capability gate closed")
 
@@ -233,6 +247,10 @@ def evaluate_shared_ancestor(
         channel_family=ChannelFamily.DEP_UPSTREAM,
         dependency_semantic=DependencySemantic.SHARED_ANCESTOR,
         source_ref=source_ref,
+        source_id=source_trace.source_id if source_trace else None,
+        source_version=source_trace.source_version if source_trace else None,
+        scenario_id=source_trace.scenario_id if source_trace else None,
+        generator_version=source_trace.generator_version if source_trace else None,
     )
 
 
@@ -243,6 +261,8 @@ class DepUpstreamAncestor:
     hierarchy: DirectedHierarchy | None
     resolver: ResourceResolver
     source_ref: str
+    source_trace: TopologySourceTrace | None = None
+    unavailable_reason: str | None = None
     lambda_dep: float = DEFAULT_LAMBDA_DEP
     theta: float = DEFAULT_THETA_CD
 
@@ -261,6 +281,8 @@ class DepUpstreamAncestor:
             theta=self.theta,
             source_ref=self.source_ref,
             channel_id=self.channel_id,
+            source_trace=self.source_trace,
+            unavailable_reason=self.unavailable_reason,
         )
 
 
@@ -370,6 +392,8 @@ def evaluate_shared_active_path(
     theta: float = DEFAULT_THETA_CD,
     source_ref: str = "unversioned",
     channel_id: str = ACTIVE_PATH_CHANNEL_ID,
+    source_trace: TopologySourceTrace | None = None,
+    unavailable_reason: str | None = None,
 ) -> ChannelValue:
     """``CD_path(i,j)``: SHARED_ACTIVE_PATH, gated on verified ordered paths.
 
@@ -394,8 +418,14 @@ def evaluate_shared_active_path(
             channel_family=ChannelFamily.DEP_UPSTREAM,
             dependency_semantic=DependencySemantic.SHARED_ACTIVE_PATH,
             source_ref=source_ref,
+            source_id=source_trace.source_id if source_trace else None,
+            source_version=source_trace.source_version if source_trace else None,
+            scenario_id=source_trace.scenario_id if source_trace else None,
+            generator_version=source_trace.generator_version if source_trace else None,
         )
 
+    if unavailable_reason is not None:
+        return fail(unavailable_reason)
     if path_index is None or not path_index.is_valid:
         return fail("no verified active-path data; SHARED_ACTIVE_PATH capability gate closed")
 
@@ -451,6 +481,10 @@ def evaluate_shared_active_path(
         channel_family=ChannelFamily.DEP_UPSTREAM,
         dependency_semantic=DependencySemantic.SHARED_ACTIVE_PATH,
         source_ref=source_ref,
+        source_id=source_trace.source_id if source_trace else None,
+        source_version=source_trace.source_version if source_trace else None,
+        scenario_id=source_trace.scenario_id if source_trace else None,
+        generator_version=source_trace.generator_version if source_trace else None,
     )
 
 
@@ -461,6 +495,8 @@ class DepUpstreamActivePath:
     path_index: ActivePathIndex | None
     resolver: ResourceResolver
     source_ref: str
+    source_trace: TopologySourceTrace | None = None
+    unavailable_reason: str | None = None
     lambda_dep: float = DEFAULT_LAMBDA_DEP
     theta: float = DEFAULT_THETA_CD
 
@@ -479,19 +515,42 @@ class DepUpstreamActivePath:
             theta=self.theta,
             source_ref=self.source_ref,
             channel_id=self.channel_id,
+            source_trace=self.source_trace,
+            unavailable_reason=self.unavailable_reason,
         )
 
 
 DependencyProvider = DepUpstreamAncestor | DepUpstreamActivePath
 
 
-def _record_source_ref(record: dict, package: IngestedPackage) -> str:
-    """Resolve one stable source/model identity without using semantic tier."""
-    source_id = str(record.get("source_id") or "topology").strip()
-    version = str(
-        record.get("source_version") or package.snapshot.topology_version or ""
-    ).strip()
-    return f"{source_id}@{version}" if version else source_id
+def _group_by_source(
+    records: list[dict],
+) -> tuple[dict[str, tuple[TopologySourceTrace, list[dict]]], list[dict]]:
+    """Group only exact source identities; incomplete records stay separate.
+
+    ``snapshot.topology_version`` and generator metadata are deliberately not
+    source-version fallbacks. A foreign payload missing record-level identity
+    degrades only the affected topology capability.
+    """
+    grouped_records: dict[str, list[dict]] = {}
+    traces: dict[str, TopologySourceTrace] = {}
+    incomplete: list[dict] = []
+    for record in records:
+        trace = topology_source_trace(record)
+        if trace is None:
+            incomplete.append(record)
+            continue
+        grouped_records.setdefault(trace.source_ref, []).append(record)
+        traces.setdefault(trace.source_ref, trace)
+
+    grouped: dict[str, tuple[TopologySourceTrace, list[dict]]] = {}
+    for source_ref, source_records in grouped_records.items():
+        trace = consistent_topology_trace(source_records)
+        if trace is None:
+            incomplete.extend(source_records)
+            continue
+        grouped[source_ref] = (trace, source_records)
+    return grouped, incomplete
 
 
 def build_dep_upstream_providers(
@@ -508,42 +567,46 @@ def build_dep_upstream_providers(
     most one normalized derivation-group vote.
     """
     resolved = resolver or ResourceResolver.from_package(package)
-    logical_by_source: dict[str, list[dict]] = {}
+    logical_records: list[dict] = []
     for edge in package.topology.get("edges") or ():
         if edge.get("relation_type") != "LOGICAL_DEPENDENCY" or not edge.get(
             "directed"
         ):
             continue
-        source_ref = _record_source_ref(edge, package)
-        logical_by_source.setdefault(source_ref, []).append(edge)
+        logical_records.append(edge)
 
-    paths_by_source: dict[str, list[dict]] = {}
-    for path in package.topology.get("active_paths") or ():
-        source_ref = _record_source_ref(path, package)
-        paths_by_source.setdefault(source_ref, []).append(path)
+    path_records = list(package.topology.get("active_paths") or ())
+    logical_by_source, incomplete_logical = _group_by_source(logical_records)
+    paths_by_source, incomplete_paths = _group_by_source(path_records)
 
-    observed_sources = set(logical_by_source) | set(paths_by_source)
-    fallback_source = (
-        next(iter(observed_sources))
-        if len(observed_sources) == 1
-        else str(package.snapshot.topology_version or "unversioned")
-    )
     providers: list[DependencyProvider] = [
         DepUpstreamAncestor(
             hierarchy=build_directed_hierarchy(records),
             resolver=resolved,
             source_ref=source_ref,
+            source_trace=trace,
             lambda_dep=lambda_dep,
             theta=theta,
         )
-        for source_ref, records in sorted(logical_by_source.items())
+        for source_ref, (trace, records) in sorted(logical_by_source.items())
     ]
-    if not providers:
+    if incomplete_logical:
         providers.append(
             DepUpstreamAncestor(
                 hierarchy=None,
                 resolver=resolved,
-                source_ref=fallback_source,
+                source_ref="topology-source-unavailable",
+                unavailable_reason=TOPOLOGY_SOURCE_VERSION_MISSING,
+                lambda_dep=lambda_dep,
+                theta=theta,
+            )
+        )
+    elif not providers:
+        providers.append(
+            DepUpstreamAncestor(
+                hierarchy=None,
+                resolver=resolved,
+                source_ref="topology-capability-unavailable",
                 lambda_dep=lambda_dep,
                 theta=theta,
             )
@@ -554,18 +617,30 @@ def build_dep_upstream_providers(
             path_index=build_active_path_index(records),
             resolver=resolved,
             source_ref=source_ref,
+            source_trace=trace,
             lambda_dep=lambda_dep,
             theta=theta,
         )
-        for source_ref, records in sorted(paths_by_source.items())
+        for source_ref, (trace, records) in sorted(paths_by_source.items())
     ]
     providers.extend(active_path_providers)
-    if not active_path_providers:
+    if incomplete_paths:
         providers.append(
             DepUpstreamActivePath(
                 path_index=None,
                 resolver=resolved,
-                source_ref=fallback_source,
+                source_ref="topology-source-unavailable",
+                unavailable_reason=TOPOLOGY_SOURCE_VERSION_MISSING,
+                lambda_dep=lambda_dep,
+                theta=theta,
+            )
+        )
+    elif not active_path_providers:
+        providers.append(
+            DepUpstreamActivePath(
+                path_index=None,
+                resolver=resolved,
+                source_ref="topology-capability-unavailable",
                 lambda_dep=lambda_dep,
                 theta=theta,
             )

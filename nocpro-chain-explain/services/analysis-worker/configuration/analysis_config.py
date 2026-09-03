@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from math import isfinite
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -35,6 +36,18 @@ class IncrementalSnapshotMode(str, Enum):
     DISABLED = "disabled"
 
 
+class ChunkRetentionMode(str, Enum):
+    """Durable ingest-artifact retention policy."""
+
+    KEEP = "KEEP"
+    DELETE_AFTER_READY = "DELETE_AFTER_READY"
+
+
+class CalibrationStatus(str, Enum):
+    SYNTHETIC_ONLY = "SYNTHETIC_ONLY"
+    PRODUCTION_CALIBRATED = "PRODUCTION_CALIBRATED"
+
+
 @dataclass(frozen=True)
 class IncrementalSnapshotPolicy:
     mode: IncrementalSnapshotMode
@@ -46,6 +59,11 @@ class IncrementalSnapshotPolicy:
 
 
 @dataclass(frozen=True)
+class ChunkRetentionPolicy:
+    mode: ChunkRetentionMode
+
+
+@dataclass(frozen=True)
 class SimilarChainsPolicy:
     corpus_policy: CorpusPolicy
     model_update_policy: ModelUpdatePolicy
@@ -54,10 +72,91 @@ class SimilarChainsPolicy:
 
 
 @dataclass(frozen=True)
+class HistoricalEvidencePolicy:
+    """Optional until an explicit, versioned lift cap is supplied."""
+
+    min_support: ConfiguredValue
+    lambda_h: ConfiguredValue
+    lift_cap: ConfiguredValue
+
+
+@dataclass(frozen=True)
+class TemporalDelayPolicy:
+    min_relation_episodes: ConfiguredValue
+    model_selection_min_episodes: ConfiguredValue
+    validation_fraction: ConfiguredValue
+    model_selection_seed: ConfiguredValue
+    local_mass_halfwidth_candidates_seconds: tuple[float, ...]
+    histogram_bin_width_candidates_seconds: tuple[float, ...]
+    kde_bandwidth_candidates_seconds: tuple[float, ...]
+    fallback_model: str
+    fallback_local_mass_halfwidth_seconds: float
+    fallback_histogram_bin_width_seconds: float | None
+    fallback_kde_bandwidth_seconds: float | None
+    support_threshold: ConfiguredValue
+
+
+@dataclass(frozen=True)
 class ConfiguredValue:
     path: str
     value: int | float
     source: ParameterSource
+
+
+@dataclass(frozen=True)
+class AttributionEvaluationConfig:
+    """Versioned deterministic-randomization envelope for ADR-0031 evaluation."""
+
+    randomization_algorithm: str
+    random_seed: ConfiguredValue
+    random_repetitions: ConfiguredValue
+
+
+@dataclass(frozen=True)
+class CounterfactualConfig:
+    config_version: str
+    calibration_status: CalibrationStatus
+    max_chain_members: int
+    max_remove_candidates: int
+    max_split_candidates: int
+    max_recommendations: int
+    membership_support_below: float
+    representativeness_below: float
+    adverse_margin_below: float
+    minimum_membership_improvement: float
+    minimum_coverage_improvement: float
+    minimum_conductance_improvement: float
+    pareto_tolerance: float
+    max_move_candidates: int | None = None
+    move_reason: str | None = None
+    max_merge_candidates: int | None = None
+    merge_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class PropagationConfig:
+    config_version: str
+    restart_probability: ConfiguredValue
+    convergence_tolerance: ConfiguredValue
+    max_iterations: ConfiguredValue
+    decay_type: str
+    decay_parameter: ConfiguredValue
+    score_threshold: ConfiguredValue
+    max_candidate_edges: ConfiguredValue
+
+
+@dataclass(frozen=True)
+class DependencyScopeConfig:
+    max_scope_resources: ConfiguredValue
+    max_materialized_resources: ConfiguredValue
+
+
+@dataclass(frozen=True)
+class P2TopologyConfig:
+    propagation: PropagationConfig | None
+    propagation_reason: str | None
+    dependency_scope: DependencyScopeConfig | None
+    dependency_scope_reason: str | None
 
 
 @dataclass(frozen=True)
@@ -73,7 +172,12 @@ class _ParameterRule:
             raise AnalysisConfigError(f"{path}: value must be numeric")
         if self.numeric_type is int and not isinstance(value, int):
             raise AnalysisConfigError(f"{path}: value must be an integer")
-        normalized: int | float = int(value) if self.numeric_type is int else float(value)
+        try:
+            normalized: int | float = (
+                int(value) if self.numeric_type is int else float(value)
+            )
+        except OverflowError as exc:
+            raise AnalysisConfigError(f"{path}: value is out of range") from exc
         if self.minimum is not None:
             invalid = (
                 normalized < self.minimum
@@ -100,10 +204,29 @@ class _ParameterRule:
 
 
 _PROBABILITY = _ParameterRule(float, 0.0, 1.0)
+_STRICT_PROBABILITY = _ParameterRule(
+    float, 0.0, 1.0, inclusive_minimum=False, inclusive_maximum=False
+)
 _BALANCE_RATIO = _ParameterRule(float, 0.0, 0.5)
 _POSITIVE_FLOAT = _ParameterRule(float, 0.0, inclusive_minimum=False)
 _POSITIVE_INT = _ParameterRule(int, 0, inclusive_minimum=False)
 _NONNEGATIVE_INT = _ParameterRule(int, 0)
+
+_P2_PROPAGATION_RULES: dict[str, _ParameterRule] = {
+    "rwr.restart_probability": _STRICT_PROBABILITY,
+    "rwr.convergence_tolerance": _POSITIVE_FLOAT,
+    "rwr.max_iterations": _POSITIVE_INT,
+    "temporal.decay_parameter": _POSITIVE_FLOAT,
+    "acceptance.score_threshold": _PROBABILITY,
+    "limits.max_candidate_edges": _POSITIVE_INT,
+}
+
+_P2_DEPENDENCY_SCOPE_RULES: dict[str, _ParameterRule] = {
+    "limits.max_scope_resources": _POSITIVE_INT,
+    "limits.max_materialized_resources": _POSITIVE_INT,
+}
+
+ATTRIBUTION_RANDOMIZATION_ALGORITHM = "SPLITMIX64_FISHER_YATES_V1"
 
 
 PARAMETER_RULES: dict[str, _ParameterRule] = {
@@ -157,7 +280,17 @@ class AnalysisConfig:
     status: str
     parameters: dict[str, ConfiguredValue]
     incremental_snapshot: IncrementalSnapshotPolicy
+    chunk_retention: ChunkRetentionPolicy
     similar_chains: SimilarChainsPolicy
+    historical_evidence: HistoricalEvidencePolicy | None
+    historical_evidence_reason: str | None
+    temporal_delay: TemporalDelayPolicy | None
+    temporal_delay_reason: str | None
+    p2_topology: P2TopologyConfig
+    attribution_evaluation: AttributionEvaluationConfig | None = None
+    attribution_evaluation_reason: str | None = None
+    counterfactual: CounterfactualConfig | None = None
+    counterfactual_reason: str | None = None
 
     REQUIRED_PARAMETERS = tuple(PARAMETER_RULES)
 
@@ -201,6 +334,324 @@ def _lookup(document: dict[str, Any], path: str) -> Any:
             raise AnalysisConfigError(f"missing required parameter {path!r}")
         current = current[segment]
     return current
+
+
+def _load_p2_configured_value(
+    document: dict[str, Any],
+    path: str,
+    rule: _ParameterRule,
+    *,
+    configured_path: str,
+) -> ConfiguredValue:
+    raw = _lookup(document, path)
+    if not isinstance(raw, dict):
+        raise AnalysisConfigError(f"{path}: expected mapping with value and source")
+    if "value" not in raw:
+        raise AnalysisConfigError(f"{path}: missing value")
+    if "source" not in raw:
+        raise AnalysisConfigError(f"{path}: missing source")
+    try:
+        source = ParameterSource(raw["source"])
+    except (TypeError, ValueError) as exc:
+        raise AnalysisConfigError(
+            f"{path}: unknown parameter source {raw['source']!r}"
+        ) from exc
+    value = rule.validate(path, raw["value"])
+    if isinstance(value, float) and not isfinite(value):
+        raise AnalysisConfigError(f"{path}: value must be finite")
+    return ConfiguredValue(
+        path=configured_path,
+        value=value,
+        source=source,
+    )
+
+
+def _load_propagation_config(document: dict[str, Any]) -> PropagationConfig:
+    raw_config_version = _lookup(document, "config_version")
+    if not isinstance(raw_config_version, str) or not raw_config_version.strip():
+        raise AnalysisConfigError(
+            "propagation.config_version must be a non-empty string"
+        )
+    raw_decay_type = _lookup(document, "temporal.decay_type")
+    if raw_decay_type != "exponential":
+        raise AnalysisConfigError(
+            "propagation.temporal.decay_type must be exponential"
+        )
+    values = {
+        path: _load_p2_configured_value(
+            document, path, rule, configured_path=f"propagation.{path}"
+        )
+        for path, rule in _P2_PROPAGATION_RULES.items()
+    }
+    return PropagationConfig(
+        config_version=raw_config_version.strip(),
+        restart_probability=values["rwr.restart_probability"],
+        convergence_tolerance=values["rwr.convergence_tolerance"],
+        max_iterations=values["rwr.max_iterations"],
+        decay_type="exponential",
+        decay_parameter=values["temporal.decay_parameter"],
+        score_threshold=values["acceptance.score_threshold"],
+        max_candidate_edges=values["limits.max_candidate_edges"],
+    )
+
+
+def _load_dependency_scope_config(document: dict[str, Any]) -> DependencyScopeConfig:
+    values = {
+        path: _load_p2_configured_value(
+            document, path, rule, configured_path=f"dependency_scope.{path}"
+        )
+        for path, rule in _P2_DEPENDENCY_SCOPE_RULES.items()
+    }
+    max_scope_resources = values["limits.max_scope_resources"]
+    max_materialized_resources = values["limits.max_materialized_resources"]
+    if max_materialized_resources.value > max_scope_resources.value:
+        raise AnalysisConfigError(
+            "dependency_scope.limits.max_materialized_resources must be <= "
+            "max_scope_resources"
+        )
+    return DependencyScopeConfig(
+        max_scope_resources=max_scope_resources,
+        max_materialized_resources=max_materialized_resources,
+    )
+
+
+def _load_optional_p2_topology(document: dict[str, Any]) -> P2TopologyConfig:
+    raw_propagation = document.get("propagation")
+    try:
+        if not isinstance(raw_propagation, dict):
+            raise AnalysisConfigError("propagation must be a YAML mapping")
+        propagation = _load_propagation_config(raw_propagation)
+        propagation_reason = None
+    except AnalysisConfigError:
+        propagation = None
+        propagation_reason = "PROPAGATION_CONFIG_INCOMPLETE"
+
+    raw_dependency_scope = document.get("dependency_scope")
+    try:
+        if not isinstance(raw_dependency_scope, dict):
+            raise AnalysisConfigError("dependency_scope must be a YAML mapping")
+        dependency_scope = _load_dependency_scope_config(raw_dependency_scope)
+        dependency_scope_reason = None
+    except AnalysisConfigError:
+        dependency_scope = None
+        dependency_scope_reason = "DEPENDENCY_SCOPE_CONFIG_INCOMPLETE"
+
+    return P2TopologyConfig(
+        propagation=propagation,
+        propagation_reason=propagation_reason,
+        dependency_scope=dependency_scope,
+        dependency_scope_reason=dependency_scope_reason,
+    )
+
+
+def _load_optional_attribution_evaluation(
+    document: dict[str, Any],
+) -> tuple[AttributionEvaluationConfig | None, str | None]:
+    try:
+        raw = _lookup(document, "attribution_evaluation.randomization")
+        if not isinstance(raw, dict):
+            raise AnalysisConfigError(
+                "attribution_evaluation.randomization must be a YAML mapping"
+            )
+        algorithm = raw.get("algorithm")
+        if algorithm != ATTRIBUTION_RANDOMIZATION_ALGORITHM:
+            raise AnalysisConfigError(
+                "attribution_evaluation.randomization.algorithm must be "
+                f"{ATTRIBUTION_RANDOMIZATION_ALGORITHM}"
+            )
+        seed = _load_p2_configured_value(
+            raw,
+            "seed",
+            _NONNEGATIVE_INT,
+            configured_path="attribution_evaluation.randomization.seed",
+        )
+        repetitions = _load_p2_configured_value(
+            raw,
+            "repetitions",
+            _POSITIVE_INT,
+            configured_path="attribution_evaluation.randomization.repetitions",
+        )
+        return (
+            AttributionEvaluationConfig(
+                randomization_algorithm=algorithm,
+                random_seed=seed,
+                random_repetitions=repetitions,
+            ),
+            None,
+        )
+    except AnalysisConfigError:
+        return None, "ATTRIBUTION_EVALUATION_CONFIG_INCOMPLETE"
+
+
+def _load_optional_historical_evidence(
+    document: dict[str, Any], parameters: dict[str, ConfiguredValue]
+) -> tuple[HistoricalEvidencePolicy | None, str | None]:
+    """Do not invent ``lift_cap`` merely because older configs lack it."""
+    try:
+        lift_cap = _load_p2_configured_value(
+            document,
+            "history.lift_cap",
+            _ParameterRule(float, 1.0, inclusive_minimum=False),
+            configured_path="history.lift_cap",
+        )
+        return (
+            HistoricalEvidencePolicy(
+                min_support=parameters["history.min_support"],
+                lambda_h=parameters["history.lambda_h"],
+                lift_cap=lift_cap,
+            ),
+            None,
+        )
+    except (AnalysisConfigError, KeyError):
+        return None, "HISTORY_CONFIG_INCOMPLETE"
+
+
+def _load_optional_temporal_delay(
+    document: dict[str, Any], parameters: dict[str, ConfiguredValue]
+) -> tuple[TemporalDelayPolicy | None, str | None]:
+    try:
+        raw = _lookup(document, "temporal.delay")
+        if not isinstance(raw, dict):
+            raise AnalysisConfigError("temporal.delay must be a YAML mapping")
+        def scalar(name: str, rule: _ParameterRule) -> ConfiguredValue:
+            return _load_p2_configured_value(raw, name, rule, configured_path=f"temporal.delay.{name}")
+        def sequence(name: str) -> tuple[float, ...]:
+            values = raw.get(name)
+            if not isinstance(values, list) or not values or any(isinstance(v, bool) or not isinstance(v, (int, float)) or v <= 0 for v in values):
+                raise AnalysisConfigError(f"temporal.delay.{name} must be non-empty positive numeric list")
+            return tuple(float(v) for v in values)
+        fallback_model = raw.get("fallback_model")
+        if fallback_model not in {"HISTOGRAM", "GAUSSIAN_KDE"}:
+            raise AnalysisConfigError("temporal.delay.fallback_model is required")
+        fallback_halfwidth = raw.get("fallback_local_mass_halfwidth_seconds")
+        if isinstance(fallback_halfwidth, bool) or not isinstance(fallback_halfwidth, (int, float)) or fallback_halfwidth <= 0:
+            raise AnalysisConfigError("temporal.delay.fallback_local_mass_halfwidth_seconds is required")
+        histogram, kde = raw.get("fallback_histogram_bin_width_seconds"), raw.get("fallback_kde_bandwidth_seconds")
+        return TemporalDelayPolicy(
+            scalar("min_relation_episodes", _POSITIVE_INT), scalar("model_selection_min_episodes", _POSITIVE_INT),
+            scalar("validation_fraction", _STRICT_PROBABILITY), scalar("model_selection_seed", _NONNEGATIVE_INT),
+            sequence("local_mass_halfwidth_candidates_seconds"), sequence("histogram_bin_width_candidates_seconds"), sequence("kde_bandwidth_candidates_seconds"),
+            fallback_model, float(fallback_halfwidth),
+            float(histogram) if isinstance(histogram, (int, float)) and not isinstance(histogram, bool) and histogram > 0 else None,
+            float(kde) if isinstance(kde, (int, float)) and not isinstance(kde, bool) and kde > 0 else None,
+            parameters["temporal.delay.support_threshold"],
+        ), None
+    except (AnalysisConfigError, KeyError):
+        return None, "TEMPORAL_DELAY_CONFIG_INCOMPLETE"
+
+
+def _counterfactual_number(
+    document: dict[str, Any], path: str, rule: _ParameterRule
+) -> int | float:
+    value = rule.validate(f"counterfactual.{path}", _lookup(document, path))
+    if isinstance(value, float) and not isfinite(value):
+        raise AnalysisConfigError(f"counterfactual.{path}: value must be finite")
+    return value
+
+
+def _load_optional_counterfactual(
+    document: dict[str, Any],
+) -> tuple[CounterfactualConfig | None, str | None]:
+    try:
+        raw = document.get("counterfactual")
+        if not isinstance(raw, dict):
+            raise AnalysisConfigError("counterfactual must be a YAML mapping")
+        raw_version = _lookup(raw, "config_version")
+        if not isinstance(raw_version, str) or not raw_version.strip():
+            raise AnalysisConfigError(
+                "counterfactual.config_version must be a non-empty string"
+            )
+        try:
+            calibration_status = CalibrationStatus(
+                _lookup(raw, "calibration_status")
+            )
+        except (TypeError, ValueError) as exc:
+            raise AnalysisConfigError(
+                "counterfactual.calibration_status is invalid"
+            ) from exc
+        try:
+            max_move_candidates = int(
+                _counterfactual_number(raw, "move.max_candidates", _POSITIVE_INT)
+            )
+            move_reason = None
+        except AnalysisConfigError:
+            # MOVE is an independent P1 operation.  Omitting its envelope must
+            # not disable the already-calibrated REMOVE/SPLIT P0 operations.
+            max_move_candidates = None
+            move_reason = "MOVE_POLICY_NOT_CALIBRATED"
+        try:
+            max_merge_candidates = int(
+                _counterfactual_number(raw, "merge.max_candidates", _POSITIVE_INT)
+            )
+            merge_reason = None
+        except AnalysisConfigError:
+            max_merge_candidates = None
+            merge_reason = "MERGE_POLICY_NOT_CALIBRATED"
+        return (
+            CounterfactualConfig(
+                config_version=raw_version.strip(),
+                calibration_status=calibration_status,
+                max_chain_members=int(
+                    _counterfactual_number(raw, "limits.max_chain_members", _POSITIVE_INT)
+                ),
+                max_remove_candidates=int(
+                    _counterfactual_number(raw, "limits.max_remove_candidates", _POSITIVE_INT)
+                ),
+                max_split_candidates=int(
+                    _counterfactual_number(raw, "limits.max_split_candidates", _POSITIVE_INT)
+                ),
+                max_recommendations=int(
+                    _counterfactual_number(raw, "limits.max_recommendations", _POSITIVE_INT)
+                ),
+                membership_support_below=float(
+                    _counterfactual_number(raw, "remove_triggers.membership_support_below", _PROBABILITY)
+                ),
+                representativeness_below=float(
+                    _counterfactual_number(raw, "remove_triggers.representativeness_below", _PROBABILITY)
+                ),
+                adverse_margin_below=float(
+                    _counterfactual_number(raw, "remove_triggers.adverse_margin_below", _ParameterRule(float))
+                ),
+                minimum_membership_improvement=float(
+                    _counterfactual_number(raw, "improvement.minimum_membership_improvement", _ParameterRule(float, 0.0))
+                ),
+                minimum_coverage_improvement=float(
+                    _counterfactual_number(raw, "improvement.minimum_coverage_improvement", _ParameterRule(float, 0.0))
+                ),
+                minimum_conductance_improvement=float(
+                    _counterfactual_number(raw, "improvement.minimum_conductance_improvement", _ParameterRule(float, 0.0))
+                ),
+                pareto_tolerance=float(
+                    _counterfactual_number(raw, "improvement.pareto_tolerance", _ParameterRule(float, 0.0))
+                ),
+                max_move_candidates=max_move_candidates,
+                move_reason=move_reason,
+                max_merge_candidates=max_merge_candidates,
+                merge_reason=merge_reason,
+            ),
+            None,
+        )
+    except AnalysisConfigError:
+        return None, "COUNTERFACTUAL_CONFIG_INCOMPLETE"
+
+
+def _load_chunk_retention(document: dict[str, Any]) -> ChunkRetentionPolicy:
+    """Load the deployment retention choice, keeping legacy YAML fail-safe."""
+    raw_ingest = document.get("ingest")
+    if raw_ingest is None:
+        return ChunkRetentionPolicy(mode=ChunkRetentionMode.KEEP)
+    if not isinstance(raw_ingest, dict):
+        raise AnalysisConfigError("ingest must be a YAML mapping")
+    raw_retention = raw_ingest.get("chunk_retention")
+    if not isinstance(raw_retention, dict):
+        raise AnalysisConfigError("ingest.chunk_retention must be a YAML mapping")
+    try:
+        mode = ChunkRetentionMode(raw_retention.get("mode"))
+    except (TypeError, ValueError) as exc:
+        raise AnalysisConfigError(
+            "ingest.chunk_retention.mode must be KEEP or DELETE_AFTER_READY"
+        ) from exc
+    return ChunkRetentionPolicy(mode=mode)
 
 
 def load_analysis_config(
@@ -270,6 +721,7 @@ def load_analysis_config(
         mode=IncrementalSnapshotMode.DISABLED,
         reason=reason.strip(),
     )
+    chunk_retention = _load_chunk_retention(document)
 
     raw_similar = document.get("similar_chains")
     if not isinstance(raw_similar, dict):
@@ -310,13 +762,33 @@ def load_analysis_config(
         temporal_cutoff="snapshot_time",
         exclude_same_lineage=True,
     )
+    p2_topology = _load_optional_p2_topology(document)
+    historical_evidence, historical_evidence_reason = _load_optional_historical_evidence(
+        document, parameters
+    )
+    temporal_delay, temporal_delay_reason = _load_optional_temporal_delay(document, parameters)
+    (
+        attribution_evaluation,
+        attribution_evaluation_reason,
+    ) = _load_optional_attribution_evaluation(document)
+    counterfactual, counterfactual_reason = _load_optional_counterfactual(document)
 
     config = AnalysisConfig(
         config_version=version.strip(),
         status=status.strip(),
         parameters=parameters,
         incremental_snapshot=incremental_snapshot,
+        chunk_retention=chunk_retention,
         similar_chains=similar_chains,
+        historical_evidence=historical_evidence,
+        historical_evidence_reason=historical_evidence_reason,
+        temporal_delay=temporal_delay,
+        temporal_delay_reason=temporal_delay_reason,
+        p2_topology=p2_topology,
+        attribution_evaluation=attribution_evaluation,
+        attribution_evaluation_reason=attribution_evaluation_reason,
+        counterfactual=counterfactual,
+        counterfactual_reason=counterfactual_reason,
     )
     if "role.s_weak" in parameters and "role.s_min" in parameters:
         if config.value("role.s_weak") > config.value("role.s_min"):

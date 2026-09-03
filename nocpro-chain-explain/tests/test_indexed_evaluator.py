@@ -10,6 +10,7 @@ from channels import (
     evaluate_pair_channels,
 )
 from groups import AuditGraphMode, PairMaterializationMode, StatisticsMode
+from groups.indexed_statistics import NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH
 from libs.contracts import load_package
 
 
@@ -90,5 +91,7 @@ def test_pair_on_click_rejects_non_member(package):
 def test_indexed_unavailable_channels_remain_explicit(package):
     evidence = evaluate_chain_indexed(package, "C1")
     for alarm_id in evidence.members:
-        assert evidence.statistics.fit_of(alarm_id, "T_delay").fit is None
+        delay = evidence.statistics.fit_of(alarm_id, "T_delay")
+        assert delay.fit is None
+        assert delay.unavailable_reason == NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH
         assert evidence.statistics.fit_of(alarm_id, "Dep_hop").fit is None

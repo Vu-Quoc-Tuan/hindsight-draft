@@ -150,6 +150,15 @@ class ChainAnalysis:
         return counts
 
 
+def _membership_support_rank_key(
+    item: tuple[str, MembershipSupport],
+) -> tuple[float, str]:
+    """Rank computable zero support ahead of unavailable support."""
+    alarm_id, membership = item
+    support = membership.support
+    return (-(support if support is not None else -1.0), alarm_id)
+
+
 def _rival_statistics(
     package: IngestedPackage,
     alarm_id: str,
@@ -356,7 +365,7 @@ def analyze_chain(
     }
     ranked = sorted(
         supports.items(),
-        key=lambda item: (-(item[1].support or -1.0), item[0]),
+        key=_membership_support_rank_key,
     )
     quantiles = {
         alarm_id: (position / (len(ranked) - 1) if len(ranked) > 1 else 0.0)

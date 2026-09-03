@@ -40,7 +40,8 @@ def parse_time(value: str) -> datetime:
 class TimedChainFingerprint:
     fingerprint: ChainFingerprint
     event_time: str
-    snapshot_id: str | None = None
+    snapshot_id: str
+    snapshot_version: str
 
     def __post_init__(self) -> None:
         parse_time(self.event_time)
@@ -112,6 +113,7 @@ def materialize_similarity_index(
             fingerprint=entry.fingerprint.scored_with(model.model_version),
             event_time=entry.event_time,
             snapshot_id=entry.snapshot_id,
+            snapshot_version=entry.snapshot_version,
         )
         for entry in eligible
     )

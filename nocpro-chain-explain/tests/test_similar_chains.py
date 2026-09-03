@@ -310,9 +310,9 @@ def test_snapshot_versioned_index_uses_history_strictly_before_cutoff():
 
     index = materialize_similarity_index(
         [
-            TimedChainFingerprint(future, "2026-08-29T10:01:00Z"),
-            TimedChainFingerprint(at_cutoff, "2026-08-29T10:00:00Z"),
-            TimedChainFingerprint(before, "2026-08-29T09:59:00Z"),
+            TimedChainFingerprint(future, "2026-08-29T10:01:00Z", "s3", "v1"),
+            TimedChainFingerprint(at_cutoff, "2026-08-29T10:00:00Z", "s2", "v1"),
+            TimedChainFingerprint(before, "2026-08-29T09:59:00Z", "s1", "v1"),
         ],
         model_version="sim-20260829-1000",
         trained_until_exclusive="2026-08-29T10:00:00Z",
@@ -336,8 +336,8 @@ def test_offline_frozen_model_never_uses_test_period():
     test = _fp("test", ["F2"], ["D2"])
     index = materialize_similarity_index(
         [
-            TimedChainFingerprint(train, "2026-07-31T23:59:59Z"),
-            TimedChainFingerprint(test, "2026-08-01T00:00:00Z"),
+            TimedChainFingerprint(train, "2026-07-31T23:59:59Z", "train", "v1"),
+            TimedChainFingerprint(test, "2026-08-01T00:00:00Z", "test", "v1"),
         ],
         model_version="benchmark-v1",
         trained_until_exclusive="2026-08-01T00:00:00Z",

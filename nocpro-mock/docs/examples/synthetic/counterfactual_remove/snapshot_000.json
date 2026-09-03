@@ -1,0 +1,277 @@
+{
+  "snapshot": {
+    "snapshot_id": "synthetic_counterfactual_remove_v1:snapshot_000",
+    "snapshot_version": "1",
+    "snapshot_time": "2026-01-01T00:00:00+00:00",
+    "status": "COMPLETE",
+    "source": "nocpro-mock",
+    "source_kind": "SYNTHETIC_TEST",
+    "produced_at": "2026-01-01T00:00:00+00:00",
+    "schema_version": "v1"
+  },
+  "alarms": [
+    {
+      "alarm_id": "SYN-REMOVE-CORE-01",
+      "snapshot_id": "synthetic_counterfactual_remove_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-REMOVE-CORE-01",
+        "chaining_id": "SYN-CHAIN-REMOVE-MUTATED",
+        "cah.start_time": "2026-01-01T00:00:01+00:00",
+        "device_code": "SYN-DEVICE-REMOVE-CORE",
+        "node_reference": "SYN-REF-REMOVE-CORE-1"
+      },
+      "raw_start_time": "2026-01-01T00:00:01+00:00",
+      "canonical_start_time": "2026-01-01T00:00:01+00:00",
+      "device_code": "SYN-DEVICE-REMOVE-CORE",
+      "node_reference": "SYN-REF-REMOVE-CORE-1",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-REMOVE-CORE-02",
+      "snapshot_id": "synthetic_counterfactual_remove_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-REMOVE-CORE-02",
+        "chaining_id": "SYN-CHAIN-REMOVE-MUTATED",
+        "cah.start_time": "2026-01-01T00:00:02+00:00",
+        "device_code": "SYN-DEVICE-REMOVE-CORE",
+        "node_reference": "SYN-REF-REMOVE-CORE-1"
+      },
+      "raw_start_time": "2026-01-01T00:00:02+00:00",
+      "canonical_start_time": "2026-01-01T00:00:02+00:00",
+      "device_code": "SYN-DEVICE-REMOVE-CORE",
+      "node_reference": "SYN-REF-REMOVE-CORE-1",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-REMOVE-CORE-03",
+      "snapshot_id": "synthetic_counterfactual_remove_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-REMOVE-CORE-03",
+        "chaining_id": "SYN-CHAIN-REMOVE-MUTATED",
+        "cah.start_time": "2026-01-01T00:00:03+00:00",
+        "device_code": "SYN-DEVICE-REMOVE-CORE",
+        "node_reference": "SYN-REF-REMOVE-CORE-1"
+      },
+      "raw_start_time": "2026-01-01T00:00:03+00:00",
+      "canonical_start_time": "2026-01-01T00:00:03+00:00",
+      "device_code": "SYN-DEVICE-REMOVE-CORE",
+      "node_reference": "SYN-REF-REMOVE-CORE-1",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-REMOVE-CORE-04",
+      "snapshot_id": "synthetic_counterfactual_remove_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-REMOVE-CORE-04",
+        "chaining_id": "SYN-CHAIN-REMOVE-MUTATED",
+        "cah.start_time": "2026-01-01T00:00:04+00:00",
+        "device_code": "SYN-DEVICE-REMOVE-CORE",
+        "node_reference": "SYN-REF-REMOVE-CORE-1"
+      },
+      "raw_start_time": "2026-01-01T00:00:04+00:00",
+      "canonical_start_time": "2026-01-01T00:00:04+00:00",
+      "device_code": "SYN-DEVICE-REMOVE-CORE",
+      "node_reference": "SYN-REF-REMOVE-CORE-1",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-REMOVE-CORE-05",
+      "snapshot_id": "synthetic_counterfactual_remove_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-REMOVE-CORE-05",
+        "chaining_id": "SYN-CHAIN-REMOVE-MUTATED",
+        "cah.start_time": "2026-01-01T00:00:05+00:00",
+        "device_code": "SYN-DEVICE-REMOVE-CORE",
+        "node_reference": "SYN-REF-REMOVE-CORE-2"
+      },
+      "raw_start_time": "2026-01-01T00:00:05+00:00",
+      "canonical_start_time": "2026-01-01T00:00:05+00:00",
+      "device_code": "SYN-DEVICE-REMOVE-CORE",
+      "node_reference": "SYN-REF-REMOVE-CORE-2",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-REMOVE-CORE-06",
+      "snapshot_id": "synthetic_counterfactual_remove_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-REMOVE-CORE-06",
+        "chaining_id": "SYN-CHAIN-REMOVE-MUTATED",
+        "cah.start_time": "2026-01-01T00:00:06+00:00",
+        "device_code": "SYN-DEVICE-REMOVE-CORE",
+        "node_reference": "SYN-REF-REMOVE-CORE-2"
+      },
+      "raw_start_time": "2026-01-01T00:00:06+00:00",
+      "canonical_start_time": "2026-01-01T00:00:06+00:00",
+      "device_code": "SYN-DEVICE-REMOVE-CORE",
+      "node_reference": "SYN-REF-REMOVE-CORE-2",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-REMOVE-CORE-07",
+      "snapshot_id": "synthetic_counterfactual_remove_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-REMOVE-CORE-07",
+        "chaining_id": "SYN-CHAIN-REMOVE-MUTATED",
+        "cah.start_time": "2026-01-01T00:00:07+00:00",
+        "device_code": "SYN-DEVICE-REMOVE-CORE",
+        "node_reference": "SYN-REF-REMOVE-CORE-2"
+      },
+      "raw_start_time": "2026-01-01T00:00:07+00:00",
+      "canonical_start_time": "2026-01-01T00:00:07+00:00",
+      "device_code": "SYN-DEVICE-REMOVE-CORE",
+      "node_reference": "SYN-REF-REMOVE-CORE-2",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-REMOVE-CORE-08",
+      "snapshot_id": "synthetic_counterfactual_remove_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-REMOVE-CORE-08",
+        "chaining_id": "SYN-CHAIN-REMOVE-MUTATED",
+        "cah.start_time": "2026-01-01T00:00:08+00:00",
+        "device_code": "SYN-DEVICE-REMOVE-CORE",
+        "node_reference": "SYN-REF-REMOVE-CORE-2"
+      },
+      "raw_start_time": "2026-01-01T00:00:08+00:00",
+      "canonical_start_time": "2026-01-01T00:00:08+00:00",
+      "device_code": "SYN-DEVICE-REMOVE-CORE",
+      "node_reference": "SYN-REF-REMOVE-CORE-2",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-REMOVE-EXTRA",
+      "snapshot_id": "synthetic_counterfactual_remove_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-REMOVE-EXTRA",
+        "chaining_id": "SYN-CHAIN-REMOVE-MUTATED",
+        "cah.start_time": "2026-01-01T00:10:00+00:00",
+        "device_code": "SYN-DEVICE-REMOVE-EXTRA",
+        "node_reference": "SYN-REF-REMOVE-EXTRA"
+      },
+      "raw_start_time": "2026-01-01T00:10:00+00:00",
+      "canonical_start_time": "2026-01-01T00:10:00+00:00",
+      "device_code": "SYN-DEVICE-REMOVE-EXTRA",
+      "node_reference": "SYN-REF-REMOVE-EXTRA",
+      "quality_flags": []
+    }
+  ],
+  "chains": [
+    {
+      "chain_id": "SYN-CHAIN-REMOVE-MUTATED",
+      "snapshot_id": "synthetic_counterfactual_remove_v1:snapshot_000",
+      "member_count": 9,
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "event_span_seconds": 599
+    }
+  ],
+  "memberships": [
+    {
+      "chain_id": "SYN-CHAIN-REMOVE-MUTATED",
+      "alarm_id": "SYN-REMOVE-CORE-01",
+      "snapshot_id": "synthetic_counterfactual_remove_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-REMOVE-MUTATED",
+      "alarm_id": "SYN-REMOVE-CORE-02",
+      "snapshot_id": "synthetic_counterfactual_remove_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-REMOVE-MUTATED",
+      "alarm_id": "SYN-REMOVE-CORE-03",
+      "snapshot_id": "synthetic_counterfactual_remove_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-REMOVE-MUTATED",
+      "alarm_id": "SYN-REMOVE-CORE-04",
+      "snapshot_id": "synthetic_counterfactual_remove_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-REMOVE-MUTATED",
+      "alarm_id": "SYN-REMOVE-CORE-05",
+      "snapshot_id": "synthetic_counterfactual_remove_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-REMOVE-MUTATED",
+      "alarm_id": "SYN-REMOVE-CORE-06",
+      "snapshot_id": "synthetic_counterfactual_remove_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-REMOVE-MUTATED",
+      "alarm_id": "SYN-REMOVE-CORE-07",
+      "snapshot_id": "synthetic_counterfactual_remove_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-REMOVE-MUTATED",
+      "alarm_id": "SYN-REMOVE-CORE-08",
+      "snapshot_id": "synthetic_counterfactual_remove_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-REMOVE-MUTATED",
+      "alarm_id": "SYN-REMOVE-EXTRA",
+      "snapshot_id": "synthetic_counterfactual_remove_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    }
+  ],
+  "system_metadata": {
+    "chain_rules": [],
+    "chain_characteristics": [],
+    "attribute_configs": [],
+    "pair_metadata": [],
+    "pair_metadata_batches": []
+  },
+  "topology": {
+    "nodes": [],
+    "edges": [],
+    "failure_domains": [],
+    "active_paths": [],
+    "mappings": []
+  },
+  "operational_context": [],
+  "provenance_manifest": {
+    "sources": [
+      {
+        "source_id": "synthetic_counterfactual_remove_v1",
+        "source_kind": "SYNTHETIC_TEST",
+        "record_count": 9,
+        "notes": [
+          "COUNTERFACTUAL EXTRA_MEMBER fixture"
+        ]
+      }
+    ],
+    "generator_version": "nocpro-mock-0.1.0",
+    "unavailable_capabilities": [],
+    "notes": [
+      "scenario_id=synthetic_counterfactual_remove_v1",
+      "seed=42",
+      "Synthetic snapshot; cannot be used as real validation."
+    ]
+  },
+  "schema_version": "v1"
+}

@@ -1,0 +1,26 @@
+scenario_id: synthetic_counterfactual_split_v1
+source_kind: SYNTHETIC_TEST
+mutation: OVER_MERGE
+mutated_chain_id: SYN-CHAIN-SPLIT-MUTATED
+truth_partition:
+  SYN-CHAIN-SPLIT-A:
+    - SYN-SPLIT-A-01
+    - SYN-SPLIT-A-02
+    - SYN-SPLIT-A-03
+    - SYN-SPLIT-A-04
+    - SYN-SPLIT-A-05
+    - SYN-SPLIT-A-06
+    - SYN-SPLIT-A-07
+    - SYN-SPLIT-A-08
+  SYN-CHAIN-SPLIT-B:
+    - SYN-SPLIT-B-01
+    - SYN-SPLIT-B-02
+    - SYN-SPLIT-B-03
+    - SYN-SPLIT-B-04
+    - SYN-SPLIT-B-05
+    - SYN-SPLIT-B-06
+    - SYN-SPLIT-B-07
+    - SYN-SPLIT-B-08
+expected_review:
+  operation: SPLIT_CHAIN
+validation_scope: SYNTHETIC_CORRECTNESS_ONLY

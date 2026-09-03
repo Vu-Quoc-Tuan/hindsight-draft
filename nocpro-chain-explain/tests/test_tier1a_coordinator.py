@@ -4,6 +4,7 @@ import asyncio
 
 import pytest
 
+from configuration import ChunkRetentionMode
 from nocpro_api.tier1a_coordinator import Tier1ACoordinator
 from nocpro_api.persistence import Tier1AClaim
 
@@ -56,6 +57,7 @@ class FailingWorkspace:
 class SuccessfulRepository:
     def __init__(self) -> None:
         self.claimed = False
+        self.finish_kwargs = None
 
     async def claim_next_tier1a(
         self, *, worker_id: str, lease_seconds: int, max_attempts: int
@@ -75,6 +77,7 @@ class SuccessfulRepository:
         return True
 
     async def finish_tier1a(self, *args, **kwargs):
+        self.finish_kwargs = kwargs
         return None
 
     async def latest_ready_payload(self):
@@ -118,10 +121,27 @@ def test_tier1a_failure_records_the_frozen_retry_policy():
 
 def test_completed_old_replay_never_replaces_newer_logical_ready_snapshot():
     workspace = RecordingWorkspace()
-    coordinator = Tier1ACoordinator(SuccessfulRepository(), workspace)
+    repository = SuccessfulRepository()
+    coordinator = Tier1ACoordinator(repository, workspace)
 
     result = asyncio.run(coordinator.run_pending_once())
 
     assert result is not None
     assert result[0] == ("old-replay", "1")
     assert workspace.active == "newer"
+    assert repository.finish_kwargs["delete_chunks_after_ready"] is False
+
+
+def test_tier1a_passes_explicit_delete_after_ready_policy_only_when_selected():
+    workspace = RecordingWorkspace()
+    repository = SuccessfulRepository()
+    coordinator = Tier1ACoordinator(
+        repository,
+        workspace,
+        chunk_retention_mode=ChunkRetentionMode.DELETE_AFTER_READY,
+    )
+
+    result = asyncio.run(coordinator.run_pending_once())
+
+    assert result is not None
+    assert repository.finish_kwargs["delete_chunks_after_ready"] is True

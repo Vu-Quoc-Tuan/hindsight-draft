@@ -1,0 +1,29 @@
+scenario_id: temporal_delay_patterns_v1
+source_kind: SYNTHETIC_TEST
+
+# This is an explicit synthetic authoritative mapping consumed only by the
+# Explain acceptance adapter; the mock snapshot itself does not claim an
+# upstream production taxonomy.
+authoritative_taxonomy:
+  source_id: synthetic-temporal-delay-taxonomy
+  source_version: td-taxonomy-v1
+  tokens_by_alarm_name:
+    TD-A: {type: TD-A, family: TD-SOURCE, category: TD-CATEGORY-SOURCE}
+    TD-B: {type: TD-B, family: TD-TARGET, category: TD-CATEGORY-TARGET}
+    TD-C: {type: TD-C, family: TD-SOURCE, category: TD-CATEGORY-SOURCE}
+    TD-D: {type: TD-D, family: TD-TARGET, category: TD-CATEGORY-TARGET}
+
+expected:
+  history_snapshot_count: 4
+  target_excluded_from_history: true
+  type_relation: TD-A->TD-B
+  learned_delays_seconds: [2, 3, 99, 101]
+  reverse_relation: TD-B->TD-A
+  reverse_history: UNAVAILABLE
+  type_backoff_relation: TD-C->TD-D
+  expected_backoff_level: FAMILY
+  equal_timestamp_reason: NO_DIRECTED_TEMPORAL_ORDER
+
+must_not_emit:
+  - T_delay.score
+  - T_delay.model

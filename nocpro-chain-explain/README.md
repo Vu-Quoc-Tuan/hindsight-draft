@@ -35,13 +35,16 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | CommonDependency: SHARED_ANCESTOR + SHARED_ACTIVE_PATH (`channels/common_dependency.py`) | P1-Core | done |
 | Similar Chains: fingerprint + cosine baseline (`similar_chains/`) | P1-Core | done |
 | Similar Chains production index (`history<t`, snapshot-versioned model) | P1-Core | done |
+| Evidence Coverage Attribution (exact indexed, derivation-group level) | P1-optional | done; fail-closed above configured ceiling |
+| Counterfactual Chain Review P0 + P1.1 (`REMOVE_MEMBER`, exact-Audit `SPLIT_CHAIN`, `MOVE_MEMBER`) | review extension | implemented; synthetic correctness verified, production calibration not established |
 | **P1-Core (3+1) feature set implemented** | | **4/4** |
 | Contrastive top-3: per-candidate `Margin_common` (§5, §11) | P0 | done |
 | Hybrid indexed Tier-1B + pairwise oracle | P0 | done |
 | Exact incremental predicate index + reconciliation triggers | P0 | done |
 | Benchmark matrix + overlap measurement tooling | P0 | implemented; Tier-1 real run recorded |
 | Production delta-default policy/threshold | P0 | `BLOCKED_BY_DATA_AVAILABILITY`; implementation ready, empirical threshold not established, mode disabled |
-| UNAVOIDABLE_DEPENDENCY (dominator), graph motif upgrade | P2 | not started |
+| P2 topology foundation: UNAVOIDABLE_DEPENDENCY annotation, PROPAGATION_HYPOTHESIS, DEPENDENCY_SCOPE_OVERLAP_SIGNAL | P2 | implemented; production capability fail-closed |
+| Graph motif upgrade and remaining P2 extensions | P2 | not started; data/capability gated |
 | FastAPI adapter: snapshot ingest, Tier-1B, pair WHY, Tier-2 polling | infra | done |
 | React/Vite/TypeScript operator UI | infra | done |
 | PostgreSQL persistence + Alembic migrations | infra | done |
@@ -54,8 +57,12 @@ The P1-Core feature set above is implemented, but the **P1 milestone is not
 closed**: production-delta validation is externally blocked because consecutive
 production snapshots do not exist. The incremental implementation is ready,
 but its empirical policy threshold is not established and production remains
-full-rebuild by default. Do not expand into P1-optional or P2 work until the
-scope gate is formally amended; P2 remains `NOT STARTED`.
+full-rebuild by default. The P2 topology foundation was explicitly opened by
+ADR-0033 after the scope amendment. Its implementation is present and tested
+on directed synthetic fixtures, while the current production topology remains
+unable to provide the required directed semantics, so production results stay
+`UNAVAILABLE`. Remaining P2 extensions are still `NOT_STARTED` and data/
+capability gated.
 
 ### Alarm taxonomy source capability
 
@@ -84,6 +91,9 @@ services/analysis-worker/tier1b/     per-chain analysis orchestration
 services/analysis-worker/audit/      audit graph, candidate cuts, conductance, over-merge
 services/analysis-worker/channels/common_dependency.py  SHARED_ANCESTOR, SHARED_ACTIVE_PATH
 services/analysis-worker/similar_chains/  fingerprint, TF-IDF, cosine similarity baseline
+services/analysis-worker/tier2/topology_hypotheses/  fail-closed P2 topology foundation
+services/analysis-worker/tier2/evidence_attribution.py  exact indexed Evidence Coverage Attribution
+services/analysis-worker/tier2/counterfactual/  bounded exact review-only alternatives
 services/api/nocpro_api/             FastAPI transport and in-process repository boundary
 services/api/nocpro_api/ingest/      Kafka v1 wire parser + consumer/coordinator
 services/api/nocpro_api/persistence/ PostgreSQL models and snapshot repository
@@ -129,6 +139,14 @@ Kafka and PostgreSQL, browser WHY/role/descriptor/deep-dive behavior, and the
 missing-chunk, consumer-restart, duplicate-snapshot and expired-lease recovery
 cases. Docker failure tests require the explicit `NOCPRO_RUN_DOCKER_E2E=1`
 opt-in and therefore cannot control Docker during an ordinary pytest run.
+
+Counterfactual Review has an additional synthetic-only acceptance stage. It
+publishes the explicit extra-member, over-merge and misassigned-member fixtures from `nocpro-mock`
+through Kafka chunk/barrier, waits for Tier-1A READY, materializes exact Audit,
+submits the separate Review job, verifies its PostgreSQL result envelope, then
+opens the REVIEW tab in Chromium. These fixtures and
+`config/thresholds/e2e-counterfactual.yaml` are labelled `SYNTHETIC_TEST`; they
+cannot calibrate or enable a production recommendation policy.
 
 ## Behavior worth knowing
 
@@ -198,6 +216,24 @@ drill-down and visualization. A verdict is never a function of a display
   with a perfect score.
 - Candidate cuts come only from Entity/Dependency/`H_domain`/Descriptor plus
   their union/difference. No second community-detection algorithm runs.
+- Counterfactual Chain Review is proposal-only and never mutates the NocPro
+  partition. P0 generates bounded deterministic `REMOVE_MEMBER` candidates
+  from member triggers and reuses only exact Structural Audit cuts for
+  `SPLIT_CHAIN`. P1.1 also generates bounded canonical `MOVE_MEMBER`
+  transfers from all source Tier-1B `local_candidates`; MOVE v1 is
+  source-local, so canonicalization does not make discovery independent of
+  which chain is under Review. For two singleton chains, only the
+  stable-greater chain may move into the stable-less chain; Review of the
+  stable-less side does not load the peer artifact or emit the reverse move. A
+  singleton/non-singleton pair is only represented as singleton-to-chain MOVE.
+  A missing
+  `Margin_common` is neither zero nor a veto. Candidate
+  aggregates are recomputed exactly over affected chains, missing required
+  metrics reject the candidate, and REMOVE/SPLIT/MOVE remain independent partial
+  results. A missing `counterfactual.move.max_candidates` makes only MOVE
+  unavailable. The shipped production config intentionally has no calibrated
+  Counterfactual envelope, so production returns
+  `COUNTERFACTUAL_CONFIG_INCOMPLETE` rather than using synthetic thresholds.
 - `|C| < 10` is `SKIPPED_SMALL_CHAIN`, never `NO_LOW_CONDUCTANCE_CUT`: "too small
   to test" and "tested, found nothing" are different claims.
 - Calibration falls back FULL bin -> COARSE bin -> GLOBAL weak baseline rather
@@ -247,6 +283,38 @@ drill-down and visualization. A verdict is never a function of a display
   (`MemberAnalysis.margins`); `.margin` is kept as a backward-compatible alias
   for the closest candidate only.
 
+### P2 topology foundation
+
+ADR-0033 opens three independent Tier-2 topology semantics:
+
+- `UNAVOIDABLE_DEPENDENCY`: an exact common strict-dominator annotation with a
+  witness and provenance, without a normalized score, audit vote, membership
+  contribution or validation vote.
+- `PROPAGATION_HYPOTHESIS`: a directed, temporally ordered candidate DAG
+  ranked by the fully versioned configured RWR contract. It is a hypothesis
+  ranking, not causal proof or a root-cause claim; missing direction, mapping,
+  timestamps or required configuration fails closed.
+- `DEPENDENCY_SCOPE_OVERLAP_SIGNAL`: exact coverage, precision, Jaccard and
+  missing/extra counts anchored to the selected dominator witness. Computation
+  and detail-materialization ceilings are separate, and no partial resource
+  list is emitted.
+
+The current production export exposes undirected `IP_ADJACENCY` only and has no
+verified directed topology/path, alarm-resource mapping or propagation config.
+Consequently the production API/UI reports these capabilities as
+`UNAVAILABLE`; synthetic directed fixtures verify the implementation contract
+but are not production validation. Graph motifs, `UNAVOIDABLE_DEPENDENCY` as a
+normalized evidence channel, and other P2 extensions remain not started until
+their documented data/capability gates are met.
+
+Every topology-derived capability also requires an exact record-level source
+identity. `source_id` and `source_version` identify the topology model, while
+`scenario_id` and `generator_version` identify how a synthetic fixture was
+generated; neither pair is a fallback for the other. A foreign payload missing
+the topology source version keeps the snapshot and Tier-1A usable, but topology
+channels and P2 return `TOPOLOGY_SOURCE_VERSION_MISSING`. The producer rejects
+such synthetic scenarios before Kafka publication.
+
 ## API
 
 The HTTP layer is an adapter over the existing analysis services; it does not
@@ -266,6 +334,20 @@ Tier-2 submit/poll endpoints under `/api/v1`. Snapshot replacement performs a
 full exact precompute because `incremental_snapshot.mode` is deliberately
 disabled until consecutive production snapshots are available.
 
+Review uses its own lazy job boundary:
+
+```text
+POST /api/v1/chains/{chain_id}/review
+GET  /api/v1/review-jobs/{job_id}
+GET  /api/v1/chains/{chain_id}/review
+```
+
+The convenience GET returns only a result compatible with the current
+snapshot, Tier-1B/Audit artifact fingerprints, engine and config. Job identity,
+progress, terminal result and artifact fingerprints are persisted in
+PostgreSQL; domain-level `UNAVAILABLE` is a successful job result, while an
+unexpected infrastructure exception is `FAILED`.
+
 Run the frontend in another terminal:
 
 ```bash
@@ -274,9 +356,11 @@ pnpm install
 pnpm dev
 ```
 
-Vite proxies `/api` to `127.0.0.1:8000`. The Evolution view intentionally
-reports `UNAVAILABLE` until a verified sequential snapshot source is connected;
-it does not infer lineage from unrelated exports.
+Vite proxies `/api` to `127.0.0.1:8000`. Production Evolution remains
+`UNAVAILABLE` until verified sequential production snapshots exist. A verified
+`SYNTHETIC_TEST` sequence may render the persisted lineage artifact in
+development/E2E, with provenance and `production_validation=NOT_ESTABLISHED`;
+it never infers lineage from unrelated exports or enables production Evolution.
 
 ## Docker Kafka integration
 
@@ -287,6 +371,14 @@ Explain marks it complete only after all unique chunks, per-chunk checksums,
 the whole-snapshot checksum, and the canonical Input Contract pass validation.
 Completion triggers Tier-1A exactly once through the persisted claim; Tier-1B
 remains lazy and runs only when a chain is requested.
+
+Chunk retention is an explicit deployment policy under
+`ingest.chunk_retention.mode`. Production `config/thresholds/v1.yaml` uses
+`KEEP`. `DELETE_AFTER_READY` is available for local/synthetic deployments: its
+transaction deletes chunks only after canonical payload persistence, ingest
+`COMPLETE`, and the Tier-1A transition to `READY`. There is no implicit
+time-based retention for completed snapshots. Cleanup is idempotent and never
+removes the canonical snapshot, lineage, similarity, Audit, or Review records.
 
 After Tier-1A, recovery processes global lineage and Similar Chains strictly in
 logical snapshot order: `READY -> LINEAGE_PENDING -> LINEAGE_READY ->
@@ -343,16 +435,55 @@ replays are idempotent; a conflicting duplicate invalidates the snapshot. HTTP
 snapshot ingest remains available for development and writes through the same
 canonical PostgreSQL repository.
 
-The 2026-08-30 isolated acceptance run passed both Chromium operator tests and
-all four Docker recovery tests. The cold API request for the 1,072-member real
-chain completed in 0.734 seconds, below the Tier-1B 5-second design objective.
-This is local-run evidence, not a production SLO. The unresolved external gate
-is recorded explicitly:
+The isolated acceptance was completed on 2026-08-30 with a read-only Compose
+override mounting the exact real exports from the sibling `nocpro-mock`
+checkout. Snapshot `acceptance-real-20260830T024315Z` passed the full replay
+path, both Chromium operator tests (`2/2`), all four Docker recovery tests
+(`4/4`), and the 1,072-member Tier-1B request in `1.217181s`. The complete
+acceptance run took `70.73s`, and the isolated containers, network and volume
+were cleaned up successfully. The export mount is an environment precondition
+for replay; a plain worktree run without that external mount cannot locate
+`datasets/raw/alarm_data.csv`. This is local-run evidence, not a production
+SLO or production-data validation.
+
+The acceptance runner additionally publishes a deterministic versioned
+synthetic directed topology through the same Kafka chunk/barrier and PostgreSQL
+path. It verifies available dominator, configured propagation and exact scope
+output with all four provenance fields, then publishes a foreign unversioned
+variant and verifies Tier-1A remains READY while all affected P2 capabilities
+fail closed. This uses `config/thresholds/e2e-p2.yaml`, which is explicitly
+synthetic acceptance configuration; production continues to use
+`config/thresholds/v1.yaml` and does not acquire uncalibrated P2 defaults.
+On 2026-08-31 the full acceptance was rerun with the authoritative external
+real-export directory mounted read-only into this worktree's mock producer.
+Chromium operator/singleton flows passed (`2/2`), recovery and ingest failure
+cases passed (`4/4`), and synthetic topology Kafka/P2 cases passed (`3/3`). The
+1,072-member Tier-1B request completed in `0.826174s`. The runner cleaned its
+isolated containers, network and PostgreSQL volume. The mount changes only the
+location from which `nocpro-mock` reads the existing export; it does not replace
+or synthesize production replay data.
+
+On 2026-09-02 the isolated Counterfactual stage was run independently because
+this feature worktree did not contain the external real-export mount needed by
+the full replay stage. Both mutation fixtures passed the real Mock → Kafka →
+PostgreSQL → Explain path (`1/1` combined Docker test), and the Chromium REVIEW
+flow passed (`1/1`) with no console errors and no Apply control. The synthetic
+benchmark, five repetitions per mutation, reported issue detection `1.0`,
+exact repair `1.0`, clean false-recommendation rate `0.0`, clean abstention
+`1.0`, mean ARI `1.0`, mean AMI approximately `1.0`, median end-to-end local
+analysis latency `0.163s`, and maximum `0.259s`. These are small synthetic
+correctness/latency measurements, not a production threshold or SLO. The
+isolated containers, network and PostgreSQL volume were removed after the run.
+
+The unresolved external gates are recorded explicitly:
 
 ```text
 PRODUCTION_DELTA_VALIDATION = BLOCKED_BY_DATA_AVAILABILITY
 implementation              = READY
 empirical_threshold          = NOT_ESTABLISHED
 incremental_snapshot.mode    = disabled
-P2                           = NOT_STARTED
+P2 topology foundation      = IMPLEMENTED / PRODUCTION_UNAVAILABLE
+remaining P2 extensions     = NOT_STARTED / DATA_AND_CAPABILITY_GATED
+counterfactual review P0    = IMPLEMENTED / SYNTHETIC_CORRECTNESS_VERIFIED
+production review policy    = NOT_CALIBRATED / FAIL_CLOSED
 ```

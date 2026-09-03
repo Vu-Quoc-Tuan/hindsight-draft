@@ -1,0 +1,15 @@
+scenario_id: temporal_delay_patterns_v1
+sequence_type: HISTORY_BOOTSTRAP
+seed: 42
+
+snapshots:
+  - snapshot_000.json
+  - snapshot_001.json
+  - snapshot_002.json
+  - snapshot_003.json
+  - snapshot_004.json
+
+target_snapshot: snapshot_004.json
+
+delivery:
+  history_until_exclusive: snapshot_004.json

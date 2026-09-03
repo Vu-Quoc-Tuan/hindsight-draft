@@ -80,6 +80,23 @@ test('operator flow exposes indexed WHY, provenance and Tier-2 audit', async ({ 
   await expect(similar).toContainText(/alarm taxonomy not used by source/i)
   await expect(similar.locator('.similar-model')).toContainText('sim_')
 
+  const attribution = page.getByRole('region', { name: 'Evidence Coverage Attribution' })
+  await expect(attribution).toBeVisible()
+  await expect(attribution.getByText('AVAILABLE', { exact: true })).toBeVisible()
+  await expect(attribution.getByText('EXACT', { exact: true })).toBeVisible()
+  await expect(attribution).toContainText('evidence coverage')
+  await expect(attribution).not.toContainText('causal importance')
+  await expect(attribution).not.toContainText('cohesion')
+
+  const topology = page.getByRole('region', { name: 'Topology hypotheses' })
+  await expect(topology).toBeVisible()
+  await expect(topology.getByRole('heading', { name: 'Unavoidable dependency annotation' })).toBeVisible()
+  await expect(topology.getByRole('heading', { name: 'Propagation hypothesis score' })).toBeVisible()
+  await expect(topology.getByRole('heading', { name: 'Dependency scope overlap signal' })).toBeVisible()
+  await expect(topology.getByText('UNAVAILABLE', { exact: true })).toHaveCount(3)
+  await expect(topology).toContainText('PROPAGATION_CONFIG_INCOMPLETE')
+  await expect(topology).toContainText('DIRECTED_TOPOLOGY_UNAVAILABLE')
+
   expect(consoleErrors, 'browser console must stay free of errors').toEqual([])
 })
 

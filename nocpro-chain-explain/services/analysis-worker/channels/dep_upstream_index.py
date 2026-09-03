@@ -87,11 +87,11 @@ class _AncestorIndex:
                     by_distance[distance] = by_distance.get(distance, 0) | bit
         return cls(provider, resolver, positions, postings)
 
-    def query(self, alarm: IngestedAlarm) -> ChannelFitFromIndex:
+    def query_bitmaps(self, alarm: IngestedAlarm) -> tuple[int, int]:
         hierarchy = self.provider.hierarchy
         resource = self.resolver.resource_of(alarm.alarm_id)
         if hierarchy is None or not hierarchy.is_valid or resource is None:
-            return _fit(self.provider, domain=0, supporting=0)
+            return 0, 0
 
         available = 0
         supporting = 0
@@ -115,6 +115,10 @@ class _AncestorIndex:
             own_mask = ~(1 << own_position)
             available &= own_mask
             supporting &= own_mask
+        return available, supporting
+
+    def query(self, alarm: IngestedAlarm) -> ChannelFitFromIndex:
+        available, supporting = self.query_bitmaps(alarm)
         return _fit(
             self.provider,
             domain=available.bit_count(),
@@ -158,7 +162,7 @@ class _ActivePathIndex:
                     by_distance[distance] = by_distance.get(distance, 0) | bit
         return cls(provider, resolver, positions, postings)
 
-    def query(self, alarm: IngestedAlarm) -> ChannelFitFromIndex:
+    def query_bitmaps(self, alarm: IngestedAlarm) -> tuple[int, int]:
         path_index = self.provider.path_index
         resource = self.resolver.resource_of(alarm.alarm_id)
         if (
@@ -167,7 +171,7 @@ class _ActivePathIndex:
             or resource is None
             or not path_index.paths_of.get(resource)
         ):
-            return _fit(self.provider, domain=0, supporting=0)
+            return 0, 0
 
         available = 0
         supporting = 0
@@ -196,6 +200,10 @@ class _ActivePathIndex:
             own_mask = ~(1 << own_position)
             available &= own_mask
             supporting &= own_mask
+        return available, supporting
+
+    def query(self, alarm: IngestedAlarm) -> ChannelFitFromIndex:
+        available, supporting = self.query_bitmaps(alarm)
         return _fit(
             self.provider,
             domain=available.bit_count(),
@@ -244,3 +252,9 @@ class DepUpstreamFitIndex:
 
     def fits_for(self, alarm: IngestedAlarm) -> tuple[ChannelFitFromIndex, ...]:
         return tuple(index.query(alarm) for index in self._indexes)
+
+    def support_bitmaps_for(self, alarm: IngestedAlarm) -> tuple[tuple[str, int], ...]:
+        return tuple(
+            (index.provider.channel_id, index.query_bitmaps(alarm)[1])
+            for index in self._indexes
+        )

@@ -7,6 +7,7 @@ from sqlalchemy import (
     BigInteger,
     DateTime,
     ForeignKeyConstraint,
+    Index,
     LargeBinary,
     String,
     Text,
@@ -175,8 +176,14 @@ class KafkaInbox(Base):
 
 class LineageNode(Base):
     __tablename__ = "lineage_node"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["component_id"], ["lineage_component.component_id"]
+        ),
+    )
 
     snapshot_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    snapshot_version: Mapped[str] = mapped_column(String(255), primary_key=True)
     snapshot_chain_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     snapshot_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     component_id: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -188,10 +195,30 @@ class LineageNode(Base):
 
 class LineageEdge(Base):
     __tablename__ = "lineage_edge"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["parent_snapshot_id", "parent_snapshot_version", "parent_chain_id"],
+            [
+                "lineage_node.snapshot_id",
+                "lineage_node.snapshot_version",
+                "lineage_node.snapshot_chain_id",
+            ],
+        ),
+        ForeignKeyConstraint(
+            ["child_snapshot_id", "child_snapshot_version", "child_chain_id"],
+            [
+                "lineage_node.snapshot_id",
+                "lineage_node.snapshot_version",
+                "lineage_node.snapshot_chain_id",
+            ],
+        ),
+    )
 
     parent_snapshot_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    parent_snapshot_version: Mapped[str] = mapped_column(String(255), primary_key=True)
     parent_chain_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     child_snapshot_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    child_snapshot_version: Mapped[str] = mapped_column(String(255), primary_key=True)
     child_chain_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     edge_type: Mapped[str] = mapped_column(String(32), nullable=False)
     overlap_count: Mapped[int] = mapped_column(nullable=False)
@@ -211,8 +238,19 @@ class LineageComponent(Base):
 
 class SimilarityFingerprint(Base):
     __tablename__ = "similarity_fingerprint"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_id", "snapshot_version", "snapshot_chain_id"],
+            [
+                "lineage_node.snapshot_id",
+                "lineage_node.snapshot_version",
+                "lineage_node.snapshot_chain_id",
+            ],
+        ),
+    )
 
     snapshot_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    snapshot_version: Mapped[str] = mapped_column(String(255), primary_key=True)
     snapshot_chain_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     event_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     component_id: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -221,9 +259,11 @@ class SimilarityFingerprint(Base):
 
 class SimilarityModelRecord(Base):
     __tablename__ = "similarity_model"
+    __table_args__ = (UniqueConstraint("snapshot_id", "snapshot_version"),)
 
     model_version: Mapped[str] = mapped_column(String(64), primary_key=True)
-    snapshot_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    snapshot_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    snapshot_version: Mapped[str] = mapped_column(String(255), nullable=False)
     trained_until_exclusive: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -235,9 +275,98 @@ class SimilarityModelRecord(Base):
 
 class SimilarityIndexEntry(Base):
     __tablename__ = "similarity_index_entry"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["model_version"],
+            ["similarity_model.model_version"],
+            ondelete="CASCADE",
+        ),
+    )
 
     model_version: Mapped[str] = mapped_column(String(64), primary_key=True)
     snapshot_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    snapshot_version: Mapped[str] = mapped_column(String(255), primary_key=True)
     snapshot_chain_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     event_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     fingerprint_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class HistoricalEvidenceModelRecord(Base):
+    """Immutable H model plus the exact taxonomy snapshot used to resolve it."""
+
+    __tablename__ = "historical_evidence_model"
+    __table_args__ = (UniqueConstraint("snapshot_id", "snapshot_version"),)
+
+    model_version: Mapped[str] = mapped_column(String(64), primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    snapshot_version: Mapped[str] = mapped_column(String(255), nullable=False)
+    training_cutoff: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    model_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    taxonomy_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class TemporalDelayModelRecord(Base):
+    __tablename__ = "temporal_delay_model"
+    __table_args__ = (UniqueConstraint("snapshot_id", "snapshot_version"),)
+
+    model_version: Mapped[str] = mapped_column(String(64), primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    snapshot_version: Mapped[str] = mapped_column(String(255), nullable=False)
+    training_cutoff: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    model_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    taxonomy_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AuditArtifactRecord(Base):
+    __tablename__ = "audit_artifact"
+    __table_args__ = (
+        Index(
+            "ix_audit_artifact_compatibility",
+            "snapshot_id",
+            "snapshot_version",
+            "chain_id",
+            "chain_fingerprint",
+            "analysis_version",
+            "analysis_config_version",
+        ),
+    )
+
+    artifact_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    artifact_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    artifact_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    snapshot_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    snapshot_version: Mapped[str] = mapped_column(String(255), nullable=False)
+    chain_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    chain_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    analysis_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    analysis_config_version: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class CounterfactualJobRecord(Base):
+    __tablename__ = "counterfactual_job"
+
+    job_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    snapshot_version: Mapped[str] = mapped_column(String(255), nullable=False)
+    chain_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    cache_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    progress_percent: Mapped[int] = mapped_column(nullable=False)
+    cache_hit: Mapped[bool] = mapped_column(nullable=False, default=False)
+    identity_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    result_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )

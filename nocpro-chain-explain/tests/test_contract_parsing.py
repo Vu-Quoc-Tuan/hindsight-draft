@@ -73,3 +73,43 @@ def test_parse_package_rejects_unknown_fields_fail_closed():
 
     with pytest.raises(ContractViolation, match="unexpected field"):
         parse_package(payload)
+
+
+def test_topology_derived_records_keep_source_version_separate_from_generator():
+    payload = _payload()
+    generation = {
+        "scenario_id": "synthetic-topology-v1",
+        "seed": 42,
+        "generator_version": "mockgen-2",
+        "generation_rule": "explicit topology fixture",
+    }
+    payload["topology"] = {
+        "active_paths": [
+            {
+                "path_id": "SYN-PATH-1",
+                "resource_id": "SYN-A",
+                "nodes": ["SYN-A", "SYN-B"],
+                "source_id": "synthetic-topology",
+                "source_version": "syn-topo-v7",
+                "source_kind": "SYNTHETIC_TEST",
+                "generation": generation,
+            }
+        ],
+        "failure_domains": [
+            {
+                "failure_domain_id": "SYN-SRLG-1",
+                "domain_type": "SRLG",
+                "members": ["SYN-A"],
+                "source_id": "synthetic-topology",
+                "source_version": "syn-topo-v7",
+                "source_kind": "SYNTHETIC_TEST",
+                "generation": generation,
+            }
+        ],
+    }
+
+    package = parse_package(payload)
+
+    assert package.topology.active_paths[0].source_version == "syn-topo-v7"
+    assert package.topology.failure_domains[0].source_version == "syn-topo-v7"
+    assert package.topology.active_paths[0].generation.generator_version == "mockgen-2"

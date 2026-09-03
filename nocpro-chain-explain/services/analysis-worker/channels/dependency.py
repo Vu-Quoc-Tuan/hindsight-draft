@@ -20,6 +20,11 @@ from dataclasses import dataclass, field
 
 from libs.contracts import IngestedAlarm, IngestedPackage
 from libs.provenance import ProvenanceClass, ProvenanceSubtype
+from topology_source import (
+    TOPOLOGY_SOURCE_VERSION_MISSING,
+    consistent_topology_trace,
+    has_missing_topology_source,
+)
 
 from .base import ChannelValue, unavailable
 
@@ -49,6 +54,11 @@ class TopologyGraph:
     provenance_class: ProvenanceClass = ProvenanceClass.EXTERNAL_OPERATIONAL
     provenance_subtype: ProvenanceSubtype | None = ProvenanceSubtype.TOPOLOGY_EXTERNAL
     unavailable_reason: str | None = None
+    source_ref: str | None = None
+    source_id: str | None = None
+    source_version: str | None = None
+    scenario_id: str | None = None
+    generator_version: str | None = None
 
     def neighbours(self, node: str) -> set[str]:
         return self.adjacency.get(node, set())
@@ -137,6 +147,25 @@ def build_topology_graph(
             "before computing Dep_hop"
         )
         return graph
+    if eligible_edges and has_missing_topology_source(eligible_edges):
+        graph.unavailable_reason = TOPOLOGY_SOURCE_VERSION_MISSING
+        return graph
+    traces = {
+        consistent_topology_trace((edge,)) for edge in eligible_edges
+    }
+    if len(traces) > 1:
+        graph.unavailable_reason = (
+            "mixed topology source identities in one relation family"
+        )
+        return graph
+    if traces:
+        trace = next(iter(traces))
+        assert trace is not None
+        graph.source_ref = trace.source_ref
+        graph.source_id = trace.source_id
+        graph.source_version = trace.source_version
+        graph.scenario_id = trace.scenario_id
+        graph.generator_version = trace.generator_version
     if signatures:
         graph.provenance_class, graph.provenance_subtype = next(iter(signatures))
 
@@ -204,6 +233,11 @@ def evaluate_dep_hop_channel(
                 if graph
                 else ProvenanceSubtype.TOPOLOGY_EXTERNAL
             ),
+            source_ref=graph.source_ref if graph else None,
+            source_id=graph.source_id if graph else None,
+            source_version=graph.source_version if graph else None,
+            scenario_id=graph.scenario_id if graph else None,
+            generator_version=graph.generator_version if graph else None,
         )
 
     if graph is None or not graph.adjacency:
@@ -233,4 +267,9 @@ def evaluate_dep_hop_channel(
         positive_score=1.0 / (1.0 + distance),
         threshold=threshold,
         detail=f"hop distance {distance} over {sorted(graph.relation_types)}",
+        source_ref=graph.source_ref,
+        source_id=graph.source_id,
+        source_version=graph.source_version,
+        scenario_id=graph.scenario_id,
+        generator_version=graph.generator_version,
     )

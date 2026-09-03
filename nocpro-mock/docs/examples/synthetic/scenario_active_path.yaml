@@ -2,6 +2,10 @@ scenario_id: synthetic_active_path_v1
 source_kind: SYNTHETIC_TEST
 seed: 42
 
+topology_source:
+  source_id: synthetic-topology
+  source_version: syn-topo-active-path-v1
+
 paths:
   - path_id: SYN-PATH-A
     resource_id: SYN-DEA-A

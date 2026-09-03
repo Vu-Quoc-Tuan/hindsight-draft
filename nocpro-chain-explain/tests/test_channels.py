@@ -348,6 +348,8 @@ def test_relation_families_are_not_mixed():
                         "target_resource_id": "P2",
                         "relation_type": "IP_ADJACENCY",
                         "directed": False,
+                        "source_id": "topology-test",
+                        "source_version": "v1",
                     },
                     {
                         "edge_id": "e2",
@@ -355,6 +357,8 @@ def test_relation_families_are_not_mixed():
                         "target_resource_id": "L2",
                         "relation_type": "LOGICAL_DEPENDENCY",
                         "directed": True,
+                        "source_id": "topology-test",
+                        "source_version": "v1",
                     },
                 ]
             },
@@ -392,6 +396,8 @@ def test_mixed_topology_provenance_fails_closed_instead_of_one_group():
                         "target_resource_id": "R2",
                         "relation_type": "IP_ADJACENCY",
                         "directed": False,
+                        "source_id": "topology-test",
+                        "source_version": "v1",
                         "provenance_class": "EXTERNAL_OPERATIONAL",
                         "provenance_subtype": "TOPOLOGY_EXTERNAL",
                     },
@@ -400,6 +406,8 @@ def test_mixed_topology_provenance_fails_closed_instead_of_one_group():
                         "target_resource_id": "R3",
                         "relation_type": "IP_ADJACENCY",
                         "directed": False,
+                        "source_id": "topology-test",
+                        "source_version": "v1",
                         "provenance_class": "POST_HOC",
                     },
                 ]
@@ -411,3 +419,39 @@ def test_mixed_topology_provenance_fails_closed_instead_of_one_group():
 
     assert graph.adjacency == {}
     assert "mixed provenance" in graph.unavailable_reason
+
+
+def test_dep_hop_missing_topology_source_version_is_unavailable():
+    from libs.contracts import load_package
+    from channels import PHYSICAL_RELATIONS, build_topology_graph
+
+    package = load_package(
+        {
+            "schema_version": "v1",
+            "snapshot": {
+                "snapshot_id": "s1",
+                "snapshot_version": "1",
+                "snapshot_time": "2026-01-01T00:00:00Z",
+                "status": "COMPLETE",
+                "source": "foreign-producer",
+                "source_kind": "REAL_EXPORT_REPLAY",
+                "produced_at": "2026-01-01T00:00:00Z",
+            },
+            "topology": {
+                "edges": [
+                    {
+                        "source_resource_id": "R1",
+                        "target_resource_id": "R2",
+                        "relation_type": "IP_ADJACENCY",
+                        "directed": False,
+                        "source_id": "topology-without-version",
+                    }
+                ]
+            },
+        }
+    )
+
+    graph = build_topology_graph(package, relation_types=PHYSICAL_RELATIONS)
+
+    assert graph.adjacency == {}
+    assert graph.unavailable_reason == "TOPOLOGY_SOURCE_VERSION_MISSING"

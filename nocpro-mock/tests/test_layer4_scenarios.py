@@ -16,6 +16,8 @@ import yaml
 
 from nocpro_mock.contract import (
     FailureDomainType,
+    MappingMethod,
+    MappingStatus,
     ProvenanceClass,
     ProvenanceSubtype,
     RelationType,
@@ -28,6 +30,7 @@ from nocpro_mock.scenarios import (
     generate_active_paths,
     generate_dependency_hierarchy,
     generate_failure_domains,
+    generate_integrated_topology,
     generate_operational_context,
     is_synthetic_identifier,
     load_scenario,
@@ -38,6 +41,10 @@ from tests.conftest import REPO_ROOT
 
 SYNTHETIC_DIR = REPO_ROOT / "docs/examples/synthetic"
 VERSION = "nocpro-mock-0.1.0"
+TOPOLOGY_SOURCE = {
+    "source_id": "synthetic-topology-test",
+    "source_version": "syn-topo-test-v1",
+}
 
 
 @pytest.fixture()
@@ -99,6 +106,197 @@ def test_missing_required_keys_are_reported():
         parse_scenario({"scenario_id": "x"})
 
 
+@pytest.mark.parametrize("derived_block", ["topology", "paths", "failure_domains"])
+def test_topology_derived_scenario_requires_source_version(derived_block):
+    with pytest.raises(ScenarioError, match="topology_source.source_version"):
+        parse_scenario(
+            {
+                "scenario_id": "synthetic_missing_topology_version",
+                "seed": 42,
+                "source_kind": "SYNTHETIC_TEST",
+                "topology_source": {"source_id": "synthetic-topology"},
+                derived_block: {},
+            }
+        )
+
+
+def test_scenario_without_topology_does_not_require_topology_source():
+    scenario = parse_scenario(
+        {
+            "scenario_id": "synthetic_alarm_only",
+            "seed": 42,
+            "source_kind": "SYNTHETIC_TEST",
+        }
+    )
+
+    assert scenario.topology_source is None
+
+
+def test_topology_source_version_is_independent_from_generator_version(hierarchy):
+    _, edges = generate_dependency_hierarchy(
+        hierarchy, generator_version="mockgen-independent-v9"
+    )
+
+    assert {edge.source_version for edge in edges} == {
+        hierarchy.topology_source.source_version
+    }
+    assert {edge.generation.generator_version for edge in edges} == {
+        "mockgen-independent-v9"
+    }
+
+
+def test_same_generator_can_emit_distinct_topology_source_versions(hierarchy):
+    changed = parse_scenario(
+        {
+            **hierarchy.raw,
+            "topology_source": {
+                "source_id": hierarchy.topology_source.source_id,
+                "source_version": "syn-topo-hierarchy-v2",
+            },
+        }
+    )
+
+    _, first = generate_dependency_hierarchy(hierarchy, generator_version=VERSION)
+    _, second = generate_dependency_hierarchy(changed, generator_version=VERSION)
+
+    assert {edge.generation.generator_version for edge in first + second} == {VERSION}
+    assert {edge.source_version for edge in first} == {"syn-topo-hierarchy-v1"}
+    assert {edge.source_version for edge in second} == {"syn-topo-hierarchy-v2"}
+
+
+def test_integrated_topology_keeps_capabilities_and_exact_mapping():
+    scenario = parse_scenario(
+        {
+            "scenario_id": "synthetic_integrated_topology_v1",
+            "source_kind": "SYNTHETIC_TEST",
+            "seed": 42,
+            "topology_source": {
+                "source_id": "synthetic-topology",
+                "source_version": "syn-topo-integrated-v1",
+            },
+            "topology": {
+                "relation_type": "LOGICAL_DEPENDENCY",
+                "directed": True,
+                "edges": [
+                    ["SYN-CORE-01", "SYN-AGG-01"],
+                    ["SYN-AGG-01", "SYN-DEVICE-01"],
+                    ["SYN-AGG-01", "SYN-DEVICE-02"],
+                ],
+            },
+            "paths": [
+                {
+                    "path_id": "SYN-PATH-01",
+                    "resource_id": "SYN-DEVICE-01",
+                    "nodes": ["SYN-DEVICE-01", "SYN-AGG-01", "SYN-CORE-01"],
+                },
+                {
+                    "path_id": "SYN-PATH-02",
+                    "resource_id": "SYN-DEVICE-02",
+                    "nodes": ["SYN-DEVICE-02", "SYN-AGG-01", "SYN-CORE-01"],
+                },
+            ],
+            "failure_domains": [
+                {
+                    "failure_domain_id": "SRLG-SYN-INTEGRATED-01",
+                    "domain_type": "SRLG",
+                    "members": ["SYN-DEVICE-01", "SYN-DEVICE-02"],
+                }
+            ],
+        }
+    )
+
+    topology = generate_integrated_topology(
+        scenario,
+        generator_version="mockgen-integrated-v1",
+        alarm_resource_ids=("SYN-DEVICE-01", "SYN-DEVICE-02"),
+    )
+
+    assert len(topology.nodes) == 4
+    assert len(topology.edges) == 3
+    assert len(topology.active_paths) == 2
+    assert len(topology.failure_domains) == 1
+    assert {mapping.alarm_id for mapping in topology.mappings} == {
+        "SYN-DEVICE-01",
+        "SYN-DEVICE-02",
+    }
+    assert all(
+        mapping.mapping_status is MappingStatus.EXACT
+        for mapping in topology.mappings
+    )
+    assert all(
+        mapping.mapping_method is MappingMethod.EXACT_IDENTITY
+        for mapping in topology.mappings
+    )
+    assert all(mapping.mapping_confidence == 1.0 for mapping in topology.mappings)
+    assert all(
+        mapping.source_version == "syn-topo-integrated-v1"
+        for mapping in topology.mappings
+    )
+
+
+def test_integrated_topology_refuses_mapping_to_absent_resource():
+    scenario = parse_scenario(
+        {
+            "scenario_id": "synthetic_integrated_missing_resource_v1",
+            "source_kind": "SYNTHETIC_TEST",
+            "seed": 42,
+            "topology_source": {
+                "source_id": "synthetic-topology",
+                "source_version": "syn-topo-integrated-v1",
+            },
+            "topology": {
+                "relation_type": "LOGICAL_DEPENDENCY",
+                "directed": True,
+                "edges": [["SYN-CORE-01", "SYN-DEVICE-01"]],
+            },
+            "paths": [
+                {
+                    "path_id": "SYN-PATH-01",
+                    "resource_id": "SYN-DEVICE-01",
+                    "nodes": ["SYN-DEVICE-01", "SYN-CORE-01"],
+                }
+            ],
+            "failure_domains": [
+                {
+                    "failure_domain_id": "SRLG-SYN-01",
+                    "domain_type": "SRLG",
+                    "members": ["SYN-DEVICE-01"],
+                }
+            ],
+        }
+    )
+
+    with pytest.raises(ScenarioError, match="absent from generated topology"):
+        generate_integrated_topology(
+            scenario,
+            generator_version="mockgen-integrated-v1",
+            alarm_resource_ids=("SYN-DEVICE-02",),
+        )
+
+
+def test_every_topology_derived_record_carries_declared_source_identity(
+    hierarchy, active_path, failure_domain
+):
+    generated = (
+        (hierarchy, generate_dependency_hierarchy(hierarchy, generator_version=VERSION)),
+        (active_path, generate_active_paths(active_path, generator_version=VERSION)),
+        (
+            failure_domain,
+            generate_failure_domains(failure_domain, generator_version=VERSION),
+        ),
+    )
+
+    for scenario, (nodes, records) in generated:
+        assert {
+            (item.source_id, item.source_version) for item in (*nodes, *records)
+        } == {
+            (
+                scenario.topology_source.source_id,
+                scenario.topology_source.source_version,
+            )
+        }
+
+
 # --------------------------------------------------------------------------
 # SYN-* naming
 # --------------------------------------------------------------------------
@@ -129,6 +327,7 @@ def test_real_looking_identifiers_are_refused(tmp_path):
                 "scenario_id": "bad_v1",
                 "source_kind": "SYNTHETIC_TEST",
                 "seed": 42,
+                "topology_source": TOPOLOGY_SOURCE,
                 "topology": {
                     "relation_type": "LOGICAL_DEPENDENCY",
                     "directed": True,
@@ -190,6 +389,7 @@ def test_undirected_logical_dependency_is_refused(tmp_path):
                 "scenario_id": "s_v1",
                 "source_kind": "SYNTHETIC_TEST",
                 "seed": 42,
+                "topology_source": TOPOLOGY_SOURCE,
                 "topology": {
                     "relation_type": "LOGICAL_DEPENDENCY",
                     "directed": False,
@@ -212,6 +412,7 @@ def test_directed_ip_adjacency_is_refused_even_in_scenarios(tmp_path):
                 "scenario_id": "s_v1",
                 "source_kind": "SYNTHETIC_TEST",
                 "seed": 42,
+                "topology_source": TOPOLOGY_SOURCE,
                 "topology": {
                     "relation_type": "IP_ADJACENCY",
                     "directed": True,
@@ -267,6 +468,7 @@ def test_single_node_path_is_refused(tmp_path):
                 "scenario_id": "s_v1",
                 "source_kind": "SYNTHETIC_TEST",
                 "seed": 42,
+                "topology_source": TOPOLOGY_SOURCE,
                 "paths": [
                     {"path_id": "SYN-P1", "resource_id": "SYN-A", "nodes": ["SYN-A"]}
                 ],
@@ -307,6 +509,7 @@ def test_clique_projection_is_refused(tmp_path):
                 "scenario_id": "s_v1",
                 "source_kind": "SYNTHETIC_TEST",
                 "seed": 42,
+                "topology_source": TOPOLOGY_SOURCE,
                 "failure_domains": [
                     {
                         "failure_domain_id": "SRLG-SYN-001",
@@ -335,6 +538,7 @@ def test_unknown_domain_type_is_refused(tmp_path):
                 "scenario_id": "s_v1",
                 "source_kind": "SYNTHETIC_TEST",
                 "seed": 42,
+                "topology_source": TOPOLOGY_SOURCE,
                 "failure_domains": [
                     {
                         "failure_domain_id": "X-SYN-1",

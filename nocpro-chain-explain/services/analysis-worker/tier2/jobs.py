@@ -15,6 +15,8 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from channels import EMPTY_TAXONOMY, AlarmTaxonomy
+from configuration import DependencyScopeConfig, PropagationConfig
+from groups import AuditGraphMode
 from libs.contracts import IngestedPackage
 from tier1a import CacheKey, CacheTier, Tier1Cache
 
@@ -23,6 +25,104 @@ from .audit_analysis import (
     SimilarityQueryContext,
     analyze_structural_audit,
 )
+from .audit_artifact import (
+    AUDIT_ANALYSIS_VERSION,
+    ReviewAuditArtifact,
+    build_review_audit_artifact,
+)
+from .topology_hypotheses.propagation import _configured_values
+from .topology_hypotheses.scope_overlap import _limits
+
+
+def _p2_cache_stamp(analysis_config: Any) -> str | None:
+    """Return a deterministic stamp for every available P2 sub-config.
+
+    Propagation has an explicit version, but the version alone is not enough:
+    an operator can construct two envelopes with the same version while
+    changing a value or its provenance.  Scope currently has no independent
+    version field, so its configured values and provenance are included to
+    prevent changing either ceiling from reusing an old Tier-2 result.  An
+    absent/incomplete production P2 envelope contributes no suffix; this keeps
+    the existing shipped ``v1`` cache identity while the result remains
+    structured ``UNAVAILABLE``.
+    """
+    p2 = getattr(analysis_config, "p2_topology", None)
+    if p2 is None:
+        return None
+    parts: list[str] = []
+    propagation = getattr(p2, "propagation", None)
+    if isinstance(propagation, PropagationConfig):
+        numeric = _configured_values(propagation)
+        propagation_fields = (
+            (
+                "restart_probability",
+                propagation.restart_probability,
+            ),
+            (
+                "convergence_tolerance",
+                propagation.convergence_tolerance,
+            ),
+            ("max_iterations", propagation.max_iterations),
+            ("decay_parameter", propagation.decay_parameter),
+            ("score_threshold", propagation.score_threshold),
+            ("max_candidate_edges", propagation.max_candidate_edges),
+        )
+        # Incomplete/unsupported envelopes deliberately produce no
+        # propagation suffix.  That makes them unable to collide with a
+        # complete available envelope, even when config_version is reused.
+        if numeric is not None:
+            identities = [
+                f"{name}[path={getattr(configured, 'path')!r},"
+                f"value={getattr(configured, 'value')!r},"
+                f"source={getattr(getattr(configured, 'source'), 'value', getattr(configured, 'source'))!r}]"
+                for name, configured in propagation_fields
+            ]
+            parts.append(
+                "propagation:"
+                f"version={propagation.config_version.strip()!r},"
+                f"decay_type={propagation.decay_type!r},"
+                + ",".join(identities)
+            )
+    scope = getattr(p2, "dependency_scope", None)
+    if scope is None:
+        pass
+    elif isinstance(scope, DependencyScopeConfig) and _limits(scope) is not None:
+        values = []
+        for name in ("max_scope_resources", "max_materialized_resources"):
+            configured = getattr(scope, name, None)
+            if configured is None:
+                continue
+            source = getattr(getattr(configured, "source", None), "value", None)
+            values.append(
+                f"{name}={getattr(configured, 'value', None)!r}"
+                f"[path={getattr(configured, 'path', None)!r},"
+                f"source={source or getattr(configured, 'source', None)!r}]"
+            )
+        if values:
+            parts.append("scope:" + ",".join(values))
+    else:
+        # Keep absent scope unsuffixed, but distinguish a concrete malformed
+        # scope object from a valid propagation-only envelope.
+        parts.append("scope:INVALID")
+    return ";".join(parts) or None
+
+
+def _attribution_evaluation_cache_stamp(analysis_config: Any) -> str:
+    config = getattr(analysis_config, "attribution_evaluation", None)
+    if config is None:
+        reason = getattr(
+            analysis_config,
+            "attribution_evaluation_reason",
+            "ATTRIBUTION_EVALUATION_CONFIG_INCOMPLETE",
+        )
+        return f"UNAVAILABLE:{reason}"
+    seed = config.random_seed
+    repetitions = config.random_repetitions
+    return (
+        f"algorithm={config.randomization_algorithm!r},"
+        f"seed={seed.value!r}[source={seed.source.value!r}],"
+        f"repetitions={repetitions.value!r}[source={repetitions.source.value!r}]"
+    )
 
 
 class JobStatus(str, Enum):
@@ -49,6 +149,7 @@ class Tier2JobView:
     cache_key: CacheKey
     result: Any | None = None
     error: str | None = None
+    audit_artifact: ReviewAuditArtifact | None = None
 
 
 @dataclass
@@ -61,6 +162,7 @@ class _MutableJob:
     cache_key: CacheKey
     result: Any | None = None
     error: str | None = None
+    audit_artifact: ReviewAuditArtifact | None = None
 
     def view(self) -> Tier2JobView:
         return Tier2JobView(
@@ -72,6 +174,7 @@ class _MutableJob:
             cache_key=self.cache_key,
             result=self.result,
             error=self.error,
+            audit_artifact=self.audit_artifact,
         )
 
 
@@ -84,6 +187,7 @@ class Tier2JobManager:
         cache: Tier1Cache | None = None,
         analyzer: Callable[..., Any] = analyze_structural_audit,
         max_workers: int = 2,
+        artifact_listener: Callable[[ReviewAuditArtifact], None] | None = None,
     ) -> None:
         if max_workers <= 0:
             raise ValueError("max_workers must be positive")
@@ -96,6 +200,45 @@ class Tier2JobManager:
         self._jobs: dict[str, _MutableJob] = {}
         self._futures: dict[str, Future[Any]] = {}
         self._inflight_by_key: dict[tuple[str, str, str, str, str], str] = {}
+        self._artifact_listener = artifact_listener
+
+    def set_artifact_listener(
+        self, listener: Callable[[ReviewAuditArtifact], None] | None
+    ) -> None:
+        with self._lock:
+            self._artifact_listener = listener
+
+    def _emit_artifact(self, artifact: ReviewAuditArtifact) -> None:
+        with self._lock:
+            listener = self._artifact_listener
+        if listener is not None:
+            listener(artifact)
+
+    @staticmethod
+    def _build_artifact(
+        package: IngestedPackage,
+        chain_id: str,
+        result: Any,
+        analysis_config: Any,
+    ) -> ReviewAuditArtifact | None:
+        mode = getattr(result, "audit_graph_mode", None)
+        if not (
+            mode is AuditGraphMode.EXACT_FULL
+            or getattr(mode, "value", mode) == AuditGraphMode.EXACT_FULL.value
+        ):
+            return None
+        structural_audit = getattr(result, "structural_audit", None)
+        if structural_audit is None:
+            return None
+        return build_review_audit_artifact(
+            snapshot_id=package.snapshot.snapshot_id,
+            snapshot_version=package.snapshot.snapshot_version,
+            chain_id=chain_id,
+            members=package.members_of(chain_id),
+            structural_audit=structural_audit,
+            analysis_version=AUDIT_ANALYSIS_VERSION,
+            analysis_config_version=analysis_config.config_version,
+        )
 
     def submit(
         self,
@@ -118,6 +261,13 @@ class Tier2JobManager:
                 f"{run_config_version}|similarity:"
                 f"{similarity_context.model.model_version}"
             )
+        p2_stamp = _p2_cache_stamp(analysis_config)
+        if p2_stamp is not None:
+            run_config_version = f"{run_config_version}|p2:{p2_stamp}"
+        run_config_version = (
+            f"{run_config_version}|attribution-evaluation:"
+            f"{_attribution_evaluation_cache_stamp(analysis_config)}"
+        )
         key = self.cache.key_for(
             CacheTier.TIER_2,
             member_ids=members,
@@ -127,6 +277,7 @@ class Tier2JobManager:
         )
         cached = self.cache.get(key)
         if cached is not None:
+            artifact = self._build_artifact(package, chain_id, cached, analysis_config)
             job_id = uuid4().hex
             with self._lock:
                 self._jobs[job_id] = _MutableJob(
@@ -137,7 +288,10 @@ class Tier2JobManager:
                     cache_hit=True,
                     cache_key=key,
                     result=cached,
+                    audit_artifact=artifact,
                 )
+            if artifact is not None:
+                self._emit_artifact(artifact)
             return Tier2Submission(job_id, cache_hit=True, deduplicated=False)
 
         key_tuple = key.as_tuple()
@@ -209,6 +363,17 @@ class Tier2JobManager:
                 small_chain_threshold=int(
                     analysis_config.value("audit.small_chain_threshold")
                 ),
+                delay_threshold=float(
+                    analysis_config.value("temporal.delay.support_threshold")
+                ),
+                d_max=int(analysis_config.value("dependency.max_hop")),
+                lambda_dep=float(analysis_config.value("dependency.lambda_dep")),
+                common_dependency_threshold=float(
+                    analysis_config.value("dependency.common_support_threshold")
+                ),
+                silent_gap_seconds=int(
+                    analysis_config.value("temporal.burst.gap_seconds")
+                ),
                 taxonomy=taxonomy,
                 dependency_edges=dependency_edges,
                 failure_domains=failure_domains,
@@ -216,6 +381,10 @@ class Tier2JobManager:
                 similarity_context=similarity_context,
                 similarity_top_k=int(
                     analysis_config.value("similar_chains.result_top_k")
+                ),
+                p2_topology_config=getattr(analysis_config, "p2_topology", None),
+                attribution_evaluation_config=getattr(
+                    analysis_config, "attribution_evaluation", None
                 ),
             )
         except Exception as exc:  # job boundary: failures become observable state
@@ -233,15 +402,20 @@ class Tier2JobManager:
                 for path, configured in analysis_config.parameters.items()
             }
 
+        artifact = self._build_artifact(package, chain_id, result, analysis_config)
+
         with self._lock:
             job = self._jobs[job_id]
             self.cache.put(
                 job.cache_key, result, snapshot_chain_id=job.chain_id
             )
             job.result = result
+            job.audit_artifact = artifact
             job.status = JobStatus.SUCCEEDED
             job.progress_percent = 100
             self._inflight_by_key.pop(job.cache_key.as_tuple(), None)
+        if artifact is not None:
+            self._emit_artifact(artifact)
 
     def get(self, job_id: str) -> Tier2JobView:
         with self._lock:
@@ -249,6 +423,21 @@ class Tier2JobManager:
                 return self._jobs[job_id].view()
             except KeyError as exc:
                 raise KeyError(f"unknown Tier-2 job_id {job_id!r}") from exc
+
+    def latest_succeeded(
+        self, snapshot_id: str, snapshot_version: str, chain_id: str
+    ) -> Tier2JobView | None:
+        """Return an already-computed Audit artifact without triggering Tier-2."""
+        with self._lock:
+            matches = [
+                job.view()
+                for job in self._jobs.values()
+                if job.chain_id == chain_id
+                and job.cache_key.snapshot_id == snapshot_id
+                and job.cache_key.snapshot_version == snapshot_version
+                and job.status is JobStatus.SUCCEEDED
+            ]
+        return matches[-1] if matches else None
 
     def wait(self, job_id: str, *, timeout: float | None = None) -> Tier2JobView:
         with self._lock:

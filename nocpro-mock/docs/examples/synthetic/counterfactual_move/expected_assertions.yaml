@@ -1,0 +1,30 @@
+scenario_id: synthetic_counterfactual_move_v1
+source_kind: SYNTHETIC_TEST
+mutation: MISASSIGNED_MEMBER
+mutated_chain_id: SYN-CHAIN-MOVE-SOURCE
+truth_partition:
+  SYN-CHAIN-MOVE-SOURCE:
+    - SYN-MOVE-SOURCE-01
+    - SYN-MOVE-SOURCE-02
+    - SYN-MOVE-SOURCE-03
+    - SYN-MOVE-SOURCE-04
+    - SYN-MOVE-SOURCE-05
+    - SYN-MOVE-SOURCE-06
+    - SYN-MOVE-SOURCE-07
+    - SYN-MOVE-SOURCE-08
+  SYN-CHAIN-MOVE-TARGET:
+    - SYN-MOVE-TARGET-01
+    - SYN-MOVE-TARGET-02
+    - SYN-MOVE-TARGET-03
+    - SYN-MOVE-TARGET-04
+    - SYN-MOVE-TARGET-05
+    - SYN-MOVE-TARGET-06
+    - SYN-MOVE-TARGET-07
+    - SYN-MOVE-TARGET-08
+    - SYN-MOVE-MISASSIGNED
+expected_review:
+  operation: MOVE_MEMBER
+  member_ids: [SYN-MOVE-MISASSIGNED]
+  source_chain_id: SYN-CHAIN-MOVE-SOURCE
+  target_chain_id: SYN-CHAIN-MOVE-TARGET
+validation_scope: SYNTHETIC_CORRECTNESS_ONLY

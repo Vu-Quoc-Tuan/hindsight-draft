@@ -178,8 +178,10 @@ def classify_membership(
     core_conditions = (
         value >= thresholds.s_min
         and in_top_quantile
-        and (representativeness is None or representativeness >= thresholds.r_min)
-        and (margin_common is None or margin_common > 0)
+        and representativeness is not None
+        and representativeness >= thresholds.r_min
+        and margin_common is not None
+        and margin_common > 0
     )
     if core_conditions:
         return MembershipRole(
@@ -195,7 +197,11 @@ def classify_membership(
 
     # WEAK needs both a low band and a non-positive contrastive margin, so a
     # merely middling member is PERIPHERAL rather than WEAK.
-    if value <= thresholds.s_weak and (margin_common is None or margin_common <= 0):
+    if (
+        value <= thresholds.s_weak
+        and margin_common is not None
+        and margin_common <= 0
+    ):
         return MembershipRole(
             alarm_id=support.alarm_id,
             verdict=MembershipVerdict.WEAK,

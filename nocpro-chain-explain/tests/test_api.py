@@ -9,6 +9,12 @@ from typing import TypeVar
 import httpx2
 
 from nocpro_api import create_app
+from nocpro_api.persistence import (
+    StoredEvolution,
+    StoredEvolutionEdge,
+    StoredEvolutionNode,
+)
+from nocpro_api.serializers import evolution_view
 
 
 T = TypeVar("T")
@@ -125,6 +131,89 @@ def test_snapshot_ingest_lists_and_explains_chains():
     assert body["descriptors"]
 
 
+def test_evolution_is_unavailable_for_a_single_direct_snapshot():
+    async def exercise(client: httpx2.AsyncClient):
+        await client.post("/api/v1/snapshots", json=_payload())
+        return await client.get("/api/v1/chains/C1/evolution")
+
+    response = run_api_test(exercise)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "UNAVAILABLE",
+        "reason": "SEQUENTIAL_SNAPSHOTS_NOT_AVAILABLE",
+        "source_kind": "SYNTHETIC_TEST",
+        "sequence_status": "UNAVAILABLE",
+        "production_validation": "NOT_ESTABLISHED",
+        "lineage_component_id": None,
+        "branch_id": None,
+        "snapshot_id": "s1",
+        "snapshot_version": "1",
+        "chain_id": "C1",
+        "nodes": [],
+        "edges": [],
+    }
+
+
+def test_evolution_serializer_keeps_verified_synthetic_artifact_provenance():
+    from datetime import datetime, timezone
+
+    result = evolution_view(
+        StoredEvolution(
+            status="AVAILABLE",
+            reason=None,
+            source_kind="SYNTHETIC_TEST",
+            sequence_status="VERIFIED",
+            production_validation="NOT_ESTABLISHED",
+            lineage_component_id="lc-test",
+            branch_id="lc-test:b0",
+            snapshot_id="s2",
+            snapshot_version="2",
+            chain_id="C2",
+            nodes=(
+                StoredEvolutionNode(
+                    snapshot_id="s1",
+                    snapshot_version="1",
+                    chain_id="C1",
+                    snapshot_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                    lineage_component_id="lc-test",
+                    branch_id="lc-test:b0",
+                    source_kind="SYNTHETIC_TEST",
+                ),
+                StoredEvolutionNode(
+                    snapshot_id="s2",
+                    snapshot_version="2",
+                    chain_id="C2",
+                    snapshot_time=datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc),
+                    lineage_component_id="lc-test",
+                    branch_id="lc-test:b0",
+                    source_kind="SYNTHETIC_TEST",
+                ),
+            ),
+            edges=(
+                StoredEvolutionEdge(
+                    parent_snapshot_id="s1",
+                    parent_snapshot_version="1",
+                    parent_chain_id="C1",
+                    child_snapshot_id="s2",
+                    child_snapshot_version="2",
+                    child_chain_id="C2",
+                    event_type="CONTINUE",
+                    overlap_count=3,
+                    contain_parent=1.0,
+                    contain_child=1.0,
+                ),
+            ),
+        )
+    )
+
+    assert result.status == "AVAILABLE"
+    assert result.source_kind == "SYNTHETIC_TEST"
+    assert result.production_validation == "NOT_ESTABLISHED"
+    assert result.edges[0].event_type == "CONTINUE"
+    assert result.edges[0].overlap_count == 3
+
+
 def test_pair_why_serializes_channel_family_and_dependency_semantic():
     payload = _payload()
     payload["snapshot"]["topology_version"] = "v17"
@@ -149,7 +238,8 @@ def test_pair_why_serializes_channel_family_and_dependency_semantic():
                     "nodes": [resource, "ROOT"],
                     "source_id": "inventory",
                     "source_kind": "REAL_EXPORT_REPLAY",
-            }
+                    "source_version": "v17",
+                }
             for resource in ("RA", "RB")
         ],
         "mappings": [
@@ -187,6 +277,105 @@ def test_pair_why_serializes_channel_family_and_dependency_semantic():
     assert {item["derivation_tag"] for item in dependencies} == {
         "dependency:inventory@v17"
     }
+    assert {item["source_id"] for item in dependencies} == {"inventory"}
+    assert {item["source_version"] for item in dependencies} == {"v17"}
+    assert {item["scenario_id"] for item in dependencies} == {None}
+    assert {item["generator_version"] for item in dependencies} == {None}
+
+
+def test_pair_why_exposes_history_as_config_incomplete_without_changing_other_channels():
+    async def exercise(client: httpx2.AsyncClient):
+        loaded = await client.post("/api/v1/snapshots", json=_payload())
+        assert loaded.status_code == 201
+        return await client.get("/api/v1/chains/C1/pairs/a1/a2")
+
+    response = run_api_test(exercise)
+
+    assert response.status_code == 200
+    history = next(
+        item for item in response.json()["evidence"] if item["channel_family"] == "H"
+    )
+    assert history["state"] == "UNAVAILABLE"
+    assert history["detail"] == "HISTORY_CONFIG_INCOMPLETE"
+    assert history["threshold"] is None
+    assert history["provenance_class"] == "BEHAVIORAL"
+    delay = next(
+        item
+        for item in response.json()["evidence"]
+        if item["channel_family"] == "T_delay"
+    )
+    # The production baseline carries neither the complete frozen DelayModel
+    # policy nor authoritative taxonomy.  Existing TimeWindow metadata must
+    # not silently make learned T_delay available.
+    assert delay["state"] == "UNAVAILABLE"
+    assert delay["detail"] == "TEMPORAL_DELAY_CONFIG_INCOMPLETE"
+    assert delay["provenance_class"] == "POST_HOC"
+
+
+def test_chain_analysis_exposes_indexed_t_delay_unavailable_reason():
+    async def exercise(client: httpx2.AsyncClient):
+        loaded = await client.post("/api/v1/snapshots", json=_payload())
+        assert loaded.status_code == 201
+        return await client.get("/api/v1/chains/C1")
+
+    response = run_api_test(exercise)
+    assert response.status_code == 200
+    temporal = next(
+        group
+        for group in response.json()["members"][0]["group_fits"]
+        if group["derivation_tag"] == "temporal_delay"
+    )
+    assert temporal["fit"] is None
+    assert temporal["unavailable_reasons"] == {
+        "T_delay": "NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH"
+    }
+
+
+def test_pair_why_keeps_snapshot_available_but_disables_unversioned_topology():
+    payload = _payload()
+    payload["snapshot"]["topology_version"] = "must-not-be-a-fallback"
+    payload["topology"] = {
+        "active_paths": [
+            {
+                "path_id": "p-a",
+                "resource_id": "RA",
+                "nodes": ["RA", "ROOT"],
+                "source_id": "foreign-topology",
+                "source_kind": "REAL_EXPORT_REPLAY",
+            }
+        ],
+        "mappings": [
+            {
+                "alarm_id": "a1",
+                "resource_id": "RA",
+                "mapping_status": "EXACT",
+                "mapping_method": "EXACT_IDENTITY",
+            },
+            {
+                "alarm_id": "a2",
+                "resource_id": "RB",
+                "mapping_status": "EXACT",
+                "mapping_method": "EXACT_IDENTITY",
+            },
+        ],
+    }
+
+    async def exercise(client: httpx2.AsyncClient):
+        loaded = await client.post("/api/v1/snapshots", json=payload)
+        assert loaded.status_code == 201
+        return await client.get("/api/v1/chains/C1/pairs/a1/a2")
+
+    response = run_api_test(exercise)
+
+    assert response.status_code == 200
+    active_path = next(
+        item
+        for item in response.json()["evidence"]
+        if item["dependency_semantic"] == "SHARED_ACTIVE_PATH"
+    )
+    assert active_path["state"] == "UNAVAILABLE"
+    assert active_path["detail"] == "TOPOLOGY_SOURCE_VERSION_MISSING"
+    assert active_path["source_version"] is None
 
 
 def test_deep_dive_is_submitted_and_polled_as_a_job():
@@ -214,3 +403,63 @@ def test_deep_dive_is_submitted_and_polled_as_a_job():
     assert polled.json()["result"]["similarity_trained_until_exclusive"] is None
     assert polled.json()["result"]["similarity_corpus_policy"] is None
     assert polled.json()["result"]["similarity_model_update_policy"] is None
+    attribution = polled.json()["result"]["evidence_attribution"]
+    assert attribution["status"] == "AVAILABLE"
+    assert attribution["mode"] == "EXACT"
+    assert attribution["reason"] is None
+    assert attribution["chain_size"] == 3
+    assert attribution["total_pair_count"] == 3
+    assert attribution["total_coverage"] == 1.0
+    evaluation = polled.json()["result"]["evidence_attribution_evaluation"]
+    assert evaluation["status"] == "AVAILABLE"
+    assert evaluation["mode"] == "EXACT"
+    assert evaluation["group_count"] == len(attribution["contributions"])
+    assert evaluation["primary"]["coverage_curve"][0] == 1.0
+    assert evaluation["primary"]["coverage_curve"][-1] == 0.0
+    assert evaluation["random"]["algorithm"] == "SPLITMIX64_FISHER_YATES_V1"
+    assert evaluation["random"]["seed"] == 42
+    assert evaluation["random"]["repetitions"] == 100
+    assert evaluation["random"]["repetitions_executed"] == 100
+    topology = polled.json()["result"]["topology_hypotheses"]
+    assert topology["dominator"]["status"] == "UNAVAILABLE"
+    assert topology["dominator"]["reason"] is not None
+    assert "positive_score" not in topology["dominator"]
+    assert topology["propagation"]["status"] == "UNAVAILABLE"
+    assert topology["propagation"]["reason"] == "PROPAGATION_CONFIG_INCOMPLETE"
+    assert topology["dependency_scope"]["status"] == "UNAVAILABLE"
+    assert topology["dependency_scope"]["resource_details"]["missing_resources"] is None
+    assert topology["dependency_scope"]["resource_details"]["extra_resources"] is None
+
+
+def test_singleton_deep_dive_serializes_not_applicable_attribution():
+    payload = _payload()
+    payload["alarms"] = payload["alarms"][:1]
+    payload["memberships"] = payload["memberships"][:1]
+    payload["chains"][0]["member_count"] = 1
+
+    async def exercise(client: httpx2.AsyncClient):
+        await client.post("/api/v1/snapshots", json=payload)
+        submission = await client.post("/api/v1/chains/C1/deep-dive")
+        job_id = submission.json()["job_id"]
+        polled = await client.get(f"/api/v1/jobs/{job_id}")
+        for _ in range(20):
+            if polled.json()["status"] in {"SUCCEEDED", "FAILED"}:
+                break
+            await asyncio.sleep(0.01)
+            polled = await client.get(f"/api/v1/jobs/{job_id}")
+        return polled
+
+    response = run_api_test(exercise)
+    attribution = response.json()["result"]["evidence_attribution"]
+    assert response.json()["status"] == "SUCCEEDED"
+    assert attribution["status"] == "NOT_APPLICABLE"
+    assert attribution["mode"] == "UNAVAILABLE"
+    assert attribution["reason"] == "SINGLETON"
+    assert attribution["detail"] == "SINGLETON_CHAIN"
+    assert attribution["total_coverage"] is None
+    assert attribution["contributions"] == []
+    evaluation = response.json()["result"]["evidence_attribution_evaluation"]
+    assert evaluation["status"] == "UNAVAILABLE"
+    assert evaluation["reason"] == "ATTRIBUTION_UNAVAILABLE"
+    assert evaluation["primary"]["coverage_curve"] == []
+    assert evaluation["primary"]["auc"] is None

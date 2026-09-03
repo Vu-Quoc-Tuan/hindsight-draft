@@ -1,0 +1,109 @@
+{
+  "snapshot": {
+    "snapshot_id": "temporal_delay_patterns_v1:snapshot_003",
+    "snapshot_version": "4",
+    "snapshot_time": "2026-01-01T00:03:00+00:00",
+    "status": "COMPLETE",
+    "source": "nocpro-mock",
+    "source_kind": "SYNTHETIC_TEST",
+    "produced_at": "2026-01-01T00:03:00+00:00",
+    "schema_version": "v1"
+  },
+  "alarms": [
+    {
+      "alarm_id": "SYN-TD-A3",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_003",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-TD-A3",
+        "chaining_id": "SYN-TD-AB-3",
+        "cah.start_time": "2026-01-01T00:03:00+00:00",
+        "device_code": "SYN-TD-A3",
+        "alarm_name": "TD-A"
+      },
+      "raw_start_time": "2026-01-01T00:03:00+00:00",
+      "canonical_start_time": "2026-01-01T00:03:00+00:00",
+      "alarm_name": "TD-A",
+      "device_code": "SYN-TD-A3",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-TD-B3",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_003",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-TD-B3",
+        "chaining_id": "SYN-TD-AB-3",
+        "cah.start_time": "2026-01-01T00:04:41+00:00",
+        "device_code": "SYN-TD-B3",
+        "alarm_name": "TD-B"
+      },
+      "raw_start_time": "2026-01-01T00:04:41+00:00",
+      "canonical_start_time": "2026-01-01T00:04:41+00:00",
+      "alarm_name": "TD-B",
+      "device_code": "SYN-TD-B3",
+      "quality_flags": []
+    }
+  ],
+  "chains": [
+    {
+      "chain_id": "SYN-TD-AB-3",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_003",
+      "member_count": 2,
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "event_span_seconds": 101
+    }
+  ],
+  "memberships": [
+    {
+      "chain_id": "SYN-TD-AB-3",
+      "alarm_id": "SYN-TD-A3",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_003",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-TD-AB-3",
+      "alarm_id": "SYN-TD-B3",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_003",
+      "source_kind": "SYNTHETIC_TEST"
+    }
+  ],
+  "system_metadata": {
+    "chain_rules": [],
+    "chain_characteristics": [],
+    "attribute_configs": [],
+    "pair_metadata": [],
+    "pair_metadata_batches": []
+  },
+  "topology": {
+    "nodes": [],
+    "edges": [],
+    "failure_domains": [],
+    "active_paths": [],
+    "mappings": []
+  },
+  "operational_context": [],
+  "provenance_manifest": {
+    "sources": [
+      {
+        "source_id": "temporal_delay_patterns_v1",
+        "source_kind": "SYNTHETIC_TEST",
+        "record_count": 2,
+        "notes": [
+          "HISTORY_BOOTSTRAP sequence member 3"
+        ]
+      }
+    ],
+    "generator_version": "nocpro-mock-0.1.0",
+    "unavailable_capabilities": [],
+    "notes": [
+      "scenario_id=temporal_delay_patterns_v1",
+      "seed=42",
+      "Synthetic snapshot; cannot be used as real validation."
+    ]
+  },
+  "schema_version": "v1"
+}

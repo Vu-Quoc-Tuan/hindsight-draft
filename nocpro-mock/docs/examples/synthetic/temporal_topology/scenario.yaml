@@ -1,0 +1,43 @@
+scenario_id: synthetic_temporal_topology_v1
+source_kind: SYNTHETIC_TEST
+seed: 42
+
+topology_source:
+  source_id: synthetic-topology
+  source_version: syn-topo-temporal-v1
+
+topology:
+  relation_type: LOGICAL_DEPENDENCY
+  directed: true
+  edges:
+    - [SYN-CORE-01, SYN-AGG-01]
+    - [SYN-AGG-01, SYN-DEVICE-01]
+    - [SYN-AGG-01, SYN-DEVICE-02]
+    - [SYN-AGG-01, SYN-DEVICE-03]
+    - [SYN-AGG-01, SYN-DEVICE-04]
+
+paths:
+  - path_id: SYN-PATH-DEVICE-01
+    resource_id: SYN-DEVICE-01
+    nodes: [SYN-DEVICE-01, SYN-AGG-01, SYN-CORE-01]
+  - path_id: SYN-PATH-DEVICE-02
+    resource_id: SYN-DEVICE-02
+    nodes: [SYN-DEVICE-02, SYN-AGG-01, SYN-CORE-01]
+  - path_id: SYN-PATH-DEVICE-03
+    resource_id: SYN-DEVICE-03
+    nodes: [SYN-DEVICE-03, SYN-AGG-01, SYN-CORE-01]
+  - path_id: SYN-PATH-DEVICE-04
+    resource_id: SYN-DEVICE-04
+    nodes: [SYN-DEVICE-04, SYN-AGG-01, SYN-CORE-01]
+
+failure_domains:
+  - failure_domain_id: SRLG-SYN-TEMPORAL-01
+    domain_type: SRLG
+    members:
+      - SYN-DEVICE-01
+      - SYN-DEVICE-02
+      - SYN-DEVICE-03
+      - SYN-DEVICE-04
+
+rules:
+  clique_project: false

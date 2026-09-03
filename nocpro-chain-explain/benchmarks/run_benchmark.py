@@ -27,11 +27,12 @@ from benchmarks.harness import (
     check_against_objectives,
     measure,
 )
+from benchmarks.closure import closure_manifest
 from channels import build_indexed_statistics, evaluate_pair_channels
 from configuration import load_analysis_config
 from descriptor import build_predicate_index
 from libs.contracts import load_package
-from tier1a import Tier1Cache, precompute_snapshot
+from tier1a import CacheTier, Tier1Cache, precompute_snapshot
 from tier1b import analyze_chain_configured
 from tier2 import AuditExecutionPolicy, analyze_structural_audit
 
@@ -109,6 +110,35 @@ def _phase_results(
     return [total, *[phases[name] for name in sorted(phases)]]
 
 
+def _cached_tier1b_analysis(package, chain_id: str, *, predicate_index, cache):
+    """Exercise the same Tier-1B cache identity used by ``Workspace.analyze``.
+
+    The benchmark intentionally keeps this adapter local: it measures the
+    analysis-worker path without importing the HTTP service into the mock
+    replay interpreter.  A cold call receives a fresh cache; a cache-hit call
+    is warmed once before timing.
+    """
+    members = set(package.members_of(chain_id))
+    key = cache.key_for(
+        CacheTier.TIER_1B,
+        member_ids=members,
+        snapshot_id=package.snapshot.snapshot_id,
+        snapshot_version=package.snapshot.snapshot_version,
+        config_version=ANALYSIS_CONFIG.config_version,
+    )
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    analysis = analyze_chain_configured(
+        package,
+        chain_id,
+        analysis_config=ANALYSIS_CONFIG,
+        predicate_index=predicate_index,
+    )
+    cache.put(key, analysis, snapshot_chain_id=chain_id)
+    return analysis
+
+
 def run() -> BenchmarkReport:
     tier1b_repetitions = int(os.environ.get("BENCHMARK_REPETITIONS", "20"))
     tier1a_repetitions = int(os.environ.get("BENCHMARK_TIER1A_REPETITIONS", "3"))
@@ -119,6 +149,10 @@ def run() -> BenchmarkReport:
             "tier_1b_repetitions": tier1b_repetitions,
             "tier_1a_repetitions": tier1a_repetitions,
             "analysis_config_version": ANALYSIS_CONFIG.config_version,
+            # The real-export runner measures a subset of the closure matrix.
+            # Keep the complete contract beside its output so unsupported or
+            # runtime-only measurements cannot disappear from interpretation.
+            "closure_benchmark_contract": closure_manifest(),
         }
     )
 
@@ -211,6 +245,41 @@ def run() -> BenchmarkReport:
                 workload=workload,
                 predicate_index=predicate_index,
                 repetitions=tier1b_repetitions,
+            )
+        )
+        report.results.append(
+            measure(
+                "tier_1b_workspace_cold_on_chain_open",
+                workload,
+                lambda cid=chain_id: _cached_tier1b_analysis(
+                    package,
+                    cid,
+                    predicate_index=predicate_index,
+                    cache=Tier1Cache(),
+                ),
+                repetitions=tier1b_repetitions,
+                track_memory=False,
+            )
+        )
+        tier1b_cache = Tier1Cache()
+        _cached_tier1b_analysis(
+            package,
+            chain_id,
+            predicate_index=predicate_index,
+            cache=tier1b_cache,
+        )
+        report.results.append(
+            measure(
+                "tier_1b_workspace_cache_hit_on_chain_open",
+                workload,
+                lambda cid=chain_id, cache=tier1b_cache: _cached_tier1b_analysis(
+                    package,
+                    cid,
+                    predicate_index=predicate_index,
+                    cache=cache,
+                ),
+                repetitions=tier1b_repetitions,
+                track_memory=False,
             )
         )
 

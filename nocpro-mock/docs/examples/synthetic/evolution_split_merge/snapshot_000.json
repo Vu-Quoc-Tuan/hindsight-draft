@@ -2,11 +2,11 @@
   "snapshot": {
     "snapshot_id": "split_then_merge_v1:snapshot_000",
     "snapshot_version": "1",
-    "snapshot_time": "2026-01-01T00:00:00",
+    "snapshot_time": "2026-01-01T00:00:00+00:00",
     "status": "COMPLETE",
     "source": "nocpro-mock",
     "source_kind": "SYNTHETIC_TEST",
-    "produced_at": "2026-01-01T00:00:00",
+    "produced_at": "2026-01-01T00:00:00+00:00",
     "schema_version": "v1"
   },
   "alarms": [
@@ -18,11 +18,11 @@
       "raw": {
         "cah.id": "SYN-ALARM-01",
         "chaining_id": "SYN-CHAIN-A",
-        "cah.start_time": "2026-01-01T00:00:00",
+        "cah.start_time": "2026-01-01T00:00:00+00:00",
         "device_code": "SYN-ALARM-01"
       },
-      "raw_start_time": "2026-01-01T00:00:00",
-      "canonical_start_time": "2026-01-01T00:00:00",
+      "raw_start_time": "2026-01-01T00:00:00+00:00",
+      "canonical_start_time": "2026-01-01T00:00:00+00:00",
       "device_code": "SYN-ALARM-01",
       "quality_flags": []
     },
@@ -34,11 +34,11 @@
       "raw": {
         "cah.id": "SYN-ALARM-02",
         "chaining_id": "SYN-CHAIN-A",
-        "cah.start_time": "2026-01-01T00:00:01",
+        "cah.start_time": "2026-01-01T00:00:01+00:00",
         "device_code": "SYN-ALARM-02"
       },
-      "raw_start_time": "2026-01-01T00:00:01",
-      "canonical_start_time": "2026-01-01T00:00:01",
+      "raw_start_time": "2026-01-01T00:00:01+00:00",
+      "canonical_start_time": "2026-01-01T00:00:01+00:00",
       "device_code": "SYN-ALARM-02",
       "quality_flags": []
     },
@@ -50,11 +50,11 @@
       "raw": {
         "cah.id": "SYN-ALARM-03",
         "chaining_id": "SYN-CHAIN-A",
-        "cah.start_time": "2026-01-01T00:00:02",
+        "cah.start_time": "2026-01-01T00:00:02+00:00",
         "device_code": "SYN-ALARM-03"
       },
-      "raw_start_time": "2026-01-01T00:00:02",
-      "canonical_start_time": "2026-01-01T00:00:02",
+      "raw_start_time": "2026-01-01T00:00:02+00:00",
+      "canonical_start_time": "2026-01-01T00:00:02+00:00",
       "device_code": "SYN-ALARM-03",
       "quality_flags": []
     },
@@ -66,11 +66,11 @@
       "raw": {
         "cah.id": "SYN-ALARM-04",
         "chaining_id": "SYN-CHAIN-A",
-        "cah.start_time": "2026-01-01T00:00:03",
+        "cah.start_time": "2026-01-01T00:00:03+00:00",
         "device_code": "SYN-ALARM-04"
       },
-      "raw_start_time": "2026-01-01T00:00:03",
-      "canonical_start_time": "2026-01-01T00:00:03",
+      "raw_start_time": "2026-01-01T00:00:03+00:00",
+      "canonical_start_time": "2026-01-01T00:00:03+00:00",
       "device_code": "SYN-ALARM-04",
       "quality_flags": []
     }

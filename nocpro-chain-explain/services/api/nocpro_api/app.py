@@ -71,6 +71,7 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
                 backoff_base_seconds=int(
                     os.environ.get("TIER1A_BACKOFF_BASE_SECONDS", "2")
                 ),
+                chunk_retention_mode=service.config.chunk_retention.mode,
             )
             service.attach_persistence(repository, coordinator)
             # READY remains available while older pending/stale work resumes in
@@ -117,9 +118,10 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
                     await recovery_task
             if consumer is not None:
                 await consumer.stop()
+            service.close()
+            await service.flush_review_persistence()
             if database is not None:
                 await database.close()
-            service.close()
 
     app = FastAPI(
         title="NocPro Chain Explain API",

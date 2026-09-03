@@ -15,6 +15,7 @@ from .schema import (
     SYNTHETIC_TOKEN,
     ScenarioDefinition,
     ScenarioError,
+    TopologySourceDefinition,
     is_synthetic_identifier,
     load_scenario,
     load_scenarios,
@@ -30,10 +31,18 @@ from .sequence import (
     parse_sequence_manifest,
 )
 from .sequence_fixtures import (
+    COUNTERFACTUAL_FIXTURES,
+    COUNTERFACTUAL_MOVE,
+    COUNTERFACTUAL_MERGE,
+    COUNTERFACTUAL_REMOVE,
+    COUNTERFACTUAL_SPLIT,
     EVOLUTION_SPLIT_MERGE,
     HISTORY_POSITIVE_LIFT,
+    TEMPORAL_DELAY_PATTERNS,
+    INTEGRATED_TEMPORAL_TOPOLOGY,
     SEQUENCE_FIXTURES,
     SequenceFixture,
+    CounterfactualFixture,
 )
 from .snapshot_builder import SEQUENCE_EPOCH, build_synthetic_snapshot
 from .topology_generators import (
@@ -41,17 +50,27 @@ from .topology_generators import (
     generate_active_paths,
     generate_dependency_hierarchy,
     generate_failure_domains,
+    generate_integrated_topology,
 )
 
 __all__ = [
     "EVOLUTION_SPLIT_MERGE",
+    "COUNTERFACTUAL_FIXTURES",
+    "COUNTERFACTUAL_MOVE",
+    "COUNTERFACTUAL_MERGE",
+    "COUNTERFACTUAL_REMOVE",
+    "COUNTERFACTUAL_SPLIT",
+    "CounterfactualFixture",
     "GENERATOR_TYPE_DETERMINISTIC",
     "HISTORY_POSITIVE_LIFT",
+    "TEMPORAL_DELAY_PATTERNS",
+    "INTEGRATED_TEMPORAL_TOPOLOGY",
     "SCORING_RULE_SAME_REFERENCE",
     "SEQUENCE_EPOCH",
     "SEQUENCE_FIXTURES",
     "SYNTHETIC_TOKEN",
     "TOPOLOGY_LAYER_SYNTHETIC",
+    "TopologySourceDefinition",
     "EvolutionEvent",
     "ExpectedTransition",
     "ScenarioDefinition",
@@ -63,6 +82,7 @@ __all__ = [
     "generate_active_paths",
     "generate_dependency_hierarchy",
     "generate_failure_domains",
+    "generate_integrated_topology",
     "generate_operational_context",
     "generate_system_pair_metadata",
     "is_synthetic_identifier",

@@ -27,6 +27,7 @@ from evolution import (
     build_lineage_components,
     build_lineage_edges,
     decompose,
+    deterministic_component_id,
     membership_stability,
 )
 from libs.contracts import load_package
@@ -97,7 +98,9 @@ def test_global_episode_dag_is_stable_across_three_snapshots_and_restart():
     dag.apply_snapshot(snapshots[2], previous=snapshots[1], config=CONFIG)
 
     identities = {
-        dag.canonical_lineage(LineageNodeKey(snapshot.snapshot.snapshot_id, chain))
+        dag.canonical_lineage(
+            LineageNodeKey(snapshot.snapshot.snapshot_id, "1", chain)
+        )
         for snapshot, chain in zip(snapshots, ("A", "B", "C"), strict=True)
     }
     assert len(identities) == 1
@@ -105,7 +108,7 @@ def test_global_episode_dag_is_stable_across_three_snapshots_and_restart():
     restarted = GlobalEpisodeDag(
         nodes=dict(dag.nodes), edges=dict(dag.edges), components=dict(dag.components)
     )
-    assert restarted.canonical_lineage(LineageNodeKey("s3", "C")) == identities.pop()
+    assert restarted.canonical_lineage(LineageNodeKey("s3", "1", "C")) == identities.pop()
     before = (len(restarted.nodes), len(restarted.edges), len(restarted.components))
     restarted.apply_snapshot(snapshots[2], previous=snapshots[1], config=CONFIG)
     assert (len(restarted.nodes), len(restarted.edges), len(restarted.components)) == before
@@ -130,14 +133,14 @@ def test_global_episode_dag_keeps_unrelated_episodes_distinct_and_unifies_merge(
     dag = GlobalEpisodeDag()
     dag.apply_snapshot(s1, previous=None, config=CONFIG)
     dag.apply_snapshot(s2, previous=s1, config=CONFIG)
-    a_id = dag.canonical_lineage(LineageNodeKey("s2", "A2"))
-    b_id = dag.canonical_lineage(LineageNodeKey("s2", "B2"))
+    a_id = dag.canonical_lineage(LineageNodeKey("s2", "1", "A2"))
+    b_id = dag.canonical_lineage(LineageNodeKey("s2", "1", "B2"))
     assert a_id != b_id
 
     dag.apply_snapshot(s3, previous=s2, config=CONFIG)
-    merged = dag.canonical_lineage(LineageNodeKey("s3", "C"))
-    assert dag.canonical_lineage(LineageNodeKey("s1", "A")) == merged
-    assert dag.canonical_lineage(LineageNodeKey("s1", "B")) == merged
+    merged = dag.canonical_lineage(LineageNodeKey("s3", "1", "C"))
+    assert dag.canonical_lineage(LineageNodeKey("s1", "1", "A")) == merged
+    assert dag.canonical_lineage(LineageNodeKey("s1", "1", "B")) == merged
 
 
 def test_global_episode_dag_split_children_share_parent_component():
@@ -154,11 +157,11 @@ def test_global_episode_dag_split_children_share_parent_component():
     dag = GlobalEpisodeDag()
     dag.apply_snapshot(s1, previous=None, config=CONFIG)
     dag.apply_snapshot(s2, previous=s1, config=CONFIG)
-    assert dag.canonical_lineage(LineageNodeKey("s1", "A")) == dag.canonical_lineage(
-        LineageNodeKey("s2", "B")
+    assert dag.canonical_lineage(LineageNodeKey("s1", "1", "A")) == dag.canonical_lineage(
+        LineageNodeKey("s2", "1", "B")
     )
-    assert dag.canonical_lineage(LineageNodeKey("s2", "B")) == dag.canonical_lineage(
-        LineageNodeKey("s2", "C")
+    assert dag.canonical_lineage(LineageNodeKey("s2", "1", "B")) == dag.canonical_lineage(
+        LineageNodeKey("s2", "1", "C")
     )
 
 
@@ -169,7 +172,15 @@ def test_global_episode_dag_rejects_late_snapshot_without_mutation():
     dag.apply_snapshot(s2, previous=None, config=CONFIG)
     with pytest.raises(ValueError, match="out-of-order"):
         dag.apply_snapshot(late, previous=None, config=CONFIG)
-    assert LineageNodeKey("late", "B") not in dag.nodes
+    assert LineageNodeKey("late", "1", "B") not in dag.nodes
+
+
+def test_lineage_identity_and_component_hash_include_snapshot_version():
+    first = LineageNodeKey("same-snapshot", "v1", "same-chain")
+    replay = LineageNodeKey("same-snapshot", "v2", "same-chain")
+
+    assert first != replay
+    assert deterministic_component_id(first) != deterministic_component_id(replay)
 
 
 # --------------------------------------------------------------------------

@@ -2,16 +2,21 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { api, ApiError } from './api'
 import { compactTime, duration, humanize, percent } from './format'
+import { TopologyHypotheses } from './TopologyHypotheses'
+import { EvidenceAttribution } from './EvidenceAttribution'
+import { CounterfactualReview } from './CounterfactualReview'
+import { EvolutionPanel } from './EvolutionPanel'
 import type { ChainAnalysis, ChainList, Job, Member, PairEvidence, PairWhy } from './types'
 import './App.css'
 
-type Tab = 'why' | 'members' | 'structure' | 'evolution'
+type Tab = 'why' | 'members' | 'structure' | 'review' | 'evolution'
 type EvidenceLayer = 'ALL' | PairEvidence['provenance_class']
 
 const tabs: Array<{ id: Tab; label: string; eyebrow: string }> = [
   { id: 'why', label: 'Why grouped', eyebrow: 'Tier 1B' },
   { id: 'members', label: 'Members', eyebrow: 'Role map' },
   { id: 'structure', label: 'Structure', eyebrow: 'Tier 2' },
+  { id: 'review', label: 'Review', eyebrow: 'What-if' },
   { id: 'evolution', label: 'Evolution', eyebrow: 'Snapshots' },
 ]
 
@@ -130,8 +135,12 @@ function PairEvidenceRail({ analysis, selected, pair, loading, layer }: {
             <div>
               <div className="evidence-title"><strong>{item.channel_family}</strong><Pill tone={statusTone(item.state)}>{item.state}</Pill></div>
               {item.dependency_semantic && <p>{humanize(item.dependency_semantic)}</p>}
-              <dl className="mini-grid"><div><dt>score</dt><dd>{percent(item.score)}</dd></div><div><dt>threshold</dt><dd>{percent(item.threshold)}</dd></div></dl>
+              <dl className="mini-grid"><div><dt>score</dt><dd>{percent(item.score)}</dd></div><div><dt>{item.threshold == null ? 'support gate' : 'threshold'}</dt><dd>{item.threshold == null ? 'strictly positive' : percent(item.threshold)}</dd></div></dl>
               <small>{item.derivation_tag}</small>
+              {item.channel_family === 'H' && item.evidence_metadata && <small>history model · {String(item.evidence_metadata.history_model_id ?? 'UNAVAILABLE')} · cutoff {String(item.evidence_metadata.training_cutoff ?? 'UNAVAILABLE')} · level {String(item.evidence_metadata.resolved_level ?? 'UNAVAILABLE')}</small>}
+              {item.channel_family === 'T_delay' && item.evidence_metadata && <small>historical temporal pattern · {String(item.evidence_metadata.direction ?? 'UNAVAILABLE')} · observed {String(item.evidence_metadata.delay_seconds ?? 'UNAVAILABLE')}s · {String(item.evidence_metadata.estimator ?? 'UNAVAILABLE')} · episodes {String(item.evidence_metadata.episode_sample_count ?? 'UNAVAILABLE')}</small>}
+              {(item.source_id || item.source_version) && <small>topology source · {item.source_id ?? 'UNAVAILABLE'} @ {item.source_version ?? 'UNAVAILABLE'}</small>}
+              {(item.scenario_id || item.generator_version) && <small>synthetic generation · {item.scenario_id ?? 'UNAVAILABLE'} · {item.generator_version ?? 'UNAVAILABLE'}</small>}
               {item.detail && <p className="evidence-detail">{item.detail}</p>}
             </div>
           </article>
@@ -200,6 +209,10 @@ function StructurePanel({ job, onRun, submitting }: { job: Job | null; onRun: ()
           <p>{result.structural_audit.reason}</p>
           <dl className="metric-row"><div><dt>best cut</dt><dd>{result.structural_audit.best_cut_label ?? 'none'}</dd></div><div><dt>conductance</dt><dd>{result.structural_audit.best_cut_phi?.toFixed(3) ?? '⊥'}</dd></div><div><dt>over-merge</dt><dd>{humanize(result.over_merge_strength)}</dd></div></dl>
           <p className="audit-narrative">{result.over_merge_narrative}</p>
+          <EvidenceAttribution
+            result={result.evidence_attribution}
+            evaluation={result.evidence_attribution_evaluation}
+          />
           <section className="similar-results" aria-label="Similar chains">
             <header><div><p className="kicker">Different incidents</p><h3>Similar chains</h3></div><Pill tone={statusTone(result.similarity_status)}>{result.similarity_status}</Pill></header>
             {result.similarity_status === 'UNAVAILABLE' ? (
@@ -390,8 +403,12 @@ function App() {
               <Timeline members={analysis.members} selected={selectedMembers} onSelect={selectMember} />
               {tab === 'why' && <WhyPanel analysis={analysis} />}
               {tab === 'members' && <MemberTable members={analysis.members} selected={selectedMembers} onSelect={selectMember} />}
-              {tab === 'structure' && <StructurePanel job={visibleJob} onRun={() => void runDeepDive()} submitting={submitting} />}
-              {tab === 'evolution' && <section className="unavailable-card"><span>UNAVAILABLE</span><h2>Sequential production snapshots are not loaded.</h2><p>Evolution remains off rather than inferring lineage from unrelated alarm exports. Load a verified sequence before enabling overlap, NEW/CLEARED and cache-consistency analysis.</p></section>}
+              {tab === 'structure' && <>
+                <StructurePanel job={visibleJob} onRun={() => void runDeepDive()} submitting={submitting} />
+                {visibleJob?.result && <TopologyHypotheses topology_hypotheses={visibleJob.result.topology_hypotheses} />}
+              </>}
+              {tab === 'review' && <CounterfactualReview key={chainId} chainId={chainId} />}
+              {tab === 'evolution' && <EvolutionPanel chainId={chainId} />}
             </div>
             <PairEvidenceRail analysis={analysis} selected={selectedMembers} pair={visiblePair} loading={selectedMembers.length === 2 && !pairMatchesSelection} layer={layer} />
           </div>

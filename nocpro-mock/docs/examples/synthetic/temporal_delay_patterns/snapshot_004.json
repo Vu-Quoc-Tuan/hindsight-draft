@@ -1,0 +1,333 @@
+{
+  "snapshot": {
+    "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+    "snapshot_version": "5",
+    "snapshot_time": "2026-01-01T00:04:00+00:00",
+    "status": "COMPLETE",
+    "source": "nocpro-mock",
+    "source_kind": "SYNTHETIC_TEST",
+    "produced_at": "2026-01-01T00:04:00+00:00",
+    "schema_version": "v1"
+  },
+  "alarms": [
+    {
+      "alarm_id": "SYN-TD-PEAK-A",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-TD-PEAK-A",
+        "chaining_id": "SYN-TD-PEAK",
+        "cah.start_time": "2026-01-01T00:04:00+00:00",
+        "device_code": "SYN-TD-PEAK-A",
+        "alarm_name": "TD-A"
+      },
+      "raw_start_time": "2026-01-01T00:04:00+00:00",
+      "canonical_start_time": "2026-01-01T00:04:00+00:00",
+      "alarm_name": "TD-A",
+      "device_code": "SYN-TD-PEAK-A",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-TD-PEAK-B",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-TD-PEAK-B",
+        "chaining_id": "SYN-TD-PEAK",
+        "cah.start_time": "2026-01-01T00:04:02+00:00",
+        "device_code": "SYN-TD-PEAK-B",
+        "alarm_name": "TD-B"
+      },
+      "raw_start_time": "2026-01-01T00:04:02+00:00",
+      "canonical_start_time": "2026-01-01T00:04:02+00:00",
+      "alarm_name": "TD-B",
+      "device_code": "SYN-TD-PEAK-B",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-TD-MID-A",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-TD-MID-A",
+        "chaining_id": "SYN-TD-MID",
+        "cah.start_time": "2026-01-01T00:04:00+00:00",
+        "device_code": "SYN-TD-MID-A",
+        "alarm_name": "TD-A"
+      },
+      "raw_start_time": "2026-01-01T00:04:00+00:00",
+      "canonical_start_time": "2026-01-01T00:04:00+00:00",
+      "alarm_name": "TD-A",
+      "device_code": "SYN-TD-MID-A",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-TD-MID-B",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-TD-MID-B",
+        "chaining_id": "SYN-TD-MID",
+        "cah.start_time": "2026-01-01T00:04:50+00:00",
+        "device_code": "SYN-TD-MID-B",
+        "alarm_name": "TD-B"
+      },
+      "raw_start_time": "2026-01-01T00:04:50+00:00",
+      "canonical_start_time": "2026-01-01T00:04:50+00:00",
+      "alarm_name": "TD-B",
+      "device_code": "SYN-TD-MID-B",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-TD-BACK-C",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-TD-BACK-C",
+        "chaining_id": "SYN-TD-BACKOFF",
+        "cah.start_time": "2026-01-01T00:04:00+00:00",
+        "device_code": "SYN-TD-BACK-C",
+        "alarm_name": "TD-C"
+      },
+      "raw_start_time": "2026-01-01T00:04:00+00:00",
+      "canonical_start_time": "2026-01-01T00:04:00+00:00",
+      "alarm_name": "TD-C",
+      "device_code": "SYN-TD-BACK-C",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-TD-BACK-D",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-TD-BACK-D",
+        "chaining_id": "SYN-TD-BACKOFF",
+        "cah.start_time": "2026-01-01T00:04:02+00:00",
+        "device_code": "SYN-TD-BACK-D",
+        "alarm_name": "TD-D"
+      },
+      "raw_start_time": "2026-01-01T00:04:02+00:00",
+      "canonical_start_time": "2026-01-01T00:04:02+00:00",
+      "alarm_name": "TD-D",
+      "device_code": "SYN-TD-BACK-D",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-TD-REVERSE-B",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-TD-REVERSE-B",
+        "chaining_id": "SYN-TD-REVERSE",
+        "cah.start_time": "2026-01-01T00:04:00+00:00",
+        "device_code": "SYN-TD-REVERSE-B",
+        "alarm_name": "TD-B"
+      },
+      "raw_start_time": "2026-01-01T00:04:00+00:00",
+      "canonical_start_time": "2026-01-01T00:04:00+00:00",
+      "alarm_name": "TD-B",
+      "device_code": "SYN-TD-REVERSE-B",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-TD-REVERSE-A",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-TD-REVERSE-A",
+        "chaining_id": "SYN-TD-REVERSE",
+        "cah.start_time": "2026-01-01T00:04:02+00:00",
+        "device_code": "SYN-TD-REVERSE-A",
+        "alarm_name": "TD-A"
+      },
+      "raw_start_time": "2026-01-01T00:04:02+00:00",
+      "canonical_start_time": "2026-01-01T00:04:02+00:00",
+      "alarm_name": "TD-A",
+      "device_code": "SYN-TD-REVERSE-A",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-TD-EQUAL-A",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-TD-EQUAL-A",
+        "chaining_id": "SYN-TD-EQUAL",
+        "cah.start_time": "2026-01-01T00:04:00+00:00",
+        "device_code": "SYN-TD-EQUAL-A",
+        "alarm_name": "TD-A"
+      },
+      "raw_start_time": "2026-01-01T00:04:00+00:00",
+      "canonical_start_time": "2026-01-01T00:04:00+00:00",
+      "alarm_name": "TD-A",
+      "device_code": "SYN-TD-EQUAL-A",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-TD-EQUAL-B",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-TD-EQUAL-B",
+        "chaining_id": "SYN-TD-EQUAL",
+        "cah.start_time": "2026-01-01T00:04:00+00:00",
+        "device_code": "SYN-TD-EQUAL-B",
+        "alarm_name": "TD-B"
+      },
+      "raw_start_time": "2026-01-01T00:04:00+00:00",
+      "canonical_start_time": "2026-01-01T00:04:00+00:00",
+      "alarm_name": "TD-B",
+      "device_code": "SYN-TD-EQUAL-B",
+      "quality_flags": []
+    }
+  ],
+  "chains": [
+    {
+      "chain_id": "SYN-TD-PEAK",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "member_count": 2,
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "event_span_seconds": 2
+    },
+    {
+      "chain_id": "SYN-TD-MID",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "member_count": 2,
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "event_span_seconds": 50
+    },
+    {
+      "chain_id": "SYN-TD-BACKOFF",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "member_count": 2,
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "event_span_seconds": 2
+    },
+    {
+      "chain_id": "SYN-TD-REVERSE",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "member_count": 2,
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "event_span_seconds": 2
+    },
+    {
+      "chain_id": "SYN-TD-EQUAL",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "member_count": 2,
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "event_span_seconds": 0
+    }
+  ],
+  "memberships": [
+    {
+      "chain_id": "SYN-TD-PEAK",
+      "alarm_id": "SYN-TD-PEAK-A",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-TD-PEAK",
+      "alarm_id": "SYN-TD-PEAK-B",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-TD-MID",
+      "alarm_id": "SYN-TD-MID-A",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-TD-MID",
+      "alarm_id": "SYN-TD-MID-B",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-TD-BACKOFF",
+      "alarm_id": "SYN-TD-BACK-C",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-TD-BACKOFF",
+      "alarm_id": "SYN-TD-BACK-D",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-TD-REVERSE",
+      "alarm_id": "SYN-TD-REVERSE-B",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-TD-REVERSE",
+      "alarm_id": "SYN-TD-REVERSE-A",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-TD-EQUAL",
+      "alarm_id": "SYN-TD-EQUAL-A",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-TD-EQUAL",
+      "alarm_id": "SYN-TD-EQUAL-B",
+      "snapshot_id": "temporal_delay_patterns_v1:snapshot_004",
+      "source_kind": "SYNTHETIC_TEST"
+    }
+  ],
+  "system_metadata": {
+    "chain_rules": [],
+    "chain_characteristics": [],
+    "attribute_configs": [],
+    "pair_metadata": [],
+    "pair_metadata_batches": []
+  },
+  "topology": {
+    "nodes": [],
+    "edges": [],
+    "failure_domains": [],
+    "active_paths": [],
+    "mappings": []
+  },
+  "operational_context": [],
+  "provenance_manifest": {
+    "sources": [
+      {
+        "source_id": "temporal_delay_patterns_v1",
+        "source_kind": "SYNTHETIC_TEST",
+        "record_count": 10,
+        "notes": [
+          "HISTORY_BOOTSTRAP sequence member 4"
+        ]
+      }
+    ],
+    "generator_version": "nocpro-mock-0.1.0",
+    "unavailable_capabilities": [],
+    "notes": [
+      "scenario_id=temporal_delay_patterns_v1",
+      "seed=42",
+      "Synthetic snapshot; cannot be used as real validation."
+    ]
+  },
+  "schema_version": "v1"
+}

@@ -12,13 +12,21 @@ from libs.contracts import ContractIngestError
 from .schemas import (
     ChainListView,
     ChainSummaryView,
+    CounterfactualJobView,
+    EvolutionView,
     JobSubmissionView,
     JobView,
     PairWhyView,
     SnapshotLoadedView,
     SystemPairFactView,
 )
-from .serializers import chain_analysis_view, job_view, pair_evidence_view
+from .serializers import (
+    chain_analysis_view,
+    counterfactual_job_view,
+    evolution_view,
+    job_view,
+    pair_evidence_view,
+)
 from .workspace import SnapshotNotLoaded, Workspace
 
 
@@ -102,6 +110,14 @@ async def explain_chain(chain_id: str, request: Request):
         raise translate_error(exc) from exc
 
 
+@router.get("/chains/{chain_id}/evolution", response_model=EvolutionView)
+async def explain_evolution(chain_id: str, request: Request) -> EvolutionView:
+    try:
+        return evolution_view(await workspace(request).evolution(chain_id))
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
 @router.get("/chains/{chain_id}/pairs/{alarm_a}/{alarm_b}", response_model=PairWhyView)
 async def explain_pair(
     chain_id: str, alarm_a: str, alarm_b: str, request: Request
@@ -149,6 +165,63 @@ async def submit_deep_dive(
 @router.get("/jobs/{job_id}", response_model=JobView)
 async def get_job(job_id: str, request: Request) -> JobView:
     try:
+        await workspace(request).flush_audit_persistence()
         return job_view(workspace(request).jobs.get(job_id))
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.post(
+    "/chains/{chain_id}/review",
+    response_model=JobSubmissionView,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def submit_review(
+    chain_id: str, request: Request
+) -> JobSubmissionView:
+    try:
+        result = await workspace(request).submit_review(chain_id)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+    return JobSubmissionView(
+        job_id=result.job_id,
+        cache_hit=result.cache_hit,
+        deduplicated=result.deduplicated,
+    )
+
+
+@router.get("/review-jobs/{job_id}", response_model=CounterfactualJobView)
+async def get_review_job(
+    job_id: str, request: Request
+) -> CounterfactualJobView:
+    try:
+        service = workspace(request)
+        # The manager sets a terminal state and enqueues its persistence future
+        # under one lock.  Read the state first so a terminal response cannot
+        # flush an older future list and race a subsequent API restart.
+        try:
+            job = service.review_jobs.get(job_id)
+        except KeyError:
+            # Preserve the read-boundary flush even for an unknown in-memory
+            # job: another request may have pending durable state to release.
+            await service.flush_review_persistence()
+            raise
+        await service.flush_review_persistence()
+        return counterfactual_job_view(job)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.get("/chains/{chain_id}/review", response_model=CounterfactualJobView)
+async def get_latest_review(
+    chain_id: str, request: Request
+) -> CounterfactualJobView:
+    try:
+        service = workspace(request)
+        result = await service.latest_review(chain_id)
+        await service.flush_review_persistence()
+        if result is None:
+            raise KeyError(f"no compatible Counterfactual review for {chain_id!r}")
+        return counterfactual_job_view(result)
     except Exception as exc:
         raise translate_error(exc) from exc
