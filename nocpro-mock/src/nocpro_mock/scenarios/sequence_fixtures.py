@@ -20,6 +20,9 @@ class SequenceFixture:
     #: One ``chain_id -> [alarm_id]`` mapping per snapshot, in sequence order.
     snapshots: tuple[dict[str, list[str]], ...]
     alarm_families: dict[str, str]
+    #: Explicit per-alarm profile is needed only when a temporal scenario must
+    #: preserve a known directed delay distribution across snapshots.
+    alarm_profiles: dict[str, dict[str, object]] | None = None
     topology_scenario_file: str | None = None
     generator_version: str | None = None
 
@@ -68,6 +71,46 @@ HISTORY_POSITIVE_LIFT = SequenceFixture(
         "SYN-ALARM-B2": FAMILY_B,
         "SYN-ALARM-B3": FAMILY_B,
         "SYN-ALARM-B4": FAMILY_B,
+    },
+)
+
+
+# Synthetic-only source material for Explain T_delay.  Authoritative taxonomy
+# is deliberately kept in its expected assertion/test adapter, never inferred
+# from these alarm names by the canonical Mock contract.
+TEMPORAL_DELAY_PATTERNS = SequenceFixture(
+    scenario_id="temporal_delay_patterns_v1",
+    directory="temporal_delay_patterns",
+    snapshots=(
+        {"SYN-TD-AB-0": ["SYN-TD-A0", "SYN-TD-B0"], "SYN-TD-CD-0": ["SYN-TD-C0", "SYN-TD-D0"]},
+        {"SYN-TD-AB-1": ["SYN-TD-A1", "SYN-TD-B1"], "SYN-TD-CD-1": ["SYN-TD-C1", "SYN-TD-D1"]},
+        {"SYN-TD-AB-2": ["SYN-TD-A2", "SYN-TD-B2"]},
+        {"SYN-TD-AB-3": ["SYN-TD-A3", "SYN-TD-B3"]},
+        # Target: peak-compatible, midpoint, backoff and simultaneous pairs.
+        {
+            "SYN-TD-PEAK": ["SYN-TD-PEAK-A", "SYN-TD-PEAK-B"],
+            "SYN-TD-MID": ["SYN-TD-MID-A", "SYN-TD-MID-B"],
+            "SYN-TD-BACKOFF": ["SYN-TD-BACK-C", "SYN-TD-BACK-D"],
+            "SYN-TD-REVERSE": ["SYN-TD-REVERSE-B", "SYN-TD-REVERSE-A"],
+            "SYN-TD-EQUAL": ["SYN-TD-EQUAL-A", "SYN-TD-EQUAL-B"],
+        },
+    ),
+    alarm_families={},
+    alarm_profiles={
+        **{f"SYN-TD-A{i}": {"alarm_name": "TD-A", "start_offset_seconds": 0} for i in range(4)},
+        **{f"SYN-TD-B{i}": {"alarm_name": "TD-B", "start_offset_seconds": delay} for i, delay in enumerate((2, 3, 99, 101))},
+        **{f"SYN-TD-C{i}": {"alarm_name": "TD-C", "start_offset_seconds": 0} for i in range(2)},
+        **{f"SYN-TD-D{i}": {"alarm_name": "TD-D", "start_offset_seconds": delay} for i, delay in enumerate((2, 3))},
+        "SYN-TD-PEAK-A": {"alarm_name": "TD-A", "start_offset_seconds": 0},
+        "SYN-TD-PEAK-B": {"alarm_name": "TD-B", "start_offset_seconds": 2},
+        "SYN-TD-MID-A": {"alarm_name": "TD-A", "start_offset_seconds": 0},
+        "SYN-TD-MID-B": {"alarm_name": "TD-B", "start_offset_seconds": 50},
+        "SYN-TD-BACK-C": {"alarm_name": "TD-C", "start_offset_seconds": 0},
+        "SYN-TD-BACK-D": {"alarm_name": "TD-D", "start_offset_seconds": 2},
+        "SYN-TD-REVERSE-B": {"alarm_name": "TD-B", "start_offset_seconds": 0},
+        "SYN-TD-REVERSE-A": {"alarm_name": "TD-A", "start_offset_seconds": 2},
+        "SYN-TD-EQUAL-A": {"alarm_name": "TD-A", "start_offset_seconds": 0},
+        "SYN-TD-EQUAL-B": {"alarm_name": "TD-B", "start_offset_seconds": 0},
     },
 )
 
@@ -144,6 +187,7 @@ INTEGRATED_TEMPORAL_TOPOLOGY = SequenceFixture(
 
 SEQUENCE_FIXTURES = (
     HISTORY_POSITIVE_LIFT,
+    TEMPORAL_DELAY_PATTERNS,
     EVOLUTION_SPLIT_MERGE,
     INTEGRATED_TEMPORAL_TOPOLOGY,
 )

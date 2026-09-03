@@ -1,5 +1,10 @@
-from history import TaxonomyLevel, TaxonomyTokens
-from temporal_delay import DelayEstimator, DelayModelConfig, DelayObservation, DelayRelationKey, build_delay_model, evaluate_delay_model, evaluate_delay_model_oracle, evaluate_ordered_delay_model, model_from_dict, model_to_dict
+import json
+from pathlib import Path
+
+from evolution import GlobalEpisodeDag, LineageConfig
+from history import HistoricalTaxonomy, TaxonomyLevel, TaxonomyTokens
+from libs.contracts import load_package
+from temporal_delay import DelayEstimator, DelayModelConfig, DelayObservation, DelayRelationKey, build_delay_model, evaluate_delay_model, evaluate_delay_model_oracle, evaluate_ordered_delay_model, model_from_dict, model_to_dict, observations_from_lineage_prefix
 
 
 def config():
@@ -136,3 +141,55 @@ def test_model_round_trip_preserves_frozen_score_and_provenance():
     restored = model_from_dict(model_to_dict(model))
     assert restored == model
     assert evaluate_delay_model(TaxonomyTokens(type="A"), TaxonomyTokens(type="B"), delay_seconds=2, model=restored) == evaluate_delay_model(TaxonomyTokens(type="A"), TaxonomyTokens(type="B"), delay_seconds=2, model=model)
+
+
+def test_synthetic_temporal_delay_sequence_covers_model_contract_end_to_end():
+    fixture = Path(__file__).resolve().parents[2] / "nocpro-mock" / "docs/examples/synthetic/temporal_delay_patterns"
+    packages = [
+        load_package(json.loads((fixture / f"snapshot_{index:03d}.json").read_text()))
+        for index in range(5)
+    ]
+    taxonomy = HistoricalTaxonomy(
+        "synthetic-temporal-delay-taxonomy", "td-taxonomy-v1",
+        {
+            "TD-A": TaxonomyTokens(type="TD-A", family="TD-SOURCE", category="TD-CATEGORY-SOURCE"),
+            "TD-B": TaxonomyTokens(type="TD-B", family="TD-TARGET", category="TD-CATEGORY-TARGET"),
+            "TD-C": TaxonomyTokens(type="TD-C", family="TD-SOURCE", category="TD-CATEGORY-SOURCE"),
+            "TD-D": TaxonomyTokens(type="TD-D", family="TD-TARGET", category="TD-CATEGORY-TARGET"),
+        },
+    )
+    dag = GlobalEpisodeDag()
+    lineage = LineageConfig(config_version="synthetic-temporal-delay", m_min=1)
+    previous = None
+    for package in packages:
+        dag.apply_snapshot(package, previous=previous, config=lineage)
+        previous = package
+    target = packages[-1]
+    observations = observations_from_lineage_prefix(
+        packages, dag=dag, cutoff=target.snapshot.snapshot_time, taxonomy=taxonomy
+    )
+    delay_config = DelayModelConfig(
+        "synthetic-temporal-delay", 3, 4, 0.4, 42, (2.0, 5.0), (2.0, 5.0),
+        (1.0, 3.0), DelayEstimator.HISTOGRAM, 5.0,
+        fallback_histogram_bin_width_seconds=5.0,
+    )
+    model = build_delay_model(
+        observations, training_cutoff=target.snapshot.snapshot_time,
+        lineage_prefix_fingerprint="fixture-prefix",
+        taxonomy_source_id=taxonomy.source_id,
+        taxonomy_source_version=taxonomy.source_version,
+        config=delay_config,
+    )
+    ab = DelayRelationKey(TaxonomyLevel.TYPE, "TD-A", "TD-B")
+    assert sorted(item.delay_seconds for item in model.relations[ab].observations) == [2.0, 3.0, 99.0, 101.0]
+    assert DelayRelationKey(TaxonomyLevel.TYPE, "TD-B", "TD-A") not in model.relations
+    peak = evaluate_delay_model(TaxonomyTokens(type="TD-A", family="TD-SOURCE", category="TD-CATEGORY-SOURCE"), TaxonomyTokens(type="TD-B", family="TD-TARGET", category="TD-CATEGORY-TARGET"), delay_seconds=2, model=model)
+    midpoint = evaluate_delay_model(TaxonomyTokens(type="TD-A", family="TD-SOURCE", category="TD-CATEGORY-SOURCE"), TaxonomyTokens(type="TD-B", family="TD-TARGET", category="TD-CATEGORY-TARGET"), delay_seconds=50, model=model)
+    assert peak.available and midpoint.available
+    assert peak.positive_score > midpoint.positive_score
+    backoff = evaluate_delay_model(TaxonomyTokens(type="TD-C", family="TD-SOURCE", category="TD-CATEGORY-SOURCE"), TaxonomyTokens(type="TD-D", family="TD-TARGET", category="TD-CATEGORY-TARGET"), delay_seconds=2, model=model)
+    assert backoff.available and backoff.resolved_level is TaxonomyLevel.FAMILY
+    reverse = evaluate_delay_model(TaxonomyTokens(type="TD-B"), TaxonomyTokens(type="TD-A"), delay_seconds=2, model=model)
+    assert reverse.available is False and reverse.reason == "INSUFFICIENT_TEMPORAL_HISTORY"
+    equal = evaluate_ordered_delay_model(TaxonomyTokens(type="TD-A"), TaxonomyTokens(type="TD-B"), left_start="2026-01-01T00:04:00Z", right_start="2026-01-01T00:04:00Z", model=model)
+    assert equal.available is False and equal.reason == "NO_DIRECTED_TEMPORAL_ORDER"

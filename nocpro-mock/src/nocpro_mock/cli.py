@@ -176,6 +176,7 @@ def _cmd_build_sequences(args: argparse.Namespace) -> int:
                 snapshot_index=index,
                 chains=chains,
                 alarm_families=fixture.alarm_families,
+                alarm_profiles=fixture.alarm_profiles,
                 generation_rule=(
                     f"{manifest.sequence_type.value} sequence member {index}"
                 ),

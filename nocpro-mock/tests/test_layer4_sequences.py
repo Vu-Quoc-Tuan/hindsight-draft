@@ -26,6 +26,7 @@ from nocpro_mock.scenarios import (
     EVOLUTION_SPLIT_MERGE,
     HISTORY_POSITIVE_LIFT,
     INTEGRATED_TEMPORAL_TOPOLOGY,
+    TEMPORAL_DELAY_PATTERNS,
     EvolutionEvent,
     ScenarioError,
     SequenceType,
@@ -39,6 +40,7 @@ SYNTHETIC_DIR = REPO_ROOT / "docs/examples/synthetic"
 HISTORY_DIR = SYNTHETIC_DIR / "history_positive_lift"
 EVOLUTION_DIR = SYNTHETIC_DIR / "evolution_split_merge"
 TEMPORAL_TOPOLOGY_DIR = SYNTHETIC_DIR / "temporal_topology"
+TEMPORAL_DELAY_DIR = SYNTHETIC_DIR / "temporal_delay_patterns"
 
 
 def _built(directory):
@@ -76,6 +78,15 @@ def test_history_manifest_parses():
     assert manifest.seed == 42
     assert len(manifest.snapshots) == 4
     assert manifest.target_snapshot == "snapshot_003.json"
+
+
+def test_temporal_delay_pattern_manifest_is_strict_history_bootstrap():
+    manifest = load_sequence_manifest(TEMPORAL_DELAY_DIR / "sequence.yaml")
+    assert manifest.scenario_id == "temporal_delay_patterns_v1"
+    assert manifest.sequence_type is SequenceType.HISTORY_BOOTSTRAP
+    assert len(manifest.history_snapshots) == 4
+    assert manifest.target_snapshot == "snapshot_004.json"
+    assert manifest.target_snapshot not in manifest.history_snapshots
 
 
 def test_history_window_excludes_the_target():
@@ -309,7 +320,7 @@ def test_history_then_target_rejects_evolution_sequences():
 
 
 def test_every_sequence_snapshot_validates():
-    for directory in (HISTORY_DIR, EVOLUTION_DIR, TEMPORAL_TOPOLOGY_DIR):
+    for directory in (HISTORY_DIR, TEMPORAL_DELAY_DIR, EVOLUTION_DIR, TEMPORAL_TOPOLOGY_DIR):
         assert validate_sequence_payloads(_built(directory)) == []
 
 
@@ -384,6 +395,21 @@ def test_history_sequence_repeats_the_family_pair():
     assert target_families == {"SYN-FAMILY-A", "SYN-FAMILY-B"}
 
 
+def test_temporal_delay_pattern_sequence_preserves_known_delays_without_scores():
+    runner = SequenceRunner(_built(TEMPORAL_DELAY_DIR))
+    history, target = runner.history_then_target()
+    pairs = []
+    for step in history:
+        by_name = {alarm["alarm_name"]: alarm for alarm in step.payload["alarms"]}
+        if "TD-A" in by_name and "TD-B" in by_name:
+            start_a = datetime.fromisoformat(by_name["TD-A"]["canonical_start_time"])
+            start_b = datetime.fromisoformat(by_name["TD-B"]["canonical_start_time"])
+            pairs.append(int((start_b - start_a).total_seconds()))
+    assert pairs == [2, 3, 99, 101]
+    assert target is not None
+    assert target.payload["snapshot"]["source_kind"] == "SYNTHETIC_TEST"
+
+
 # --------------------------------------------------------------------------
 # Expected assertions files
 # --------------------------------------------------------------------------
@@ -420,6 +446,7 @@ def test_mock_output_never_contains_history_scores():
 def test_fixture_definitions_match_their_manifests():
     for fixture, directory in (
         (HISTORY_POSITIVE_LIFT, HISTORY_DIR),
+        (TEMPORAL_DELAY_PATTERNS, TEMPORAL_DELAY_DIR),
         (EVOLUTION_SPLIT_MERGE, EVOLUTION_DIR),
         (INTEGRATED_TEMPORAL_TOPOLOGY, TEMPORAL_TOPOLOGY_DIR),
     ):

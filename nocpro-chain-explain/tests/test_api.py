@@ -299,6 +299,17 @@ def test_pair_why_exposes_history_as_config_incomplete_without_changing_other_ch
     assert history["detail"] == "HISTORY_CONFIG_INCOMPLETE"
     assert history["threshold"] is None
     assert history["provenance_class"] == "BEHAVIORAL"
+    delay = next(
+        item
+        for item in response.json()["evidence"]
+        if item["channel_family"] == "T_delay"
+    )
+    # The production baseline carries neither the complete frozen DelayModel
+    # policy nor authoritative taxonomy.  Existing TimeWindow metadata must
+    # not silently make learned T_delay available.
+    assert delay["state"] == "UNAVAILABLE"
+    assert delay["detail"] == "TEMPORAL_DELAY_CONFIG_INCOMPLETE"
+    assert delay["provenance_class"] == "POST_HOC"
 
 
 def test_pair_why_keeps_snapshot_available_but_disables_unversioned_topology():
