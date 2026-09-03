@@ -22,6 +22,7 @@ from history import (
     taxonomy_from_dict,
     taxonomy_to_dict,
 )
+from temporal_delay import observations_from_lineage_prefix
 from evolution import GlobalEpisodeDag, LineageConfig
 from libs.contracts import IngestedAlarm, load_package
 
@@ -324,3 +325,50 @@ def test_lineage_prefix_episodes_ignore_future_merge_aliases():
         for item in episodes
         for state in item.states
     )
+
+
+def test_temporal_prefix_requires_strict_order_same_chain_and_strict_cutoff():
+    # Contract timestamps are immutable, so this fixture is built directly.
+    payload = {"schema_version": "v1", "snapshot": {"snapshot_id": "s1", "snapshot_version": "1", "snapshot_time": "2026-01-01T00:00:00Z", "status": "COMPLETE", "source": "synthetic", "source_kind": "SYNTHETIC_TEST", "produced_at": "2026-01-01T00:00:00Z", "schema_version": "v1"}, "alarms": [{"alarm_id": "a", "snapshot_id": "s1", "alarm_name": "A", "canonical_start_time": "2026-01-01T00:00:00Z", "raw": {}}, {"alarm_id": "b", "snapshot_id": "s1", "alarm_name": "B", "canonical_start_time": "2026-01-01T00:00:05Z", "raw": {}}, {"alarm_id": "equal", "snapshot_id": "s1", "alarm_name": "C", "canonical_start_time": "2026-01-01T00:00:00Z", "raw": {}}], "chains": [{"snapshot_id": "s1", "chain_id": "chain", "member_count": 3}], "memberships": [{"snapshot_id": "s1", "chain_id": "chain", "alarm_id": value} for value in ("a", "b", "equal")]}
+    first = load_package(payload)
+    dag = GlobalEpisodeDag(); dag.apply_snapshot(first, previous=None, config=LineageConfig(config_version="delay", m_min=1))
+    authoritative = HistoricalTaxonomy("syn", "v1", {name: TaxonomyTokens(type=name) for name in "ABC"})
+    observations = observations_from_lineage_prefix([first], dag=dag, cutoff="2026-01-01T00:00:01Z", taxonomy=authoritative)
+    assert [(item.key.source_token, item.key.target_token, item.delay_seconds) for item in observations] == [("A", "B", 5.0), ("C", "B", 5.0)]
+    assert observations_from_lineage_prefix([first], dag=dag, cutoff="2026-01-01T00:00:00Z", taxonomy=authoritative) == ()
+
+
+def test_temporal_prefix_dedups_repeated_event_pair_but_keeps_presplit_cogroup():
+    def package(snapshot_id: str, snapshot_time: str, chains: dict[str, list[str]]):
+        return load_package({
+            "schema_version": "v1",
+            "snapshot": {"snapshot_id": snapshot_id, "snapshot_version": "1", "snapshot_time": snapshot_time, "status": "COMPLETE", "source": "synthetic", "source_kind": "SYNTHETIC_TEST", "produced_at": snapshot_time, "schema_version": "v1"},
+            "alarms": [
+                {"alarm_id": alarm_id, "snapshot_id": snapshot_id, "alarm_name": "A" if alarm_id == "a" else "B", "canonical_start_time": "2026-01-01T00:00:00Z" if alarm_id == "a" else "2026-01-01T00:00:05Z", "raw": {}}
+                for alarm_id in sorted({item for members in chains.values() for item in members})
+            ],
+            "chains": [{"snapshot_id": snapshot_id, "chain_id": chain_id, "member_count": len(members)} for chain_id, members in chains.items()],
+            "memberships": [{"snapshot_id": snapshot_id, "chain_id": chain_id, "alarm_id": alarm_id} for chain_id, members in chains.items() for alarm_id in members],
+        })
+    s1 = package("s1", "2026-01-01T00:00:00Z", {"C": ["a", "b"]})
+    s2 = package("s2", "2026-01-01T00:01:00Z", {"C2": ["a", "b"]})
+    s3 = package("s3", "2026-01-01T00:02:00Z", {"L": ["a"], "R": ["b"]})
+    dag = GlobalEpisodeDag(); config = LineageConfig(config_version="delay-prefix", m_min=1)
+    dag.apply_snapshot(s1, previous=None, config=config)
+    dag.apply_snapshot(s2, previous=s1, config=config)
+    dag.apply_snapshot(s3, previous=s2, config=config)
+    taxonomy = HistoricalTaxonomy("syn", "v1", {"A": TaxonomyTokens(type="A"), "B": TaxonomyTokens(type="B")})
+    observations = observations_from_lineage_prefix([s1, s2, s3], dag=dag, cutoff="2026-01-01T00:03:00Z", taxonomy=taxonomy)
+    directed = [item for item in observations if item.key.level is TaxonomyLevel.TYPE]
+    assert len(directed) == 1
+    assert (directed[0].key.source_token, directed[0].key.target_token, directed[0].delay_seconds) == ("A", "B", 5.0)
+
+
+def test_temporal_prefix_split_branches_without_cogroup_do_not_create_observation():
+    left = _lineage_package("left", "2026-01-01T00:00:00Z", {"L": [("a", "A")]})
+    right = _lineage_package("right", "2026-01-01T00:01:00Z", {"R": [("b", "B")]})
+    dag = GlobalEpisodeDag(); config = LineageConfig(config_version="delay-branches", m_min=1)
+    dag.apply_snapshot(left, previous=None, config=config)
+    dag.apply_snapshot(right, previous=left, config=config)
+    taxonomy = HistoricalTaxonomy("syn", "v1", {"A": TaxonomyTokens(type="A"), "B": TaxonomyTokens(type="B")})
+    assert observations_from_lineage_prefix([left, right], dag=dag, cutoff="2026-01-01T00:02:00Z", taxonomy=taxonomy) == ()
