@@ -370,3 +370,28 @@ class CounterfactualJobRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+
+class OperatorFeedbackRecord(Base):
+    __tablename__ = "operator_feedback"
+    __table_args__ = (
+        Index("ix_operator_feedback_job_id", "job_id"),
+        Index("ix_operator_feedback_chain_id", "chain_id"),
+    )
+
+    feedback_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    job_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    snapshot_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    snapshot_version: Mapped[str] = mapped_column(String(255), nullable=False)
+    chain_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    candidate_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    operation: Mapped[str] = mapped_column(String(64), nullable=False)
+    decision: Mapped[str] = mapped_column(String(32), nullable=False)
+    operator_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text)
+    partition_delta: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    mutation_dispatched: Mapped[bool] = mapped_column(nullable=False, default=False)
+    mutation_dispatch_result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

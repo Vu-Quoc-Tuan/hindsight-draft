@@ -92,3 +92,47 @@ def test_counterfactual_job_identity_cannot_be_rewritten() -> None:
             await database.close()
 
     asyncio.run(exercise())
+
+
+def test_operator_feedback_lifecycle_persisted() -> None:
+    database_url = os.environ.get("TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("TEST_DATABASE_URL is not configured")
+
+    async def exercise() -> None:
+        database = Database(database_url)
+        repository = SnapshotRepository(database.sessions)
+        try:
+            feedback_payload = {
+                "feedback_id": "fb-test-pg-1",
+                "job_id": "job-pg-1",
+                "snapshot_id": "s1",
+                "snapshot_version": "1",
+                "chain_id": "C",
+                "candidate_id": "cand-1",
+                "operation": "SPLIT_CHAIN",
+                "decision": "APPROVED",
+                "operator_id": "pg_operator",
+                "reason": "Confirmed split",
+                "partition_delta": {"before": [["C", ["A1", "A2"]]], "after": [["C", ["A1"]], ["C2", ["A2"]]]},
+                "mutation_dispatched": True,
+                "mutation_dispatch_result": {"dispatched": True, "status_code": 200},
+            }
+            stored = await repository.persist_operator_feedback(feedback_payload)
+            assert stored.feedback_id == "fb-test-pg-1"
+            assert stored.decision == "APPROVED"
+            assert stored.mutation_dispatched is True
+
+            # Query by job
+            by_job = await repository.operator_feedback_for_job("job-pg-1")
+            assert len(by_job) >= 1
+            assert any(f.feedback_id == "fb-test-pg-1" for f in by_job)
+
+            # Query by chain
+            by_chain = await repository.operator_feedback_for_chain("C")
+            assert len(by_chain) >= 1
+            assert any(f.feedback_id == "fb-test-pg-1" for f in by_chain)
+        finally:
+            await database.close()
+
+    asyncio.run(exercise())

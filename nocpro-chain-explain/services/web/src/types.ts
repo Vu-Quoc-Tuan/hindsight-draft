@@ -485,3 +485,21 @@ export type TopologyHypothesesResult = {
   propagation: PropagationResult
   dependency_scope: DependencyScopeResult
 }
+
+export type OperatorFeedback = {
+  feedback_id: string
+  job_id: string
+  chain_id: string
+  candidate_id: string
+  operation: string
+  decision: 'APPROVED' | 'REJECTED' | 'ACCEPTED'
+  operator_id: string
+  reason?: string | null
+  partition_delta: {
+    before: [string, string[]][]
+    after: [string, string[]][]
+  }
+  mutation_dispatched: boolean
+  mutation_dispatch_result?: Record<string, unknown> | null
+  created_at: string
+}

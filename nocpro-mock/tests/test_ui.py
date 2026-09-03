@@ -185,3 +185,22 @@ def test_api_topology_projection(ui_server: str):
     status, data = _request_json(f"{ui_server}/api/topology/projection")
     assert status == 400
     assert "required" in data["error"].lower()
+
+
+def test_api_webhook_mutation(ui_server: str):
+    payload = {
+        "event_id": "evt-ui-1",
+        "chain_id": "C1",
+        "operation": "SPLIT_CHAIN",
+        "operator_id": "viettel_ops",
+    }
+    status, data = _request_json(
+        f"{ui_server}/api/webhook/mutation",
+        method="POST",
+        data=payload,
+    )
+    assert status == 200
+    assert data["ok"] is True
+    assert data["applied"] is True
+    assert data["event_id"] == "evt-ui-1"
+    assert data["status"] == "MUTATION_RECORDED_BY_NOCPRO"

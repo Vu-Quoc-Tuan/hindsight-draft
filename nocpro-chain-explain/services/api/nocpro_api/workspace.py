@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import os
 import asyncio
+import uuid
 from concurrent.futures import Future
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock
 from typing import Any
@@ -24,9 +26,11 @@ from tier2 import (
 )
 from tier2.counterfactual import (
     CounterfactualJobManager,
+    CounterfactualJobView as DomainCounterfactualJobView,
     artifact_fingerprint,
     review_identity,
 )
+from tier2.counterfactual.public_contract import public_review_result
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -68,6 +72,7 @@ class Workspace:
         self._persistence_loop = None
         self._review_persistence_futures: list[Future] = []
         self._audit_persistence_futures: list[Future] = []
+        self.operator_feedbacks: list[dict[str, Any]] = []
 
     def close(self) -> None:
         self.review_jobs.shutdown()
@@ -409,3 +414,128 @@ class Workspace:
             snapshot_version=package.snapshot.snapshot_version,
             chain_id=chain_id,
         )
+
+    async def record_operator_feedback(
+        self, job_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        job = None
+        try:
+            job = self.review_jobs.get(job_id)
+        except KeyError:
+            if self.repository is not None:
+                job = await self.repository.counterfactual_job(job_id)
+
+        if job is None:
+            raise KeyError(f"unknown review job_id {job_id!r}")
+
+        if getattr(job, "result", None) is None:
+            raise ValueError("review job has not completed yet or result is unavailable")
+
+        if isinstance(job, DomainCounterfactualJobView):
+            result_dict = public_review_result(job.result)
+        elif isinstance(job.result, dict):
+            result_dict = job.result
+        else:
+            result_dict = dict(job.result)
+
+        candidate_id = payload["candidate_id"]
+        candidate: dict[str, Any] | None = None
+
+        all_candidates: list[Any] = []
+        if "evaluated_candidates" in result_dict and result_dict["evaluated_candidates"]:
+            all_candidates.extend(result_dict["evaluated_candidates"])
+        if "recommendations" in result_dict and result_dict["recommendations"]:
+            all_candidates.extend(result_dict["recommendations"])
+        for op_key in ("remove", "split", "move", "merge"):
+            op_data = result_dict.get(op_key)
+            if isinstance(op_data, dict) and "candidates" in op_data:
+                all_candidates.extend(op_data["candidates"])
+
+        for cand in all_candidates:
+            c_id = cand.get("candidate_id") if isinstance(cand, dict) else getattr(cand, "candidate_id", None)
+            if c_id == candidate_id:
+                candidate = cand if isinstance(cand, dict) else cand.__dict__
+                break
+
+        if candidate is None:
+            raise ValueError(f"candidate_id {candidate_id!r} not found in review job {job_id!r}")
+
+        operation = candidate.get("operation", "UNKNOWN")
+        partition_delta = candidate.get("partition_delta", {})
+
+        decision = payload["decision"].upper()
+        if decision not in {"APPROVED", "REJECTED", "ACCEPTED"}:
+            raise ValueError(f"invalid decision {payload['decision']!r}")
+
+        chain_id = getattr(job, "chain_id", None) or result_dict.get("identity", {}).get("chain_id")
+        snapshot_id = result_dict.get("identity", {}).get("snapshot_id") or (
+            getattr(job, "identity", {}).get("snapshot_id") if hasattr(job, "identity") else None
+        )
+        snapshot_version = result_dict.get("identity", {}).get("snapshot_version") or (
+            getattr(job, "identity", {}).get("snapshot_version") if hasattr(job, "identity") else "1"
+        )
+
+        mutation_dispatched = False
+        dispatch_result: dict[str, Any] | None = None
+        auto_apply = bool(payload.get("auto_apply", False)) or (
+            os.environ.get("NOCPRO_AUTO_APPLY_MUTATIONS", "false").lower() in {"true", "1", "yes"}
+        )
+
+        if decision in {"APPROVED", "ACCEPTED"} and auto_apply:
+            from .mutation import MutationEvent, dispatch_mutation
+
+            event = MutationEvent(
+                event_id=f"mut_{uuid.uuid4().hex[:12]}",
+                chain_id=str(chain_id or ""),
+                operation=operation,
+                candidate_id=candidate_id,
+                partition_delta=partition_delta,
+                operator_id=payload.get("operator_id") or "viettel_operator",
+                approved_at=datetime.now(timezone.utc).isoformat(),
+                reason=payload.get("reason"),
+            )
+            dispatch_result = dispatch_mutation(event)
+            mutation_dispatched = bool(dispatch_result.get("dispatched", False))
+
+        feedback_id = f"fb_{uuid.uuid4().hex[:12]}"
+        now = datetime.now(timezone.utc)
+        record: dict[str, Any] = {
+            "feedback_id": feedback_id,
+            "job_id": job_id,
+            "snapshot_id": str(snapshot_id or ""),
+            "snapshot_version": str(snapshot_version or "1"),
+            "chain_id": str(chain_id or ""),
+            "candidate_id": candidate_id,
+            "operation": operation,
+            "decision": decision,
+            "operator_id": payload.get("operator_id") or "viettel_operator",
+            "reason": payload.get("reason"),
+            "partition_delta": partition_delta,
+            "mutation_dispatched": mutation_dispatched,
+            "mutation_dispatch_result": dispatch_result,
+            "created_at": now,
+        }
+
+        self.operator_feedbacks.append(record)
+
+        if self.repository is not None:
+            persisted = await self.repository.persist_operator_feedback(record)
+            return persisted
+
+        return record
+
+    async def list_operator_feedback(
+        self, job_id: str | None = None, chain_id: str | None = None
+    ) -> list[Any]:
+        if self.repository is not None:
+            if job_id is not None:
+                return await self.repository.operator_feedback_for_job(job_id)
+            if chain_id is not None:
+                return await self.repository.operator_feedback_for_chain(chain_id)
+
+        results = self.operator_feedbacks
+        if job_id is not None:
+            results = [f for f in results if f.get("job_id") == job_id]
+        if chain_id is not None:
+            results = [f for f in results if f.get("chain_id") == chain_id]
+        return results

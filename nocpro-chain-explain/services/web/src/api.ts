@@ -1,4 +1,4 @@
-import type { ChainAnalysis, ChainList, CounterfactualJob, Evolution, Job, PairWhy } from './types'
+import type { ChainAnalysis, ChainList, CounterfactualJob, Evolution, Job, OperatorFeedback, PairWhy } from './types'
 import type { TopologyTreePayload } from './TopologyTree'
 
 export class ApiError extends Error {
@@ -93,6 +93,34 @@ export const api = {
   latestReview: (chainId: string, signal?: AbortSignal) =>
     request<CounterfactualJob>(
       `/api/v1/chains/${encodeURIComponent(chainId)}/review`,
+      { signal },
+    ),
+  submitReviewFeedback: (
+    jobId: string,
+    payload: {
+      candidate_id: string
+      decision: 'APPROVED' | 'REJECTED'
+      operator_id?: string
+      reason?: string
+      auto_apply?: boolean
+    },
+  ) =>
+    request<OperatorFeedback>(
+      `/api/v1/review-jobs/${encodeURIComponent(jobId)}/feedback`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+    ),
+  reviewFeedback: (jobId: string, signal?: AbortSignal) =>
+    request<OperatorFeedback[]>(
+      `/api/v1/review-jobs/${encodeURIComponent(jobId)}/feedback`,
+      { signal },
+    ),
+  chainFeedback: (chainId: string, signal?: AbortSignal) =>
+    request<OperatorFeedback[]>(
+      `/api/v1/chains/${encodeURIComponent(chainId)}/feedback`,
       { signal },
     ),
   topologyProjection: (profileId: string, signal?: AbortSignal) => topologyRequest(profileId, signal),

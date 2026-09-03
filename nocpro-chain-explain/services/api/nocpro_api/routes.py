@@ -13,6 +13,8 @@ from .schemas import (
     ChainListView,
     ChainSummaryView,
     CounterfactualJobView,
+    OperatorFeedbackSubmission,
+    OperatorFeedbackView,
     EvolutionView,
     JobSubmissionView,
     JobView,
@@ -23,6 +25,7 @@ from .schemas import (
 from .serializers import (
     chain_analysis_view,
     counterfactual_job_view,
+    operator_feedback_view,
     evolution_view,
     job_view,
     pair_evidence_view,
@@ -223,5 +226,55 @@ async def get_latest_review(
         if result is None:
             raise KeyError(f"no compatible Counterfactual review for {chain_id!r}")
         return counterfactual_job_view(result)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.post(
+    "/review-jobs/{job_id}/feedback",
+    response_model=OperatorFeedbackView,
+    status_code=status.HTTP_201_CREATED,
+)
+async def submit_operator_feedback(
+    job_id: str,
+    submission: OperatorFeedbackSubmission,
+    request: Request,
+) -> OperatorFeedbackView:
+    try:
+        service = workspace(request)
+        result = await service.record_operator_feedback(
+            job_id, submission.model_dump()
+        )
+        return operator_feedback_view(result)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.get(
+    "/review-jobs/{job_id}/feedback",
+    response_model=list[OperatorFeedbackView],
+)
+async def get_job_operator_feedback(
+    job_id: str, request: Request
+) -> list[OperatorFeedbackView]:
+    try:
+        service = workspace(request)
+        feedbacks = await service.list_operator_feedback(job_id=job_id)
+        return [operator_feedback_view(f) for f in feedbacks]
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.get(
+    "/chains/{chain_id}/feedback",
+    response_model=list[OperatorFeedbackView],
+)
+async def get_chain_operator_feedback(
+    chain_id: str, request: Request
+) -> list[OperatorFeedbackView]:
+    try:
+        service = workspace(request)
+        feedbacks = await service.list_operator_feedback(chain_id=chain_id)
+        return [operator_feedback_view(f) for f in feedbacks]
     except Exception as exc:
         raise translate_error(exc) from exc

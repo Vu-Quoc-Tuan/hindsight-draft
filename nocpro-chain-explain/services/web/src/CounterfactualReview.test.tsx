@@ -142,8 +142,75 @@ describe('CounterfactualReview', () => {
       } : null,
     }
     const html = renderToStaticMarkup(<CounterfactualReview chainId="C1" initialJob={withMove} />)
-
     expect(html).toContain('Reason: becomes a connector after the move')
     expect(html).toContain('2 supported blocks')
+  })
+
+  it('renders interactive operator feedback buttons for unevaluated proposals', () => {
+    const html = renderToStaticMarkup(<CounterfactualReview chainId="C1" initialJob={job} />)
+
+    expect(html).toContain('Phản hồi chuyên gia (Operator Feedback):')
+    expect(html).toContain('Chấp thuận đề xuất')
+    expect(html).toContain('Từ chối đề xuất')
+  })
+
+  it('renders approved operator feedback verdict with auto-apply mutation status', () => {
+    const approvedFeedback = {
+      feedback_id: 'fb-test-01',
+      job_id: 'review-1',
+      chain_id: 'C1',
+      candidate_id: 'remove-X',
+      operation: 'REMOVE_MEMBER',
+      decision: 'APPROVED' as const,
+      operator_id: 'lead_engineer_viettel',
+      reason: 'Đã xác minh không liên quan tuyến truyền dẫn',
+      partition_delta: { before: [], after: [] },
+      mutation_dispatched: true,
+      mutation_dispatch_result: { status_code: 200 },
+      created_at: '2026-09-04T06:00:00Z',
+    }
+
+    const html = renderToStaticMarkup(
+      <CounterfactualReview
+        chainId="C1"
+        initialJob={job}
+        initialFeedbacks={{ 'remove-X': approvedFeedback }}
+      />
+    )
+
+    expect(html).toContain('ĐÃ CHẤP THUẬN ĐỀ XUẤT')
+    expect(html).toContain('lead_engineer_viettel')
+    expect(html).toContain('Đã xác minh không liên quan tuyến truyền dẫn')
+    expect(html).toContain('Đã ghi nhận &amp; gửi lệnh NocPro live')
+    expect(html).not.toContain('Từ chối đề xuất')
+  })
+
+  it('renders rejected operator feedback verdict with engineer reasoning', () => {
+    const rejectedFeedback = {
+      feedback_id: 'fb-test-02',
+      job_id: 'review-1',
+      chain_id: 'C1',
+      candidate_id: 'remove-X',
+      operation: 'REMOVE_MEMBER',
+      decision: 'REJECTED' as const,
+      operator_id: 'ops_shift_lead',
+      reason: 'Cảnh báo thuộc chung tuyến switch truyền dẫn',
+      partition_delta: { before: [], after: [] },
+      mutation_dispatched: false,
+      mutation_dispatch_result: null,
+      created_at: '2026-09-04T06:10:00Z',
+    }
+
+    const html = renderToStaticMarkup(
+      <CounterfactualReview
+        chainId="C1"
+        initialJob={job}
+        initialFeedbacks={{ 'remove-X': rejectedFeedback }}
+      />
+    )
+
+    expect(html).toContain('ĐÃ TỪ CHỐI ĐỀ XUẤT')
+    expect(html).toContain('ops_shift_lead')
+    expect(html).toContain('Cảnh báo thuộc chung tuyến switch truyền dẫn')
   })
 })

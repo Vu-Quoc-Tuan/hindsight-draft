@@ -7,6 +7,7 @@ import type {
   CounterfactualJob,
   CounterfactualMetricVector,
   CounterfactualOperation,
+  OperatorFeedback,
 } from './types'
 
 const metricLabels: Array<[keyof CounterfactualMetricVector, string]> = [
@@ -36,7 +37,23 @@ function evidenceStrings(candidate: CounterfactualCandidate, key: string): strin
   return Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : undefined
 }
 
-function CandidateCard({ candidate, recommended }: { candidate: CounterfactualCandidate; recommended: boolean }) {
+function CandidateCard({
+  candidate,
+  recommended,
+  feedback,
+  onFeedbackSubmit,
+}: {
+  candidate: CounterfactualCandidate
+  recommended: boolean
+  feedback?: OperatorFeedback
+  onFeedbackSubmit?: (
+    candidateId: string,
+    decision: 'APPROVED' | 'REJECTED',
+    operatorId?: string,
+    reason?: string,
+    autoApply?: boolean
+  ) => Promise<void>
+}) {
   const status = candidate.evaluation_status ?? candidate.status ?? 'NOT_EVALUATED'
   const sourceRef = candidate.debug_source_ref ?? candidate.source_ref
   const memberIds = candidate.member_ids?.length
@@ -46,6 +63,42 @@ function CandidateCard({ candidate, recommended }: { candidate: CounterfactualCa
   const targetChainId = candidate.target_chain_id ?? evidenceString(candidate, 'target_chain_id')
   const mergedChainIds = candidate.merged_chain_ids ?? evidenceStrings(candidate, 'merged_chain_ids')
   const mergeEvidence = candidate.merge_evidence ?? candidate.operation_specific_evidence?.cross_chain_evidence as { cross_audit_edge_count?: number } | undefined
+
+  const [showForm, setShowForm] = useState(false)
+  const [selectedDecision, setSelectedDecision] = useState<'APPROVED' | 'REJECTED'>('APPROVED')
+  const [operatorId, setOperatorId] = useState('viettel_operator')
+  const [reason, setReason] = useState('')
+  const [autoApply, setAutoApply] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+
+  const handleOpenForm = (decision: 'APPROVED' | 'REJECTED') => {
+    setSelectedDecision(decision)
+    setShowForm(true)
+    setSubmitError(null)
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!onFeedbackSubmit) return
+    setSubmitting(true)
+    setSubmitError(null)
+    try {
+      await onFeedbackSubmit(
+        candidate.candidate_id,
+        selectedDecision,
+        operatorId,
+        reason,
+        selectedDecision === 'APPROVED' ? autoApply : false
+      )
+      setShowForm(false)
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Gửi phản hồi thất bại')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
     <article className={`review-candidate ${recommended ? 'review-candidate--recommended' : ''}`}>
       <header>
@@ -70,6 +123,103 @@ function CandidateCard({ candidate, recommended }: { candidate: CounterfactualCa
           </div>
         ))}
       </div>
+
+      {feedback ? (
+        <div className={`review-feedback-verdict review-feedback-verdict--${feedback.decision.toLowerCase()}`}>
+          <div className="review-feedback-verdict-header">
+            <span className="review-feedback-badge">
+              {feedback.decision === 'APPROVED' ? '✓ ĐÃ CHẤP THUẬN ĐỀ XUẤT' : '✗ ĐÃ TỪ CHỐI ĐỀ XUẤT'}
+            </span>
+            <span className="review-feedback-operator">
+              Kỹ sư: <strong>{feedback.operator_id}</strong>
+            </span>
+          </div>
+          {feedback.reason ? <p className="review-feedback-reason">“{feedback.reason}”</p> : null}
+          {feedback.mutation_dispatched ? (
+            <div className="review-feedback-mutation">
+              <span>⚡ Đã ghi nhận & gửi lệnh NocPro live (Status: {String(feedback.mutation_dispatch_result?.status_code ?? 200)})</span>
+            </div>
+          ) : null}
+        </div>
+      ) : showForm ? (
+        <form className="review-feedback-form" onSubmit={handleSubmit}>
+          <div className="review-feedback-form-title">
+            <strong>{selectedDecision === 'APPROVED' ? '✓ Xác nhận chấp thuận đề xuất' : '✗ Xác nhận từ chối đề xuất'}</strong>
+            <small>Đánh giá sẽ được lưu vào PostgreSQL Golden Dataset</small>
+          </div>
+          {submitError ? <div className="review-form-error">{submitError}</div> : null}
+          <div className="review-form-row">
+            <label htmlFor={`operator-${candidate.candidate_id}`}>Mã kỹ sư vận hành:</label>
+            <input
+              id={`operator-${candidate.candidate_id}`}
+              type="text"
+              value={operatorId}
+              onChange={(e) => setOperatorId(e.target.value)}
+              required
+            />
+          </div>
+          <div className="review-form-row">
+            <label htmlFor={`reason-${candidate.candidate_id}`}>Ghi chú / Căn cứ đánh giá:</label>
+            <textarea
+              id={`reason-${candidate.candidate_id}`}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="VD: Cảnh báo thuộc cùng một tuyến truyền dẫn quang..."
+              rows={2}
+            />
+          </div>
+          {selectedDecision === 'APPROVED' ? (
+            <div className="review-form-checkbox">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={autoApply}
+                  onChange={(e) => setAutoApply(e.target.checked)}
+                />
+                <span>Tự động ghi đè quyết định vào hệ thống NocPro thật (Auto-Apply Mutation)</span>
+              </label>
+            </div>
+          ) : null}
+          <div className="review-form-actions">
+            <button
+              type="submit"
+              className={`review-btn-submit ${selectedDecision === 'APPROVED' ? 'review-btn-submit--approve' : 'review-btn-submit--reject'}`}
+              disabled={submitting}
+            >
+              {submitting ? 'Đang lưu...' : 'Lưu phản hồi & gửi'}
+            </button>
+            <button
+              type="button"
+              className="review-btn-cancel"
+              onClick={() => setShowForm(false)}
+              disabled={submitting}
+            >
+              Hủy
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="review-feedback-prompt">
+          <span className="review-feedback-prompt-label">Phản hồi chuyên gia (Operator Feedback):</span>
+          <div className="review-feedback-buttons">
+            <button
+              type="button"
+              className="review-btn-action review-btn-approve"
+              onClick={() => handleOpenForm('APPROVED')}
+            >
+              ✓ Chấp thuận đề xuất
+            </button>
+            <button
+              type="button"
+              className="review-btn-action review-btn-reject"
+              onClick={() => handleOpenForm('REJECTED')}
+            >
+              ✗ Từ chối đề xuất
+            </button>
+          </div>
+        </div>
+      )}
+
       <footer>
         <span>Exact bounded evaluation{sourceRef ? ` · ${sourceRef}` : ''}</span>
         {candidate.operation === 'MOVE_MEMBER' && sourceChainId && targetChainId ? <span>Transfer {sourceChainId} → {targetChainId}</span> : null}
@@ -81,7 +231,23 @@ function CandidateCard({ candidate, recommended }: { candidate: CounterfactualCa
   )
 }
 
-function OperationSection({ operation, recommendationIds }: { operation: CounterfactualOperation; recommendationIds: Set<string> }) {
+function OperationSection({
+  operation,
+  recommendationIds,
+  feedbacks,
+  onFeedbackSubmit,
+}: {
+  operation: CounterfactualOperation
+  recommendationIds: Set<string>
+  feedbacks: Record<string, OperatorFeedback>
+  onFeedbackSubmit?: (
+    candidateId: string,
+    decision: 'APPROVED' | 'REJECTED',
+    operatorId?: string,
+    reason?: string,
+    autoApply?: boolean
+  ) => Promise<void>
+}) {
   return (
     <section className="review-operation-section">
       <header>
@@ -97,7 +263,13 @@ function OperationSection({ operation, recommendationIds }: { operation: Counter
       {operation.reason && <p className="review-reason">{operation.reason}</p>}
       <div className="review-candidate-list">
         {operation.candidates.map((candidate) => (
-          <CandidateCard key={candidate.candidate_id} candidate={candidate} recommended={recommendationIds.has(candidate.candidate_id)} />
+          <CandidateCard
+            key={candidate.candidate_id}
+            candidate={candidate}
+            recommended={recommendationIds.has(candidate.candidate_id)}
+            feedback={feedbacks[candidate.candidate_id]}
+            onFeedbackSubmit={onFeedbackSubmit}
+          />
         ))}
         {operation.status === 'AVAILABLE' && operation.candidates.length === 0 ? <p className="review-empty">No bounded candidate met the trigger policy.</p> : null}
       </div>
@@ -105,8 +277,17 @@ function OperationSection({ operation, recommendationIds }: { operation: Counter
   )
 }
 
-export function CounterfactualReview({ chainId, initialJob = null }: { chainId: string; initialJob?: CounterfactualJob | null }) {
+export function CounterfactualReview({
+  chainId,
+  initialJob = null,
+  initialFeedbacks = {},
+}: {
+  chainId: string
+  initialJob?: CounterfactualJob | null
+  initialFeedbacks?: Record<string, OperatorFeedback>
+}) {
   const [job, setJob] = useState<CounterfactualJob | null>(initialJob)
+  const [feedbacks, setFeedbacks] = useState<Record<string, OperatorFeedback>>(initialFeedbacks)
   const [loading, setLoading] = useState(initialJob == null)
   const [error, setError] = useState<string | null>(null)
 
@@ -123,7 +304,25 @@ export function CounterfactualReview({ chainId, initialJob = null }: { chainId: 
           const submission = await api.submitReview(chainId)
           current = await api.reviewJob(submission.job_id, controller.signal)
         }
-        if (!controller.signal.aborted) setJob(current)
+        if (!controller.signal.aborted) {
+          setJob(current)
+          // Also fetch existing feedbacks for this job
+          if (current.job_id) {
+            api.reviewFeedback(current.job_id, controller.signal)
+              .then((list) => {
+                if (!controller.signal.aborted) {
+                  const map: Record<string, OperatorFeedback> = {}
+                  for (const fb of list) {
+                    map[fb.candidate_id] = fb
+                  }
+                  setFeedbacks(map)
+                }
+              })
+              .catch(() => {
+                // Ignore feedback fetch errors on fresh jobs
+              })
+          }
+        }
       } catch (cause) {
         if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Review unavailable')
       } finally {
@@ -144,6 +343,24 @@ export function CounterfactualReview({ chainId, initialJob = null }: { chainId: 
     }, 450)
     return () => { controller.abort(); window.clearTimeout(timer) }
   }, [job])
+
+  const handleFeedbackSubmit = async (
+    candidateId: string,
+    decision: 'APPROVED' | 'REJECTED',
+    operatorId?: string,
+    reason?: string,
+    autoApply?: boolean
+  ) => {
+    if (!job?.job_id) return
+    const fb = await api.submitReviewFeedback(job.job_id, {
+      candidate_id: candidateId,
+      decision,
+      operator_id: operatorId,
+      reason,
+      auto_apply: autoApply,
+    })
+    setFeedbacks((prev) => ({ ...prev, [candidateId]: fb }))
+  }
 
   if (loading && !job) return <section className="review-shell review-loading"><span /><p>Evaluating bounded alternatives…</p></section>
   if (error) return <section className="review-shell review-unavailable" role="alert"><span>UNAVAILABLE</span><h2>Counterfactual review could not be loaded.</h2><p>{error}</p></section>
@@ -177,7 +394,15 @@ export function CounterfactualReview({ chainId, initialJob = null }: { chainId: 
       <div className="review-safety-notice"><strong>Proposal only</strong><span>NocPro was not changed. No candidate is applied automatically.</span></div>
       {result.reason ? <p className="review-global-reason">{result.reason}</p> : null}
       <div className="review-operation-grid">
-        {operations.map((operation) => <OperationSection key={operation.operation} operation={operation} recommendationIds={recommendationIds} />)}
+        {operations.map((operation) => (
+          <OperationSection
+            key={operation.operation}
+            operation={operation}
+            recommendationIds={recommendationIds}
+            feedbacks={feedbacks}
+            onFeedbackSubmit={handleFeedbackSubmit}
+          />
+        ))}
       </div>
       <footer className="review-provenance">
         <span>Snapshot {result.identity.snapshot_id}@{result.identity.snapshot_version}</span>

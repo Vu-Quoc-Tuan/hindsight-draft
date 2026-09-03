@@ -138,6 +138,7 @@ def build_package_from_request(data: dict[str, Any]) -> MockSnapshotPackage:
     topo_path = _resolve_path(data.get("topo_ip", DEFAULT_TOPO_IP_CSV)) if data.get("with_topology") else None
     chain_ids = set(data["chain_ids"]) if data.get("chain_ids") else None
     limit = int(data["limit"]) if data.get("limit") else None
+    bounded_subgraph = bool(data.get("bounded_subgraph", True))
 
     return build_real_replay_snapshot(
         alarm_csv_path=alarm_path,
@@ -147,6 +148,7 @@ def build_package_from_request(data: dict[str, Any]) -> MockSnapshotPackage:
         topo_ip_path=topo_path,
         chain_ids=chain_ids,
         limit=limit,
+        bounded_subgraph=bounded_subgraph,
     )
 
 
@@ -359,6 +361,21 @@ class MockUIRequestHandler(SimpleHTTPRequestHandler):
             bootstrap = body.get("kafka_bootstrap", getattr(self.server, "default_kafka", "localhost:9092"))
             ok, msg = check_kafka_socket(bootstrap)
             self._send_json(HTTPStatus.OK, {"ok": ok, "message": msg, "bootstrap": bootstrap})
+            return
+
+        if path == "/api/webhook/mutation":
+            logger.info("Received upstream mutation webhook: %s", body)
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "ok": True,
+                    "applied": True,
+                    "event_id": body.get("event_id"),
+                    "chain_id": body.get("chain_id"),
+                    "operation": body.get("operation"),
+                    "status": "MUTATION_RECORDED_BY_NOCPRO",
+                },
+            )
             return
 
         if path == "/api/preview":

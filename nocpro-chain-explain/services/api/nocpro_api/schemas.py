@@ -485,3 +485,28 @@ class CounterfactualJobView(ApiModel):
     # The Counterfactual artifact owns its explicitly versioned nested schema.
     result: dict[str, object] | None
     error: str | None
+
+
+class OperatorFeedbackSubmission(ApiModel):
+    candidate_id: str
+    decision: str
+    operator_id: str = "viettel_operator"
+    reason: str | None = None
+    auto_apply: bool = False
+
+
+class OperatorFeedbackView(ApiModel):
+    feedback_id: str
+    job_id: str
+    snapshot_id: str
+    snapshot_version: str
+    chain_id: str
+    candidate_id: str
+    operation: str
+    decision: str
+    operator_id: str
+    reason: str | None = None
+    partition_delta: dict[str, object]
+    mutation_dispatched: bool = False
+    mutation_dispatch_result: dict[str, object] | None = None
+    created_at: str

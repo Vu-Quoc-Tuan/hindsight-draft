@@ -34,6 +34,7 @@ from ..fixtures.golden import GoldenFixture, load_golden_fixture
 from ..loaders.alarm_csv import AlarmCsvLoader
 from ..loaders.topology_ip_csv import TopoIPLoader
 from ..normalize.alarms import build_chains, normalize_alarm
+from ..normalize.bounded_subgraph import extract_bounded_ip_subgraph
 from ..normalize.resource_mapping import ResourceMapper
 from ..normalize.topology import TOPOLOGY_LAYER_IP, normalize_topo_ip
 
@@ -65,6 +66,7 @@ def build_real_replay_snapshot(
     topo_ip_path: str | Path | None = None,
     chain_ids: set[str] | None = None,
     limit: int | None = None,
+    bounded_subgraph: bool = True,
 ) -> MockSnapshotPackage:
     """Replay the real alarm export as one canonical snapshot.
 
@@ -107,7 +109,12 @@ def build_real_replay_snapshot(
     unavailable: list[str] = []
 
     if topo_ip_path is not None and config.topo_ip_enabled:
-        relations = TopoIPLoader(topo_ip_path).load()
+        all_relations = TopoIPLoader(topo_ip_path).load()
+        if bounded_subgraph:
+            seed_codes = {a.device_code for a in alarms if a.device_code}
+            relations = extract_bounded_ip_subgraph(all_relations, seed_codes, max_hops=1)
+        else:
+            relations = all_relations
         nodes, edges = normalize_topo_ip(
             relations,
             source_id="topo_ip_csv",

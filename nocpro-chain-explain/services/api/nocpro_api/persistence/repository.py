@@ -63,6 +63,7 @@ from .models import (
     SimilarityModelRecord,
     HistoricalEvidenceModelRecord,
     TemporalDelayModelRecord,
+    OperatorFeedbackRecord,
 )
 
 
@@ -119,6 +120,24 @@ class StoredCounterfactualJob:
     error: str | None
     created_at: datetime
     updated_at: datetime
+
+
+@dataclass(frozen=True)
+class StoredOperatorFeedback:
+    feedback_id: str
+    job_id: str
+    snapshot_id: str
+    snapshot_version: str
+    chain_id: str
+    candidate_id: str
+    operation: str
+    decision: str
+    operator_id: str
+    reason: str | None
+    partition_delta: dict[str, Any]
+    mutation_dispatched: bool
+    mutation_dispatch_result: dict[str, Any] | None
+    created_at: datetime
 
 
 @dataclass(frozen=True)
@@ -569,6 +588,95 @@ class SnapshotRepository:
                 .limit(1)
             )
             return self._stored_counterfactual(row) if row is not None else None
+
+    async def persist_operator_feedback(
+        self, payload: dict[str, Any]
+    ) -> StoredOperatorFeedback:
+        async with self._session_factory() as session:
+            statement = (
+                pg_insert(OperatorFeedbackRecord)
+                .values(
+                    feedback_id=payload["feedback_id"],
+                    job_id=payload["job_id"],
+                    snapshot_id=payload["snapshot_id"],
+                    snapshot_version=payload["snapshot_version"],
+                    chain_id=payload["chain_id"],
+                    candidate_id=payload["candidate_id"],
+                    operation=payload["operation"],
+                    decision=payload["decision"],
+                    operator_id=payload["operator_id"],
+                    reason=payload.get("reason"),
+                    partition_delta=payload["partition_delta"],
+                    mutation_dispatched=payload.get("mutation_dispatched", False),
+                    mutation_dispatch_result=payload.get("mutation_dispatch_result"),
+                )
+                .on_conflict_do_update(
+                    index_elements=[OperatorFeedbackRecord.feedback_id],
+                    set_={
+                        "decision": payload["decision"],
+                        "operator_id": payload["operator_id"],
+                        "reason": payload.get("reason"),
+                        "mutation_dispatched": payload.get("mutation_dispatched", False),
+                        "mutation_dispatch_result": payload.get("mutation_dispatch_result"),
+                    },
+                )
+            )
+            await session.execute(statement)
+            await session.commit()
+        stored = await self.get_operator_feedback(payload["feedback_id"])
+        if stored is None:
+            raise RuntimeError("persisted operator feedback is unavailable")
+        return stored
+
+    async def get_operator_feedback(
+        self, feedback_id: str
+    ) -> StoredOperatorFeedback | None:
+        async with self._session_factory() as session:
+            row = await session.get(OperatorFeedbackRecord, feedback_id)
+            return self._stored_feedback(row) if row is not None else None
+
+    async def operator_feedback_for_job(
+        self, job_id: str
+    ) -> list[StoredOperatorFeedback]:
+        async with self._session_factory() as session:
+            result = await session.scalars(
+                select(OperatorFeedbackRecord)
+                .where(OperatorFeedbackRecord.job_id == job_id)
+                .order_by(OperatorFeedbackRecord.created_at.asc())
+            )
+            return [self._stored_feedback(row) for row in result]
+
+    async def operator_feedback_for_chain(
+        self, chain_id: str
+    ) -> list[StoredOperatorFeedback]:
+        async with self._session_factory() as session:
+            result = await session.scalars(
+                select(OperatorFeedbackRecord)
+                .where(OperatorFeedbackRecord.chain_id == chain_id)
+                .order_by(OperatorFeedbackRecord.created_at.asc())
+            )
+            return [self._stored_feedback(row) for row in result]
+
+    @staticmethod
+    def _stored_feedback(
+        row: OperatorFeedbackRecord,
+    ) -> StoredOperatorFeedback:
+        return StoredOperatorFeedback(
+            feedback_id=row.feedback_id,
+            job_id=row.job_id,
+            snapshot_id=row.snapshot_id,
+            snapshot_version=row.snapshot_version,
+            chain_id=row.chain_id,
+            candidate_id=row.candidate_id,
+            operation=row.operation,
+            decision=row.decision,
+            operator_id=row.operator_id,
+            reason=row.reason,
+            partition_delta=row.partition_delta,
+            mutation_dispatched=row.mutation_dispatched,
+            mutation_dispatch_result=row.mutation_dispatch_result,
+            created_at=row.created_at,
+        )
 
     @staticmethod
     def _stored_counterfactual(

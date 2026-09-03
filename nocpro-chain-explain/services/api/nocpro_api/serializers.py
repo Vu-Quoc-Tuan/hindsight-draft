@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, is_dataclass
+from datetime import datetime
 
 from channels import ChannelValue
 from tier1b import ChainAnalysis
@@ -20,6 +21,7 @@ from tier2.topology_hypotheses import (
 from .schemas import (
     ChainAnalysisView,
     CounterfactualJobView,
+    OperatorFeedbackView,
     DeepDiveView,
     DescriptorView,
     EvidenceCoverageAttributionView,
@@ -611,4 +613,32 @@ def job_view(view: Tier2JobView) -> JobView:
         cache_hit=view.cache_hit,
         result=deep_dive_view(view.result) if view.result is not None else None,
         error=view.error,
+    )
+
+
+def operator_feedback_view(feedback: Any) -> OperatorFeedbackView:
+    if is_dataclass(feedback):
+        d = asdict(feedback)
+    elif hasattr(feedback, "__dict__") and not isinstance(feedback, dict):
+        d = dict(feedback.__dict__)
+    else:
+        d = dict(feedback)
+    created_at = d.get("created_at")
+    if isinstance(created_at, datetime):
+        created_at = created_at.isoformat()
+    return OperatorFeedbackView(
+        feedback_id=d["feedback_id"],
+        job_id=d["job_id"],
+        snapshot_id=d["snapshot_id"],
+        snapshot_version=d["snapshot_version"],
+        chain_id=d["chain_id"],
+        candidate_id=d["candidate_id"],
+        operation=d["operation"],
+        decision=d["decision"],
+        operator_id=d["operator_id"],
+        reason=d.get("reason"),
+        partition_delta=d["partition_delta"],
+        mutation_dispatched=bool(d.get("mutation_dispatched", False)),
+        mutation_dispatch_result=d.get("mutation_dispatch_result"),
+        created_at=str(created_at),
     )
