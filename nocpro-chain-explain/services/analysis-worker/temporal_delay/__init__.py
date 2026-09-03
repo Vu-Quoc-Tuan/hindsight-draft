@@ -11,8 +11,10 @@ from .model import (
     evaluate_delay_model,
     evaluate_delay_model_oracle,
     evaluate_ordered_delay_model,
+    model_from_dict,
+    model_to_dict,
 )
-from .bootstrap import observations_from_lineage_prefix
+from .bootstrap import lineage_prefix_fingerprint, observations_from_lineage_prefix
 
 __all__ = [
     "DelayEstimator",
@@ -25,5 +27,7 @@ __all__ = [
     "evaluate_delay_model",
     "evaluate_delay_model_oracle",
     "evaluate_ordered_delay_model",
-    "observations_from_lineage_prefix",
+    "lineage_prefix_fingerprint", "observations_from_lineage_prefix",
+    "model_from_dict",
+    "model_to_dict",
 ]

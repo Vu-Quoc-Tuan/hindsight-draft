@@ -11,6 +11,16 @@ temporal:
   delay:
     bandwidth_seconds: {value: 5.0, source: DOCUMENTED_DEFAULT}
     support_threshold: {value: 0.5, source: DOCUMENTED_DEFAULT}
+    min_relation_episodes: {value: 2, source: FROZEN_SPEC}
+    model_selection_min_episodes: {value: 4, source: FROZEN_SPEC}
+    validation_fraction: {value: 0.4, source: FROZEN_SPEC}
+    model_selection_seed: {value: 42, source: FROZEN_SPEC}
+    local_mass_halfwidth_candidates_seconds: [2.0, 5.0]
+    histogram_bin_width_candidates_seconds: [2.0, 5.0]
+    kde_bandwidth_candidates_seconds: [1.0, 3.0]
+    fallback_model: HISTOGRAM
+    fallback_local_mass_halfwidth_seconds: 5.0
+    fallback_histogram_bin_width_seconds: 5.0
 
 dependency:
   max_hop: {value: 3, source: DOCUMENTED_DEFAULT}

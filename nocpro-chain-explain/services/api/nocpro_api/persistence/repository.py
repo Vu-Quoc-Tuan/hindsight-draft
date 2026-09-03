@@ -37,6 +37,7 @@ from history import (
     taxonomy_from_dict as historical_taxonomy_from_dict,
     taxonomy_to_dict as historical_taxonomy_to_dict,
 )
+from temporal_delay import FrozenDelayModel, model_from_dict as delay_model_from_dict, model_to_dict as delay_model_to_dict
 from tier2.audit_artifact import (
     ReviewAuditArtifact,
     audit_artifact_from_dict,
@@ -61,6 +62,7 @@ from .models import (
     SimilarityIndexEntry,
     SimilarityModelRecord,
     HistoricalEvidenceModelRecord,
+    TemporalDelayModelRecord,
 )
 
 
@@ -1543,6 +1545,35 @@ class SnapshotRepository:
             taxonomy.source_version,
         ):
             raise RuntimeError("persisted historical model/taxonomy provenance mismatch")
+        return model, taxonomy
+
+    async def persist_temporal_delay_model(
+        self, *, snapshot_id: str, snapshot_version: str, model: FrozenDelayModel,
+        taxonomy: HistoricalTaxonomy,
+    ) -> None:
+        if (model.taxonomy_source_id, model.taxonomy_source_version) != (taxonomy.source_id, taxonomy.source_version):
+            raise ValueError("temporal delay taxonomy does not match model provenance")
+        statement = pg_insert(TemporalDelayModelRecord).values(
+            model_version=model.model_version, snapshot_id=snapshot_id, snapshot_version=snapshot_version,
+            training_cutoff=_logical_time(model.training_cutoff), model_payload=delay_model_to_dict(model),
+            taxonomy_payload=historical_taxonomy_to_dict(taxonomy),
+        )
+        async with self.sessions.begin() as session:
+            await session.execute(statement.on_conflict_do_nothing())
+
+    async def load_temporal_delay_model(
+        self, snapshot_id: str, snapshot_version: str
+    ) -> tuple[FrozenDelayModel, HistoricalTaxonomy] | None:
+        async with self.sessions() as session:
+            row = await session.scalar(select(TemporalDelayModelRecord).where(
+                TemporalDelayModelRecord.snapshot_id == snapshot_id,
+                TemporalDelayModelRecord.snapshot_version == snapshot_version,
+            ))
+        if row is None:
+            return None
+        model, taxonomy = delay_model_from_dict(row.model_payload), historical_taxonomy_from_dict(row.taxonomy_payload)
+        if (model.taxonomy_source_id, model.taxonomy_source_version) != (taxonomy.source_id, taxonomy.source_version):
+            raise RuntimeError("persisted temporal delay model/taxonomy provenance mismatch")
         return model, taxonomy
 
     async def canonical_lineages(

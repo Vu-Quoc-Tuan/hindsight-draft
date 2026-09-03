@@ -81,6 +81,22 @@ class HistoricalEvidencePolicy:
 
 
 @dataclass(frozen=True)
+class TemporalDelayPolicy:
+    min_relation_episodes: ConfiguredValue
+    model_selection_min_episodes: ConfiguredValue
+    validation_fraction: ConfiguredValue
+    model_selection_seed: ConfiguredValue
+    local_mass_halfwidth_candidates_seconds: tuple[float, ...]
+    histogram_bin_width_candidates_seconds: tuple[float, ...]
+    kde_bandwidth_candidates_seconds: tuple[float, ...]
+    fallback_model: str
+    fallback_local_mass_halfwidth_seconds: float
+    fallback_histogram_bin_width_seconds: float | None
+    fallback_kde_bandwidth_seconds: float | None
+    support_threshold: ConfiguredValue
+
+
+@dataclass(frozen=True)
 class ConfiguredValue:
     path: str
     value: int | float
@@ -268,6 +284,8 @@ class AnalysisConfig:
     similar_chains: SimilarChainsPolicy
     historical_evidence: HistoricalEvidencePolicy | None
     historical_evidence_reason: str | None
+    temporal_delay: TemporalDelayPolicy | None
+    temporal_delay_reason: str | None
     p2_topology: P2TopologyConfig
     attribution_evaluation: AttributionEvaluationConfig | None = None
     attribution_evaluation_reason: str | None = None
@@ -486,6 +504,40 @@ def _load_optional_historical_evidence(
         )
     except (AnalysisConfigError, KeyError):
         return None, "HISTORY_CONFIG_INCOMPLETE"
+
+
+def _load_optional_temporal_delay(
+    document: dict[str, Any], parameters: dict[str, ConfiguredValue]
+) -> tuple[TemporalDelayPolicy | None, str | None]:
+    try:
+        raw = _lookup(document, "temporal.delay")
+        if not isinstance(raw, dict):
+            raise AnalysisConfigError("temporal.delay must be a YAML mapping")
+        def scalar(name: str, rule: _ParameterRule) -> ConfiguredValue:
+            return _load_p2_configured_value(raw, name, rule, configured_path=f"temporal.delay.{name}")
+        def sequence(name: str) -> tuple[float, ...]:
+            values = raw.get(name)
+            if not isinstance(values, list) or not values or any(isinstance(v, bool) or not isinstance(v, (int, float)) or v <= 0 for v in values):
+                raise AnalysisConfigError(f"temporal.delay.{name} must be non-empty positive numeric list")
+            return tuple(float(v) for v in values)
+        fallback_model = raw.get("fallback_model")
+        if fallback_model not in {"HISTOGRAM", "GAUSSIAN_KDE"}:
+            raise AnalysisConfigError("temporal.delay.fallback_model is required")
+        fallback_halfwidth = raw.get("fallback_local_mass_halfwidth_seconds")
+        if isinstance(fallback_halfwidth, bool) or not isinstance(fallback_halfwidth, (int, float)) or fallback_halfwidth <= 0:
+            raise AnalysisConfigError("temporal.delay.fallback_local_mass_halfwidth_seconds is required")
+        histogram, kde = raw.get("fallback_histogram_bin_width_seconds"), raw.get("fallback_kde_bandwidth_seconds")
+        return TemporalDelayPolicy(
+            scalar("min_relation_episodes", _POSITIVE_INT), scalar("model_selection_min_episodes", _POSITIVE_INT),
+            scalar("validation_fraction", _STRICT_PROBABILITY), scalar("model_selection_seed", _NONNEGATIVE_INT),
+            sequence("local_mass_halfwidth_candidates_seconds"), sequence("histogram_bin_width_candidates_seconds"), sequence("kde_bandwidth_candidates_seconds"),
+            fallback_model, float(fallback_halfwidth),
+            float(histogram) if isinstance(histogram, (int, float)) and not isinstance(histogram, bool) and histogram > 0 else None,
+            float(kde) if isinstance(kde, (int, float)) and not isinstance(kde, bool) and kde > 0 else None,
+            parameters["temporal.delay.support_threshold"],
+        ), None
+    except (AnalysisConfigError, KeyError):
+        return None, "TEMPORAL_DELAY_CONFIG_INCOMPLETE"
 
 
 def _counterfactual_number(
@@ -714,6 +766,7 @@ def load_analysis_config(
     historical_evidence, historical_evidence_reason = _load_optional_historical_evidence(
         document, parameters
     )
+    temporal_delay, temporal_delay_reason = _load_optional_temporal_delay(document, parameters)
     (
         attribution_evaluation,
         attribution_evaluation_reason,
@@ -729,6 +782,8 @@ def load_analysis_config(
         similar_chains=similar_chains,
         historical_evidence=historical_evidence,
         historical_evidence_reason=historical_evidence_reason,
+        temporal_delay=temporal_delay,
+        temporal_delay_reason=temporal_delay_reason,
         p2_topology=p2_topology,
         attribution_evaluation=attribution_evaluation,
         attribution_evaluation_reason=attribution_evaluation_reason,

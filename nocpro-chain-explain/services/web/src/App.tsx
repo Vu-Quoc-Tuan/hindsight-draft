@@ -138,6 +138,7 @@ function PairEvidenceRail({ analysis, selected, pair, loading, layer }: {
               <dl className="mini-grid"><div><dt>score</dt><dd>{percent(item.score)}</dd></div><div><dt>{item.threshold == null ? 'support gate' : 'threshold'}</dt><dd>{item.threshold == null ? 'strictly positive' : percent(item.threshold)}</dd></div></dl>
               <small>{item.derivation_tag}</small>
               {item.channel_family === 'H' && item.evidence_metadata && <small>history model · {String(item.evidence_metadata.history_model_id ?? 'UNAVAILABLE')} · cutoff {String(item.evidence_metadata.training_cutoff ?? 'UNAVAILABLE')} · level {String(item.evidence_metadata.resolved_level ?? 'UNAVAILABLE')}</small>}
+              {item.channel_family === 'T_delay' && item.evidence_metadata && <small>historical temporal pattern · {String(item.evidence_metadata.direction ?? 'UNAVAILABLE')} · observed {String(item.evidence_metadata.delay_seconds ?? 'UNAVAILABLE')}s · {String(item.evidence_metadata.estimator ?? 'UNAVAILABLE')} · episodes {String(item.evidence_metadata.episode_sample_count ?? 'UNAVAILABLE')}</small>}
               {(item.source_id || item.source_version) && <small>topology source · {item.source_id ?? 'UNAVAILABLE'} @ {item.source_version ?? 'UNAVAILABLE'}</small>}
               {(item.scenario_id || item.generator_version) && <small>synthetic generation · {item.scenario_id ?? 'UNAVAILABLE'} · {item.generator_version ?? 'UNAVAILABLE'}</small>}
               {item.detail && <p className="evidence-detail">{item.detail}</p>}

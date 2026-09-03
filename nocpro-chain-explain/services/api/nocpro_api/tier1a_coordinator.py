@@ -22,6 +22,7 @@ from history import (
     build_historical_model,
     episodes_from_lineage_prefix,
 )
+from temporal_delay import DelayEstimator, DelayModelConfig, build_delay_model, lineage_prefix_fingerprint, observations_from_lineage_prefix
 
 from .persistence import SnapshotRepository
 
@@ -144,6 +145,11 @@ class Tier1ACoordinator:
             if historical is not None:
                 model, taxonomy = historical
                 self.workspace.attach_historical_model(model, taxonomy)
+        if self.workspace.temporal_delay_model is None:
+            temporal = await self.repository.load_temporal_delay_model(*identity)
+            if temporal is not None:
+                model, taxonomy = temporal
+                self.workspace.attach_temporal_delay_model(model, taxonomy)
         return precompute
 
     async def run_lineage_pending_once(self):
@@ -286,6 +292,7 @@ class Tier1ACoordinator:
                 package=package,
                 dag=dag,
             )
+            await self.build_temporal_delay_model_for_snapshot(package=package, dag=dag)
             return claim.snapshot_id, claim.snapshot_version
         except Exception as exc:
             await self.repository.release_similarity(claim, str(exc))
@@ -345,4 +352,30 @@ class Tier1ACoordinator:
             package.snapshot.snapshot_version,
         ):
             self.workspace.attach_historical_model(model, taxonomy)
+        return True
+
+    async def build_temporal_delay_model_for_snapshot(self, *, package, dag) -> bool:
+        policy = self.workspace.config.temporal_delay
+        taxonomy = self.workspace.historical_taxonomy_source
+        if policy is None or taxonomy is None:
+            return False
+        existing = await self.repository.load_temporal_delay_model(package.snapshot.snapshot_id, package.snapshot.snapshot_version)
+        if existing is None:
+            cutoff = package.snapshot.snapshot_time
+            cutoff_time = datetime.fromisoformat(cutoff.replace("Z", "+00:00"))
+            if cutoff_time.tzinfo is None:
+                cutoff_time = cutoff_time.replace(tzinfo=timezone.utc)
+            packages = await self.repository.load_historical_packages(cutoff=cutoff_time)
+            observations = observations_from_lineage_prefix(packages, dag=dag, cutoff=cutoff, taxonomy=taxonomy)
+            model = build_delay_model(
+                observations, training_cutoff=cutoff,
+                lineage_prefix_fingerprint=lineage_prefix_fingerprint(packages, dag=dag, cutoff=cutoff),
+                taxonomy_source_id=taxonomy.source_id, taxonomy_source_version=taxonomy.source_version,
+                config=DelayModelConfig(self.workspace.config.config_version, int(policy.min_relation_episodes.value), int(policy.model_selection_min_episodes.value), float(policy.validation_fraction.value), int(policy.model_selection_seed.value), policy.local_mass_halfwidth_candidates_seconds, policy.histogram_bin_width_candidates_seconds, policy.kde_bandwidth_candidates_seconds, DelayEstimator(policy.fallback_model), policy.fallback_local_mass_halfwidth_seconds, policy.fallback_histogram_bin_width_seconds, policy.fallback_kde_bandwidth_seconds),
+            )
+            await self.repository.persist_temporal_delay_model(snapshot_id=package.snapshot.snapshot_id, snapshot_version=package.snapshot.snapshot_version, model=model, taxonomy=taxonomy)
+        else:
+            model, taxonomy = existing
+        if self.workspace.active_identity() == (package.snapshot.snapshot_id, package.snapshot.snapshot_version):
+            self.workspace.attach_temporal_delay_model(model, taxonomy)
         return True

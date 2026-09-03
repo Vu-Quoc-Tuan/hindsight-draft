@@ -22,6 +22,14 @@ from history import (
     TaxonomyTokens,
     build_historical_model,
 )
+from temporal_delay import (
+    DelayEstimator,
+    DelayModelConfig,
+    DelayObservation,
+    DelayRelationKey,
+    build_delay_model,
+)
+from history import TaxonomyLevel
 from similar_chains import build_fingerprint, find_similar_chains
 from sqlalchemy import func, select
 from nocpro_api.persistence.models import SnapshotChunk, SnapshotIngest
@@ -139,6 +147,66 @@ def test_historical_model_persists_and_hydrates_after_workspace_restart():
             assert history.supports is True
             assert history.source_ref == model.model_version
             assert history.evidence_metadata["training_cutoff"] == model.training_cutoff
+            first_workspace.close()
+            restarted_workspace.close()
+        finally:
+            await database.close()
+
+    import asyncio
+
+    asyncio.run(exercise())
+
+
+def test_temporal_delay_model_persists_and_hydrates_pair_why_after_restart():
+    database_url = os.environ.get("TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("TEST_DATABASE_URL is not configured")
+
+    async def exercise():
+        database = Database(database_url)
+        repository = SnapshotRepository(database.sessions)
+        snapshot_id = f"pg-delay-{uuid4().hex}"
+        payload = _payload(snapshot_id)
+        payload["alarms"][0].update({"alarm_name": "A", "canonical_start_time": "2026-08-29T00:00:00Z"})
+        payload["alarms"][1].update({"alarm_name": "B", "canonical_start_time": "2026-08-29T00:00:05Z"})
+        try:
+            await repository.ingest_direct(payload)
+            first_workspace = Workspace()
+            first_coordinator = Tier1ACoordinator(repository, first_workspace)
+            assert await first_coordinator.run(snapshot_id, "1") is not None
+            taxonomy = HistoricalTaxonomy(
+                "synthetic-temporal-taxonomy", "v1",
+                {"A": TaxonomyTokens(type="A"), "B": TaxonomyTokens(type="B")},
+            )
+            config = DelayModelConfig(
+                "synthetic-delay", 2, 4, 0.4, 42, (2.0,), (2.0,), (1.0,),
+                DelayEstimator.HISTOGRAM, 2.0,
+                fallback_histogram_bin_width_seconds=2.0,
+            )
+            key = DelayRelationKey(TaxonomyLevel.TYPE, "A", "B")
+            model = build_delay_model(
+                [DelayObservation(f"e{i}", f"a{i}", f"b{i}", key, 5.0) for i in range(4)],
+                training_cutoff="2026-08-29T00:00:00Z",
+                lineage_prefix_fingerprint="temporal-prefix",
+                taxonomy_source_id=taxonomy.source_id,
+                taxonomy_source_version=taxonomy.source_version,
+                config=config,
+            )
+            await repository.persist_temporal_delay_model(
+                snapshot_id=snapshot_id, snapshot_version="1", model=model, taxonomy=taxonomy,
+            )
+            # Fresh process/workspace: it must hydrate the immutable artifact,
+            # not refit it from whatever data happens to exist at restart time.
+            restarted_workspace = Workspace()
+            restarted_coordinator = Tier1ACoordinator(repository, restarted_workspace)
+            assert await restarted_coordinator.hydrate_active() is not None
+            values = restarted_workspace.pair_why("c1", "a1", "a2")
+            delay = next(value for value in values if value.channel_id == "T_delay")
+            assert delay.availability is True
+            assert delay.supports is True
+            assert delay.source_ref == model.model_version
+            assert delay.evidence_metadata["training_cutoff"] == model.training_cutoff
+            assert delay.evidence_metadata["direction"] == "A->B"
             first_workspace.close()
             restarted_workspace.close()
         finally:

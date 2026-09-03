@@ -2,11 +2,44 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+
 from evolution import GlobalEpisodeDag
 from history import HistoricalTaxonomy, TaxonomyLevel
 from libs.contracts import IngestedPackage
 
 from .model import DelayObservation, DelayRelationKey, _time
+
+
+def lineage_prefix_fingerprint(
+    packages: list[IngestedPackage], *, dag: GlobalEpisodeDag, cutoff: str
+) -> str:
+    """Stable identity of exactly the lineage graph visible before ``cutoff``."""
+    cutoff_time = _time(cutoff)
+    package_keys = {
+        (package.snapshot.snapshot_id, package.snapshot.snapshot_version)
+        for package in packages
+        if _time(package.snapshot.snapshot_time) < cutoff_time
+    }
+    keys = {
+        node.key for node in dag.nodes.values()
+        if (node.key.snapshot_id, node.key.snapshot_version) in package_keys
+        and _time(node.snapshot_time) < cutoff_time
+    }
+    node_identity = sorted(
+        (key.snapshot_id, key.snapshot_version, key.snapshot_chain_id) for key in keys
+    )
+    edge_identity = sorted(
+        (
+            edge.parent.snapshot_id, edge.parent.snapshot_version, edge.parent.snapshot_chain_id,
+            edge.child.snapshot_id, edge.child.snapshot_version, edge.child.snapshot_chain_id,
+            edge.event_type,
+        )
+        for edge in dag.edges.values() if edge.parent in keys and edge.child in keys
+    )
+    payload = {"cutoff": cutoff, "nodes": node_identity, "edges": edge_identity}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def observations_from_lineage_prefix(

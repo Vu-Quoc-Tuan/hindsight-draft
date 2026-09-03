@@ -1,5 +1,5 @@
 from history import TaxonomyLevel, TaxonomyTokens
-from temporal_delay import DelayEstimator, DelayModelConfig, DelayObservation, DelayRelationKey, build_delay_model, evaluate_delay_model, evaluate_delay_model_oracle, evaluate_ordered_delay_model
+from temporal_delay import DelayEstimator, DelayModelConfig, DelayObservation, DelayRelationKey, build_delay_model, evaluate_delay_model, evaluate_delay_model_oracle, evaluate_ordered_delay_model, model_from_dict, model_to_dict
 
 
 def config():
@@ -42,7 +42,8 @@ def test_runtime_uses_first_usable_common_level_not_better_coarse_score():
     assert result.positive_score == 0
     reverse = evaluate_delay_model(TaxonomyTokens(type="B"), TaxonomyTokens(type="A"), delay_seconds=2, model=model)
     assert reverse.available is False
-    assert reverse.reason == "INSUFFICIENT_TYPE_TEMPORAL_HISTORY"
+    assert reverse.reason == "INSUFFICIENT_TEMPORAL_HISTORY"
+    assert reverse.backoff_reason == "INSUFFICIENT_TYPE_TEMPORAL_HISTORY"
 
 
 def test_runtime_and_oracle_keep_the_same_frozen_relation_result():
@@ -70,7 +71,8 @@ def test_runtime_reverses_relation_only_when_current_order_reverses():
     assert forward.available is True
     assert forward.relation_key == DelayRelationKey(TaxonomyLevel.TYPE, "A", "B")
     assert backward.available is False
-    assert backward.reason == "INSUFFICIENT_TYPE_TEMPORAL_HISTORY"
+    assert backward.reason == "INSUFFICIENT_TEMPORAL_HISTORY"
+    assert backward.backoff_reason == "INSUFFICIENT_TYPE_TEMPORAL_HISTORY"
 
 
 def test_missing_fallback_is_relation_unavailable_not_global_build_failure():
@@ -124,5 +126,13 @@ def test_insufficient_all_levels_and_missing_taxonomy_are_unavailable():
     insufficient = evaluate_delay_model(TaxonomyTokens(type="A", family="FA", category="CA"), TaxonomyTokens(type="B", family="FB", category="CB"), delay_seconds=2, model=model)
     missing = evaluate_delay_model(None, TaxonomyTokens(type="B"), delay_seconds=2, model=model)
     assert insufficient.available is False
-    assert insufficient.reason == "INSUFFICIENT_CATEGORY_TEMPORAL_HISTORY"
+    assert insufficient.reason == "INSUFFICIENT_TEMPORAL_HISTORY"
+    assert insufficient.backoff_reason == "INSUFFICIENT_CATEGORY_TEMPORAL_HISTORY"
     assert missing.reason == "TAXONOMY_UNAVAILABLE"
+
+
+def test_model_round_trip_preserves_frozen_score_and_provenance():
+    model = build_delay_model([observation(f"e{i}", f"a{i}", f"b{i}", 2) for i in range(4)], training_cutoff="2026-01-02T00:00:00Z", lineage_prefix_fingerprint="prefix", taxonomy_source_id="syn", taxonomy_source_version="v1", config=config())
+    restored = model_from_dict(model_to_dict(model))
+    assert restored == model
+    assert evaluate_delay_model(TaxonomyTokens(type="A"), TaxonomyTokens(type="B"), delay_seconds=2, model=restored) == evaluate_delay_model(TaxonomyTokens(type="A"), TaxonomyTokens(type="B"), delay_seconds=2, model=model)

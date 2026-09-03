@@ -11,6 +11,7 @@ from typing import Any
 
 from channels import evaluate_pair_channels
 from history import HistoricalEvidenceModel, HistoricalTaxonomy
+from temporal_delay import FrozenDelayModel
 from configuration import AnalysisConfig, load_analysis_config
 from libs.contracts import IngestedPackage, load_validated_package
 from tier1a import CacheTier, SnapshotPrecompute, Tier1Cache, precompute_snapshot
@@ -61,6 +62,9 @@ class Workspace:
         # once; each H model still persists the exact version it consumed.
         self.historical_taxonomy_source: HistoricalTaxonomy | None = None
         self.historical_unavailable_reason = self.config.historical_evidence_reason
+        self.temporal_delay_model: FrozenDelayModel | None = None
+        self.temporal_delay_taxonomy: HistoricalTaxonomy | None = None
+        self.temporal_delay_unavailable_reason = self.config.temporal_delay_reason
         self._persistence_loop = None
         self._review_persistence_futures: list[Future] = []
         self._audit_persistence_futures: list[Future] = []
@@ -184,6 +188,9 @@ class Workspace:
             self.historical_model = None
             self.historical_taxonomy = None
             self.historical_unavailable_reason = self.config.historical_evidence_reason
+            self.temporal_delay_model = None
+            self.temporal_delay_taxonomy = None
+            self.temporal_delay_unavailable_reason = self.config.temporal_delay_reason
 
     def attach_similarity(self, index, lineage_by_chain: dict[str, str]) -> None:
         with self._lock:
@@ -210,6 +217,12 @@ class Workspace:
         """
         with self._lock:
             self.historical_taxonomy_source = taxonomy
+
+    def attach_temporal_delay_model(self, model: FrozenDelayModel, taxonomy: HistoricalTaxonomy) -> None:
+        with self._lock:
+            self.temporal_delay_model = model
+            self.temporal_delay_taxonomy = taxonomy
+            self.temporal_delay_unavailable_reason = None
 
     def list_chains(self):
         self.require_package()
@@ -264,6 +277,13 @@ class Workspace:
             historical_taxonomy=self.historical_taxonomy,
             historical_unavailable_reason=self.historical_unavailable_reason,
             include_historical=True,
+            temporal_delay_model=self.temporal_delay_model,
+            temporal_delay_taxonomy=self.temporal_delay_taxonomy,
+            temporal_delay_unavailable_reason=self.temporal_delay_unavailable_reason,
+            temporal_delay_threshold_source=self.config.parameters[
+                "temporal.delay.support_threshold"
+            ].source.value,
+            include_temporal_delay=True,
         )
 
     def submit_deep_dive(self, chain_id: str):

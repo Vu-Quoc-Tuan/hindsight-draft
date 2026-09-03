@@ -308,6 +308,19 @@ class HistoricalEvidenceModelRecord(Base):
     )
 
 
+class TemporalDelayModelRecord(Base):
+    __tablename__ = "temporal_delay_model"
+    __table_args__ = (UniqueConstraint("snapshot_id", "snapshot_version"),)
+
+    model_version: Mapped[str] = mapped_column(String(64), primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    snapshot_version: Mapped[str] = mapped_column(String(255), nullable=False)
+    training_cutoff: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    model_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    taxonomy_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class AuditArtifactRecord(Base):
     __tablename__ = "audit_artifact"
     __table_args__ = (

@@ -58,6 +58,8 @@ from .temporal import (
 )
 from history import HistoricalEvidenceModel, HistoricalTaxonomy
 from history.channel import evaluate_historical_channel
+from temporal_delay import FrozenDelayModel
+from temporal_delay.channel import evaluate_temporal_delay_channel
 
 #: Default cap on **stored pair detail**, not on statistics.
 DEFAULT_PAIR_DETAIL_LIMIT = 20_000
@@ -240,6 +242,11 @@ def evaluate_pair_channels(
     historical_taxonomy: HistoricalTaxonomy | None = None,
     historical_unavailable_reason: str | None = None,
     include_historical: bool = False,
+    temporal_delay_model: FrozenDelayModel | None = None,
+    temporal_delay_taxonomy: HistoricalTaxonomy | None = None,
+    temporal_delay_unavailable_reason: str | None = None,
+    temporal_delay_threshold_source: str | None = None,
+    include_temporal_delay: bool = False,
 ) -> list[ChannelValue]:
     """Evaluate the full WHY detail for one explicitly requested chain pair."""
     members = set(package.members_of(chain_id))
@@ -286,6 +293,15 @@ def evaluate_pair_channels(
                 unavailable_reason=historical_unavailable_reason,
             )
         )
+    if include_temporal_delay:
+        # Replaces the default empty distribution only in explicit Pair WHY.
+        values = [item for item in values if item.channel_id != "T_delay"]
+        values.append(evaluate_temporal_delay_channel(
+            package.alarms[alarm_a], package.alarms[alarm_b], model=temporal_delay_model,
+            taxonomy=temporal_delay_taxonomy, threshold=delay_threshold,
+            threshold_source=temporal_delay_threshold_source,
+            unavailable_reason=temporal_delay_unavailable_reason,
+        ))
     return values
 
 

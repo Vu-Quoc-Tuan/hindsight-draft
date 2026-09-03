@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 from enum import Enum
 import hashlib
 import json
-from math import erf, floor, sqrt
-from typing import Iterable
+from math import erf, floor, log, sqrt
+from typing import ClassVar, Iterable
 
 from history import TaxonomyLevel, TaxonomyTokens
 
@@ -95,6 +95,11 @@ class SelectedDelayRelation:
     train_episode_ids: tuple[str, ...] = ()
     holdout_episode_ids: tuple[str, ...] = ()
 
+    # This is deliberately part of the immutable model implementation contract.
+    # Runtime and oracle use the same finite, deterministic support points rather
+    # than relying on an optimiser whose result can vary by numerical library.
+    PEAK_MASS_PROCEDURE: ClassVar[str] = "OBSERVATION_SUPPORT_POINTS_V1"
+
     def _weights(self) -> tuple[float, ...]:
         counts: dict[str, int] = {}
         for item in self.observations:
@@ -122,9 +127,11 @@ class SelectedDelayRelation:
         )
 
     def typicality(self, delay: float) -> float:
-        candidates = [item.delay_seconds for item in self.observations]
-        peak = max((self.local_mass(point) for point in candidates), default=0.0)
+        peak = self.normalizing_peak_mass()
         return self.local_mass(delay) / peak if peak > 0 else 0.0
+
+    def normalizing_peak_mass(self) -> float:
+        return max((self.local_mass(item.delay_seconds) for item in self.observations), default=0.0)
 
 
 @dataclass(frozen=True)
@@ -140,6 +147,54 @@ class FrozenDelayModel:
     unavailable_relations: dict[DelayRelationKey, str]
 
     implementation_version: str = "TEMPORAL_DELAY_MODEL_V1"
+
+
+def model_to_dict(model: FrozenDelayModel) -> dict:
+    def key(value: DelayRelationKey) -> list[str]:
+        return [value.level.value, value.source_token, value.target_token]
+    def observation(value: DelayObservation) -> dict:
+        return {
+            "episode_id": value.episode_id, "source_alarm_id": value.source_alarm_id,
+            "target_alarm_id": value.target_alarm_id, "key": key(value.key),
+            "delay_seconds": value.delay_seconds, "source_snapshot_id": value.source_snapshot_id,
+            "source_snapshot_version": value.source_snapshot_version, "source_chain_id": value.source_chain_id,
+        }
+    def relation(value: SelectedDelayRelation) -> dict:
+        return {
+            "key": key(value.key), "observations": [observation(item) for item in value.observations],
+            "episode_sample_count": value.episode_sample_count, "raw_observation_count": value.raw_observation_count,
+            "effective_weight": value.effective_weight, "estimator": value.estimator.value,
+            "local_mass_halfwidth_seconds": value.local_mass_halfwidth_seconds,
+            "estimator_parameter_seconds": value.estimator_parameter_seconds,
+            "selection_mode": value.selection_mode, "held_out_score": value.held_out_score,
+            "train_episode_ids": list(value.train_episode_ids), "holdout_episode_ids": list(value.holdout_episode_ids),
+        }
+    return {
+        "model_version": model.model_version, "training_cutoff": model.training_cutoff,
+        "corpus_fingerprint": model.corpus_fingerprint, "lineage_prefix_fingerprint": model.lineage_prefix_fingerprint,
+        "taxonomy_source_id": model.taxonomy_source_id, "taxonomy_source_version": model.taxonomy_source_version,
+        "implementation_version": model.implementation_version,
+        "config": {name: (value.value if isinstance(value, DelayEstimator) else list(value) if isinstance(value, tuple) else value) for name, value in model.config.__dict__.items()},
+        "relations": [relation(value) for _, value in sorted(model.relations.items())],
+        "unavailable_relations": [[key(value), reason] for value, reason in sorted(model.unavailable_relations.items())],
+    }
+
+
+def model_from_dict(value: dict) -> FrozenDelayModel:
+    def parse_key(raw: list[str]) -> DelayRelationKey:
+        return DelayRelationKey(TaxonomyLevel(raw[0]), raw[1], raw[2])
+    config_payload = dict(value["config"])
+    for name in ("local_mass_halfwidth_candidates_seconds", "histogram_bin_width_candidates_seconds", "kde_bandwidth_candidates_seconds"):
+        config_payload[name] = tuple(config_payload[name])
+    config_payload["fallback_model"] = DelayEstimator(config_payload["fallback_model"])
+    config = DelayModelConfig(**config_payload)
+    relations = {}
+    for raw in value["relations"]:
+        observations = tuple(DelayObservation(item["episode_id"], item["source_alarm_id"], item["target_alarm_id"], parse_key(item["key"]), float(item["delay_seconds"]), item.get("source_snapshot_id"), item.get("source_snapshot_version"), item.get("source_chain_id")) for item in raw["observations"])
+        selected = SelectedDelayRelation(parse_key(raw["key"]), observations, int(raw["episode_sample_count"]), int(raw["raw_observation_count"]), float(raw["effective_weight"]), DelayEstimator(raw["estimator"]), float(raw["local_mass_halfwidth_seconds"]), float(raw["estimator_parameter_seconds"]), raw["selection_mode"], raw.get("held_out_score"), tuple(raw.get("train_episode_ids", ())), tuple(raw.get("holdout_episode_ids", ())))
+        relations[selected.key] = selected
+    unavailable = {parse_key(key): reason for key, reason in value.get("unavailable_relations", ())}
+    return FrozenDelayModel(value["model_version"], value["training_cutoff"], value["corpus_fingerprint"], value["lineage_prefix_fingerprint"], value["taxonomy_source_id"], value["taxonomy_source_version"], config, relations, unavailable, value.get("implementation_version", "TEMPORAL_DELAY_MODEL_V1"))
 
 
 @dataclass(frozen=True)
@@ -177,7 +232,17 @@ def _select(key: DelayRelationKey, observations: tuple[DelayObservation, ...], c
             for parameter in parameters:
                 for halfwidth in config.local_mass_halfwidth_candidates_seconds:
                     candidate = SelectedDelayRelation(key, train_obs, len(train), len(train_obs), float(len(train)), estimator, halfwidth, parameter, "HELD_OUT_SELECTED", None, tuple(sorted(train)), tuple(sorted(holdout)))
-                    score = sum(max(candidate.local_mass(item.delay_seconds), 1e-12) / max(1, sum(1 for value in holdout_obs if value.episode_id == item.episode_id)) for item in holdout_obs)
+                    # Selection is episode-balanced and predictive: every
+                    # observation contributes its relation-local episode weight
+                    # to log local probability mass.  The numerical floor is
+                    # only for log stability, never an evidence threshold.
+                    holdout_counts: dict[str, int] = {}
+                    for item in holdout_obs:
+                        holdout_counts[item.episode_id] = holdout_counts.get(item.episode_id, 0) + 1
+                    score = sum(
+                        (1 / holdout_counts[item.episode_id]) * log(max(candidate.local_mass(item.delay_seconds), 1e-12))
+                        for item in holdout_obs
+                    ) / len(holdout_obs)
                     candidate_rows.append((score, estimator.value, parameter, halfwidth))
     if candidate_rows:
         score, name, parameter, halfwidth = sorted(candidate_rows, key=lambda item: (-item[0], item[1], item[2], item[3]))[0]
@@ -240,9 +305,9 @@ def evaluate_delay_model(
             backoff_reason = last_reason
             continue
         local = relation.local_mass(delay_seconds)
-        peak = max((relation.local_mass(item.delay_seconds) for item in relation.observations), default=0.0)
+        peak = relation.normalizing_peak_mass()
         return DelayLookup(True, None, level, key, delay_seconds, relation, local, peak, local / peak if peak else 0.0, backoff_reason)
-    return DelayLookup(False, last_reason, None, None, delay_seconds, None, None, None, 0.0, backoff_reason)
+    return DelayLookup(False, "INSUFFICIENT_TEMPORAL_HISTORY", None, None, delay_seconds, None, None, None, 0.0, backoff_reason)
 
 
 def evaluate_ordered_delay_model(
