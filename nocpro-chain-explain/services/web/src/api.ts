@@ -1,4 +1,5 @@
 import type { ChainAnalysis, ChainList, CounterfactualJob, Evolution, Job, PairWhy } from './types'
+import type { TopologyTreePayload } from './TopologyTree'
 
 export class ApiError extends Error {
   status: number
@@ -23,6 +24,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(response.status, message)
   }
   return (await response.json()) as T
+}
+
+async function topologyRequest(profileId: string, signal?: AbortSignal): Promise<TopologyTreePayload> {
+  const base = import.meta.env.VITE_NOCPRO_MOCK_URL
+  if (!base) return {
+    status: 'UNAVAILABLE', profile: profileId as 'ALARM_ONLY' | 'IP_NETWORK' | 'IT_SERVICES', topology_kind: 'UNAVAILABLE',
+    reason: 'MOCK_TOPOLOGY_ENDPOINT_NOT_CONFIGURED',
+  }
+  const url = new URL('/api/topology/projection', base)
+  url.searchParams.set('profile_id', profileId)
+  const response = await fetch(url, { signal })
+  if (!response.ok) throw new ApiError(response.status, `${response.status} ${response.statusText}`)
+  return (await response.json()) as TopologyTreePayload
 }
 
 export const api = {
@@ -81,4 +95,5 @@ export const api = {
       `/api/v1/chains/${encodeURIComponent(chainId)}/review`,
       { signal },
     ),
+  topologyProjection: (profileId: string, signal?: AbortSignal) => topologyRequest(profileId, signal),
 }

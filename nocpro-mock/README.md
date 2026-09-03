@@ -14,6 +14,8 @@ Design docs live in `docs/`. Start with `docs/README.md` and
 |---|---|
 | Alarm CSV loader (multiline, BOM, quality flags) | done |
 | topoIP loader (adjacency + freshness) | done |
+| Real-data profile catalog + topology tree read model | done |
+| topoIT directed source-relation navigation graph | done |
 | Canonical models + raw preservation | done |
 | Direct Snapshot producer with contract validation | done |
 | Observed `chaining_id` replay incl. singletons | done |
@@ -21,6 +23,7 @@ Design docs live in `docs/`. Start with `docs/README.md` and
 | Exact-identity / verified-alias mapping (fail closed) | done |
 | Synthetic directed hierarchy / active path / failure domain | done |
 | Synthetic operational context | done |
+| Synthetic operator-feedback ground-truth fixture | done, synthetic-only |
 | System pair metadata (explicit + deterministic generator) | done |
 | History / evolution sequences via manifest + step mode | done |
 | Kafka chunk + completion-barrier producer | done |
@@ -39,14 +42,18 @@ python3 -m venv .venv
 ## Usage
 
 ```bash
-# Profile a real export
-nocpro-mock profile alarm datasets/raw/alarm_data.csv
-nocpro-mock profile topoip datasets/raw/topoIP-8zjkidh613ffzdck7jca5j6bdc.csv
+# Real input profiles are intentionally non-interchangeable
+# ALARM_ONLY = alarm/alarm_data.csv without topology
+# IP_NETWORK = alarm/alarmIP.csv + topo/topoIP.csv (undirected adjacency)
+# IT_SERVICES = alarm/alarmIT.csv + topo/topoIT/ (directed source relations)
+nocpro-mock topology-tree --profile ALARM_ONLY
+nocpro-mock topology-tree --profile IP_NETWORK --max-depth 2 --max-children 12
+nocpro-mock topology-tree --profile IT_SERVICES --root-id it:service:1
 
 # Emit a Direct Snapshot package for one observed chain
 nocpro-mock replay --chain-id 6907125 --out datasets/generated/chain.json
 
-# Include real topoIP adjacency (slower; ~200k edges)
+# Include real topoIP adjacency in a canonical replay (slower; ~200k edges)
 nocpro-mock replay --chain-id 6907125 --with-topology --out datasets/generated/chain.json
 
 # Replay the Golden Gray-box fixture
@@ -67,6 +74,15 @@ nocpro-mock run-sequence docs/examples/synthetic/evolution_split_merge
 # Launch the interactive Web UI with explicit 'Push to Kafka' button
 nocpro-mock ui --port 8085
 ```
+
+## Synthetic operator feedback
+
+`docs/examples/synthetic/operator_feedback/feedback.json` is a typed mock of
+operator acceptance/rejection labels for the existing REMOVE/MOVE/MERGE
+fixtures.  It exercises future empirical-evaluation plumbing, but it is
+explicitly `SYNTHETIC_TEST` and
+`eligible_as_production_ground_truth=false`; it must never calibrate or validate
+production recommendations.
 
 Kafka publication serializes canonical JSON, calculates the whole-snapshot
 SHA-256 checksum, compresses it once with zstd, then emits idempotent
@@ -124,6 +140,23 @@ topoIP           201,977 rows / 16 columns, SITE_ROUTER source 90.3860%
 
 - Raw values are preserved; dirty data is flagged, never repaired.
 - `topoIP` edges stay `IP_ADJACENCY` with `directed=False`.
+- Real-data navigation profiles remain semantically separate:
+  - `ALARM_ONLY` reports topology `UNAVAILABLE`.
+  - `IP_NETWORK` projects only undirected `ADJACENT_TO` records.
+  - `IT_SERVICES` projects directed `SOURCE_RELATION` records such as
+    `SERVICE_HAS_MODULE`; these are not verified dependency/causal edges.
+- The IT source can contain cycles and multi-parent links. The UI read model
+  returns a bounded tree projection with deterministic technical primary paths
+  and cycle/reference badges; the primary path is not ownership semantics.
+- Real IT source relations do not enable `Dep_upstream`, ancestor, dominator,
+  propagation, scope-overlap, or any other P2 dependency capability.
+- Every topology-navigation response carries a first-class profile capability
+  artifact. `ALARM_ONLY` is unavailable; IP exposes only undirected adjacency;
+  IT exposes directed source relations with `dependency_semantics=UNVERIFIED`.
+  `alarm_resource_mapping` is `UNAVAILABLE` for both real topology sources.
+- Alarm-to-IT-resource mapping is still `UNAVAILABLE` until a source-backed,
+  exact and unambiguous mapping contract is supplied; names and prefixes are
+  never used as a heuristic bridge.
 - Mapping is exact-identity or verified-alias only. The Golden DEA resources
   (`DEHL01`, `DEHT01`, `HLC9102DEA01`, `HHT9603DEA01`) resolve to `UNMAPPED`
   even though `HLC9102*` / `HHT9603*` prefixes exist in the export.

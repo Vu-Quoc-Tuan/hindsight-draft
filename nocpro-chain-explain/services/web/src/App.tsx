@@ -7,10 +7,11 @@ import { EvidenceAttribution } from './EvidenceAttribution'
 import { CounterfactualReview } from './CounterfactualReview'
 import { EvolutionPanel } from './EvolutionPanel'
 import { ChainTree } from './ChainTree'
+import { TopologyTree, type TopologyTreePayload } from './TopologyTree'
 import type { ChainAnalysis, ChainList, Job, Member, PairEvidence, PairWhy } from './types'
 import './App.css'
 
-type Tab = 'tree' | 'members' | 'why' | 'structure' | 'review' | 'evolution'
+type Tab = 'tree' | 'members' | 'why' | 'topology' | 'structure' | 'review' | 'evolution'
 type EvidenceLayer = 'ALL' | PairEvidence['provenance_class']
 
 const tabs: Array<{ id: Tab; label: string; eyebrow: string }> = [
@@ -18,6 +19,7 @@ const tabs: Array<{ id: Tab; label: string; eyebrow: string }> = [
   { id: 'members', label: 'All Alarms', eyebrow: 'Table' },
   { id: 'why', label: 'Why Grouped', eyebrow: 'Tier 1B' },
   { id: 'structure', label: 'Structure', eyebrow: 'Tier 2' },
+  { id: 'topology', label: 'Topology', eyebrow: 'Source view' },
   { id: 'review', label: 'Review', eyebrow: 'What-if' },
   { id: 'evolution', label: 'Evolution', eyebrow: 'Snapshots' },
 ]
@@ -432,6 +434,8 @@ function App() {
   const [pairWhy, setPairWhy] = useState<PairWhy | null>(null)
   const [job, setJob] = useState<Job | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [topologyProfile, setTopologyProfile] = useState<'ALARM_ONLY' | 'IP_NETWORK' | 'IT_SERVICES'>('IT_SERVICES')
+  const [topologyPayload, setTopologyPayload] = useState<TopologyTreePayload | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -485,6 +489,19 @@ function App() {
     }, 450)
     return () => { controller.abort(); window.clearTimeout(timer) }
   }, [job])
+
+  useEffect(() => {
+    if (tab !== 'topology') return
+    const controller = new AbortController()
+    setTopologyPayload(null)
+    api.topologyProjection(topologyProfile, controller.signal).then(setTopologyPayload).catch((cause: unknown) => {
+      if (!controller.signal.aborted) setTopologyPayload({
+        status: 'UNAVAILABLE', profile: topologyProfile, topology_kind: 'UNAVAILABLE',
+        reason: cause instanceof Error ? cause.message : 'TOPOLOGY_PROJECTION_UNAVAILABLE',
+      })
+    })
+    return () => controller.abort()
+  }, [tab, topologyProfile])
 
   const filteredChains = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -718,6 +735,32 @@ function App() {
                       <TopologyHypotheses topology_hypotheses={visibleJob.result.topology_hypotheses} />
                     )}
                   </>
+                )}
+                {tab === 'topology' && (
+                  <section className="topology-workspace">
+                    <header className="topology-workspace-header">
+                      <div>
+                        <p className="kicker">Read-only source navigation</p>
+                        <h2>Topology records</h2>
+                      </div>
+                      <label>
+                        Dataset profile
+                        <select value={topologyProfile} onChange={(event) => setTopologyProfile(event.target.value as typeof topologyProfile)}>
+                          <option value="ALARM_ONLY">Alarm-only</option>
+                          <option value="IP_NETWORK">IP network</option>
+                          <option value="IT_SERVICES">IT services</option>
+                        </select>
+                      </label>
+                    </header>
+                    {topologyPayload ? (
+                      <TopologyTree payload={topologyPayload} />
+                    ) : (
+                      <div className="loading-state">
+                        <span />
+                        <p>Loading bounded topology projection…</p>
+                      </div>
+                    )}
+                  </section>
                 )}
                 {tab === 'review' && <CounterfactualReview key={chainId} chainId={chainId} />}
                 {tab === 'evolution' && <EvolutionPanel chainId={chainId} />}

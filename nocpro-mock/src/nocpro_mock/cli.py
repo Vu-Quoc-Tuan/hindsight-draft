@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from .loaders.topology_ip_csv import TopoIPLoader
 from .producer.direct_snapshot import DirectSnapshotProducer
 from .producer.kafka_snapshot import KafkaSnapshotConfig, publish_snapshot
 from .replay.snapshot import build_golden_snapshot, build_real_replay_snapshot
+from .ui.topology_api import projection_payload
 
 DEFAULT_ALARM_CSV = "datasets/raw/alarm_data.csv"
 DEFAULT_TOPO_IP_CSV = "datasets/raw/topoIP-8zjkidh613ffzdck7jca5j6bdc.csv"
@@ -110,6 +112,23 @@ def _cmd_golden(args: argparse.Namespace) -> int:
         snapshot_version=args.snapshot_version,
     )
     return _emit(package, args)
+
+
+def _cmd_topology_tree(args: argparse.Namespace) -> int:
+    """Print one bounded source-navigation topology projection as JSON."""
+    try:
+        payload = projection_payload(
+            args.profile,
+            root_id=args.root_id,
+            source_root=args.source_root,
+            max_depth=args.max_depth,
+            max_children=args.max_children,
+        )
+    except ValueError as exc:
+        print(f"topology projection unavailable: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0
 
 
 def _cmd_build_sequences(args: argparse.Namespace) -> int:
@@ -279,6 +298,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_golden.add_argument("--out", default=None)
     _add_kafka_options(p_golden)
     p_golden.set_defaults(func=_cmd_golden)
+
+    p_topology_tree = sub.add_parser(
+        "topology-tree",
+        help="emit a bounded UI navigation projection for one named real-data profile",
+    )
+    p_topology_tree.add_argument("--profile", choices=["ALARM_ONLY", "IP_NETWORK", "IT_SERVICES"], required=True)
+    p_topology_tree.add_argument("--root-id", default=None)
+    p_topology_tree.add_argument("--source-root", default=None, help="directory containing datasets/raw; defaults to nocpro-mock")
+    p_topology_tree.add_argument("--max-depth", type=int, default=3)
+    p_topology_tree.add_argument("--max-children", type=int, default=50)
+    p_topology_tree.set_defaults(func=_cmd_topology_tree)
 
     p_build = sub.add_parser(
         "build-sequences", help="materialize the shipped sequence fixtures"
