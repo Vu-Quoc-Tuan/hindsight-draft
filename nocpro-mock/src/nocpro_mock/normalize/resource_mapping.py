@@ -14,6 +14,7 @@ prefixes are a trap, not permission to map, so this module offers no prefix API.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from ..contract import AlarmResourceMapping, MappingMethod, MappingStatus
 
@@ -159,3 +160,40 @@ class ResourceMapper:
             topology_layer=self.topology_layer,
             source_version=self.source_version,
         )
+
+
+def build_it_resource_mapper(
+    topo_it_dir: str | Path,
+    *,
+    source_version: str | None = None,
+) -> ResourceMapper:
+    """Build an IT ResourceMapper with graph resources and verified aliases."""
+    from ..loaders.topology_it_csv import ITTopologyLoader
+
+    loader = ITTopologyLoader(topo_it_dir)
+    graph = loader.load_graph()
+    known_resources = {node.resource_id for node in graph.nodes}
+    aliases = loader.load_aliases()
+    return ResourceMapper(
+        known_resources=known_resources,
+        aliases=aliases,
+        topology_layer="IT",
+        source_version=source_version or graph.source_version,
+    )
+
+
+def build_ip_resource_mapper(
+    topo_ip_path: str | Path,
+    *,
+    source_version: str | None = None,
+) -> ResourceMapper:
+    """Build an IP ResourceMapper with network device codes."""
+    from ..loaders.topology_ip_csv import TopoIPLoader
+
+    loader = TopoIPLoader(topo_ip_path)
+    known_resources = set(loader.device_codes())
+    return ResourceMapper(
+        known_resources=known_resources,
+        topology_layer="IP",
+        source_version=source_version,
+    )

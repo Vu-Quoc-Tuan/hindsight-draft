@@ -53,3 +53,25 @@ def test_resource_mapper_map_real_alarm() -> None:
     res4 = mapper.map_real_alarm("ALM_4", device_code="UNKNOWN_DEV")
     assert res4.mapping_status == MappingStatus.UNMAPPED
     assert res4.resource_id is None
+
+
+def test_build_it_resource_mapper_loads_verified_aliases() -> None:
+    from nocpro_mock.normalize.resource_mapping import build_it_resource_mapper
+
+    topo_it_dir = Path("datasets/raw/topo/topoIT")
+    if not topo_it_dir.is_dir():
+        return
+
+    mapper = build_it_resource_mapper(topo_it_dir)
+    assert len(mapper.aliases) > 1000
+
+    # Test IP alias lookup (10.30.143.68 -> it:instance:23083)
+    res_ip = mapper.map_real_alarm("ALM_IP", device_ip="10.30.143.68/26")
+    assert res_ip.mapping_status == MappingStatus.VERIFIED_ALIAS
+    assert res_ip.mapping_method == MappingMethod.VERIFIED_ALIAS_TABLE
+    assert res_ip.resource_id == "it:instance:23083"
+
+    # Test Service code alias lookup (VTN_CNTT_VAS_094 -> it:service:1)
+    res_svc = mapper.map_real_alarm("ALM_SVC", device_code="VTN_CNTT_VAS_094")
+    assert res_svc.mapping_status == MappingStatus.VERIFIED_ALIAS
+    assert res_svc.resource_id == "it:service:1"

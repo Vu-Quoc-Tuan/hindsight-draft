@@ -14,8 +14,23 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-ALARM_CSV = REPO_ROOT / "datasets/raw/alarm_data.csv"
-TOPO_IP_CSV = REPO_ROOT / "datasets/raw/topoIP-8zjkidh613ffzdck7jca5j6bdc.csv"
+
+def _find_candidate_file(candidates: list[Path]) -> Path:
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return candidates[0]
+
+
+ALARM_CSV = _find_candidate_file([
+    REPO_ROOT / "datasets/raw/alarm/alarm_data.csv",
+    REPO_ROOT / "datasets/raw/alarm_data.csv",
+])
+TOPO_IP_CSV = _find_candidate_file([
+    REPO_ROOT / "datasets/raw/topo/topoIP.csv",
+    REPO_ROOT / "datasets/raw/topoIP-8zjkidh613ffzdck7jca5j6bdc.csv",
+    REPO_ROOT / "datasets/raw/topoIP.csv",
+])
 GOLDEN_DIR = REPO_ROOT / "docs/examples/golden_2214039"
 CAPABILITY_CONFIG = REPO_ROOT / "docs/config/mock_capabilities.example.yaml"
 

@@ -140,6 +140,99 @@ class ITTopologyLoader:
         )
         return ITTopologyGraph(nodes, tuple(edges.values()), source_version, _TABLES)
 
+    def load_aliases(self) -> dict[str, Any]:
+        """Extract verified aliases from IT topology tables.
+
+        Maps canonical entity identifiers:
+          - instance_ip (clean) -> it:instance:<instance_id>
+          - service_code -> it:service:<service_id>
+          - module_code -> it:module:<module_id>
+          - database_name -> it:database:<database_id>
+          - storage_name -> it:storage:<storage_name>
+        """
+        from ..normalize.resource_mapping import AliasEntry
+
+        rows_by_table = {table: tuple(self._iter_rows(table)) for table in _TABLES}
+        aliases: dict[str, AliasEntry] = {}
+
+        # 1. service_module_server.csv
+        for row in rows_by_table["service_module_server.csv"]:
+            inst_id = _value(row, "instance_id")
+            inst_ip = _value(row, "instance_ip")
+            if inst_id and inst_ip:
+                clean_ip = inst_ip.split("/")[0].strip()
+                if clean_ip and clean_ip not in aliases:
+                    aliases[clean_ip] = AliasEntry(
+                        alias=clean_ip,
+                        resource_id=_node_id("INSTANCE", inst_id),
+                        verified_by="topoIT:service_module_server.csv:instance_ip",
+                        note=f"Instance {inst_id} primary IP",
+                    )
+            svc_id = _value(row, "service_id")
+            svc_code = _value(row, "service_code")
+            if svc_id and svc_code and svc_code not in aliases:
+                aliases[svc_code] = AliasEntry(
+                    alias=svc_code,
+                    resource_id=_node_id("SERVICE", svc_id),
+                    verified_by="topoIT:service_module_server.csv:service_code",
+                    note=f"Service {svc_id} code",
+                )
+            mod_id = _value(row, "module_id")
+            mod_code = _value(row, "module_code")
+            if mod_id and mod_code and mod_code not in aliases:
+                aliases[mod_code] = AliasEntry(
+                    alias=mod_code,
+                    resource_id=_node_id("MODULE", mod_id),
+                    verified_by="topoIT:service_module_server.csv:module_code",
+                    note=f"Module {mod_id} code",
+                )
+
+        # 2. database.csv
+        for row in rows_by_table["database.csv"]:
+            db_id = _value(row, "database_id")
+            db_name = _value(row, "database_name")
+            if db_id and db_name and db_name not in aliases:
+                aliases[db_name] = AliasEntry(
+                    alias=db_name,
+                    resource_id=_node_id("DATABASE", db_id),
+                    verified_by="topoIT:database.csv:database_name",
+                    note=f"Database {db_id} name",
+                )
+            inst_id = _value(row, "instance_id")
+            inst_ip = _value(row, "instance_ip")
+            if inst_id and inst_ip:
+                clean_ip = inst_ip.split("/")[0].strip()
+                if clean_ip and clean_ip not in aliases:
+                    aliases[clean_ip] = AliasEntry(
+                        alias=clean_ip,
+                        resource_id=_node_id("INSTANCE", inst_id),
+                        verified_by="topoIT:database.csv:instance_ip",
+                        note=f"Instance {inst_id} database IP",
+                    )
+
+        # 3. storage.csv
+        for row in rows_by_table["storage.csv"]:
+            st_name = _value(row, "storage_name")
+            if st_name and st_name not in aliases:
+                aliases[st_name] = AliasEntry(
+                    alias=st_name,
+                    resource_id=_node_id("STORAGE", st_name),
+                    verified_by="topoIT:storage.csv:storage_name",
+                    note="Storage resource",
+                )
+            st_ip = _value(row, "ip_address")
+            if st_ip and st_name:
+                clean_ip = st_ip.split("/")[0].strip()
+                if clean_ip and clean_ip not in aliases:
+                    aliases[clean_ip] = AliasEntry(
+                        alias=clean_ip,
+                        resource_id=_node_id("STORAGE", st_name),
+                        verified_by="topoIT:storage.csv:ip_address",
+                        note="Storage IP",
+                    )
+
+        return aliases
+
     def _iter_rows(self, table: str) -> Iterator[dict[str, str]]:
         path = self.directory / table
         if not path.is_file():
