@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+import csv
+import json
+from contextlib import redirect_stdout
+from io import StringIO
+
 from nocpro_mock.loaders.topology_it_csv import TopologyRelationEdge, TopologyRelationNode
 from nocpro_mock.ui.topology_projection import project_relation_tree
+from nocpro_mock.ui.topology_api import projection_payload
+from nocpro_mock.cli import main
 
 
 def _node(resource_id: str, resource_type: str) -> TopologyRelationNode:
@@ -10,6 +17,21 @@ def _node(resource_id: str, resource_type: str) -> TopologyRelationNode:
 
 def _edge(source: str, target: str, relation: str = "SERVICE_HAS_MODULE") -> TopologyRelationEdge:
     return TopologyRelationEdge(source, target, relation, "SOURCE_RELATION", "UNVERIFIED", "fixture.csv", "fixture-v1")  # type: ignore[arg-type]
+
+
+def _write_csv(path, headers, rows) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _write_minimal_topoit(root) -> None:
+    _write_csv(root / "service_module_server.csv", ["service_id", "module_id", "instance_id"], [{"service_id": "s1", "module_id": "m1", "instance_id": "i1"}])
+    _write_csv(root / "module_database.csv", ["module_id", "database_id"], [{"module_id": "m1", "database_id": "d1"}])
+    _write_csv(root / "database.csv", ["database_id", "service_id", "instance_id"], [{"database_id": "d1", "service_id": "s1", "instance_id": "i1"}])
+    _write_csv(root / "storage.csv", ["storage_name", "instance_id"], [{"storage_name": "st1", "instance_id": "i1"}])
 
 
 def test_projection_stops_cycle_with_non_expandable_reference() -> None:
@@ -50,3 +72,43 @@ def test_projection_reports_hidden_children_under_bound() -> None:
 
     assert len(projection.root.children) == 2
     assert projection.root.hidden_child_count == 1
+
+
+def test_alarm_only_profile_is_explicitly_unavailable() -> None:
+    payload = projection_payload("ALARM_ONLY")
+    assert payload["status"] == "UNAVAILABLE"
+    assert payload["reason"] == "TOPOLOGY_NOT_PROVIDED_BY_DATASET_PROFILE"
+
+
+def test_it_profile_payload_keeps_source_relation_boundary(tmp_path) -> None:
+    topology_root = tmp_path / "datasets" / "raw" / "topo" / "topoIT"
+    _write_minimal_topoit(topology_root)
+    payload = projection_payload("IT_SERVICES", source_root=tmp_path)
+    assert payload["status"] == "AVAILABLE"
+    assert payload["direction_kind"] == "SOURCE_RELATION"
+    assert payload["dependency_semantics"] == "UNVERIFIED"
+
+
+def test_cli_emits_alarm_only_unavailable_payload() -> None:
+    output = StringIO()
+    with redirect_stdout(output):
+        assert main(["topology-tree", "--profile", "ALARM_ONLY"]) == 0
+    payload = json.loads(output.getvalue())
+    assert payload["status"] == "UNAVAILABLE"
+
+
+def test_adjacency_projection_deduplicates_repeated_endpoint_pairs(monkeypatch, tmp_path) -> None:
+    from nocpro_mock.data_profiles import DatasetProfile
+    from nocpro_mock.ui import topology_api
+
+    profile = DatasetProfile("IP_NETWORK", "fixture", "alarm.csv", "topo.csv", "UNDIRECTED_ADJACENCY", "NONE", "UNVERIFIED")
+    monkeypatch.setattr(topology_api, "resolve_dataset_profile", lambda _: profile)
+    topo = tmp_path / "topo.csv"
+    topo.write_text(
+        "id,device_code,device_code_relation,network_class_name,network_class_name_relation,interface_port,interface_port_relation,update_time_vipa\n"
+        "1,A,B,,,p1,p2,\n2,A,B,,,p3,p4,\n",
+        encoding="utf-8",
+    )
+    payload = topology_api.projection_payload("IP_NETWORK", source_root=tmp_path, max_depth=1)
+    assert [child["resource_id"] for child in payload["tree"]["children"]] == ["B"]
+    assert payload["source_version"].startswith("sha256:")

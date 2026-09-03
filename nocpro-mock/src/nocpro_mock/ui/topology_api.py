@@ -1,0 +1,102 @@
+"""Read-model payloads for topology navigation clients.
+
+This module stays outside snapshot contract construction.  Its relations are
+for source navigation and cannot be consumed by Explain dependency/P2 code.
+"""
+
+from __future__ import annotations
+
+from dataclasses import asdict
+import hashlib
+from pathlib import Path
+from typing import Any
+
+from ..data_profiles import DatasetProfile, resolve_dataset_profile
+from ..loaders.topology_ip_csv import TopoIPLoader
+from ..loaders.topology_it_csv import ITTopologyLoader, TopologyRelationNode
+from .topology_projection import NavigationRelationEdge, TopologyTreeProjection, project_adjacency_tree, project_relation_tree
+
+
+def _mock_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
+def _path(profile: DatasetProfile, root: Path) -> Path | None:
+    return root / profile.topology_path if profile.topology_path else None
+
+
+def _content_version(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return f"sha256:{digest.hexdigest()}"
+
+
+def projection_payload(
+    profile_id: str,
+    *,
+    root_id: str | None = None,
+    source_root: str | Path | None = None,
+    max_depth: int = 3,
+    max_children: int = 50,
+) -> dict[str, Any]:
+    """Build the public JSON-ready tree payload for one explicit profile."""
+    profile = resolve_dataset_profile(profile_id)
+    base = Path(source_root) if source_root is not None else _mock_root()
+    topology_path = _path(profile, base)
+    if topology_path is None:
+        return {
+            "status": "UNAVAILABLE",
+            "reason": "TOPOLOGY_NOT_PROVIDED_BY_DATASET_PROFILE",
+            "profile": profile.profile_id,
+            "topology_kind": profile.topology_kind,
+        }
+    if not topology_path.exists():
+        return {
+            "status": "UNAVAILABLE",
+            "reason": "TOPOLOGY_SOURCE_FILE_MISSING",
+            "profile": profile.profile_id,
+            "topology_kind": profile.topology_kind,
+            "topology_path": str(topology_path),
+        }
+    projection = _build_projection(profile, topology_path, root_id, max_depth, max_children)
+    return {
+        "status": "AVAILABLE",
+        "profile": profile.profile_id,
+        "topology_kind": profile.topology_kind,
+        "direction_kind": projection.direction_kind,
+        "dependency_semantics": projection.dependency_semantics,
+        "semantic_notice": projection.semantic_notice,
+        "source_version": projection.source_version,
+        "tree": asdict(projection.root),
+    }
+
+
+def _build_projection(profile: DatasetProfile, path: Path, root_id: str | None, max_depth: int, max_children: int) -> TopologyTreeProjection:
+    if profile.profile_id == "IT_SERVICES":
+        graph = ITTopologyLoader(path).load_graph()
+        chosen = root_id or next((node.resource_id for node in graph.nodes if node.resource_type == "SERVICE"), None)
+        if chosen is None:
+            raise ValueError("topoIT graph contains no SERVICE node for default projection root")
+        return project_relation_tree(graph.nodes, graph.edges, root_id=chosen, max_depth=max_depth, max_children=max_children)
+    relations = TopoIPLoader(path).load()
+    source_version = _content_version(path)
+    labels: dict[str, str] = {}
+    adjacency: list[NavigationRelationEdge] = []
+    seen_pairs: set[tuple[str, str]] = set()
+    for relation in relations:
+        if not relation.device_code or not relation.device_code_relation or relation.device_code == relation.device_code_relation:
+            continue
+        pair = tuple(sorted((relation.device_code, relation.device_code_relation)))
+        if pair in seen_pairs:
+            continue
+        seen_pairs.add(pair)
+        labels.setdefault(relation.device_code, relation.device_code)
+        labels.setdefault(relation.device_code_relation, relation.device_code_relation)
+        adjacency.append(NavigationRelationEdge(relation.device_code, relation.device_code_relation, "ADJACENT_TO", "topoIP.csv", source_version))
+    nodes = tuple(TopologyRelationNode(resource_id, "DEVICE", label, ("topoIP.csv",)) for resource_id, label in sorted(labels.items()))  # type: ignore[arg-type]
+    chosen = root_id or next(iter(labels), None)
+    if chosen is None:
+        raise ValueError("topoIP graph contains no usable adjacency node")
+    return project_adjacency_tree(nodes, adjacency, root_id=chosen, max_depth=max_depth, max_children=max_children)

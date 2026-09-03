@@ -47,9 +47,20 @@ class TopologyTreeProjection:
     source_version: str
 
 
+@dataclass(frozen=True)
+class NavigationRelationEdge:
+    """UI-only edge shape shared by source-relation and adjacency projections."""
+
+    source_id: str
+    target_id: str
+    relation_type: str
+    source_table: str
+    source_version: str
+
+
 def project_relation_tree(
     nodes: Iterable[TopologyRelationNode],
-    edges: Iterable[TopologyRelationEdge],
+    edges: Iterable[TopologyRelationEdge | NavigationRelationEdge],
     *,
     root_id: str,
     max_depth: int = 3,
@@ -65,7 +76,7 @@ def project_relation_tree(
     node_map: Mapping[str, TopologyRelationNode] = {node.resource_id: node for node in nodes}
     if root_id not in node_map:
         raise ValueError(f"projection root does not exist: {root_id}")
-    outgoing: dict[str, list[TopologyRelationEdge]] = defaultdict(list)
+    outgoing: dict[str, list[TopologyRelationEdge | NavigationRelationEdge]] = defaultdict(list)
     for edge in edges:
         if edge.source_id in node_map and edge.target_id in node_map:
             outgoing[edge.source_id].append(edge)
@@ -102,4 +113,31 @@ def project_relation_tree(
         dependency_semantics="UNVERIFIED",
         semantic_notice="This relation-tree projection is for navigation. It does not imply dependency, causality, ownership, or propagation direction.",
         source_version=source_version,
+    )
+
+
+def project_adjacency_tree(
+    nodes: Iterable[TopologyRelationNode],
+    edges: Iterable[NavigationRelationEdge],
+    *,
+    root_id: str,
+    max_depth: int = 3,
+    max_children: int = 50,
+) -> TopologyTreeProjection:
+    """Project an undirected adjacency graph without claiming a hierarchy."""
+    doubled = tuple(
+        direction
+        for edge in edges
+        for direction in (
+            edge,
+            NavigationRelationEdge(edge.target_id, edge.source_id, edge.relation_type, edge.source_table, edge.source_version),
+        )
+    )
+    projection = project_relation_tree(nodes, doubled, root_id=root_id, max_depth=max_depth, max_children=max_children)
+    return TopologyTreeProjection(
+        root=projection.root,
+        direction_kind="NONE",
+        dependency_semantics="UNVERIFIED",
+        semantic_notice="This adjacency-tree projection is for navigation. It does not imply dependency, causality, ownership, or propagation direction.",
+        source_version=projection.source_version,
     )
