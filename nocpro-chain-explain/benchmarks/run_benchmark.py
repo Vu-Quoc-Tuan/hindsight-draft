@@ -27,6 +27,7 @@ from benchmarks.harness import (
     check_against_objectives,
     measure,
 )
+from benchmarks.closure import closure_manifest
 from channels import build_indexed_statistics, evaluate_pair_channels
 from configuration import load_analysis_config
 from descriptor import build_predicate_index
@@ -148,6 +149,10 @@ def run() -> BenchmarkReport:
             "tier_1b_repetitions": tier1b_repetitions,
             "tier_1a_repetitions": tier1a_repetitions,
             "analysis_config_version": ANALYSIS_CONFIG.config_version,
+            # The real-export runner measures a subset of the closure matrix.
+            # Keep the complete contract beside its output so unsupported or
+            # runtime-only measurements cannot disappear from interpretation.
+            "closure_benchmark_contract": closure_manifest(),
         }
     )
 

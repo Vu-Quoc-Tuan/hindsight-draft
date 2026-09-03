@@ -78,6 +78,14 @@ NOCPRO_RUN_DOCKER_E2E=1 PYTHONPATH="../nocpro-mock/src" \
   .venv/bin/python -m pytest tests/e2e/test_synthetic_p2_kafka.py -q
 pnpm --dir services/web exec playwright test e2e/evolution.spec.ts
 
+# T_delay's synthetic sequence has authoritative taxonomy only in its explicit
+# test adapter.  Run that frozen-model/Pair-WHY suite beside the Kafka stages;
+# the production container must still fail closed when no authoritative
+# taxonomy source is configured.
+PYTHONPATH="../nocpro-mock/src:services/analysis-worker" \
+  .venv/bin/python -m pytest \
+    tests/test_temporal_delay_model.py tests/test_historical_pair_why.py -q
+
 ANALYSIS_CONFIG_PATH="/app/config/thresholds/e2e-counterfactual.yaml" \
   docker compose up -d --force-recreate api
 deadline=$((SECONDS + 60))
