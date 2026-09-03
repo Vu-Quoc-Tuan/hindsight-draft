@@ -510,3 +510,13 @@ class OperatorFeedbackView(ApiModel):
     mutation_dispatched: bool = False
     mutation_dispatch_result: dict[str, object] | None = None
     created_at: str
+
+
+class AISuggestionView(ApiModel):
+    chain_id: str
+    status: str
+    model: str
+    narrative: str
+    grounded_claims: list[str]
+    disclaimer: str
+    provider_status: str | None = None

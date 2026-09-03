@@ -503,3 +503,13 @@ export type OperatorFeedback = {
   mutation_dispatch_result?: Record<string, unknown> | null
   created_at: string
 }
+
+export type AISuggestion = {
+  chain_id: string
+  status: 'AVAILABLE' | 'FALLBACK' | 'ERROR'
+  model: string
+  narrative: string
+  grounded_claims: string[]
+  disclaimer: string
+  provider_status?: string | null
+}

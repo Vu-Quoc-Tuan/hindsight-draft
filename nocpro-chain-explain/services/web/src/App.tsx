@@ -8,10 +8,11 @@ import { CounterfactualReview } from './CounterfactualReview'
 import { EvolutionPanel } from './EvolutionPanel'
 import { ChainTree } from './ChainTree'
 import { TopologyTree, type TopologyTreePayload } from './TopologyTree'
+import { AIAdvisorPanel } from './AIAdvisorPanel'
 import type { ChainAnalysis, ChainList, Job, Member, PairEvidence, PairWhy } from './types'
 import './App.css'
 
-type Tab = 'tree' | 'members' | 'why' | 'topology' | 'structure' | 'review' | 'evolution'
+type Tab = 'tree' | 'members' | 'why' | 'topology' | 'structure' | 'review' | 'evolution' | 'ai'
 type EvidenceLayer = 'ALL' | PairEvidence['provenance_class']
 
 const tabs: Array<{ id: Tab; label: string; eyebrow: string }> = [
@@ -22,6 +23,7 @@ const tabs: Array<{ id: Tab; label: string; eyebrow: string }> = [
   { id: 'topology', label: 'Topology', eyebrow: 'Source view' },
   { id: 'review', label: 'Review', eyebrow: 'What-if' },
   { id: 'evolution', label: 'Evolution', eyebrow: 'Snapshots' },
+  { id: 'ai', label: 'AI Advisor', eyebrow: 'Mistral-Large' },
 ]
 
 const evidenceLayers: Array<{ id: EvidenceLayer; label: string }> = [
@@ -764,6 +766,7 @@ function App() {
                 )}
                 {tab === 'review' && <CounterfactualReview key={chainId} chainId={chainId} />}
                 {tab === 'evolution' && <EvolutionPanel chainId={chainId} />}
+                {tab === 'ai' && <AIAdvisorPanel key={chainId} chainId={chainId} />}
               </ErrorBoundary>
             </div>
 

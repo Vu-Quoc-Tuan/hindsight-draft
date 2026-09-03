@@ -1,4 +1,4 @@
-import type { ChainAnalysis, ChainList, CounterfactualJob, Evolution, Job, OperatorFeedback, PairWhy } from './types'
+import type { AISuggestion, ChainAnalysis, ChainList, CounterfactualJob, Evolution, Job, OperatorFeedback, PairWhy } from './types'
 import type { TopologyTreePayload } from './TopologyTree'
 
 export class ApiError extends Error {
@@ -121,6 +121,11 @@ export const api = {
   chainFeedback: (chainId: string, signal?: AbortSignal) =>
     request<OperatorFeedback[]>(
       `/api/v1/chains/${encodeURIComponent(chainId)}/feedback`,
+      { signal },
+    ),
+  aiSuggestion: (chainId: string, signal?: AbortSignal) =>
+    request<AISuggestion>(
+      `/api/v1/chains/${encodeURIComponent(chainId)}/ai-suggestion`,
       { signal },
     ),
   topologyProjection: (profileId: string, signal?: AbortSignal) => topologyRequest(profileId, signal),

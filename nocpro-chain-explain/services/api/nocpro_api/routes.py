@@ -15,6 +15,7 @@ from .schemas import (
     CounterfactualJobView,
     OperatorFeedbackSubmission,
     OperatorFeedbackView,
+    AISuggestionView,
     EvolutionView,
     JobSubmissionView,
     JobView,
@@ -26,6 +27,7 @@ from .serializers import (
     chain_analysis_view,
     counterfactual_job_view,
     operator_feedback_view,
+    ai_suggestion_view,
     evolution_view,
     job_view,
     pair_evidence_view,
@@ -276,5 +278,43 @@ async def get_chain_operator_feedback(
         service = workspace(request)
         feedbacks = await service.list_operator_feedback(chain_id=chain_id)
         return [operator_feedback_view(f) for f in feedbacks]
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.post(
+    "/chains/{chain_id}/ai-suggestion",
+    response_model=AISuggestionView,
+)
+@router.get(
+    "/chains/{chain_id}/ai-suggestion",
+    response_model=AISuggestionView,
+)
+async def get_chain_ai_suggestion(
+    chain_id: str, request: Request
+) -> AISuggestionView:
+    try:
+        service = workspace(request)
+        analysis = service.analyze(chain_id)
+        review_result = None
+        try:
+            latest_review = await service.latest_review(chain_id)
+            if latest_review and latest_review.result:
+                from tier2.counterfactual.public_contract import public_review_result
+                review_result = (
+                    public_review_result(latest_review.result)
+                    if hasattr(latest_review.result, "recommendations")
+                    else latest_review.result
+                )
+        except Exception:
+            pass
+
+        from .ai_advisor import generate_ai_suggestion
+        suggestion = generate_ai_suggestion(
+            chain_id=chain_id,
+            analysis=analysis,
+            review_result=review_result,
+        )
+        return ai_suggestion_view(suggestion)
     except Exception as exc:
         raise translate_error(exc) from exc

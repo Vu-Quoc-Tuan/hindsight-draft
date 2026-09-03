@@ -22,6 +22,7 @@ from .schemas import (
     ChainAnalysisView,
     CounterfactualJobView,
     OperatorFeedbackView,
+    AISuggestionView,
     DeepDiveView,
     DescriptorView,
     EvidenceCoverageAttributionView,
@@ -641,4 +642,22 @@ def operator_feedback_view(feedback: Any) -> OperatorFeedbackView:
         mutation_dispatched=bool(d.get("mutation_dispatched", False)),
         mutation_dispatch_result=d.get("mutation_dispatch_result"),
         created_at=str(created_at),
+    )
+
+
+def ai_suggestion_view(result: Any) -> AISuggestionView:
+    if hasattr(result, "to_dict"):
+        d = result.to_dict()
+    elif is_dataclass(result):
+        d = asdict(result)
+    else:
+        d = dict(result)
+    return AISuggestionView(
+        chain_id=d["chain_id"],
+        status=d["status"],
+        model=d["model"],
+        narrative=d["narrative"],
+        grounded_claims=list(d.get("grounded_claims", [])),
+        disclaimer=d["disclaimer"],
+        provider_status=d.get("provider_status"),
     )

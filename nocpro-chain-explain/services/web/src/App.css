@@ -3598,5 +3598,190 @@ button.table-row.is-selected {
 /* Source-navigation tree. It is deliberately distinct from P2 hypotheses: it
    exposes record provenance without implying dependency semantics. */
 .topology-tree{border:1px solid rgba(148,163,184,.22);border-radius:18px;background:linear-gradient(145deg,rgba(15,23,42,.96),rgba(15,23,42,.82));padding:20px;color:#e5edf8}.topology-tree-header,.topology-tree-layout,.topology-tree-toolbar,.topology-tree-badges{display:flex;gap:12px}.topology-tree-header{align-items:flex-start;justify-content:space-between}.topology-tree-header .kicker,.topology-tree-inspector .kicker{color:#b6e500}.topology-tree-header h2{margin:2px 0 0;color:#f8fbff;font-size:1.08rem}.topology-tree-badges{flex-wrap:wrap;justify-content:flex-end}.topology-tree-badges span,.topology-tree-link-count{border:1px solid rgba(56,189,248,.34);background:rgba(56,189,248,.10);color:#b3e8ff;border-radius:999px;padding:3px 8px;font-size:.66rem;letter-spacing:.04em}.topology-tree-notice{margin:14px 0;padding:10px 12px;border-left:3px solid #fbbf24;background:rgba(251,191,36,.10);color:#f4f7fb;font-size:.8rem;line-height:1.45}.topology-tree-toolbar{align-items:center;justify-content:space-between;margin:0 0 14px;color:#b4c1d2;font-family:var(--mono,ui-monospace,monospace);font-size:.68rem}.topology-tree-toolbar input{min-width:min(300px,100%);border:1px solid rgba(148,163,184,.32);background:rgba(2,6,23,.62);color:#eef6ff;border-radius:8px;padding:9px 11px;outline:none}.topology-tree-toolbar input::placeholder{color:#94a3b8}.topology-tree-toolbar input:focus{border-color:#38bdf8;box-shadow:0 0 0 3px rgba(56,189,248,.12)}.topology-tree-layout{align-items:stretch;min-height:280px}.topology-tree-canvas{min-width:0;flex:1 1 auto;overflow:auto;border:1px solid rgba(148,163,184,.18);border-radius:11px;padding:9px 8px;background:rgba(2,6,23,.35)}.topology-tree-canvas ul,.topology-tree-children{list-style:none;margin:0;padding:0}.topology-tree-line{display:flex;align-items:center;min-width:max-content;min-height:34px}.topology-tree-toggle,.topology-tree-stub{width:25px;height:25px;flex:0 0 25px;display:grid;place-items:center}.topology-tree-toggle{border:0;border-radius:6px;color:#cbd5e1;background:transparent;cursor:pointer;font-size:1.05rem}.topology-tree-toggle:hover{color:#fff;background:rgba(148,163,184,.15)}.topology-tree-node{display:flex;align-items:center;gap:8px;min-width:230px;width:100%;text-align:left;color:#e7eef8;border:1px solid transparent;background:transparent;border-radius:8px;padding:4px 8px;cursor:pointer}.topology-tree-node:hover,.topology-tree-row.is-selected>.topology-tree-line .topology-tree-node{background:rgba(56,189,248,.12);border-color:rgba(56,189,248,.28)}.topology-tree-row.is-reference .topology-tree-node{color:#d2dbe7;font-style:italic}.topology-tree-icon{width:22px;height:22px;display:grid;place-items:center;border-radius:6px;background:rgba(148,163,184,.13);color:#cbd5e1}.topology-tree-icon.type-service{color:#7dd3fc;background:rgba(14,165,233,.15)}.topology-tree-icon.type-module{color:#c4b5fd;background:rgba(139,92,246,.16)}.topology-tree-icon.type-database{color:#fcd34d;background:rgba(245,158,11,.15)}.topology-tree-icon.type-instance{color:#86efac;background:rgba(34,197,94,.14)}.topology-tree-icon.type-storage{color:#fda4af;background:rgba(244,63,94,.14)}.topology-tree-label{display:grid;gap:1px;flex:1}.topology-tree-label strong{font-size:.82rem;font-weight:650}.topology-tree-label small{color:#aebcd0;font:.64rem var(--mono,ui-monospace,monospace)}.topology-tree-hidden{color:#c1cede;font-size:.72rem;margin-block:4px}.topology-tree-matches{display:flex;flex-wrap:wrap;gap:6px;margin:-6px 0 12px}.topology-tree-matches button{border:1px solid rgba(148,163,184,.28);background:rgba(30,41,59,.7);color:#eef6ff;border-radius:7px;padding:5px 8px;cursor:pointer}.topology-tree-matches small{margin-left:6px;color:#b6c4d7}.topology-tree-inspector{width:min(280px,32%);padding:13px;border-radius:11px;background:rgba(30,41,59,.5);color:#e8eef6}.topology-tree-inspector h3{margin:4px 0 13px;color:#fff;font-size:.98rem}.topology-tree-inspector dl{display:grid;gap:9px;margin:0}.topology-tree-inspector dl div{display:grid;gap:2px}.topology-tree-inspector dt{color:#b7c4d6;font:.62rem var(--mono,ui-monospace,monospace);text-transform:uppercase}.topology-tree-inspector dd{margin:0;color:#f1f5f9;font-size:.75rem;overflow-wrap:anywhere}.topology-tree-reference-note{border-top:1px solid rgba(148,163,184,.2);margin:13px 0 0;padding-top:10px;color:#d0d9e6;font-size:.74rem;line-height:1.45}.topology-tree--unavailable{max-width:540px}.topology-tree--unavailable h2{margin:4px 0}.topology-tree--unavailable p{color:#fbbf24;font-family:var(--mono,ui-monospace,monospace)}.topology-tree--unavailable small{color:#c0ccdc}@media (max-width:760px){.topology-tree-layout{flex-direction:column}.topology-tree-inspector{width:auto}.topology-tree-toolbar{align-items:stretch;flex-direction:column}.topology-tree-toolbar input{width:100%}.topology-tree-header{gap:10px;flex-direction:column}.topology-tree-badges{justify-content:flex-start}}
+
+/* AI Operational Advisor (ADR-0024) */
+.ai-advisor-panel {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: rgba(15, 23, 42, 0.7);
+  padding: 1.5rem;
+  display: grid;
+  gap: 1.25rem;
+}
+
+.ai-advisor-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.ai-advisor-header h2 {
+  margin: 0.25rem 0 0.4rem;
+  font-size: 1.3rem;
+  color: #ffffff;
+  background: linear-gradient(135deg, #38bdf8, #818cf8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.ai-advisor-sub {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.ai-advisor-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.ai-epistemic-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 0.85rem 1.15rem;
+  background: rgba(30, 58, 138, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-radius: var(--radius-sm);
+  color: #bfdbfe;
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+
+.ai-epistemic-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.ai-epistemic-banner strong {
+  display: block;
+  color: #93c5fd;
+  margin-bottom: 0.2rem;
+  font-size: 0.78rem;
+}
+
+.ai-epistemic-banner p {
+  margin: 0;
+  color: #cbd5e1;
+}
+
+.ai-suggestion-body {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: rgba(2, 6, 23, 0.6);
+  padding: 1.4rem;
+  display: grid;
+  gap: 1.25rem;
+}
+
+.ai-provider-notice {
+  padding: 0.6rem 0.9rem;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #fcd34d;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.ai-provider-notice span {
+  font-weight: 700;
+}
+
+.ai-provider-notice small {
+  display: block;
+  margin-top: 0.25rem;
+  color: #fde68a;
+  opacity: 0.85;
+}
+
+.ai-narrative-content {
+  color: #e2e8f0;
+  font-size: 0.8rem;
+  line-height: 1.65;
+}
+
+.ai-narrative-heading {
+  margin: 1.2rem 0 0.5rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #38bdf8;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.18);
+  padding-bottom: 0.3rem;
+}
+
+.ai-narrative-heading:first-child {
+  margin-top: 0;
+}
+
+.ai-narrative-item {
+  margin: 0.3rem 0;
+  padding-left: 0.5rem;
+  list-style-type: square;
+  list-style-position: inside;
+}
+
+.ai-narrative-quote {
+  margin: 0.9rem 0;
+  padding: 0.6rem 0.9rem;
+  background: rgba(15, 23, 42, 0.7);
+  border-left: 3px solid #06b6d4;
+  border-radius: 0 6px 6px 0;
+  font-style: italic;
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.ai-narrative-paragraph {
+  margin: 0.45rem 0;
+}
+
+.ai-narrative-spacer {
+  height: 0.5rem;
+}
+
+.ai-claims-section {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 1rem;
+}
+
+.ai-claims-section h4 {
+  margin: 0 0 0.6rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.ai-claims-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-claim-pill {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 4px;
+  padding: 0.3rem 0.6rem;
+}
+
+.ai-advisor-footer {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  font-family: var(--mono);
+}
+
 .workspace-grid--topology{display:block}.topology-workspace{max-width:1200px}.topology-workspace-header{display:flex;align-items:end;justify-content:space-between;gap:14px;margin-bottom:14px}.topology-workspace-header h2{margin:3px 0 0}.topology-workspace-header label{display:grid;gap:5px;color:#94a3b8;font-size:.72rem}.topology-workspace-header select{border:1px solid rgba(148,163,184,.24);border-radius:8px;background:#101827;color:#e5edf8;padding:8px 10px}@media(max-width:760px){.topology-workspace-header{align-items:stretch;flex-direction:column}.topology-workspace-header select{width:100%}}
 .topology-preview{min-height:100vh;padding:clamp(20px,4vw,56px);background:radial-gradient(circle at 15% 0,#173958 0,transparent 34%),#09111e;color:#e8eef6}.topology-preview>header{display:flex;align-items:end;justify-content:space-between;gap:20px;max-width:1200px;margin:0 auto 20px}.topology-preview .kicker{color:#b6e500}.topology-preview h1{margin:4px 0 0;color:#f8fbff;font-size:clamp(1.6rem,3.4vw,2.7rem)}.topology-preview>header label{display:grid;gap:6px;color:#c3cfdf;font-size:.75rem}.topology-preview select{border:1px solid rgba(148,163,184,.35);border-radius:8px;background:#101827;color:#f8fbff;padding:9px 10px}@media(max-width:760px){.topology-preview>header{align-items:stretch;flex-direction:column}}
