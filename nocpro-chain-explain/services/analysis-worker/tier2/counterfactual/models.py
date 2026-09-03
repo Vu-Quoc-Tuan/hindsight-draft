@@ -211,6 +211,7 @@ class CounterfactualCandidate:
     target_chain_id: str | None = None
     merged_chain_ids: tuple[str, str] | None = None
     merge_evidence: CrossChainEvidence | None = None
+    operation_evidence: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -243,6 +244,10 @@ class CandidateEvaluation:
     reason: str | None = None
     move_structural_facts: MoveStructuralFacts | None = None
     semantic_effects: tuple[SemanticEffect, ...] = ()
+    # Exact signed deltas actually calculated by the evaluator: positive means
+    # improvement according to the metric's frozen direction.
+    metric_deltas: dict[str, float] = field(default_factory=dict)
+    external_validation: str = "UNAVAILABLE"
 
 
 @dataclass(frozen=True)
@@ -268,7 +273,9 @@ class CounterfactualResult:
     split: OperationResult
     move: OperationResult
     merge: OperationResult
+    calibration_status: str | None = None
     recommendations: tuple[CandidateEvaluation, ...] = ()
     frontier_count_before_limit: int = 0
     frontier_truncated: bool = False
+    frontier_candidate_ids: tuple[str, ...] = ()
     parameter_provenance: dict[str, str] = field(default_factory=dict)

@@ -480,5 +480,6 @@ class CounterfactualJobView(ApiModel):
     cache_hit: bool
     cache_fingerprint: str
     identity: ReviewIdentityView
-    result: CounterfactualResultView | None
+    # The Counterfactual artifact owns its explicitly versioned nested schema.
+    result: dict[str, object] | None
     error: str | None

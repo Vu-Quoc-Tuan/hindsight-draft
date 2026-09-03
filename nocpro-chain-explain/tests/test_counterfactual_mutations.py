@@ -11,7 +11,9 @@ from configuration import load_analysis_config
 from libs.contracts import load_validated_package
 from tier1b import analyze_chain_configured
 from tier2 import Tier2JobManager
-from tier2.counterfactual import CounterfactualJobManager
+from tier2.counterfactual import CounterfactualJobManager, CounterfactualJobView
+from tier2.counterfactual.jobs import JobStatus
+from tier2.counterfactual.public_contract import public_review_result
 
 
 MOCK_SYNTHETIC = (
@@ -134,6 +136,49 @@ def test_undermerge_mutation_is_an_accepted_pareto_merge_recommendation() -> Non
     assert candidate.candidate.edit_cost.membership_reassignments == 0
     assert candidate.candidate.merge_evidence is not None
     assert candidate.candidate.merge_evidence.cross_audit_edge_count >= 1
+
+
+@pytest.mark.parametrize(
+    "name, expected_operation",
+    [
+        ("counterfactual_remove", "REMOVE_MEMBER"),
+        ("counterfactual_split", "SPLIT_CHAIN"),
+        ("counterfactual_move", "MOVE_MEMBER"),
+        ("counterfactual_merge", "MERGE_CHAINS"),
+    ],
+)
+def test_public_contract_v1_is_persistence_stable_for_each_operation(
+    name: str, expected_operation: str
+) -> None:
+    result, _expected = run_fixture(name)
+    public = public_review_result(result)
+    persisted = CounterfactualJobView(
+        job_id="review-contract-test",
+        chain_id=result.identity.chain_id,
+        identity=result.identity,
+        status=JobStatus.SUCCEEDED,
+        progress_percent=100,
+        cache_hit=False,
+        result=result,
+    ).persistence_payload()["result"]
+
+    assert public == persisted
+    assert public["contract_version"] == "counterfactual-review-v1"
+    assert public["calibration_status"] == "SYNTHETIC_ONLY"
+    assert public["operation_status"]["ADD_MEMBER"]["status"] == "BLOCKED"
+    assert public["operation_status"]["ADD_MEMBER"]["reason"] == "UNKNOWN_UPSTREAM_SEMANTICS"
+    candidate_ids = [item["candidate_id"] for item in public["evaluated_candidates"]]
+    assert len(candidate_ids) == len(set(candidate_ids))
+    assert all(
+        item["candidate_id"] in candidate_ids for item in public["recommendations"]
+    )
+    expected = next(
+        item for item in public["evaluated_candidates"] if item["operation"] == expected_operation
+    )
+    assert expected["metric_deltas"]
+    assert expected["hard_gate_result"]["status"] == "PASSED"
+    assert expected["pareto_state"] == "FRONTIER_SELECTED"
+    assert expected["external_validation"] == "UNAVAILABLE"
 
 
 def test_clean_truth_partition_abstains() -> None:

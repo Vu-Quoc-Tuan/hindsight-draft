@@ -124,6 +124,7 @@ def analyze_counterfactual_review(
             split=_operation_unavailable(Operation.SPLIT_CHAIN, reason, None),
             move=_operation_unavailable(Operation.MOVE_MEMBER, reason, None),
             merge=_operation_unavailable(Operation.MERGE_CHAINS, reason, None),
+            calibration_status=None,
         )
 
     if chain.member_count > config.max_chain_members:
@@ -145,6 +146,7 @@ def analyze_counterfactual_review(
             merge=_operation_unavailable(
                 Operation.MERGE_CHAINS, reason, config.max_merge_candidates
             ),
+            calibration_status=config.calibration_status.value,
         )
 
     members = tuple(package.members_of(chain_id))
@@ -222,6 +224,11 @@ def analyze_counterfactual_review(
                     ),
                     externally_supported=(
                         candidate.candidate_id in external.supported_candidate_ids
+                    ),
+                    external_validation_available=(external_artifact is not None),
+                    external_validation_conflict=(
+                        candidate.candidate_id in external.supported_candidate_ids
+                        and candidate.candidate_id in external.contradicted_candidate_ids
                     ),
                 )
             )
@@ -334,6 +341,7 @@ def analyze_counterfactual_review(
             split=split_result,
             move=move_result,
             merge=merge_result,
+            calibration_status=config.calibration_status.value,
         )
 
     frontier = select_frontier(all_evaluations, config)
@@ -351,7 +359,11 @@ def analyze_counterfactual_review(
         split=split_result,
         move=move_result,
         merge=merge_result,
+        calibration_status=config.calibration_status.value,
         recommendations=frontier.items,
         frontier_count_before_limit=frontier.count_before_limit,
         frontier_truncated=frontier.truncated,
+        frontier_candidate_ids=tuple(
+            item.candidate.candidate_id for item in frontier.all_items
+        ),
     )

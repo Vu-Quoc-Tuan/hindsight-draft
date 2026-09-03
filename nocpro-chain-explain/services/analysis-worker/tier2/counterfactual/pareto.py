@@ -12,6 +12,7 @@ from .models import CandidateEvaluation, CandidateStatus, Operation
 @dataclass(frozen=True)
 class FrontierResult:
     items: tuple[CandidateEvaluation, ...]
+    all_items: tuple[CandidateEvaluation, ...]
     count_before_limit: int
     truncated: bool
 
@@ -67,6 +68,7 @@ def select_frontier(
     ordered = tuple(sorted(frontier, key=_frontier_order))
     return FrontierResult(
         items=ordered[: config.max_recommendations],
+        all_items=ordered,
         count_before_limit=len(ordered),
         truncated=len(ordered) > config.max_recommendations,
     )

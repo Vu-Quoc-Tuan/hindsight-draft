@@ -147,6 +147,12 @@ def generate_remove_candidates(
                 edit_cost=EditCost(1, 1, len(canonical_members)),
                 source_ref="remove-trigger:" + ",".join(triggered[alarm_id]),
                 member_ids=(alarm_id,),
+                source_chain_id=chain_id,
+                operation_evidence={
+                    "alarm_id": alarm_id,
+                    "source_chain_id": chain_id,
+                    "triggers": list(triggered[alarm_id]),
+                },
             )
         )
     return CandidateBatch(
@@ -243,6 +249,12 @@ def generate_move_candidates(
                 member_ids=(alarm_id,),
                 source_chain_id=source_chain_id,
                 target_chain_id=target_chain_id,
+                operation_evidence={
+                    "alarm_id": alarm_id,
+                    "source_chain_id": source_chain_id,
+                    "target_chain_id": target_chain_id,
+                    "triggers": list(reasons),
+                },
             )
             if margin_value is not None and float(margin_value) < 0:
                 margin_state = 0
@@ -343,6 +355,11 @@ def generate_merge_candidates(
             member_ids=(),
             merged_chain_ids=pair,
             merge_evidence=evidence,
+            operation_evidence={
+                "merged_chain_ids": list(pair),
+                "resulting_chain_id": merged_chain_id,
+                "cross_chain_evidence": evidence.as_payload(),
+            },
         )
         discovered.append(
             (
@@ -449,6 +466,20 @@ def generate_split_candidates(
                 edit_cost=EditCost(1, 0, len(canonical_members)),
                 source_ref=f"audit-cut:{label}:phi={phi:.12g}",
                 member_ids=min(left, right),
+                source_chain_id=chain_id,
+                operation_evidence={
+                    "original_chain_id": chain_id,
+                    "resulting_chain_ids": [
+                        f"{chain_id}::split::0",
+                        f"{chain_id}::split::1",
+                    ],
+                    "audit_cut": {
+                        "label": label,
+                        "conductance": phi,
+                        "member_sets": [list(left), list(right)],
+                        "provenance": "EXACT_STRUCTURAL_AUDIT",
+                    },
+                },
             )
         )
     return CandidateBatch(

@@ -43,14 +43,25 @@ def test_review_submit_poll_and_compatible_lookup() -> None:
                 assert completed["identity"]["snapshot_id"] == "s1"
                 assert completed["identity"]["snapshot_version"] == "1"
                 assert completed["result"]["status"] == "UNAVAILABLE"
+                assert completed["result"]["contract_version"] == "counterfactual-review-v1"
+                assert completed["result"]["calibration_status"] is None
                 assert (
                     completed["result"]["reason"]
                     == "COUNTERFACTUAL_CONFIG_INCOMPLETE"
                 )
-                assert completed["result"]["remove"]["status"] == "UNAVAILABLE"
-                assert completed["result"]["split"]["status"] == "UNAVAILABLE"
-                assert completed["result"]["move"]["status"] == "UNAVAILABLE"
-                assert completed["result"]["merge"]["status"] == "UNAVAILABLE"
+                operations = completed["result"]["operation_status"]
+                assert operations["REMOVE_MEMBER"]["status"] == "UNAVAILABLE"
+                assert operations["SPLIT_CHAIN"]["status"] == "UNAVAILABLE"
+                assert operations["MOVE_MEMBER"]["status"] == "UNAVAILABLE"
+                assert operations["MERGE_CHAINS"]["status"] == "UNAVAILABLE"
+                assert operations["ADD_MEMBER"] == {
+                    "status": "BLOCKED",
+                    "reason": "UNKNOWN_UPSTREAM_SEMANTICS",
+                    "search_mode": "NOT_RUN",
+                    "candidate_count": 0,
+                    "evaluated_count": 0,
+                    "ceiling": None,
+                }
 
                 latest = await client.get("/api/v1/chains/C1/review")
                 assert latest.status_code == 200

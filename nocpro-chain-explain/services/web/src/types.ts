@@ -253,7 +253,7 @@ export type CounterfactualMetricVector = {
 
 export type CounterfactualCandidate = {
   candidate_id: string
-  operation: 'REMOVE_MEMBER' | 'SPLIT_CHAIN' | 'MOVE_MEMBER' | 'MERGE_CHAINS'
+  operation: 'REMOVE_MEMBER' | 'SPLIT_CHAIN' | 'MOVE_MEMBER' | 'MERGE_CHAINS' | 'ADD_MEMBER'
   member_ids: string[]
   source_chain_id: string | null
   target_chain_id: string | null
@@ -294,11 +294,24 @@ export type CounterfactualCandidate = {
     after_blocks_supported: number
   } | null
   semantic_effects: string[]
+  before_metrics?: CounterfactualMetricVector | null
+  after_metrics?: CounterfactualMetricVector | null
+  structural_facts?: {
+    before_structural_role: string
+    after_structural_role: string
+    after_is_articulation_point: boolean
+    after_blocks_supported: number
+  } | null
+  operation_specific_evidence?: Record<string, unknown>
+  metric_deltas?: Record<string, number>
+  hard_gate_result?: { status: string; reason: string | null }
+  pareto_state?: string
+  external_validation?: string
 }
 
 export type CounterfactualOperation = {
-  operation: 'REMOVE_MEMBER' | 'SPLIT_CHAIN' | 'MOVE_MEMBER' | 'MERGE_CHAINS'
-  status: 'AVAILABLE' | 'UNAVAILABLE' | 'NOT_APPLICABLE'
+  operation: 'REMOVE_MEMBER' | 'SPLIT_CHAIN' | 'MOVE_MEMBER' | 'MERGE_CHAINS' | 'ADD_MEMBER'
+  status: 'AVAILABLE' | 'UNAVAILABLE' | 'NOT_APPLICABLE' | 'BLOCKED'
   reason: string | null
   search_mode: 'BOUNDED' | 'NOT_RUN'
   discovered_candidate_count: number
@@ -309,6 +322,8 @@ export type CounterfactualOperation = {
 }
 
 export type CounterfactualResult = {
+  contract_version?: string
+  calibration_status?: string | null
   identity: {
     snapshot_id: string
     snapshot_version: string
@@ -332,6 +347,16 @@ export type CounterfactualResult = {
   frontier_count_before_limit: number
   frontier_truncated: boolean
   parameter_provenance: Record<string, string>
+  operation_status?: Record<string, {
+    status: string
+    reason: string | null
+    search_mode: string
+    candidate_count: number
+    evaluated_count: number
+    ceiling: number | null
+  }>
+  evaluated_candidates?: CounterfactualCandidate[]
+  frontier?: { count_before_limit: number; selected_count: number; truncated: boolean }
 }
 
 export type CounterfactualJob = {

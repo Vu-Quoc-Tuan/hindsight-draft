@@ -18,6 +18,7 @@ from tier2.jobs import JobStatus
 
 from .analysis import analyze_counterfactual_review
 from .models import ExternalValidationArtifact, ReviewIdentity
+from .public_contract import public_review_result
 
 
 ENGINE_VERSION = "counterfactual-p1-v1"
@@ -131,7 +132,11 @@ class CounterfactualJobView:
             "progress_percent": self.progress_percent,
             "cache_hit": self.cache_hit,
             "identity": _jsonable(self.identity),
-            "result": _jsonable(self.result) if self.result is not None else None,
+            "result": (
+                public_review_result(self.result)
+                if self.result is not None
+                else None
+            ),
             "error": self.error,
         }
 

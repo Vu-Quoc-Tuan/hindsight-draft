@@ -295,7 +295,7 @@ def compare_before_after(
     before: MetricVector,
     after: MetricVector,
     config: CounterfactualConfig,
-) -> tuple[CandidateStatus, tuple[str, ...], str | None]:
+) -> tuple[CandidateStatus, tuple[str, ...], str | None, dict[str, float]]:
     deltas: dict[str, float] = {}
     for name in _METRIC_NAMES:
         old = getattr(before, name)
@@ -308,16 +308,17 @@ def compare_before_after(
                 CandidateStatus.HARD_GATE_REJECTED,
                 (),
                 "REQUIRED_METRIC_UNAVAILABLE",
+                deltas,
             )
         assert old.value is not None and new.value is not None
         deltas[name] = _delta_for_metric(name, old.value, new.value)
 
     if int(after.eligible_external_contradiction_count.value or 0) > 0:
-        return CandidateStatus.EXTERNALLY_CONTRADICTED, (), "EXTERNAL_CONTRADICTION"
+        return CandidateStatus.EXTERNALLY_CONTRADICTED, (), "EXTERNAL_CONTRADICTION", deltas
     if deltas["audit_verdict_severity"] < 0:
-        return CandidateStatus.HARD_GATE_REJECTED, (), "AUDIT_SEVERITY_WORSENED"
+        return CandidateStatus.HARD_GATE_REJECTED, (), "AUDIT_SEVERITY_WORSENED", deltas
     if any(delta < -config.pareto_tolerance for delta in deltas.values()):
-        return CandidateStatus.HARD_GATE_REJECTED, (), "PARETO_METRIC_WORSENED"
+        return CandidateStatus.HARD_GATE_REJECTED, (), "PARETO_METRIC_WORSENED", deltas
 
     improved = tuple(
         name
@@ -325,8 +326,8 @@ def compare_before_after(
         if deltas[name] >= _minimum_improvement(name, config)
     )
     if not improved:
-        return CandidateStatus.HARD_GATE_REJECTED, (), "NO_MATERIAL_IMPROVEMENT"
-    return CandidateStatus.BETTER_SUPPORTED, improved, None
+        return CandidateStatus.HARD_GATE_REJECTED, (), "NO_MATERIAL_IMPROVEMENT", deltas
+    return CandidateStatus.BETTER_SUPPORTED, improved, None, deltas
 
 
 def evaluate_candidate(
@@ -339,6 +340,8 @@ def evaluate_candidate(
     metric_computer: MetricComputer | None = None,
     eligible_external_contradiction_count: int = 0,
     externally_supported: bool = False,
+    external_validation_available: bool = False,
+    external_validation_conflict: bool = False,
 ) -> CandidateEvaluation:
     before_chain_ids = tuple(chain_id for chain_id, _ in candidate.partition_delta.before)
     after_chain_ids = tuple(chain_id for chain_id, _ in candidate.partition_delta.after)
@@ -381,7 +384,11 @@ def evaluate_candidate(
                 ),
             )
 
-    status, improved, reason = compare_before_after(before, after, config)
+    status, improved, reason, metric_deltas = compare_before_after(before, after, config)
+    if external_validation_conflict:
+        status = CandidateStatus.HARD_GATE_REJECTED
+        improved = ()
+        reason = "EXTERNAL_VALIDATION_CONFLICT"
     if status is CandidateStatus.BETTER_SUPPORTED and externally_supported:
         status = CandidateStatus.EXTERNALLY_SUPPORTED
     semantic_effects: tuple[SemanticEffect, ...] = ()
@@ -402,6 +409,18 @@ def evaluate_candidate(
         reason=reason,
         move_structural_facts=structural_facts,
         semantic_effects=semantic_effects,
+        metric_deltas=metric_deltas,
+        external_validation=(
+            "UNAVAILABLE"
+            if not external_validation_available
+            else "NOT_APPLIED"
+            if status is CandidateStatus.HARD_GATE_REJECTED
+            else "CONTRADICTED"
+            if reason == "EXTERNAL_CONTRADICTION"
+            else "SUPPORTED"
+            if externally_supported
+            else "NO_FINDING"
+        ),
     )
 
 

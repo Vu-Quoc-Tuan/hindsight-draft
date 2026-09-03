@@ -8,6 +8,7 @@ from channels import ChannelValue
 from tier1b import ChainAnalysis
 from tier2 import Tier2JobView
 from tier2.counterfactual import CounterfactualJobView as DomainCounterfactualJobView
+from tier2.counterfactual.public_contract import public_review_result
 from tier2.topology_hypotheses import (
     DependencyScopeResult,
     DominatorResult,
@@ -194,7 +195,7 @@ def counterfactual_job_view(job) -> CounterfactualJobView:
             "cache_fingerprint": job.cache_fingerprint,
             "identity": asdict(job.identity),
             "result": (
-                counterfactual_result_view(job.result)
+                public_review_result(job.result)
                 if job.result is not None
                 else None
             ),
