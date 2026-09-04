@@ -127,8 +127,8 @@ async def publish_snapshot(
         enable_idempotence=True,
         max_request_size=max(4 * 1024 * 1024, config.chunk_target_bytes * 2),
     )
-    await producer.start()
     try:
+        await producer.start()
         for event in batch.events:
             await producer.send_and_wait(
                 config.topic,

@@ -20,6 +20,7 @@ from ..contract import (
     MockSnapshotPackage,
     ProvenanceClass,
     ProvenanceManifest,
+    QualityFlag,
     Snapshot,
     SnapshotStatus,
     SourceKind,
@@ -27,7 +28,7 @@ from ..contract import (
     SystemMetadata,
     package_to_json,
 )
-from ..loaders.alarm_csv import AlarmCsvLoader, AlarmRecord
+from ..loaders.alarm_csv import AlarmCsvLoader, AlarmRecord, parse_timestamp
 from ..normalize.alarms import build_chains, normalize_alarm
 
 
@@ -47,18 +48,6 @@ class SlicedSequenceSummary:
     window_minutes: int
 
 
-def _parse_time(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    val = value.strip().split(".")[0]
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%d-%m-%Y %H:%M:%S"):
-        try:
-            dt = datetime.strptime(val, fmt)
-            return dt.replace(tzinfo=timezone.utc)
-        except ValueError:
-            continue
-    return None
-
 
 def slice_alarm_sequence(
     *,
@@ -73,6 +62,14 @@ def slice_alarm_sequence(
     source_kind: SourceKind = SourceKind.REAL_EXPORT_REPLAY,
 ) -> SlicedSequenceSummary:
     """Slice alarms into consecutive snapshot packages and save sequence directory."""
+    if num_snapshots < 1:
+        raise ValueError("num_snapshots must be >= 1")
+    if step_minutes < 1:
+        raise ValueError("step_minutes must be >= 1")
+    if window_minutes < 1:
+        raise ValueError("window_minutes must be >= 1")
+    if max_chains_per_snapshot is not None and max_chains_per_snapshot < 1:
+        raise ValueError("max_chains_per_snapshot must be >= 1 when provided")
     csv_p = Path(alarm_csv_path)
     if not csv_p.exists():
         raise FileNotFoundError(f"Alarm CSV export file not found: {csv_p}")
@@ -83,15 +80,35 @@ def slice_alarm_sequence(
     loader = AlarmCsvLoader(csv_p)
     all_records: list[tuple[datetime, datetime, AlarmRecord]] = []
 
-    # Read records and parse their [start_time, end_time]
+    # Read records and sanitize their [start_time, end_time] using canonical loader fields and flags
     for r in loader.iter_records():
-        start = _parse_time(r.raw.get("cah.start_time")) or _parse_time(r.raw.get("cah.create_time"))
-        if not start:
+        if QualityFlag.TIMESTAMP_FUTURE_OUTLIER.value in r.quality_flags:
             continue
-        end = _parse_time(r.raw.get("end_time"))
-        if not end or end <= start or (end - start).total_seconds() > 86400 * 7:
-            # Default active duration if missing or invalid: 30 minutes
+
+        start = r.canonical_start_time
+        if start is None and r.raw.get("cah.create_time"):
+            start = parse_timestamp(r.raw.get("cah.create_time"))
+
+        if not start or start.year >= loader.future_year_threshold:
+            continue
+
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+
+        end = r.canonical_end_time
+        if end is not None and end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+
+        if (
+            not end
+            or end.year >= loader.future_year_threshold
+            or QualityFlag.END_BEFORE_START.value in r.quality_flags
+            or end <= start
+            or (end - start).total_seconds() > 86400 * 7
+        ):
+            # Default active duration if missing, reversed, or invalid: 30 minutes
             end = start + timedelta(minutes=30)
+
         all_records.append((start, end, r))
 
     if not all_records:
@@ -126,7 +143,7 @@ def slice_alarm_sequence(
         if max_chains_per_snapshot:
             allowed_chains = {r.chaining_id for r in active_records}
             if len(allowed_chains) > max_chains_per_snapshot:
-                sampled_chains = set(list(allowed_chains)[:max_chains_per_snapshot])
+                sampled_chains = set(sorted(allowed_chains)[:max_chains_per_snapshot])
                 active_records = [r for r in active_records if r.chaining_id in sampled_chains]
 
         snap_id = f"{scenario_id}_snap_{idx:03d}"
@@ -162,7 +179,9 @@ def slice_alarm_sequence(
                 status=SnapshotStatus.COMPLETE,
                 source=DERIVED_REPLAY_SOURCE,
                 source_kind=source_kind,
-                produced_at=datetime.now(timezone.utc).isoformat(),
+                # Derived replay has no upstream production timestamp.  Pin
+                # this to snapshot time so equal inputs serialize identically.
+                produced_at=snap_time_str,
             ),
             alarms=alarms,
             chains=chains,

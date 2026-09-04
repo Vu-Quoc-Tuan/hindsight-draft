@@ -72,3 +72,73 @@ def test_cli_slice_sequence(tmp_path: Path, sample_alarm_csv: Path) -> None:
     assert exit_code == 0
     assert (out_dir / "sequence.yaml").exists()
     assert (out_dir / "snapshot_002.json").exists()
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"num_snapshots": 0}, "num_snapshots"),
+        ({"step_minutes": 0}, "step_minutes"),
+        ({"window_minutes": 0}, "window_minutes"),
+        ({"max_chains_per_snapshot": 0}, "max_chains_per_snapshot"),
+    ],
+)
+def test_slice_alarm_sequence_rejects_invalid_bounds(
+    tmp_path: Path,
+    sample_alarm_csv: Path,
+    kwargs: dict[str, int],
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        slice_alarm_sequence(
+            alarm_csv_path=sample_alarm_csv,
+            output_dir=tmp_path / "invalid",
+            **kwargs,
+        )
+
+
+def test_slice_alarm_sequence_is_deterministic_when_chains_are_bounded(
+    tmp_path: Path,
+    sample_alarm_csv: Path,
+) -> None:
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    kwargs = {
+        "alarm_csv_path": sample_alarm_csv,
+        "scenario_id": "deterministic",
+        "num_snapshots": 2,
+        "step_minutes": 5,
+        "window_minutes": 20,
+        "max_chains_per_snapshot": 2,
+    }
+    slice_alarm_sequence(output_dir=first, **kwargs)
+    slice_alarm_sequence(output_dir=second, **kwargs)
+
+    assert (first / "sequence.yaml").read_bytes() == (second / "sequence.yaml").read_bytes()
+    assert (first / "snapshot_000.json").read_bytes() == (second / "snapshot_000.json").read_bytes()
+
+
+def test_slice_alarm_sequence_sanitizes_dirty_and_future_timestamps(tmp_path: Path) -> None:
+    csv_file = tmp_path / "dirty_alarms.csv"
+    csv_file.write_text(
+        'cah.id,chaining_id,alarm_name,fault_id,group_name,cah.start_time,cah.create_time,end_time\n'
+        '1,100,Valid Alarm,47933128,Core Event,2026-08-01 10:00:00,2026-08-01 10:00:00,2026-08-01 10:20:00\n'
+        '2,100,Future 2098 Outlier,715054,Core Power,2098-08-01 10:05:00,2098-08-01 10:05:00,2098-08-01 10:25:00\n'
+        '3,101,End Before Start,47933081,Core Event,2026-08-01 10:10:00,2026-08-01 10:10:00,2026-08-01 09:00:00\n',
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "dirty_out"
+    summary = slice_alarm_sequence(
+        alarm_csv_path=csv_file,
+        output_dir=out_dir,
+        scenario_id="dirty_test",
+        num_snapshots=3,
+        step_minutes=5,
+        window_minutes=15,
+    )
+    # The year 2098 alarm should be completely omitted from distinct alarms
+    assert summary.total_distinct_alarms == 2
+    package = parse_package(json.loads((out_dir / "snapshot_002.json").read_text(encoding="utf-8")))
+    alarm_ids = {a.alarm_id for a in package.alarms}
+    assert "2" not in alarm_ids
+    assert "3" in alarm_ids

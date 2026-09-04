@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import base64
+import asyncio
 import json
+from unittest.mock import patch
 
+import pytest
 import zstandard
 
 from nocpro_mock.contract import package_to_dict
@@ -13,6 +16,7 @@ from nocpro_mock.producer.kafka_snapshot import (
     KafkaSnapshotConfig,
     build_snapshot_wire_batch,
     encode_event,
+    publish_snapshot,
     sha256_hex,
 )
 from nocpro_mock.replay import build_golden_snapshot
@@ -95,3 +99,26 @@ def test_kafka_round_trip_preserves_independent_topology_and_generator_versions(
     sources = {item["source_id"]: item for item in payload["provenance_manifest"]["sources"]}
     assert sources["synthetic-topology"]["source_version"] == "syn-topo-hierarchy-v1"
     assert payload["provenance_manifest"]["generator_version"] == "mockgen-transport-v4"
+
+
+def test_publish_snapshot_stops_producer_when_start_fails(config):
+    package = build_golden_snapshot(config=config)
+
+    class FailingProducer:
+        instance = None
+
+        def __init__(self, **_kwargs):
+            type(self).instance = self
+            self.stopped = False
+
+        async def start(self):
+            raise OSError("Kafka unavailable")
+
+        async def stop(self):
+            self.stopped = True
+
+    with patch("nocpro_mock.producer.kafka_snapshot.AIOKafkaProducer", FailingProducer):
+        with pytest.raises(OSError, match="Kafka unavailable"):
+            asyncio.run(publish_snapshot(package, bootstrap_servers="unreachable:9092"))
+    assert FailingProducer.instance is not None
+    assert FailingProducer.instance.stopped is True
