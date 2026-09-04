@@ -212,13 +212,21 @@ def build_fingerprint(
     top_descriptor_predicates: int = DEFAULT_TOP_DESCRIPTOR_PREDICATES,
     size_bin_edges: tuple[int, ...] = DEFAULT_SIZE_BINS,
     duration_bin_edges: tuple[int, ...] = DEFAULT_DURATION_BINS,
+    include_taxonomy_terms: bool = True,
 ) -> ChainFingerprint:
     """Build a chain's fingerprint from its members and mined descriptors."""
-    family_terms = [
-        term.namespaced
-        for alarm in alarms
-        if (term := _family_term(alarm, taxonomy)) is not None
-    ]
+    # A caller that declares taxonomy unavailable must not let raw
+    # alarm_type/group/fault fields reappear as an implicit taxonomy vector.
+    # The remaining fingerprint blocks are still exact source facts.
+    family_terms = (
+        [
+            term.namespaced
+            for alarm in alarms
+            if (term := _family_term(alarm, taxonomy)) is not None
+        ]
+        if include_taxonomy_terms
+        else []
+    )
     device_terms = [
         term for alarm in alarms if (term := _device_type_term(alarm)) is not None
     ]

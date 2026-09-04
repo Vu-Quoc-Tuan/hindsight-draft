@@ -385,6 +385,33 @@ def test_unavailable_taxonomy_keeps_other_fingerprint_blocks_usable():
     }
 
 
+def test_unavailable_taxonomy_does_not_reintroduce_raw_export_terms():
+    fingerprint = build_fingerprint(
+        "T",
+        [
+            alarm(
+                "a1",
+                alarm_name="Observed source alarm",
+                alarm_type_name="RAW_TYPE",
+                group_name="RAW_GROUP",
+                fault_id="123",
+                device_type_name="ROUTER",
+            )
+        ],
+        include_taxonomy_terms=False,
+    )
+
+    assert fingerprint.family_terms.counts == {}
+    model = fit_fingerprint_model(
+        [fingerprint],
+        model_version="sim-no-unverified-taxonomy",
+        taxonomy_status=TaxonomyStatus.UNAVAILABLE,
+        taxonomy_reason="ALARM_TAXONOMY_NOT_USED_BY_SOURCE",
+    )
+    assert model.taxonomy_status is TaxonomyStatus.UNAVAILABLE
+    assert fingerprint.device_type_terms.counts == {"ROUTER": 1}
+
+
 def test_unavailable_taxonomy_rejects_fake_or_contradictory_terms():
     with pytest.raises(ValueError, match="taxonomy terms are present"):
         fit_fingerprint_model(
@@ -510,7 +537,7 @@ def test_similar_chains_on_real_snapshot():
 
     from tests.conftest import MOCK_ROOT
 
-    if not (MOCK_ROOT / "datasets/raw/alarm_data.csv").is_file():
+    if not (MOCK_ROOT / "datasets/raw/alarm/alarm_data.csv").is_file():
         pytest.skip("real alarm export not present")
     venv = MOCK_ROOT / ".venv/bin/python"
     interpreter = str(venv) if venv.is_file() else sys.executable

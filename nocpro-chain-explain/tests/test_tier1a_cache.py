@@ -285,7 +285,7 @@ def test_precompute_respects_max_chains():
 
 @pytest.mark.realdata
 def test_precompute_on_real_snapshot():
-    if not (MOCK_ROOT / "datasets/raw/alarm_data.csv").is_file():
+    if not (MOCK_ROOT / "datasets/raw/alarm/alarm_data.csv").is_file():
         pytest.skip("real alarm export not present")
     venv = MOCK_ROOT / ".venv/bin/python"
     interpreter = str(venv) if venv.is_file() else sys.executable

@@ -32,7 +32,7 @@ THRESHOLDS = RoleThresholds(config_version="e2e-v1")
 
 
 def _replay(chain_id: str):
-    if not (MOCK_ROOT / "datasets/raw/alarm_data.csv").is_file():
+    if not (MOCK_ROOT / "datasets/raw/alarm/alarm_data.csv").is_file():
         pytest.skip("real alarm export not present")
     venv_python = MOCK_ROOT / ".venv/bin/python"
     interpreter = str(venv_python) if venv_python.is_file() else sys.executable

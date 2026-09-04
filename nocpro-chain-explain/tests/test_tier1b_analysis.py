@@ -408,7 +408,7 @@ def test_unknown_chain_raises(two_chain_package):
 
 @pytest.mark.realdata
 def test_analysis_on_real_snapshot():
-    if not (MOCK_ROOT / "datasets/raw/alarm_data.csv").is_file():
+    if not (MOCK_ROOT / "datasets/raw/alarm/alarm_data.csv").is_file():
         pytest.skip("real alarm export not present")
     venv = MOCK_ROOT / ".venv/bin/python"
     interpreter = str(venv) if venv.is_file() else sys.executable
@@ -557,7 +557,7 @@ def test_near_duplicate_does_not_preclude_core():
 
 @pytest.mark.realdata
 def test_real_snapshot_produces_membership_and_redundancy_without_tier2_audit():
-    if not (MOCK_ROOT / "datasets/raw/alarm_data.csv").is_file():
+    if not (MOCK_ROOT / "datasets/raw/alarm/alarm_data.csv").is_file():
         pytest.skip("real alarm export not present")
     venv = MOCK_ROOT / ".venv/bin/python"
     interpreter = str(venv) if venv.is_file() else sys.executable
@@ -674,7 +674,7 @@ def test_no_candidates_means_empty_margins():
 
 @pytest.mark.realdata
 def test_top_3_margins_on_real_snapshot():
-    if not (MOCK_ROOT / "datasets/raw/alarm_data.csv").is_file():
+    if not (MOCK_ROOT / "datasets/raw/alarm/alarm_data.csv").is_file():
         pytest.skip("real alarm export not present")
     venv = MOCK_ROOT / ".venv/bin/python"
     interpreter = str(venv) if venv.is_file() else sys.executable

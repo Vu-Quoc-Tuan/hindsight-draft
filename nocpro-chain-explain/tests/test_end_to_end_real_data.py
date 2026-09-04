@@ -21,6 +21,11 @@ from graybox import (
     operation_status,
     render_system_fact_box,
 )
+from channels.dependency import (
+    ResourceResolver,
+    build_topology_graph,
+    evaluate_dep_hop_channel,
+)
 from libs.contracts import load_package
 from tests.conftest import MOCK_ROOT
 
@@ -30,12 +35,14 @@ pytestmark = pytest.mark.realdata
 SINGLETON_CHAIN = "3263265"
 #: The largest observed chain: 1,072 members.
 LARGEST_CHAIN = "6907125"
+# A real alarmIP chain containing two devices that are direct topoIP neighbors.
+IP_ADJACENCY_CHAIN = "6912465"
 
 
 def _run_mock(*args: str):
     if not MOCK_ROOT.is_dir():
         pytest.skip("sibling nocpro-mock repo not present")
-    if not (MOCK_ROOT / "datasets/raw/alarm_data.csv").is_file():
+    if not (MOCK_ROOT / "datasets/raw/alarm/alarm_data.csv").is_file():
         pytest.skip("real alarm export not present")
     venv_python = MOCK_ROOT / ".venv/bin/python"
     interpreter = str(venv_python) if venv_python.is_file() else sys.executable
@@ -109,3 +116,37 @@ def test_topology_unavailable_capabilities_reach_explain(largest_chain_package):
     unavailable = largest_chain_package.unavailable_capabilities
     assert unavailable
     assert any("TOPO_IT" in cap for cap in unavailable)
+
+
+def test_real_ip_replay_exact_mapping_can_supply_undirected_dep_hop():
+    """Exact IP identity plus adjacency is usable proximity evidence, not P2 direction."""
+    if not (MOCK_ROOT / "datasets/raw/alarm/alarmIP.csv").is_file():
+        pytest.skip("real IP alarm export not present")
+    if not (MOCK_ROOT / "datasets/raw/topo/topoIP.csv").is_file():
+        pytest.skip("real IP topology export not present")
+
+    package = _run_mock(
+        "replay",
+        "--alarm-csv",
+        "datasets/raw/alarm/alarmIP.csv",
+        "--topo-ip",
+        "datasets/raw/topo/topoIP.csv",
+        "--with-topology",
+        "--chain-id",
+        IP_ADJACENCY_CHAIN,
+        "--snapshot-id",
+        "s_ip_topology",
+    )
+    members = package.members_of(IP_ADJACENCY_CHAIN)
+    graph = build_topology_graph(package)
+    resolver = ResourceResolver.from_package(package)
+
+    values = [
+        evaluate_dep_hop_channel(package.alarms[left], package.alarms[right], graph=graph, resolver=resolver)
+        for index, left in enumerate(members)
+        for right in members[index + 1 :]
+    ]
+
+    assert graph.unavailable_reason is None
+    assert all(edge.get("source_version") for edge in package.topology["edges"])
+    assert any(value.availability for value in values)

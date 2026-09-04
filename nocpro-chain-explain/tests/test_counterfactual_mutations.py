@@ -207,3 +207,11 @@ def test_partition_benchmark_metrics_are_label_invariant() -> None:
     renamed = ["left", "left", "right", "right"]
     assert adjusted_rand_index(truth, renamed) == pytest.approx(1.0)
     assert adjusted_mutual_info(truth, renamed) == pytest.approx(1.0)
+
+
+def test_partition_benchmark_ami_is_label_invariant_for_one_cluster() -> None:
+    """A MERGE may create a fresh counterfactual chain ID for one cluster."""
+    assert adjusted_mutual_info(
+        ["truth-merged", "truth-merged", "truth-merged"],
+        ["CF-MERGE-123", "CF-MERGE-123", "CF-MERGE-123"],
+    ) == pytest.approx(1.0)

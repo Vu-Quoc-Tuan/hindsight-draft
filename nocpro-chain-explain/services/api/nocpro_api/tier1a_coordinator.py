@@ -249,6 +249,10 @@ class Tier1ACoordinator:
                             "similar_chains.top_descriptor_predicates"
                         )
                     ),
+                    # Current source exports do not carry an authoritative
+                    # Similar-Chains taxonomy.  Do not reinterpret their raw
+                    # fields as one while the persisted model says unavailable.
+                    include_taxonomy_terms=False,
                 )
                 current_fingerprints.append(
                     TimedChainFingerprint(
