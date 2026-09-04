@@ -364,6 +364,10 @@ class SnapshotRepository:
                     )
                 ).all()
             )
+        source_by_snapshot = {
+            (row.snapshot_id, row.snapshot_version): row.source_kind
+            for row in snapshot_rows
+        }
         production_validation = _sequence_production_validation(snapshot_rows)
         return StoredEvolution(
             status="AVAILABLE",
@@ -592,7 +596,7 @@ class SnapshotRepository:
     async def persist_operator_feedback(
         self, payload: dict[str, Any]
     ) -> StoredOperatorFeedback:
-        async with self._session_factory() as session:
+        async with self.sessions() as session:
             statement = (
                 pg_insert(OperatorFeedbackRecord)
                 .values(
@@ -631,31 +635,31 @@ class SnapshotRepository:
     async def get_operator_feedback(
         self, feedback_id: str
     ) -> StoredOperatorFeedback | None:
-        async with self._session_factory() as session:
+        async with self.sessions() as session:
             row = await session.get(OperatorFeedbackRecord, feedback_id)
             return self._stored_feedback(row) if row is not None else None
 
     async def operator_feedback_for_job(
         self, job_id: str
     ) -> list[StoredOperatorFeedback]:
-        async with self._session_factory() as session:
+        async with self.sessions() as session:
             result = await session.scalars(
                 select(OperatorFeedbackRecord)
                 .where(OperatorFeedbackRecord.job_id == job_id)
                 .order_by(OperatorFeedbackRecord.created_at.asc())
             )
-            return [self._stored_feedback(row) for row in result]
+            return [self._stored_feedback(row) for row in result.all()]
 
     async def operator_feedback_for_chain(
         self, chain_id: str
     ) -> list[StoredOperatorFeedback]:
-        async with self._session_factory() as session:
+        async with self.sessions() as session:
             result = await session.scalars(
                 select(OperatorFeedbackRecord)
                 .where(OperatorFeedbackRecord.chain_id == chain_id)
                 .order_by(OperatorFeedbackRecord.created_at.asc())
             )
-            return [self._stored_feedback(row) for row in result]
+            return [self._stored_feedback(row) for row in result.all()]
 
     @staticmethod
     def _stored_feedback(

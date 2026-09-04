@@ -146,15 +146,34 @@ describe('CounterfactualReview', () => {
     expect(html).toContain('2 supported blocks')
   })
 
-  it('renders interactive operator feedback buttons for unevaluated proposals', () => {
-    const html = renderToStaticMarkup(<CounterfactualReview chainId="C1" initialJob={job} />)
+  it('renders interactive operator feedback buttons only for Pareto recommendations', () => {
+    const recommendedJob: CounterfactualJob = {
+      ...job,
+      result: job.result
+        ? {
+            ...job.result,
+            recommendations: [job.result.remove.candidates[0]],
+          }
+        : null,
+    }
+    const html = renderToStaticMarkup(<CounterfactualReview chainId="C1" initialJob={recommendedJob} />)
 
     expect(html).toContain('Phản hồi chuyên gia (Operator Feedback):')
     expect(html).toContain('Chấp thuận đề xuất')
     expect(html).toContain('Từ chối đề xuất')
   })
 
-  it('renders approved operator feedback verdict with auto-apply mutation status', () => {
+  it('restricts feedback buttons and shows notice on non-recommended candidates', () => {
+    const html = renderToStaticMarkup(<CounterfactualReview chainId="C1" initialJob={job} />)
+
+    expect(html).not.toContain('Phản hồi chuyên gia (Operator Feedback):')
+    expect(html).not.toContain('Chấp thuận đề xuất')
+    expect(html).toContain(
+      'Chỉ các đề xuất thuộc biên Pareto (recommendation) mới mở tiếp nhận phản hồi vận hành.'
+    )
+  })
+
+  it('renders approved operator feedback as proposal-only review data', () => {
     const approvedFeedback = {
       feedback_id: 'fb-test-01',
       job_id: 'review-1',
@@ -165,8 +184,6 @@ describe('CounterfactualReview', () => {
       operator_id: 'lead_engineer_viettel',
       reason: 'Đã xác minh không liên quan tuyến truyền dẫn',
       partition_delta: { before: [], after: [] },
-      mutation_dispatched: true,
-      mutation_dispatch_result: { status_code: 200 },
       created_at: '2026-09-04T06:00:00Z',
     }
 
@@ -181,7 +198,8 @@ describe('CounterfactualReview', () => {
     expect(html).toContain('ĐÃ CHẤP THUẬN ĐỀ XUẤT')
     expect(html).toContain('lead_engineer_viettel')
     expect(html).toContain('Đã xác minh không liên quan tuyến truyền dẫn')
-    expect(html).toContain('Đã ghi nhận &amp; gửi lệnh NocPro live')
+    expect(html).toContain('Proposal only')
+    expect(html).not.toContain('gửi lệnh NocPro live')
     expect(html).not.toContain('Từ chối đề xuất')
   })
 
@@ -196,8 +214,6 @@ describe('CounterfactualReview', () => {
       operator_id: 'ops_shift_lead',
       reason: 'Cảnh báo thuộc chung tuyến switch truyền dẫn',
       partition_delta: { before: [], after: [] },
-      mutation_dispatched: false,
-      mutation_dispatch_result: null,
       created_at: '2026-09-04T06:10:00Z',
     }
 

@@ -115,13 +115,11 @@ def test_operator_feedback_lifecycle_persisted() -> None:
                 "operator_id": "pg_operator",
                 "reason": "Confirmed split",
                 "partition_delta": {"before": [["C", ["A1", "A2"]]], "after": [["C", ["A1"]], ["C2", ["A2"]]]},
-                "mutation_dispatched": True,
-                "mutation_dispatch_result": {"dispatched": True, "status_code": 200},
             }
             stored = await repository.persist_operator_feedback(feedback_payload)
             assert stored.feedback_id == "fb-test-pg-1"
             assert stored.decision == "APPROVED"
-            assert stored.mutation_dispatched is True
+            assert stored.mutation_dispatched is False
 
             # Query by job
             by_job = await repository.operator_feedback_for_job("job-pg-1")

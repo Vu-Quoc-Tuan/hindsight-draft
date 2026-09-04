@@ -51,7 +51,6 @@ function CandidateCard({
     decision: 'APPROVED' | 'REJECTED',
     operatorId?: string,
     reason?: string,
-    autoApply?: boolean
   ) => Promise<void>
 }) {
   const status = candidate.evaluation_status ?? candidate.status ?? 'NOT_EVALUATED'
@@ -68,7 +67,6 @@ function CandidateCard({
   const [selectedDecision, setSelectedDecision] = useState<'APPROVED' | 'REJECTED'>('APPROVED')
   const [operatorId, setOperatorId] = useState('viettel_operator')
   const [reason, setReason] = useState('')
-  const [autoApply, setAutoApply] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
@@ -89,7 +87,6 @@ function CandidateCard({
         selectedDecision,
         operatorId,
         reason,
-        selectedDecision === 'APPROVED' ? autoApply : false
       )
       setShowForm(false)
     } catch (err) {
@@ -135,88 +132,80 @@ function CandidateCard({
             </span>
           </div>
           {feedback.reason ? <p className="review-feedback-reason">“{feedback.reason}”</p> : null}
-          {feedback.mutation_dispatched ? (
-            <div className="review-feedback-mutation">
-              <span>⚡ Đã ghi nhận & gửi lệnh NocPro live (Status: {String(feedback.mutation_dispatch_result?.status_code ?? 200)})</span>
-            </div>
-          ) : null}
         </div>
-      ) : showForm ? (
-        <form className="review-feedback-form" onSubmit={handleSubmit}>
-          <div className="review-feedback-form-title">
-            <strong>{selectedDecision === 'APPROVED' ? '✓ Xác nhận chấp thuận đề xuất' : '✗ Xác nhận từ chối đề xuất'}</strong>
-            <small>Đánh giá sẽ được lưu vào PostgreSQL Golden Dataset</small>
-          </div>
-          {submitError ? <div className="review-form-error">{submitError}</div> : null}
-          <div className="review-form-row">
-            <label htmlFor={`operator-${candidate.candidate_id}`}>Mã kỹ sư vận hành:</label>
-            <input
-              id={`operator-${candidate.candidate_id}`}
-              type="text"
-              value={operatorId}
-              onChange={(e) => setOperatorId(e.target.value)}
-              required
-            />
-          </div>
-          <div className="review-form-row">
-            <label htmlFor={`reason-${candidate.candidate_id}`}>Ghi chú / Căn cứ đánh giá:</label>
-            <textarea
-              id={`reason-${candidate.candidate_id}`}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="VD: Cảnh báo thuộc cùng một tuyến truyền dẫn quang..."
-              rows={2}
-            />
-          </div>
-          {selectedDecision === 'APPROVED' ? (
-            <div className="review-form-checkbox">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={autoApply}
-                  onChange={(e) => setAutoApply(e.target.checked)}
-                />
-                <span>Tự động ghi đè quyết định vào hệ thống NocPro thật (Auto-Apply Mutation)</span>
-              </label>
+      ) : recommended ? (
+        showForm ? (
+          <form className="review-feedback-form" onSubmit={handleSubmit}>
+            <div className="review-feedback-form-title">
+              <strong>{selectedDecision === 'APPROVED' ? '✓ Xác nhận chấp thuận đề xuất' : '✗ Xác nhận từ chối đề xuất'}</strong>
+              <small>Phản hồi được lưu làm dữ liệu đánh giá; không thay đổi NocPro.</small>
             </div>
-          ) : null}
-          <div className="review-form-actions">
-            <button
-              type="submit"
-              className={`review-btn-submit ${selectedDecision === 'APPROVED' ? 'review-btn-submit--approve' : 'review-btn-submit--reject'}`}
-              disabled={submitting}
-            >
-              {submitting ? 'Đang lưu...' : 'Lưu phản hồi & gửi'}
-            </button>
-            <button
-              type="button"
-              className="review-btn-cancel"
-              onClick={() => setShowForm(false)}
-              disabled={submitting}
-            >
-              Hủy
-            </button>
+            {submitError ? <div className="review-form-error">{submitError}</div> : null}
+            <div className="review-form-row">
+              <label htmlFor={`operator-${candidate.candidate_id}`}>Mã kỹ sư vận hành:</label>
+              <input
+                id={`operator-${candidate.candidate_id}`}
+                name="operator_id"
+                autoComplete="username"
+                type="text"
+                value={operatorId}
+                onChange={(e) => setOperatorId(e.target.value)}
+                required
+              />
+            </div>
+            <div className="review-form-row">
+              <label htmlFor={`reason-${candidate.candidate_id}`}>Ghi chú / Căn cứ đánh giá:</label>
+              <textarea
+                id={`reason-${candidate.candidate_id}`}
+                name="reason"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="VD: Cảnh báo thuộc cùng một tuyến truyền dẫn quang…"
+                rows={2}
+              />
+            </div>
+            <div className="review-form-actions">
+              <button
+                type="submit"
+                className={`review-btn-submit ${selectedDecision === 'APPROVED' ? 'review-btn-submit--approve' : 'review-btn-submit--reject'}`}
+                disabled={submitting}
+              >
+                {submitting ? 'Đang lưu…' : 'Lưu phản hồi'}
+              </button>
+              <button
+                type="button"
+                className="review-btn-cancel"
+                onClick={() => setShowForm(false)}
+                disabled={submitting}
+              >
+                Hủy
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="review-feedback-prompt">
+            <span className="review-feedback-prompt-label">Phản hồi chuyên gia (Operator Feedback):</span>
+            <div className="review-feedback-buttons">
+              <button
+                type="button"
+                className="review-btn-action review-btn-approve"
+                onClick={() => handleOpenForm('APPROVED')}
+              >
+                ✓ Chấp thuận đề xuất
+              </button>
+              <button
+                type="button"
+                className="review-btn-action review-btn-reject"
+                onClick={() => handleOpenForm('REJECTED')}
+              >
+                ✗ Từ chối đề xuất
+              </button>
+            </div>
           </div>
-        </form>
+        )
       ) : (
-        <div className="review-feedback-prompt">
-          <span className="review-feedback-prompt-label">Phản hồi chuyên gia (Operator Feedback):</span>
-          <div className="review-feedback-buttons">
-            <button
-              type="button"
-              className="review-btn-action review-btn-approve"
-              onClick={() => handleOpenForm('APPROVED')}
-            >
-              ✓ Chấp thuận đề xuất
-            </button>
-            <button
-              type="button"
-              className="review-btn-action review-btn-reject"
-              onClick={() => handleOpenForm('REJECTED')}
-            >
-              ✗ Từ chối đề xuất
-            </button>
-          </div>
+        <div className="review-feedback-non-recommended">
+          <small>Chỉ các đề xuất thuộc biên Pareto (recommendation) mới mở tiếp nhận phản hồi vận hành.</small>
         </div>
       )}
 
@@ -245,7 +234,6 @@ function OperationSection({
     decision: 'APPROVED' | 'REJECTED',
     operatorId?: string,
     reason?: string,
-    autoApply?: boolean
   ) => Promise<void>
 }) {
   return (
@@ -349,7 +337,6 @@ export function CounterfactualReview({
     decision: 'APPROVED' | 'REJECTED',
     operatorId?: string,
     reason?: string,
-    autoApply?: boolean
   ) => {
     if (!job?.job_id) return
     const fb = await api.submitReviewFeedback(job.job_id, {
@@ -357,7 +344,6 @@ export function CounterfactualReview({
       decision,
       operator_id: operatorId,
       reason,
-      auto_apply: autoApply,
     })
     setFeedbacks((prev) => ({ ...prev, [candidateId]: fb }))
   }

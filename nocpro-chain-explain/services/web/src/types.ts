@@ -499,8 +499,6 @@ export type OperatorFeedback = {
     before: [string, string[]][]
     after: [string, string[]][]
   }
-  mutation_dispatched: boolean
-  mutation_dispatch_result?: Record<string, unknown> | null
   created_at: string
 }
 

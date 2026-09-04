@@ -639,8 +639,6 @@ def operator_feedback_view(feedback: Any) -> OperatorFeedbackView:
         operator_id=d["operator_id"],
         reason=d.get("reason"),
         partition_delta=d["partition_delta"],
-        mutation_dispatched=bool(d.get("mutation_dispatched", False)),
-        mutation_dispatch_result=d.get("mutation_dispatch_result"),
         created_at=str(created_at),
     )
 

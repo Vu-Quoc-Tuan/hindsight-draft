@@ -439,26 +439,34 @@ class Workspace:
             result_dict = dict(job.result)
 
         candidate_id = payload["candidate_id"]
-        candidate: dict[str, Any] | None = None
+        evaluated = {
+            str(candidate.get("candidate_id")): candidate
+            for candidate in result_dict.get("evaluated_candidates", [])
+            if isinstance(candidate, dict) and candidate.get("candidate_id")
+        }
+        recommendation_ids = {
+            str(reference.get("candidate_id"))
+            for reference in result_dict.get("recommendations", [])
+            if isinstance(reference, dict) and reference.get("candidate_id")
+        }
+        # Legacy artifacts could contain fully materialized recommendation
+        # candidates. They are still operator-facing only when explicitly
+        # present in that recommendations list.
+        for reference in result_dict.get("recommendations", []):
+            if isinstance(reference, dict) and reference.get("operation"):
+                evaluated.setdefault(str(reference["candidate_id"]), reference)
 
-        all_candidates: list[Any] = []
-        if "evaluated_candidates" in result_dict and result_dict["evaluated_candidates"]:
-            all_candidates.extend(result_dict["evaluated_candidates"])
-        if "recommendations" in result_dict and result_dict["recommendations"]:
-            all_candidates.extend(result_dict["recommendations"])
-        for op_key in ("remove", "split", "move", "merge"):
-            op_data = result_dict.get(op_key)
-            if isinstance(op_data, dict) and "candidates" in op_data:
-                all_candidates.extend(op_data["candidates"])
-
-        for cand in all_candidates:
-            c_id = cand.get("candidate_id") if isinstance(cand, dict) else getattr(cand, "candidate_id", None)
-            if c_id == candidate_id:
-                candidate = cand if isinstance(cand, dict) else cand.__dict__
-                break
-
+        if candidate_id not in recommendation_ids:
+            raise ValueError(
+                f"candidate_id {candidate_id!r} is not an operator-facing recommendation "
+                f"for review job {job_id!r}"
+            )
+        candidate = evaluated.get(candidate_id)
         if candidate is None:
-            raise ValueError(f"candidate_id {candidate_id!r} not found in review job {job_id!r}")
+            raise ValueError(
+                f"candidate_id {candidate_id!r} is referenced by recommendations "
+                "but its evaluated detail is unavailable"
+            )
 
         operation = candidate.get("operation", "UNKNOWN")
         partition_delta = candidate.get("partition_delta", {})
@@ -475,28 +483,6 @@ class Workspace:
             getattr(job, "identity", {}).get("snapshot_version") if hasattr(job, "identity") else "1"
         )
 
-        mutation_dispatched = False
-        dispatch_result: dict[str, Any] | None = None
-        auto_apply = bool(payload.get("auto_apply", False)) or (
-            os.environ.get("NOCPRO_AUTO_APPLY_MUTATIONS", "false").lower() in {"true", "1", "yes"}
-        )
-
-        if decision in {"APPROVED", "ACCEPTED"} and auto_apply:
-            from .mutation import MutationEvent, dispatch_mutation
-
-            event = MutationEvent(
-                event_id=f"mut_{uuid.uuid4().hex[:12]}",
-                chain_id=str(chain_id or ""),
-                operation=operation,
-                candidate_id=candidate_id,
-                partition_delta=partition_delta,
-                operator_id=payload.get("operator_id") or "viettel_operator",
-                approved_at=datetime.now(timezone.utc).isoformat(),
-                reason=payload.get("reason"),
-            )
-            dispatch_result = dispatch_mutation(event)
-            mutation_dispatched = bool(dispatch_result.get("dispatched", False))
-
         feedback_id = f"fb_{uuid.uuid4().hex[:12]}"
         now = datetime.now(timezone.utc)
         record: dict[str, Any] = {
@@ -511,8 +497,6 @@ class Workspace:
             "operator_id": payload.get("operator_id") or "viettel_operator",
             "reason": payload.get("reason"),
             "partition_delta": partition_delta,
-            "mutation_dispatched": mutation_dispatched,
-            "mutation_dispatch_result": dispatch_result,
             "created_at": now,
         }
 

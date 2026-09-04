@@ -102,7 +102,6 @@ export const api = {
       decision: 'APPROVED' | 'REJECTED'
       operator_id?: string
       reason?: string
-      auto_apply?: boolean
     },
   ) =>
     request<OperatorFeedback>(

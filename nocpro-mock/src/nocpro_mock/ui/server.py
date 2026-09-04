@@ -383,21 +383,6 @@ class MockUIRequestHandler(SimpleHTTPRequestHandler):
             self._send_json(HTTPStatus.OK, {"ok": ok, "message": msg, "bootstrap": bootstrap})
             return
 
-        if path == "/api/webhook/mutation":
-            logger.info("Received upstream mutation webhook: %s", body)
-            self._send_json(
-                HTTPStatus.OK,
-                {
-                    "ok": True,
-                    "applied": True,
-                    "event_id": body.get("event_id"),
-                    "chain_id": body.get("chain_id"),
-                    "operation": body.get("operation"),
-                    "status": "MUTATION_RECORDED_BY_NOCPRO",
-                },
-            )
-            return
-
         if path == "/api/preview":
             try:
                 package = build_package_from_request(body)

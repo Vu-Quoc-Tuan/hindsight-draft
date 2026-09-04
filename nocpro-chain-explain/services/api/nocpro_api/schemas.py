@@ -492,7 +492,6 @@ class OperatorFeedbackSubmission(ApiModel):
     decision: str
     operator_id: str = "viettel_operator"
     reason: str | None = None
-    auto_apply: bool = False
 
 
 class OperatorFeedbackView(ApiModel):
@@ -507,8 +506,6 @@ class OperatorFeedbackView(ApiModel):
     operator_id: str
     reason: str | None = None
     partition_delta: dict[str, object]
-    mutation_dispatched: bool = False
-    mutation_dispatch_result: dict[str, object] | None = None
     created_at: str
 
 

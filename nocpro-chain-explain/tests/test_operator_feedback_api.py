@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
 import httpx2
 import pytest
 
@@ -82,7 +80,7 @@ def test_feedback_on_unknown_candidate_returns_400() -> None:
                     },
                 )
                 assert resp.status_code == 422
-                assert "not found in review job" in resp.json()["detail"]
+                assert "not an operator-facing recommendation" in resp.json()["detail"]
         finally:
             ws.close()
 
@@ -116,7 +114,6 @@ def test_feedback_rejected_stores_and_queries_successfully() -> None:
                 assert body["decision"] == "REJECTED"
                 assert body["operator_id"] == "ops_expert_01"
                 assert body["reason"] == "Topology confirmed these devices belong to the same optical link"
-                assert body["mutation_dispatched"] is False
 
                 # Query job feedback
                 get_job_fb = await client.get(f"/api/v1/review-jobs/{job_id}/feedback")
@@ -139,7 +136,7 @@ def test_feedback_rejected_stores_and_queries_successfully() -> None:
     asyncio.run(exercise())
 
 
-def test_feedback_approved_with_auto_apply_dispatches_mutation() -> None:
+def test_feedback_approved_is_persisted_without_dispatching_a_mutation() -> None:
     async def exercise() -> None:
         ws, job_id, candidate_id = _setup_workspace_with_evaluated_review()
         app = create_app(workspace=ws)
@@ -148,34 +145,44 @@ def test_feedback_approved_with_auto_apply_dispatches_mutation() -> None:
             async with httpx2.AsyncClient(
                 transport=transport, base_url="http://testserver"
             ) as client:
-                mock_response = MagicMock()
-                mock_response.status = 200
-                mock_response.read.return_value = b'{"ok": true, "status": "MUTATION_RECORDED_BY_NOCPRO"}'
-                mock_response.__enter__.return_value = mock_response
+                submission_payload = {
+                    "candidate_id": candidate_id,
+                    "decision": "APPROVED",
+                    "operator_id": "noc_director",
+                    "reason": "Split approved to separate unrelated fault domains",
+                }
+                resp = await client.post(
+                    f"/api/v1/review-jobs/{job_id}/feedback",
+                    json=submission_payload,
+                )
+                assert resp.status_code == 201
+                body = resp.json()
+                assert body["decision"] == "APPROVED"
+                assert "mutation_dispatched" not in body
+        finally:
+            ws.close()
 
-                with patch(
-                    "urllib.request.urlopen", return_value=mock_response
-                ), patch.dict(
-                    "os.environ",
-                    {"NOCPRO_MUTATION_WEBHOOK_URL": "http://nocpro.viettel.internal/webhook"},
-                ):
-                    submission_payload = {
+    asyncio.run(exercise())
+
+
+def test_feedback_rejects_removed_auto_apply_parameter() -> None:
+    async def exercise() -> None:
+        ws, job_id, candidate_id = _setup_workspace_with_evaluated_review()
+        app = create_app(workspace=ws)
+        transport = httpx2.ASGITransport(app=app)
+        try:
+            async with httpx2.AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as client:
+                response = await client.post(
+                    f"/api/v1/review-jobs/{job_id}/feedback",
+                    json={
                         "candidate_id": candidate_id,
                         "decision": "APPROVED",
-                        "operator_id": "noc_director",
-                        "reason": "Split approved to separate unrelated fault domains",
                         "auto_apply": True,
-                    }
-                    resp = await client.post(
-                        f"/api/v1/review-jobs/{job_id}/feedback",
-                        json=submission_payload,
-                    )
-                    assert resp.status_code == 201
-                    body = resp.json()
-                    assert body["decision"] == "APPROVED"
-                    assert body["mutation_dispatched"] is True
-                    assert body["mutation_dispatch_result"]["status_code"] == 200
-                    assert body["mutation_dispatch_result"]["response"]["ok"] is True
+                    },
+                )
+                assert response.status_code == 422
         finally:
             ws.close()
 
