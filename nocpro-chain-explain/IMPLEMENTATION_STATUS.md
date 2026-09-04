@@ -20,32 +20,54 @@ It separates **capability** from evidence that the capability was exercised;
 
 | Capability | Implementation | Unit/regression | Synthetic | Docker/runtime | Production | Boundary / evidence needed |
 | --- | --- | --- | --- | --- | --- | --- |
-| Kafka chunk + `SNAPSHOT_COMPLETE` barrier, PostgreSQL ingest, Tier-1A | `READY` | `PASS` | `PASS` | `PASS` synthetic Docker stack | `BLOCKED_BY_DATA_AVAILABILITY` for production delta validation | The 2026-09-03 acceptance run covered Kafka, PostgreSQL READY and restart paths; raw production replay is skipped because `alarm_data.csv` is absent. |
+| Kafka chunk + `SNAPSHOT_COMPLETE` barrier, PostgreSQL ingest, Tier-1A | `READY` | `PASS` | `PASS` | `PASS` synthetic Docker stack and raw-export replay | `BLOCKED_BY_DATA_AVAILABILITY` for production delta validation | The 2026-09-04 acceptance run covered Kafka, PostgreSQL READY, duplicate/recovery paths, restart, and replay of the local raw export at `nocpro-mock/datasets/raw/alarm/alarm_data.csv`. |
 | Tier-1B lazy indexed analysis and cache | `READY` | `PASS` | `PASS` | `PASS` synthetic Docker stack | `READY` for available primitive evidence only | Chain size 1072 is an anti-dense regression gate; Tier-1B may not use a dense pairwise fallback. |
-| Pair WHY API/UI | `READY` | `PASS` | `PASS` | `NOT_RUN` | Input-dependent | A Pair WHY result can be `UNAVAILABLE` without changing Tier-1B availability. |
-| Historical `H` Pair WHY | `READY` | `PASS` | `PASS` | `NOT_RUN` | `BLOCKED_BY_DATA_AVAILABILITY` | The raw-field adapter is a `DERIVED_REPLAY` utility, not authoritative taxonomy. Production requires a business-owned, versioned taxonomy and verified historical lineage corpus. |
-| `T_delay` frozen model/training semantics | `READY` | `PASS` | `PASS` | `NOT_RUN` | `BLOCKED_BY_DATA_AVAILABILITY` | The raw-field adapter and sequence slicer support test/replay only; production requires authoritative taxonomy, verified sequential snapshots, and calibrated configuration. |
-| `T_delay` Pair WHY runtime/API/UI | `READY` | `PASS` | `PASS` | `NOT_RUN` | `UNAVAILABLE` / `NOT_CALIBRATED` | No production taxonomy/model/calibration has been established. |
+| Pair WHY API/UI | `READY` | `PASS` | `PASS` | `PASS` Chromium/operator flow | Input-dependent | A Pair WHY result can be `UNAVAILABLE` without changing Tier-1B availability. |
+| Historical `H` Pair WHY | `READY` | `PASS` | `PASS` model suite | `BLOCKED_BY_DATA_AVAILABILITY` | The raw-field adapter is a `DERIVED_REPLAY` utility, not authoritative taxonomy. Production requires a business-owned, versioned taxonomy and verified historical lineage corpus. |
+| `T_delay` frozen model/training semantics | `READY` | `PASS` | `PASS` model suite | `BLOCKED_BY_DATA_AVAILABILITY` | The raw-field adapter and sequence slicer support test/replay only; production requires authoritative taxonomy, verified sequential snapshots, and calibrated configuration. |
+| `T_delay` Pair WHY runtime/API/UI | `READY` | `PASS` | `PASS` model suite; generic Pair WHY UI is runtime-proven | `UNAVAILABLE` / `NOT_CALIBRATED` | The production-shaped baseline does not invent taxonomy or a calibrated threshold, so T_delay-specific service/API availability remains intentionally fail-closed. |
 | `T_delay` full-chain indexed Role contribution | `UNAVAILABLE` | `PASS` fail-closed | N/A | N/A | `UNAVAILABLE` | `NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH`. Dense pairwise fallback is forbidden. |
 | `T_delay` full-chain indexed Audit contribution | `UNAVAILABLE` | `PASS` fail-closed | N/A | N/A | `UNAVAILABLE` | `NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH`. Eligibility metadata does not manufacture an exact indexed statistic. |
 | Structural Audit, attribution, deletion evaluation | `READY` under exact ceilings | `PASS` | `PASS` | `PASS` synthetic Docker stack for Audit/Review | Input/config-dependent | Ceiling exceedance is component `UNAVAILABLE`, not a fabricated approximation or a failed Tier-2 job. |
-| Similar Chains | `READY` | `PASS` | `PASS` | `NOT_RUN` | Degraded / input-dependent | Raw `group_name` can be used only as an observed source field; it does not establish authoritative production taxonomy. |
+| Similar Chains | `READY` | `PASS` | `PASS` | `PASS` raw-export replay | Degraded / input-dependent | Raw `group_name` can be used only as an observed source field; it does not establish authoritative production taxonomy. |
 | Evolution v1 persisted lineage projection | `READY` | `PASS` | `PASS` | `PASS` synthetic Docker stack | `BLOCKED_BY_DATA_AVAILABILITY` | The sequence slicer creates `DERIVED_REPLAY` windows from one export; production evolution requires verified sequential upstream snapshots. |
-| Topology P2 semantics | `READY` only for compatible synthetic inputs | `PASS` | `PASS` | `PASS` synthetic Docker stack | `UNAVAILABLE` | IP is structural adjacency and IT is unverified source relation. Display hierarchy never supplies dependency direction, active paths, dominators, propagation, or failure domains. |
+| Directed topology P2 semantics | `READY` only for compatible synthetic inputs | `PASS` | `PASS` | `PASS` synthetic Docker stack | `UNAVAILABLE` | IP is structural adjacency and IT is unverified source relation. Display hierarchy never supplies dependency direction, active paths, dominators, propagation, or failure domains. |
 | Real topology navigation read model | `READY` | `PASS` | N/A | `PASS` local mock endpoint + Chromium tree preview | `READY` for source-record navigation only | `ALARM_ONLY` has no topology; IP is undirected adjacency; IT is `DIRECTED_SOURCE_RELATIONS`, not verified dependency. Tree primary paths are technical projection only. The full Explain snapshot workflow remains separately input-dependent. |
-| Real IT/IP topology contribution to Explain P2 | `UNAVAILABLE` | `PASS` fail-closed | N/A | N/A | `UNAVAILABLE` | `SOURCE_RELATION` / `UNVERIFIED` IT records and IP adjacency must not enable dependency, ancestor, dominator, propagation, scope, or failure-domain semantics. |
+| Exact alarm-to-topology identity mapping | `PARTIAL_EXACT_ONLY` | `PASS` | N/A | N/A | `UNAVAILABLE` as a complete P2 prerequisite | The current `alarmIP`/`topoIP` audit resolves 140,596/212,636 rows by exact `device_code` identity (1,294/2,908 distinct codes); `alarmIT`/`topoIT` resolves 241/258,344 rows by exact canonical resource ID. Unmapped/ambiguous alarms remain fail-closed; topoIT aliases are navigation-only. |
+| IP `Dep_hop` proximity evidence | `READY` for exact-mapped IP endpoints | `PASS` | N/A | `PASS` targeted Kafka/PostgreSQL/API smoke | `PARTIAL_EXACT_ONLY` | Real `alarmIP` replay carries a content-hashed topoIP provenance; a mapped adjacent pair returns `Dep_hop=SUPPORT`. This is undirected hop proximity over `IP_ADJACENCY`, never upstream/dependency direction. |
+| IT source-relation contribution to Explain P2 | `UNAVAILABLE` | `PASS` fail-closed | N/A | N/A | `UNAVAILABLE` | `SOURCE_RELATION` / `UNVERIFIED` IT records must not enable dependency, ancestor, dominator, propagation, scope, or failure-domain semantics. |
 | Synthetic operator-feedback fixture | `READY` | `PASS` | `PASS` | N/A | `NOT_CALIBRATED` | Typed accepted/rejected labels exercise empirical-evaluation input only. It is `SYNTHETIC_TEST` and explicitly cannot serve as production ground truth. |
-| Counterfactual `REMOVE_MEMBER`, `SPLIT_CHAIN`, `MOVE_MEMBER`, connector annotation | `READY` | `PASS` | `PASS` | `PASS` synthetic Docker stack | `NOT_CALIBRATED` | Proposal-only; production recommendation policy requires operator corrections/calibration. |
-| Counterfactual `MERGE_CHAINS` | `READY` | `PASS` | `PASS` | `PASS` synthetic Docker stack | `NOT_CALIBRATED` | Exact cross-chain evidence, persisted Review reload and Chromium Review acceptance passed; production policy remains uncalibrated. |
+| Counterfactual `REMOVE_MEMBER`, `SPLIT_CHAIN`, `MOVE_MEMBER`, connector annotation | `READY` | `PASS` | `PASS` | `PASS` Kafka/PostgreSQL/restart/Chromium | `NOT_CALIBRATED` | Proposal-only; feedback is persisted evaluation data and cannot mutate NocPro. Production recommendation policy requires operator corrections/calibration. |
+| Counterfactual `MERGE_CHAINS` | `READY` | `PASS` | `PASS` | `PASS` Kafka/PostgreSQL/restart/Chromium | `NOT_CALIBRATED` | Exact cross-chain evidence and persisted Review reload have runtime acceptance. |
 | Counterfactual `ADD_MEMBER` | `BLOCKED` | N/A | N/A | N/A | `BLOCKED` | `UNKNOWN_UPSTREAM_SEMANTICS`: first-class zero-membership alarms have not been verified upstream. A singleton-source transfer is canonical `MOVE_MEMBER`, never ADD. |
+| AI Advisor grounded narrative | `READY` (ADR-0024 epistemic boundaries) | `PASS` | `PASS` | `NOT_RUN` for current revision | `READY` for deterministic narrative only; `UNAVAILABLE` for ungrounded LLM inference | Deterministic adapter strictly extracts from verified member roles, descriptors, and Pareto recommendations. `provider_status=NOT_USED`; GET endpoint produces zero external LLM side effects or credential dependency. |
+| IT alias & topology mapping limits | `READY` fail-closed | `PASS` | `PASS` | `NOT_RUN` for real IT/IP navigation acceptance | `READY` for source-record navigation only; `PARTIAL_EXACT_ONLY` for identity matches; `UNAVAILABLE` for complete production mapping | Ambiguous aliases resolve to `AMBIGUOUS`. `topoIT` aliases strictly excluded from `build_it_resource_mapper()` to forbid unverified CSV columns from claiming `VERIFIED_ALIAS` status. |
 
-## Topology hierarchy boundary
+## AI Advisor boundary
+
+ADR-0024 enforces strict epistemic boundaries on operator narrative generation.
+The AI Advisor adapter is deterministic and evidence-bound: it synthesizes
+only verified member roles (`support`, `representativeness`), descriptors, and
+evaluated Pareto recommendations. `provider_status` is explicitly `NOT_USED`.
+The HTTP GET endpoint performs zero external LLM network calls, requires no
+provider API secret at runtime, and never hallucinates unobserved topology or
+counterfactual operations.
+
+## Topology hierarchy and alias mapping boundary
 
 `topology_hierarchy.py` supplies display ordering only for `STRUCTURAL_NAVIGATION`.
 It is forbidden from supplying P2/RCA dependency direction, common ancestor,
 dominator, active-path, propagation, scope-overlap, or failure-domain inputs.
 Promotion into P2 requires a separate authoritative business semantics source,
 verified alarm-resource mappings, and versioned provenance/configuration.
+
+The one real topology exception is bounded `Dep_hop` proximity: exact-mapped
+IP alarms can use versioned, undirected `IP_ADJACENCY` to report hop distance.
+That distance does not promote the graph to directed dependency semantics.
+
+`build_it_resource_mapper()` strictly excludes `topoIT` alias join columns from
+acting as authoritative production alarm mappings; colliding aliases fail-closed
+to `AMBIGUOUS`. Alias fields remain structural navigation helpers only.
 
 ## T_delay boundary
 
@@ -60,12 +82,10 @@ indexed sufficient-statistics provider for `T_delay`; they must return
 `O(n^2)` fallback is forbidden, including on the 1072-member regression
 workload.
 
-**Closure finding:** the current indexed internal representation records this
-as `fit=None` and does not yet serialize a separate full-chain diagnostic
-reason field. The status label above is therefore the required capability
-classification, not a claim that a currently exposed full-chain API already
-contains that string. This is documented drift to keep visible; no fallback or
-new full-chain algorithm was added in this closure pass.
+The indexed representation persists `fit=None` together with the explicit
+unavailable reason `NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH`; clients must
+not infer the reason from a null fit. This is an intentional capability
+boundary, not a deferred dense fallback.
 
 ## Closure benchmark and acceptance harness
 
@@ -93,14 +113,16 @@ synthetic_temporal_topology_v1
 `run_acceptance.sh` runs the explicit T_delay synthetic model/Pair WHY suite
 with its authoritative test adapter alongside the Kafka/PostgreSQL stages.
 It deliberately does **not** make the container's production-shaped baseline
-invent taxonomy; that baseline remains fail-closed. The synthetic Docker
-acceptance run passed on 2026-09-03: migration/runtime failure tests (6), P2
-Kafka tests (3), Evolution Chromium (1), H/T_delay model tests (18),
-Counterfactual Kafka/PostgreSQL/restart (1), and Counterfactual Chromium (1).
-The raw-export replay stage was explicitly skipped because
-`nocpro-mock/datasets/raw/alarm_data.csv` is unavailable. H/T_delay Pair WHY
-through the production-shaped service/API remains `NOT_RUN`; the model suite
-does not establish that separate capability.
+invent taxonomy; that baseline remains fail-closed. The Docker acceptance run
+passed on 2026-09-04: migration/runtime failure tests (6), P2 Kafka tests (3),
+Evolution Chromium (1), H/T_delay model tests (18), Counterfactual
+Kafka/PostgreSQL/restart (1), Counterfactual Chromium (1), raw-export replay,
+and generic Pair WHY Chromium/operator flow.
+The raw-export replay path uses
+`nocpro-mock/datasets/raw/alarm/alarm_data.csv` when that file is mounted into
+the Docker producer. H/T_delay Pair WHY through the production-shaped
+service/API remains `NOT_RUN`; the model suite does not establish that separate
+capability.
 
 ## Production evidence still required
 
@@ -117,3 +139,28 @@ defaults:
 The three available production exports are not treated as a sequential snapshot
 series. No overlap threshold, topology direction, taxonomy, or production
 recommendation threshold is inferred from them.
+
+### Measured local raw-export Tier-1 matrix
+
+`benchmarks/run_benchmark.py` was run on 2026-09-04 against the local raw
+export (`8,714` alarms, `2,824` chains). This is a local performance
+characterisation, not a production SLO or empirical recommendation validation.
+
+| Requested size | Actual chain size | Tier-1B cold-open P95 | Cache-hit P95 | Pair WHY P95 | Peak process allocation |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 1 | 0.0117 s | < 0.0001 s | N/A | 0.12 MB |
+| 10 | 10 | 0.0184 s | < 0.0001 s | 0.0001 s | 0.21 MB |
+| 50 | 42 | 0.0456 s | < 0.0001 s | 0.0001 s | 0.95 MB |
+| 200 | 215 | 0.1094 s | < 0.0001 s | 0.0003 s | 3.06 MB |
+| 500 | 256 | 0.1281 s | < 0.0001 s | 0.0003 s | 3.78 MB |
+| 1072 | 1072 | 0.4514 s | 0.0002 s | 0.0012 s | 14.98 MB |
+
+The full-snapshot Tier-1A background precompute measured P95 `0.9485 s`
+(three repetitions; the report correctly labels that P95 as not statistically
+reliable) and peak process allocation `2.83 MB` for its single memory sample.
+The architectural 1072-member anti-dense test passed separately (`3 passed`).
+
+Only this Tier-1 matrix was measured by `run_benchmark.py`. The complete
+closure manifest intentionally continues to mark Audit, attribution,
+Counterfactual, persistence, and restart timings as `NOT_RUN` unless their
+specific benchmark/runtime workflow has supplied a measurement.

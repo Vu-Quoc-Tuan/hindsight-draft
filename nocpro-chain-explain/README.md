@@ -299,9 +299,11 @@ ADR-0033 opens three independent Tier-2 topology semantics:
   and detail-materialization ceilings are separate, and no partial resource
   list is emitted.
 
-The current production export exposes undirected `IP_ADJACENCY` only and has no
-verified directed topology/path, alarm-resource mapping or propagation config.
-Consequently the production API/UI reports these capabilities as
+The current production export exposes undirected `IP_ADJACENCY` only. It has
+partial exact `alarmIP`→`topoIP` identity coverage for bounded `Dep_hop`
+proximity, but no complete mapping contract, verified directed topology/path,
+or propagation configuration. Consequently the production API/UI reports the
+directed P2 capabilities as
 `UNAVAILABLE`; synthetic directed fixtures verify the implementation contract
 but are not production validation. Graph motifs, `UNAVOIDABLE_DEPENDENCY` as a
 normalized evidence channel, and other P2 extensions remain not started until
@@ -443,7 +445,7 @@ path, both Chromium operator tests (`2/2`), all four Docker recovery tests
 acceptance run took `70.73s`, and the isolated containers, network and volume
 were cleaned up successfully. The export mount is an environment precondition
 for replay; a plain worktree run without that external mount cannot locate
-`datasets/raw/alarm_data.csv`. This is local-run evidence, not a production
+`datasets/raw/alarm/alarm_data.csv`. This is local-run evidence, not a production
 SLO or production-data validation.
 
 The acceptance runner additionally publishes a deterministic versioned
@@ -465,10 +467,12 @@ or synthesize production replay data.
 
 On 2026-09-02 the isolated Counterfactual stage was run independently because
 this feature worktree did not contain the external real-export mount needed by
-the full replay stage. Both mutation fixtures passed the real Mock → Kafka →
-PostgreSQL → Explain path (`1/1` combined Docker test), and the Chromium REVIEW
-flow passed (`1/1`) with no console errors and no Apply control. The synthetic
-benchmark, five repetitions per mutation, reported issue detection `1.0`,
+the full replay stage. The synthetic Counterfactual fixtures passed the real
+Mock → Kafka → PostgreSQL → Explain path (`1/1` combined Docker test), and the
+Chromium REVIEW flow passed (`1/1`) with no console errors and no Apply control.
+Review is proposal-only: operator feedback is persisted for evaluation and
+cannot dispatch a NocPro mutation. The synthetic benchmark, five repetitions
+per fixture, reported issue detection `1.0`,
 exact repair `1.0`, clean false-recommendation rate `0.0`, clean abstention
 `1.0`, mean ARI `1.0`, mean AMI approximately `1.0`, median end-to-end local
 analysis latency `0.163s`, and maximum `0.259s`. These are small synthetic
