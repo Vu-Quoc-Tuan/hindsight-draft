@@ -20,7 +20,8 @@ Design docs live in `docs/`. Start with `docs/README.md` and
 | Direct Snapshot producer with contract validation | done |
 | Observed `chaining_id` replay incl. singletons | done |
 | Golden 2214039 fixture replay | done |
-| Exact-identity / verified-alias mapping (fail closed) | done |
+| Exact-identity alarm-resource mapping (fail closed) | done |
+| topoIT structural aliases | navigation-only; not an alarm-resource mapping authority |
 | Synthetic directed hierarchy / active path / failure domain | done |
 | Synthetic operational context | done |
 | Synthetic operator-feedback ground-truth fixture | done, synthetic-only |
@@ -45,7 +46,8 @@ python3 -m venv .venv
 # Real input profiles are intentionally non-interchangeable
 # ALARM_ONLY = alarm/alarm_data.csv without topology
 # IP_NETWORK = alarm/alarmIP.csv + topo/topoIP.csv (undirected adjacency)
-# IT_SERVICES = alarm/alarmIT.csv + topo/topoIT/ (directed source relations)
+# IT_SERVICES = alarm/alarmIT.csv + topo/topoIT/ (directed source relations,
+# not operational dependency edges)
 nocpro-mock topology-tree --profile ALARM_ONLY
 nocpro-mock topology-tree --profile IP_NETWORK --max-depth 2 --max-children 12
 nocpro-mock topology-tree --profile IT_SERVICES --root-id it:service:1
@@ -140,6 +142,9 @@ topoIP           201,977 rows / 16 columns, SITE_ROUTER source 90.3860%
 
 - Raw values are preserved; dirty data is flagged, never repaired.
 - `topoIP` edges stay `IP_ADJACENCY` with `directed=False`.
+- Exact-mapped IP alarm pairs can report bounded undirected `Dep_hop`
+  proximity when the topoIP content fingerprint is carried with the replay.
+  This is not an upstream/downstream or causal dependency statement.
 - Real-data navigation profiles remain semantically separate:
   - `ALARM_ONLY` reports topology `UNAVAILABLE`.
   - `IP_NETWORK` projects only undirected `ADJACENT_TO` records.
@@ -153,10 +158,14 @@ topoIP           201,977 rows / 16 columns, SITE_ROUTER source 90.3860%
 - Every topology-navigation response carries a first-class profile capability
   artifact. `ALARM_ONLY` is unavailable; IP exposes only undirected adjacency;
   IT exposes directed source relations with `dependency_semantics=UNVERIFIED`.
-  `alarm_resource_mapping` is `UNAVAILABLE` for both real topology sources.
-- Alarm-to-IT-resource mapping is still `UNAVAILABLE` until a source-backed,
-  exact and unambiguous mapping contract is supplied; names and prefixes are
-  never used as a heuristic bridge.
+  The navigation endpoint itself does not establish a complete alarm-resource
+  mapping contract. Separately, the offline mapper supports exact identity
+  matches: the current IP export has partial `device_code` coverage, while IT
+  has only limited matches to canonical resource IDs. Those partial matches do
+  not promote topology into Explain P2.
+- `topoIT` aliases are still `UNAVAILABLE` for production alarm mapping until a
+  source-backed, exact and unambiguous mapping contract is supplied; names and
+  prefixes are never used as a heuristic bridge.
 - Mapping is exact-identity or verified-alias only. The Golden DEA resources
   (`DEHL01`, `DEHT01`, `HLC9102DEA01`, `HHT9603DEA01`) resolve to `UNMAPPED`
   even though `HLC9102*` / `HHT9603*` prefixes exist in the export.

@@ -166,3 +166,25 @@ def test_largest_real_chain_replays_completely(alarm_csv, config):
     assert package.chains[0].member_count == 1072
     assert len(package.memberships) == 1072
     assert DirectSnapshotProducer().check(package).ok
+
+
+@pytest.mark.realdata
+def test_real_topology_replay_carries_a_content_source_version(alarm_csv, topo_ip_csv, config):
+    """Real topoIP edges need immutable provenance before Explain can use them."""
+    ip_alarm_csv = topo_ip_csv.parents[1] / "alarm" / "alarmIP.csv"
+    if not ip_alarm_csv.is_file():
+        pytest.skip(f"real IP alarm export not present: {ip_alarm_csv}")
+    package = build_real_replay_snapshot(
+        alarm_csv_path=ip_alarm_csv,
+        topo_ip_path=topo_ip_csv,
+        config=config,
+        snapshot_id="snap_topology_version",
+        snapshot_time=FIXED_TIME,
+        chain_ids={"6912465"},
+    )
+
+    assert package.topology.edges
+    versions = {edge.source_version for edge in package.topology.edges}
+    assert len(versions) == 1
+    assert next(iter(versions)).startswith("sha256:")
+    assert {mapping.source_version for mapping in package.topology.mappings} == versions

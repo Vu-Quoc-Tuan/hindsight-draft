@@ -109,7 +109,9 @@ def build_real_replay_snapshot(
     unavailable: list[str] = []
 
     if topo_ip_path is not None and config.topo_ip_enabled:
-        all_relations = TopoIPLoader(topo_ip_path).load()
+        topology_loader = TopoIPLoader(topo_ip_path)
+        all_relations = topology_loader.load()
+        topology_source_version = topology_loader.source_version()
         if bounded_subgraph:
             seed_codes = {a.device_code for a in alarms if a.device_code}
             relations = extract_bounded_ip_subgraph(all_relations, seed_codes, max_hops=1)
@@ -119,6 +121,7 @@ def build_real_replay_snapshot(
             relations,
             source_id="topo_ip_csv",
             reference_time=reference_time,
+            source_version=topology_source_version,
             freshness_pass_max_age_seconds=(
                 config.topology_freshness_pass_max_age_seconds
             ),
@@ -126,6 +129,7 @@ def build_real_replay_snapshot(
         mapper = ResourceMapper(
             {n.resource_id for n in nodes},
             topology_layer=TOPOLOGY_LAYER_IP,
+            source_version=topology_source_version,
         )
         mappings = tuple(
             mapper.map_alarm(

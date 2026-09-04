@@ -921,8 +921,12 @@ FAILURE_DOMAIN
 ## Mapping policy
 
 1. exact device/resource identity,
-2. verified alias table,
-3. otherwise UNMAPPED.
+2. otherwise UNMAPPED.
+
+topoIT aliases are structural source-table joins for navigation. They are not
+an authoritative alarm-to-resource mapping table and must not be promoted to
+`VERIFIED_ALIAS` by the replay adapter. Exact canonical identity matches may
+exist, but partial match coverage is not a complete P2 mapping prerequisite.
 
 Never use prefix similarity as truth.
 
@@ -1402,7 +1406,11 @@ Golden must NOT emit unless sourced:
 
 ## Topology
 
-Current topoIP has no exact mapping for the relevant DEA resources.
+Current topoIP has no exact mapping for the relevant Golden DEA resources.
+This does not mean the whole IP export has zero exact matches: its regular
+alarmIP/device_code records can partially match topology device_code by exact
+identity. That partial source mapping remains distinct from a complete,
+authoritative P2 alarm-to-resource mapping contract.
 
 Expected:
 

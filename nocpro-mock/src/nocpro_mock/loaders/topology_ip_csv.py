@@ -14,6 +14,7 @@ every emitted edge stays ``IP_ADJACENCY`` with ``directed=False``.
 from __future__ import annotations
 
 import csv
+import hashlib
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -90,6 +91,19 @@ class TopoIPLoader:
 
     def load(self) -> list[TopoIPRelation]:
         return list(self.iter_relations())
+
+    def source_version(self) -> str:
+        """Return a deterministic content fingerprint for this raw topology export.
+
+        Explain topology evidence is immutable only when its source revision is
+        carried with every emitted edge. File path, mtime, and replay time are
+        not source identities, so this deliberately hashes the bytes.
+        """
+        digest = hashlib.sha256()
+        with self.path.open("rb") as fh:
+            for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return f"sha256:{digest.hexdigest()}"
 
     def columns(self) -> tuple[str, ...]:
         with self.path.open("r", newline="", encoding=ENCODING, errors="replace") as fh:

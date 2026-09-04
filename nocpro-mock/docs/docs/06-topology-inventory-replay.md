@@ -27,8 +27,11 @@ FAILURE_DOMAIN
 ## Mapping policy
 
 1. exact device/resource identity,
-2. verified alias table,
-3. otherwise UNMAPPED.
+2. otherwise UNMAPPED.
+
+The topoIT table joins and aliases are retained for structural navigation only.
+They are not an authoritative alarm-to-resource mapping table and must not be
+promoted to `VERIFIED_ALIAS` by the replay adapter.
 
 Never use prefix similarity as truth.
 
@@ -69,10 +72,12 @@ Do not hardcode PASS threshold in the mock spec; config decides.
 
 ## topoIT
 
-Until archive schema is extracted and verified:
-- preserve it as pending source,
-- use the image only to motivate future multi-layer support,
-- do not claim real directed SERVICE dependency.
+The archive schema is normalized as directed source-record relations for
+navigation: service/module/instance/database/storage nodes and typed joins.
+This proves only that the source columns contain those relations. It does not
+claim real directed service dependency, propagation, active paths, or failure
+domains. topoIT aliases are navigation helpers; only exact canonical identities
+can be mapped, and partial mapping coverage cannot promote the graph into P2.
 
 ## What to mock for missing topology capabilities
 
