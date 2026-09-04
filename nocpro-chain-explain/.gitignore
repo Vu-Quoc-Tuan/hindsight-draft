@@ -1,0 +1,12 @@
+# Local runtime secrets and deployment overrides must never enter source control.
+.env
+.env.*
+!.env.example
+
+# Python and frontend generated state.
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+services/web/node_modules/
+services/web/dist/

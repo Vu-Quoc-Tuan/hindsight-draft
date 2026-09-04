@@ -1,3 +1,9 @@
+# Local runtime secrets and environment configurations
+.env
+.env.*
+!.env.example
+*.env
+
 __pycache__/
 *.py[cod]
 .venv/
