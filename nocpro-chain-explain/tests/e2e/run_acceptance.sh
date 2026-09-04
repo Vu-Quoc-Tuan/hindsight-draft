@@ -25,7 +25,13 @@ cleanup() {
 trap cleanup EXIT
 
 docker compose down --volumes --remove-orphans
-docker compose up -d --build api web
+if [[ "${NOCPRO_E2E_SKIP_BUILD:-0}" == "1" ]]; then
+  # Useful when a verified local image already exists and the registry is
+  # temporarily unavailable. CI and normal acceptance still rebuild by default.
+  docker compose up -d migrate api web
+else
+  docker compose up -d --build migrate api web
+fi
 
 wait_for_postgres() {
   local deadline=$((SECONDS + 60))
@@ -39,33 +45,47 @@ wait_for_postgres() {
   done
 }
 
+wait_for_snapshot_ready() {
+  local snapshot_id="$1"
+  local deadline=$((SECONDS + 120))
+  local state=""
+  while (( SECONDS < deadline )); do
+    state="$(docker compose exec -T postgres psql -U nocpro -d nocpro -At -c \
+      "SELECT concat_ws('|', status, tier1a_status, lineage_status, similarity_status) FROM snapshot_ingest WHERE snapshot_id='${snapshot_id}' AND snapshot_version='1';")"
+    if [[ "$state" == "COMPLETE|READY|READY|READY" ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+  docker compose logs --no-color api
+  echo "snapshot ${snapshot_id} failed acceptance readiness: ${state:-missing}" >&2
+  return 1
+}
+
 wait_for_postgres
 
 NOCPRO_RUN_DOCKER_E2E=1 PYTHONPATH="../nocpro-mock/src" \
   .venv/bin/python -m pytest tests/e2e/test_postgres_migrations_runtime.py -q
 
+# Exercise recovery/duplicate delivery before the large real replay.  These
+# tests deliberately restart the API and must not race unrelated Tier-2 work
+# from a previous browser scenario.
+NOCPRO_RUN_DOCKER_E2E=1 PYTHONPATH="../nocpro-mock/src" \
+  .venv/bin/python -m pytest tests/e2e/test_docker_failures.py -q
+
 snapshot_id="acceptance-real-$(date -u +%Y%m%dT%H%M%SZ)"
-raw_alarm_csv="../nocpro-mock/datasets/raw/alarm_data.csv"
+raw_alarm_csv="../nocpro-mock/datasets/raw/alarm/alarm_data.csv"
 if [[ -f "$raw_alarm_csv" ]]; then
   MOCK_SNAPSHOT_ID="$snapshot_id" MOCK_SNAPSHOT_VERSION=1 \
-    docker compose --profile replay run --rm mock-producer
+    docker compose --profile replay run --rm --no-deps mock-producer
 
-  deadline=$((SECONDS + 120))
-  while (( SECONDS < deadline )); do
-    state="$(docker compose exec -T postgres psql -U nocpro -d nocpro -At -c \
-      "SELECT concat_ws('|', status, tier1a_status, lineage_status, similarity_status) FROM snapshot_ingest WHERE snapshot_id='${snapshot_id}' AND snapshot_version='1';")"
-    if [[ "$state" == "COMPLETE|READY|READY|READY" ]]; then
-      break
-    fi
-    sleep 1
-  done
-  if [[ "${state:-}" != "COMPLETE|READY|READY|READY" ]]; then
-    docker compose logs --no-color api
-    echo "snapshot ${snapshot_id} failed acceptance readiness: ${state:-missing}" >&2
-    exit 1
-  fi
+  wait_for_snapshot_ready "$snapshot_id"
 
-  pnpm --dir services/web e2e
+  # The browser scenarios intentionally depend on different active snapshots:
+  # real replay for core WHY/Audit, synthetic P2 for Evolution, and synthetic
+  # Counterfactual for Review.  Do not execute the whole suite against the
+  # real replay before those later fixtures have been ingested.
+  pnpm --dir services/web exec playwright test e2e/operator-flow.spec.ts
 
   curl -fsS "http://127.0.0.1:${API_HOST_PORT}/api/v1/chains/6907125" \
     -o /tmp/nocpro-acceptance-largest-chain.json \
@@ -74,8 +94,28 @@ else
   echo "production_replay_acceptance=SKIPPED_RAW_ALARM_EXPORT_MISSING"
 fi
 
-NOCPRO_RUN_DOCKER_E2E=1 PYTHONPATH="../nocpro-mock/src" \
-  .venv/bin/python -m pytest tests/e2e/test_docker_failures.py -q
+# This separately proves the only real topology evidence permitted today:
+# exact alarmIP identity mapping + undirected topoIP hop proximity. The result
+# remains Dep_hop only; it does not establish any directed dependency claim.
+ip_snapshot_id="acceptance-ip-topology-$(date -u +%Y%m%dT%H%M%SZ)"
+if [[ -f "../nocpro-mock/datasets/raw/alarm/alarmIP.csv" && -f "../nocpro-mock/datasets/raw/topo/topoIP.csv" ]]; then
+  MOCK_IP_SNAPSHOT_ID="$ip_snapshot_id" MOCK_IP_SNAPSHOT_VERSION=1 \
+    docker compose --profile replay-ip run --rm --no-deps mock-producer-ip
+  wait_for_snapshot_ready "$ip_snapshot_id"
+  curl -fsS "http://127.0.0.1:${API_HOST_PORT}/api/v1/chains/6912465/pairs/3960289954/3960289955" \
+    | .venv/bin/python -c '
+import json
+import sys
+payload = json.load(sys.stdin)
+dep_hop = next((item for item in payload["evidence"] if item.get("channel_family") == "Dep_hop"), None)
+assert dep_hop is not None, payload
+assert dep_hop["state"] == "SUPPORT", dep_hop
+assert dep_hop["source_version"].startswith("sha256:"), dep_hop
+'
+  echo "ip_topology_dep_hop_acceptance=PASS"
+else
+  echo "ip_topology_dep_hop_acceptance=SKIPPED_IP_INPUT_MISSING"
+fi
 
 ANALYSIS_CONFIG_PATH="/app/config/thresholds/e2e-p2.yaml" \
   docker compose up -d --force-recreate api

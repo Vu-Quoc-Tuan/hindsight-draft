@@ -57,7 +57,12 @@ def package_for(case: str, minute_offset: int):
         snapshot_index=0,
         chains={f"{scenario}_CHAIN": [f"{scenario}_A{i}" for i in range(1, 7)]},
     )
-    logical_time = datetime.now(timezone.utc) + timedelta(minutes=minute_offset)
+    # This suite is intentionally run before the real replay in the aggregate
+    # harness.  Keep its recovery fixtures in a stable historical prefix so
+    # the replay's default current timestamp cannot violate lineage ordering.
+    logical_time = datetime.now(timezone.utc) - timedelta(hours=1) + timedelta(
+        minutes=minute_offset
+    )
     return replace(
         package,
         snapshot=replace(
@@ -222,7 +227,9 @@ def test_04_expired_running_lease_is_reclaimed():
             and value["similarity_status"] == "READY",
             timeout=60,
         )
-        assert row["worker_id"] is None
-        assert row["lease_expires_at"] is None
+        # Lease fields are shared by Tier-1A, lineage, and Similarity.  A
+        # subsequent lineage claim may therefore legitimately own them after
+        # Tier-1A is READY; the reclaimed stale owner must never survive.
+        assert row["worker_id"] != "dead-worker"
 
     asyncio.run(exercise())

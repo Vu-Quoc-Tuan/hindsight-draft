@@ -107,10 +107,46 @@ services:
       - -m
       - nocpro_mock.cli
       - replay
+      - --alarm-csv
+      - datasets/raw/alarm/alarm_data.csv
       - --snapshot-id
       - ${MOCK_SNAPSHOT_ID:-docker-replay-001}
       - --snapshot-version
       - ${MOCK_SNAPSHOT_VERSION:-1}
+      - --kafka-bootstrap
+      - kafka:19092
+      - --chunk-target-bytes
+      - "2097152"
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+
+  # A bounded real-IP replay used only to prove exact identity mapping plus
+  # undirected adjacency. It must not promote topology to directed P2/RCA.
+  mock-producer-ip:
+    profiles: ["replay-ip"]
+    build:
+      context: ..
+      dockerfile: nocpro-mock/Dockerfile
+    working_dir: /workspace/nocpro-mock
+    volumes:
+      - ../nocpro-mock/datasets/raw:/workspace/nocpro-mock/datasets/raw:ro
+    command:
+      - .venv/bin/python
+      - -m
+      - nocpro_mock.cli
+      - replay
+      - --alarm-csv
+      - datasets/raw/alarm/alarmIP.csv
+      - --topo-ip
+      - datasets/raw/topo/topoIP.csv
+      - --with-topology
+      - --chain-id
+      - "6912465"
+      - --snapshot-id
+      - ${MOCK_IP_SNAPSHOT_ID:-docker-ip-topology-001}
+      - --snapshot-version
+      - ${MOCK_IP_SNAPSHOT_VERSION:-1}
       - --kafka-bootstrap
       - kafka:19092
       - --chunk-target-bytes
