@@ -438,6 +438,7 @@ function App() {
   const [submitting, setSubmitting] = useState(false)
   const [topologyProfile, setTopologyProfile] = useState<'ALARM_ONLY' | 'IP_NETWORK' | 'IT_SERVICES'>('IT_SERVICES')
   const [topologyPayload, setTopologyPayload] = useState<TopologyTreePayload | null>(null)
+  const [topologyRootId, setTopologyRootId] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -496,14 +497,15 @@ function App() {
     if (tab !== 'topology') return
     const controller = new AbortController()
     setTopologyPayload(null)
-    api.topologyProjection(topologyProfile, controller.signal).then(setTopologyPayload).catch((cause: unknown) => {
+    setTopologyPayload(null)
+    api.topologyProjection(topologyProfile, controller.signal, topologyRootId).then(setTopologyPayload).catch((cause: unknown) => {
       if (!controller.signal.aborted) setTopologyPayload({
         status: 'UNAVAILABLE', profile: topologyProfile, topology_kind: 'UNAVAILABLE',
         reason: cause instanceof Error ? cause.message : 'TOPOLOGY_PROJECTION_UNAVAILABLE',
       })
     })
     return () => controller.abort()
-  }, [tab, topologyProfile])
+  }, [tab, topologyProfile, topologyRootId])
 
   const filteredChains = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -747,7 +749,10 @@ function App() {
                       </div>
                       <label>
                         Dataset profile
-                        <select value={topologyProfile} onChange={(event) => setTopologyProfile(event.target.value as typeof topologyProfile)}>
+                        <select value={topologyProfile} onChange={(event) => {
+                          setTopologyProfile(event.target.value as typeof topologyProfile)
+                          setTopologyRootId(undefined)
+                        }}>
                           <option value="ALARM_ONLY">Alarm-only</option>
                           <option value="IP_NETWORK">IP network</option>
                           <option value="IT_SERVICES">IT services</option>
@@ -755,7 +760,14 @@ function App() {
                       </label>
                     </header>
                     {topologyPayload ? (
-                      <TopologyTree payload={topologyPayload} />
+                      <TopologyTree
+                        key={topologyPayload.status === 'AVAILABLE'
+                          ? topologyPayload.profile + ':' + topologyPayload.source_version + ':' + topologyPayload.tree.resource_id
+                          : topologyPayload.profile + ':' + topologyPayload.reason}
+                        payload={topologyPayload}
+                        onSearchSource={(query) => api.topologySearch(topologyProfile, query)}
+                        onRootChange={setTopologyRootId}
+                      />
                     ) : (
                       <div className="loading-state">
                         <span />

@@ -52,16 +52,18 @@ test('operator flow exposes indexed WHY, provenance and Tier-2 audit', async ({ 
     page.getByRole('heading', { level: 1, name: `Chain ${pairChain.chain_id}` }),
   ).toBeVisible()
   await expect(page.getByText('exact indexed', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Why Grouped' }).click()
   await expect(page.getByText('What defines this chain')).toBeVisible()
   await expect(page.getByText('Role distribution')).toBeVisible()
 
-  const timeline = page.getByLabel('Bounded member timeline')
-  const nodes = timeline.locator('button')
-  await expect(nodes).toHaveCount(pairChain.member_count)
-  await nodes.nth(0).click()
+  await page.getByRole('button', { name: 'Chain Tree' }).click()
+  const tree = page.getByLabel('Hierarchical alarm chain tree')
+  const compareControls = tree.locator('.node-compare-btn')
+  await expect(compareControls).toHaveCount(pairChain.member_count)
+  await compareControls.nth(0).click()
   await Promise.all([
     page.waitForResponse((response) => response.url().includes('/pairs/') && response.ok()),
-    nodes.nth(1).click(),
+    compareControls.nth(1).click(),
   ])
   await expect(page.getByText(/evidence channels$/)).toBeVisible()
   const dependencyEvidence = page.locator('.evidence-item').filter({ hasText: 'DEP_HOP' })
@@ -110,9 +112,12 @@ test('singleton remains first class and is never made weak by missing pairs', as
 
   await page.goto('/')
   await page.getByLabel('Select alarm chain').selectOption(singleton.chain_id)
-  await expect(page.getByText('singleton path', { exact: false })).toBeVisible()
+  await page.getByRole('button', { name: 'Why Grouped' }).click()
   const rolePanel = page.locator('.role-panel')
   await expect(rolePanel).toContainText('not applicable')
   await expect(rolePanel).not.toContainText('weak')
-  await expect(page.getByText('Select two alarms')).toBeVisible()
+  await page.getByRole('button', { name: 'Chain Tree' }).click()
+  await expect(
+    page.getByLabel('Hierarchical alarm chain tree').locator('.node-compare-btn'),
+  ).toHaveCount(1)
 })

@@ -26,7 +26,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T
 }
 
-async function topologyRequest(profileId: string, signal?: AbortSignal): Promise<TopologyTreePayload> {
+export type TopologySearchResult = {
+  resource_id: string
+  resource_type: string
+  display_name: string
+}
+
+async function topologyRequest(
+  profileId: string,
+  signal?: AbortSignal,
+  rootId?: string,
+): Promise<TopologyTreePayload> {
   const base = import.meta.env.VITE_NOCPRO_MOCK_URL
   if (!base) return {
     status: 'UNAVAILABLE', profile: profileId as 'ALARM_ONLY' | 'IP_NETWORK' | 'IT_SERVICES', topology_kind: 'UNAVAILABLE',
@@ -34,9 +44,26 @@ async function topologyRequest(profileId: string, signal?: AbortSignal): Promise
   }
   const url = new URL('/api/topology/projection', base)
   url.searchParams.set('profile_id', profileId)
+  if (rootId) url.searchParams.set('root_id', rootId)
   const response = await fetch(url, { signal })
   if (!response.ok) throw new ApiError(response.status, `${response.status} ${response.statusText}`)
   return (await response.json()) as TopologyTreePayload
+}
+
+async function topologySearchRequest(
+  profileId: string,
+  query: string,
+  signal?: AbortSignal,
+): Promise<TopologySearchResult[]> {
+  const base = import.meta.env.VITE_NOCPRO_MOCK_URL
+  if (!base || !query.trim()) return []
+  const url = new URL('/api/topology/search', base)
+  url.searchParams.set('profile_id', profileId)
+  url.searchParams.set('q', query)
+  const response = await fetch(url, { signal })
+  if (!response.ok) throw new ApiError(response.status, response.status + " " + response.statusText)
+  const payload = (await response.json()) as { status: string; results?: TopologySearchResult[] }
+  return payload.status === 'AVAILABLE' ? payload.results ?? [] : []
 }
 
 export const api = {
@@ -127,5 +154,8 @@ export const api = {
       `/api/v1/chains/${encodeURIComponent(chainId)}/ai-suggestion`,
       { signal },
     ),
-  topologyProjection: (profileId: string, signal?: AbortSignal) => topologyRequest(profileId, signal),
+  topologyProjection: (profileId: string, signal?: AbortSignal, rootId?: string) =>
+    topologyRequest(profileId, signal, rootId),
+  topologySearch: (profileId: string, query: string, signal?: AbortSignal) =>
+    topologySearchRequest(profileId, query, signal),
 }
