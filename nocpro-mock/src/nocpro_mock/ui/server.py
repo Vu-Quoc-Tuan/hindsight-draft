@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 from ..config import load_config
 from ..data_profiles import dataset_profiles
-from .topology_api import projection_payload
+from .topology_api import projection_payload, search_payload
 from ..contract import (
     ContractViolation,
     MockSnapshotPackage,
@@ -347,6 +347,26 @@ class MockUIRequestHandler(SimpleHTTPRequestHandler):
             self._send_json(HTTPStatus.OK, payload)
             return
 
+        if path == "/api/topology/search":
+            parsed = urlparse(self.path)
+            query = parse_qs(parsed.query)
+            profile = query.get("profile_id", [None])[0] or query.get("profile", [None])[0]
+            if profile is None:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "profile_id is required"})
+                return
+            try:
+                payload = search_payload(
+                    profile,
+                    query.get("q", [""])[0],
+                    source_root=getattr(self.server, "source_root", None),
+                    limit=_integer(query.get("limit", [None])[0], 20, minimum=1, maximum=100),
+                )
+            except ValueError as exc:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                return
+            self._send_json(HTTPStatus.OK, payload)
+            return
+
         self.send_error(HTTPStatus.NOT_FOUND, f"Endpoint not found: {path}")
 
     def do_POST(self) -> None:
@@ -542,7 +562,7 @@ class TopologyRequestHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/topology/profiles":
             self._json(HTTPStatus.OK, {"profiles": [profile.__dict__ for profile in dataset_profiles()]})
             return
-        if parsed.path != "/api/topology/projection":
+        if parsed.path not in {"/api/topology/projection", "/api/topology/search"}:
             self._json(HTTPStatus.NOT_FOUND, {"error": "endpoint not found"})
             return
         query = parse_qs(parsed.query)
@@ -551,13 +571,21 @@ class TopologyRequestHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.BAD_REQUEST, {"error": "profile_id is required"})
             return
         try:
-            payload = projection_payload(
-                profile,
-                root_id=query.get("root_id", [None])[0],
-                source_root=getattr(self.server, "source_root", None),
-                max_depth=_integer(query.get("depth", [None])[0], 3, minimum=0, maximum=8),
-                max_children=_integer(query.get("child_limit", [None])[0], 50, minimum=1, maximum=200),
-            )
+            if parsed.path == "/api/topology/search":
+                payload = search_payload(
+                    profile,
+                    query=query.get("q", [""])[0],
+                    source_root=getattr(self.server, "source_root", None),
+                    limit=_integer(query.get("limit", [None])[0], 20, minimum=1, maximum=100),
+                )
+            else:
+                payload = projection_payload(
+                    profile,
+                    root_id=query.get("root_id", [None])[0],
+                    source_root=getattr(self.server, "source_root", None),
+                    max_depth=_integer(query.get("depth", [None])[0], 3, minimum=0, maximum=8),
+                    max_children=_integer(query.get("child_limit", [None])[0], 50, minimum=1, maximum=200),
+                )
         except ValueError as exc:
             self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
             return

@@ -77,9 +77,11 @@ def project_relation_tree(
     if root_id not in node_map:
         raise ValueError(f"projection root does not exist: {root_id}")
     outgoing: dict[str, list[TopologyRelationEdge | NavigationRelationEdge]] = defaultdict(list)
+    incoming_count: dict[str, int] = defaultdict(int)
     for edge in edges:
         if edge.source_id in node_map and edge.target_id in node_map:
             outgoing[edge.source_id].append(edge)
+            incoming_count[edge.target_id] += 1
     for source_id, values in outgoing.items():
         values.sort(key=lambda edge: (_RELATION_PRIORITY.get(edge.relation_type, 99), _TYPE_PRIORITY.get(node_map[edge.target_id].resource_type, 99), edge.target_id, edge.source_table))
 
@@ -100,7 +102,17 @@ def project_relation_tree(
                 rendered.append(TopologyProjectionNode(child.resource_id, child.resource_type, child.display_name, edge.relation_type, edge.source_table, reference_kind="CYCLE"))
                 continue
             if child.resource_id in primary_seen:
-                rendered.append(TopologyProjectionNode(child.resource_id, child.resource_type, child.display_name, edge.relation_type, edge.source_table, reference_kind="MULTI_PARENT", linked_parent_count=1))
+                rendered.append(
+                    TopologyProjectionNode(
+                        child.resource_id,
+                        child.resource_type,
+                        child.display_name,
+                        edge.relation_type,
+                        edge.source_table,
+                        reference_kind="MULTI_PARENT",
+                        linked_parent_count=max(1, incoming_count[child.resource_id] - 1),
+                    )
+                )
                 continue
             primary_seen.add(child.resource_id)
             rendered.append(build(child.resource_id, edge, path | {child.resource_id}, depth + 1))
@@ -137,7 +149,7 @@ def project_adjacency_tree(
     return TopologyTreeProjection(
         root=projection.root,
         direction_kind="NONE",
-        dependency_semantics="UNVERIFIED",
+        dependency_semantics="UNAVAILABLE",
         semantic_notice="This adjacency-tree projection is for navigation. It does not imply dependency, causality, ownership, or propagation direction.",
         source_version=projection.source_version,
     )

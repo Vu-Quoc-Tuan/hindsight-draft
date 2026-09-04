@@ -24,8 +24,8 @@ from .producer.kafka_snapshot import KafkaSnapshotConfig, publish_snapshot
 from .replay.snapshot import build_golden_snapshot, build_real_replay_snapshot
 from .ui.topology_api import projection_payload
 
-DEFAULT_ALARM_CSV = "datasets/raw/alarm_data.csv"
-DEFAULT_TOPO_IP_CSV = "datasets/raw/topoIP-8zjkidh613ffzdck7jca5j6bdc.csv"
+DEFAULT_ALARM_CSV = "datasets/raw/alarm/alarm_data.csv"
+DEFAULT_TOPO_IP_CSV = "datasets/raw/topo/topoIP.csv"
 DEFAULT_SYNTHETIC_DIR = "docs/examples/synthetic"
 
 

@@ -54,7 +54,7 @@ def _capability_artifact(profile: DatasetProfile, *, topology_available: bool) -
         "relation_model": profile.topology_kind,
         "direction_kind": profile.direction_kind or "NONE",
         "dependency_semantics": dependency_semantics,
-        "alarm_resource_mapping": "UNAVAILABLE",
+        "alarm_resource_mapping": profile.alarm_resource_mapping,
     }
 
 
@@ -149,6 +149,68 @@ def projection_payload(
         "semantic_notice": projection.semantic_notice,
         "source_version": projection.source_version,
         "tree": asdict(projection.root),
+    }
+
+
+def search_payload(
+    profile_id: str,
+    query: str,
+    *,
+    source_root: str | Path | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Search the full normalized navigation graph without projecting it all.
+
+    Results are resource records only. They do not imply dependency semantics;
+    the client must request a bounded projection for a selected resource ID.
+    """
+    profile = resolve_dataset_profile(profile_id)
+    base = Path(source_root) if source_root is not None else _mock_root()
+    topology_path = _path(profile, base)
+    if topology_path is None:
+        return {
+            "status": "UNAVAILABLE",
+            "reason": "TOPOLOGY_NOT_PROVIDED_BY_DATASET_PROFILE",
+            "dataset_profile": profile.profile_id,
+            "results": [],
+        }
+    if not topology_path.exists():
+        return {
+            "status": "UNAVAILABLE",
+            "reason": "TOPOLOGY_SOURCE_FILE_MISSING",
+            "dataset_profile": profile.profile_id,
+            "results": [],
+        }
+    normalized = query.strip().casefold()
+    if not normalized:
+        return {
+            "status": "AVAILABLE",
+            "dataset_profile": profile.profile_id,
+            "results": [],
+        }
+    graph = _cached_graph(profile, topology_path)
+    matches = [
+        {
+            "resource_id": node.resource_id,
+            "resource_type": node.resource_type,
+            "display_name": node.display_name,
+        }
+        for node in graph.nodes
+        if normalized in node.resource_id.casefold()
+        or normalized in node.display_name.casefold()
+        or normalized in node.resource_type.casefold()
+    ]
+    matches.sort(
+        key=lambda item: (
+            item["display_name"].casefold() != normalized,
+            item["display_name"].casefold(),
+            item["resource_id"],
+        )
+    )
+    return {
+        "status": "AVAILABLE",
+        "dataset_profile": profile.profile_id,
+        "results": matches[:max(1, min(limit, 100))],
     }
 
 

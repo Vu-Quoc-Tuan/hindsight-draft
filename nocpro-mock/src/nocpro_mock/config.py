@@ -46,7 +46,9 @@ class MockConfig:
     topo_ip_enabled: bool = True
     topo_ip_capabilities: TopoIPCapabilities = field(default_factory=TopoIPCapabilities)
     topo_it_enabled: bool = False
-    topo_it_disabled_reason: str = "archive schema not yet verified"
+    topo_it_disabled_reason: str = (
+        "source relations are navigation-only; dependency semantics unverified"
+    )
     synthetic_generators: dict[str, bool] = field(default_factory=dict)
     policy: Policy = field(default_factory=Policy)
     #: Freshness PASS threshold. ``None`` means unknown -> quality_status UNKNOWN.
@@ -157,7 +159,10 @@ def load_config(path: str | Path | None = None) -> MockConfig:
         ),
         topo_it_enabled=bool(topo_it.get("enabled", False)),
         topo_it_disabled_reason=str(
-            topo_it.get("reason", "archive schema not yet verified")
+            topo_it.get(
+                "reason",
+                "source relations are navigation-only; dependency semantics unverified",
+            )
         ),
         synthetic_generators=generators or _default_generators(),
         policy=Policy(

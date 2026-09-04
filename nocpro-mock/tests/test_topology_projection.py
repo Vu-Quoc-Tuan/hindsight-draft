@@ -8,7 +8,7 @@ from urllib.request import urlopen
 
 from nocpro_mock.loaders.topology_it_csv import TopologyRelationEdge, TopologyRelationNode
 from nocpro_mock.ui.topology_projection import project_relation_tree
-from nocpro_mock.ui.topology_api import projection_payload
+from nocpro_mock.ui.topology_api import projection_payload, search_payload
 from nocpro_mock.ui.server import start_topology_server_in_thread
 from nocpro_mock.cli import main
 
@@ -100,6 +100,29 @@ def test_it_profile_payload_keeps_source_relation_boundary(tmp_path) -> None:
     }
 
 
+def test_full_graph_search_returns_a_rootable_resource_without_dependency_promotion(tmp_path) -> None:
+    topology_root = tmp_path / "datasets" / "raw" / "topo" / "topoIT"
+    _write_minimal_topoit(topology_root)
+
+    found = search_payload("IT_SERVICES", "m1", source_root=tmp_path)
+
+    assert found["status"] == "AVAILABLE"
+    assert found["results"] == [
+        {
+            "resource_id": "it:module:m1",
+            "resource_type": "MODULE",
+            "display_name": "m1",
+        }
+    ]
+    projection = projection_payload(
+        "IT_SERVICES",
+        root_id=found["results"][0]["resource_id"],
+        source_root=tmp_path,
+    )
+    assert projection["direction_kind"] == "SOURCE_RELATION"
+    assert projection["topology"]["dependency_semantics"] == "UNVERIFIED"
+
+
 def test_cli_emits_alarm_only_unavailable_payload() -> None:
     output = StringIO()
     with redirect_stdout(output):
@@ -112,7 +135,7 @@ def test_adjacency_projection_deduplicates_repeated_endpoint_pairs(monkeypatch, 
     from nocpro_mock.data_profiles import DatasetProfile
     from nocpro_mock.ui import topology_api
 
-    profile = DatasetProfile("IP_NETWORK", "fixture", "alarm.csv", "topo.csv", "UNDIRECTED_ADJACENCY", "NONE", "UNVERIFIED")
+    profile = DatasetProfile("IP_NETWORK", "fixture", "alarm.csv", "topo.csv", "UNDIRECTED_ADJACENCY", "NONE", "UNVERIFIED", "PARTIAL_EXACT_ONLY")
     monkeypatch.setattr(topology_api, "resolve_dataset_profile", lambda _: profile)
     topo = tmp_path / "topo.csv"
     topo.write_text(
@@ -128,7 +151,7 @@ def test_adjacency_projection_deduplicates_repeated_endpoint_pairs(monkeypatch, 
         "relation_model": "UNDIRECTED_ADJACENCY",
         "direction_kind": "NONE",
         "dependency_semantics": "UNAVAILABLE",
-        "alarm_resource_mapping": "UNAVAILABLE",
+        "alarm_resource_mapping": "PARTIAL_EXACT_ONLY",
     }
 
 
@@ -136,7 +159,7 @@ def test_projection_reuses_cached_graph_until_source_signature_changes(monkeypat
     from nocpro_mock.ui import topology_api
     from nocpro_mock.data_profiles import DatasetProfile
 
-    profile = DatasetProfile("IP_NETWORK", "fixture", "alarm.csv", "topo.csv", "UNDIRECTED_ADJACENCY", "NONE", "UNVERIFIED")
+    profile = DatasetProfile("IP_NETWORK", "fixture", "alarm.csv", "topo.csv", "UNDIRECTED_ADJACENCY", "NONE", "UNVERIFIED", "PARTIAL_EXACT_ONLY")
     monkeypatch.setattr(topology_api, "resolve_dataset_profile", lambda _: profile)
     topology_api._GRAPH_CACHE.clear()
     topo = tmp_path / "topo.csv"

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 TopologyKind = Literal["UNAVAILABLE", "UNDIRECTED_ADJACENCY", "DIRECTED_SOURCE_RELATIONS"]
+AlarmResourceMappingCapability = Literal["UNAVAILABLE", "PARTIAL_EXACT_ONLY"]
 
 
 @dataclass(frozen=True)
@@ -21,21 +22,24 @@ class DatasetProfile:
     topology_path: str | None
     topology_kind: TopologyKind
     direction_kind: Literal["NONE", "SOURCE_RELATION"] | None
-    dependency_semantics: Literal["UNVERIFIED"] | None
+    dependency_semantics: Literal["UNVERIFIED", "UNAVAILABLE"] | None
+    alarm_resource_mapping: AlarmResourceMappingCapability
 
 
 _PROFILES: dict[str, DatasetProfile] = {
     "ALARM_ONLY": DatasetProfile(
         "ALARM_ONLY", "Alarm only", "datasets/raw/alarm/alarm_data.csv", None,
-        "UNAVAILABLE", None, None,
+        "UNAVAILABLE", None, None, "UNAVAILABLE",
     ),
     "IP_NETWORK": DatasetProfile(
         "IP_NETWORK", "IP network adjacency", "datasets/raw/alarm/alarmIP.csv",
-        "datasets/raw/topo/topoIP.csv", "UNDIRECTED_ADJACENCY", "NONE", "UNVERIFIED",
+        "datasets/raw/topo/topoIP.csv", "UNDIRECTED_ADJACENCY", "NONE", "UNAVAILABLE",
+        "PARTIAL_EXACT_ONLY",
     ),
     "IT_SERVICES": DatasetProfile(
         "IT_SERVICES", "IT source relations", "datasets/raw/alarm/alarmIT.csv",
         "datasets/raw/topo/topoIT", "DIRECTED_SOURCE_RELATIONS", "SOURCE_RELATION", "UNVERIFIED",
+        "UNAVAILABLE",
     ),
 }
 
