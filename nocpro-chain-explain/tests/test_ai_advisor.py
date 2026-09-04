@@ -1,114 +1,104 @@
-"""Tests for AI Operational Advisor conforming to ADR-0024."""
+"""Regression tests for ADR-0024 deterministic evidence rendering."""
 
 from __future__ import annotations
 
 import asyncio
-import json
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
 
 import httpx2
-import pytest
 
 from nocpro_api import create_app
 from nocpro_api.ai_advisor import (
-    extract_grounded_claims,
     build_deterministic_narrative,
+    extract_grounded_claims,
     generate_ai_suggestion,
 )
 from tests.test_api import _payload
 
 
-def test_ai_advisor_extracts_pure_grounded_claims() -> None:
-    # Build a mock analysis object
-    mock_member_1 = {"alarm_id": "A1", "device_code": "R1", "role": "ROOT", "fit": "NORMAL"}
-    mock_member_2 = {"alarm_id": "A2", "device_code": "R2", "role": "LEAF", "fit": "WEAK"}
-    mock_desc = {"label": "Power Supply Fluctuation", "coverage": 0.85, "precision_global": 0.9}
-
-    analysis = MagicMock()
-    analysis.members = [mock_member_1, mock_member_2]
-    analysis.descriptors = [mock_desc]
-    analysis.role_counts = {"ROOT": 1, "LEAF": 1}
-
-    structured, claims = extract_grounded_claims("C100", analysis)
-    assert structured["chain_id"] == "C100"
-    assert structured["member_count"] == 2
-    assert "A2 (R2)" in structured["weak_members"]
-    assert "A1 (R1)" in structured["root_members"]
-    assert any("2 cảnh báo" in c for c in claims)
-    assert any("tương quan yếu" in c for c in claims)
-
-
-def test_ai_advisor_fallback_builds_rich_deterministic_narrative() -> None:
-    mock_member = {"alarm_id": "A1", "device_code": "CORE-HNI", "role": "ROOT", "fit": "NORMAL"}
-    analysis = MagicMock()
-    analysis.members = [mock_member]
-    analysis.descriptors = []
-    analysis.role_counts = {"ROOT": 1}
-
-    # Generate without LLM
-    with patch.dict("os.environ", {"AI_API_KEY": ""}):
-        res = generate_ai_suggestion("C1", analysis)
-        assert res.status == "FALLBACK"
-        assert "CORE-HNI" in res.narrative
-        assert "ADR-0024" in res.disclaimer
-        assert len(res.grounded_claims) > 0
+def _analysis() -> SimpleNamespace:
+    return SimpleNamespace(
+        members={
+            "A1": SimpleNamespace(
+                role=SimpleNamespace(verdict="CORE", support=0.91),
+                representativeness=0.82,
+            ),
+            "A2": SimpleNamespace(
+                role=SimpleNamespace(verdict="WEAK", support=0.12),
+                representativeness=0.10,
+            ),
+            "A3": SimpleNamespace(
+                role=SimpleNamespace(
+                    verdict="INSUFFICIENT_DATA",
+                    support=None,
+                ),
+                representativeness=None,
+            ),
+        },
+        descriptors=[
+            SimpleNamespace(label="same entity", coverage=0.85),
+        ],
+    )
 
 
-def test_ai_advisor_handles_llm_provider_restriction_gracefully() -> None:
-    mock_member = {"alarm_id": "A1", "device_code": "CORE-HNI", "role": "ROOT", "fit": "NORMAL"}
-    analysis = MagicMock()
-    analysis.members = [mock_member]
-    analysis.descriptors = []
-    analysis.role_counts = {"ROOT": 1}
-
-    http_error = MagicMock()
-    http_error.code = 403
-    http_error.reason = "Forbidden"
-    http_error.read.return_value = b'{"error":{"type":"forbidden","message":"telegram_required"}}'
-
-    import urllib.error
-    with patch("urllib.request.urlopen", side_effect=urllib.error.HTTPError(
-        url="https://router.bynara.id/v1/chat/completions",
-        code=403,
-        msg="Forbidden",
-        hdrs={},
-        fp=http_error,
-    )), patch.dict("os.environ", {"AI_API_KEY": "sk-test-key"}):
-        res = generate_ai_suggestion("C1", analysis)
-        assert res.status == "FALLBACK"
-        assert "telegram_required" in (res.provider_status or "")
-        # Invariant: narrative must still be provided via grounded fallback
-        assert "Tóm tắt chuỗi sự cố" in res.narrative
-
-
-def test_ai_advisor_successful_llm_call() -> None:
-    mock_member = {"alarm_id": "A1", "device_code": "CORE-HNI", "role": "ROOT", "fit": "NORMAL"}
-    analysis = MagicMock()
-    analysis.members = [mock_member]
-    analysis.descriptors = []
-    analysis.role_counts = {"ROOT": 1}
-
-    mock_resp = MagicMock()
-    mock_resp.read.return_value = json.dumps({
-        "choices": [{
-            "message": {
-                "role": "assistant",
-                "content": "### 📋 Tóm tắt trạng thái chuỗi sự cố\nChuỗi C1 được phân tích bởi Mistral-Large."
+def _review() -> dict[str, object]:
+    return {
+        "evaluated_candidates": [
+            {
+                "candidate_id": "cf-1",
+                "operation": "REMOVE_MEMBER",
             }
-        }]
-    }).encode("utf-8")
-    mock_resp.__enter__.return_value = mock_resp
-
-    with patch("urllib.request.urlopen", return_value=mock_resp), patch.dict(
-        "os.environ", {"AI_API_KEY": "sk-test-key", "AI_MODEL": "mistral-large"}
-    ):
-        res = generate_ai_suggestion("C1", analysis)
-        assert res.status == "AVAILABLE"
-        assert res.model == "mistral-large"
-        assert "Mistral-Large" in res.narrative
+        ],
+        "recommendations": [{"candidate_id": "cf-1"}],
+    }
 
 
-def test_ai_suggestion_api_endpoint() -> None:
+def test_ai_advisor_projects_actual_member_role_shape() -> None:
+    structured, claims = extract_grounded_claims("C100", _analysis(), _review())
+
+    assert structured["member_count"] == 3
+    assert structured["weak_members"] == ["A2"]
+    assert structured["insufficient_members"] == ["A3"]
+    assert structured["proposals"] == [
+        {"candidate_id": "cf-1", "operation": "REMOVE_MEMBER"}
+    ]
+    assert any("WEAK" in claim for claim in claims)
+    assert any("INSUFFICIENT_DATA" in claim for claim in claims)
+    assert all("root cause" not in claim.lower() for claim in claims)
+
+
+def test_ai_advisor_never_converts_absence_of_weak_into_high_fit() -> None:
+    analysis = SimpleNamespace(
+        members={
+            "A1": SimpleNamespace(
+                role=SimpleNamespace(
+                    verdict="INSUFFICIENT_DATA",
+                    support=None,
+                ),
+                representativeness=None,
+            )
+        },
+        descriptors=[],
+    )
+    structured, _ = extract_grounded_claims("C1", analysis)
+    narrative = build_deterministic_narrative("C1", structured)
+
+    assert "Evidence is incomplete for: A1." in narrative
+    assert "high fit" not in narrative.lower()
+    assert "causal direction is" not in narrative.lower()
+
+
+def test_ai_advisor_uses_recommendation_refs_to_find_evaluated_detail() -> None:
+    result = generate_ai_suggestion("C1", _analysis(), _review())
+
+    assert result.status == "AVAILABLE"
+    assert result.model == "DETERMINISTIC_EVIDENCE"
+    assert result.provider_status == "NOT_USED"
+    assert "REMOVE_MEMBER (cf-1)" in result.narrative
+    assert "does not infer root cause" in result.narrative
+
+
+def test_ai_suggestion_api_endpoint_is_deterministic_and_provider_free() -> None:
     async def exercise() -> None:
         app = create_app()
         transport = httpx2.ASGITransport(app=app)
@@ -119,14 +109,14 @@ def test_ai_suggestion_api_endpoint() -> None:
                 loaded = await client.post("/api/v1/snapshots", json=_payload())
                 assert loaded.status_code == 201
 
-                resp = await client.get("/api/v1/chains/C1/ai-suggestion")
-                assert resp.status_code == 200
-                data = resp.json()
-                assert data["chain_id"] == "C1"
-                assert data["status"] in {"AVAILABLE", "FALLBACK"}
-                assert "ADR-0024" in data["disclaimer"]
-                assert len(data["narrative"]) > 0
-                assert len(data["grounded_claims"]) > 0
+                first = await client.get("/api/v1/chains/C1/ai-suggestion")
+                second = await client.get("/api/v1/chains/C1/ai-suggestion")
+                assert first.status_code == 200
+                assert second.status_code == 200
+                assert first.json() == second.json()
+                assert first.json()["model"] == "DETERMINISTIC_EVIDENCE"
+                assert first.json()["provider_status"] == "NOT_USED"
+                assert "ADR-0024" in first.json()["disclaimer"]
         finally:
             app.state.workspace.close()
 

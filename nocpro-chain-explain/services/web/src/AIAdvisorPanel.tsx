@@ -47,9 +47,9 @@ export function AIAdvisorPanel({
       }
       if (trimmed.startsWith('- ')) {
         return (
-          <li key={idx} className="ai-narrative-item">
+          <p key={idx} className="ai-narrative-item">
             {trimmed.replace('- ', '')}
-          </li>
+          </p>
         )
       }
       if (trimmed.startsWith('> ')) {
@@ -71,9 +71,9 @@ export function AIAdvisorPanel({
       <header className="ai-advisor-header">
         <div>
           <p className="kicker">ADR-0024 Grounded Narrative · Viettel NOC AI Support</p>
-          <h2>✨ Trợ lý AI Viettel NocPro</h2>
+          <h2>Evidence summary</h2>
           <p className="ai-advisor-sub">
-            Diễn giải và tổng hợp các mệnh đề bằng chứng xác định của chuỗi <strong>{chainId}</strong>.
+            Bản diễn giải xác định từ evidence đã persist của chuỗi <strong>{chainId}</strong>.
           </p>
         </div>
         <div className="ai-advisor-actions">
@@ -88,7 +88,7 @@ export function AIAdvisorPanel({
             onClick={() => setRefreshIndex((v) => v + 1)}
             disabled={loading}
           >
-            {loading ? 'Đang phân tích…' : '🔄 Tải lại phân tích AI'}
+            {loading ? 'Đang tải…' : '🔄 Tải lại evidence summary'}
           </button>
         </div>
       </header>
@@ -107,19 +107,18 @@ export function AIAdvisorPanel({
       {loading && !suggestion ? (
         <div className="loading-state">
           <span />
-          <p>Đang phân tích dữ liệu chuỗi bằng Mistral-Large…</p>
+          <p>Đang tải evidence summary xác định…</p>
         </div>
       ) : error ? (
         <div className="error-banner" role="alert">
-          <strong>Lỗi khi kết nối Trợ lý AI</strong>
+          <strong>Không thể tải evidence summary</strong>
           <p>{error}</p>
         </div>
       ) : suggestion ? (
         <article className="ai-suggestion-body">
-          {suggestion.provider_status && suggestion.provider_status !== 'OK' && (
+          {suggestion.provider_status === 'ERROR' && (
             <div className="ai-provider-notice">
-              <span>⚠️ Thông báo nhà cung cấp LLM:</span> {suggestion.provider_status}.
-              <small>Hệ thống tự động sử dụng Bản tổng hợp xác định (Deterministic Grounded Synthesis) để đảm bảo không gián đoạn.</small>
+              <span>⚠️ Provider status:</span> {suggestion.provider_status}.
             </div>
           )}
 

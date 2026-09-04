@@ -23,7 +23,7 @@ const tabs: Array<{ id: Tab; label: string; eyebrow: string }> = [
   { id: 'topology', label: 'Topology', eyebrow: 'Source view' },
   { id: 'review', label: 'Review', eyebrow: 'What-if' },
   { id: 'evolution', label: 'Evolution', eyebrow: 'Snapshots' },
-  { id: 'ai', label: 'AI Advisor', eyebrow: 'Mistral-Large' },
+  { id: 'ai', label: 'Evidence summary', eyebrow: 'Grounded facts' },
 ]
 
 const evidenceLayers: Array<{ id: EvidenceLayer; label: string }> = [
