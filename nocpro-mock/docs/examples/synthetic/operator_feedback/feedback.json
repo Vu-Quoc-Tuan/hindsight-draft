@@ -27,6 +27,15 @@
       "target_chain_id": "SYN-CHAIN-MOVE-TARGET"
     },
     {
+      "feedback_id": "FB-SYN-SPLIT-001",
+      "scenario_id": "synthetic_counterfactual_split_v1",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "snapshot_version": "1",
+      "chain_id": "SYN-CHAIN-SPLIT-MUTATED",
+      "operation": "SPLIT_CHAIN",
+      "verdict": "ACCEPTED"
+    },
+    {
       "feedback_id": "FB-SYN-MERGE-REJECTED-001",
       "scenario_id": "synthetic_counterfactual_merge_v1",
       "snapshot_id": "synthetic_counterfactual_merge_v1:snapshot_000",

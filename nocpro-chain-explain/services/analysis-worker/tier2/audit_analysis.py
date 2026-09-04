@@ -17,7 +17,7 @@ from audit import (
     OverMergeStrength,
     assess_over_merge,
     build_audit_graph,
-    classify_structural_role,
+    classify_structural_roles,
     generate_candidates,
     run_structural_audit,
 )
@@ -293,10 +293,7 @@ def analyze_structural_audit(
             pair_detail_limit=pair_count,
         )
         graph = build_audit_graph(evidence.members, evidence.matrix.values)
-        roles = {
-            alarm_id: classify_structural_role(alarm_id, graph)
-            for alarm_id in evidence.members
-        }
+        roles = classify_structural_roles(graph)
         resolved_failure_domains = (
             failure_domains
             if failure_domains is not None

@@ -1,14 +1,15 @@
-"""Real Data Taxonomy Adapter for NocPro Alarms.
+"""Raw taxonomy-field adapter for NocPro alarms.
 
-Extracts structured, ground-truth taxonomy from NocPro production records:
+Extracts structured taxonomy-like source fields from NocPro export records:
 - Type: derived from ``fault_id`` and/or canonical ``alarm_name``.
 - Family: derived from ``group_name`` (e.g., 'Cảnh báo power Core', 'Cảnh báo UDCNTT_VCLOUD').
 - Category: derived from ``network_class_name`` or ``monitor_type_name``.
 
-This adapter exposes populated raw taxonomy-like fields as optional tokens.  It
-does not establish that a production taxonomy is authoritative: that requires a
-separately versioned business-owned taxonomy source.  Missing values stay
-missing; this module never invents fallback labels.
+This adapter exposes populated raw fields as optional replay/context tokens.
+It does not establish an authoritative production taxonomy: that requires a
+separately versioned, business-owned taxonomy source. Missing values stay
+missing; this module never invents fallback labels or promotes these fields to
+production H/T_delay eligibility.
 """
 
 from __future__ import annotations
@@ -84,7 +85,7 @@ def build_real_historical_taxonomy(
     source_id: str = "real-nocpro-export",
     version: str = "real-taxonomy-v1",
 ) -> HistoricalTaxonomy:
-    """Build a HistoricalTaxonomy instance for H and T_delay evidence models."""
+    """Build a replay/test taxonomy object; it is not production authority."""
     mappings: dict[str, TaxonomyTokens] = {}
 
     for item in alarms:

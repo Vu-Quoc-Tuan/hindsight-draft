@@ -17,6 +17,7 @@ def test_synthetic_operator_feedback_is_typed_and_never_production_ground_truth(
     assert fixture.eligible_as_production_ground_truth is False
     assert {(record.operation, record.verdict) for record in fixture.records} == {
         ("REMOVE_MEMBER", "ACCEPTED"),
+        ("SPLIT_CHAIN", "ACCEPTED"),
         ("MOVE_MEMBER", "ACCEPTED"),
         ("MERGE_CHAINS", "REJECTED"),
     }

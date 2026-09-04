@@ -28,12 +28,12 @@ It separates **capability** from evidence that the capability was exercised;
 | `T_delay` Pair WHY runtime/API/UI | `READY` | `PASS` | `PASS` model suite; generic Pair WHY UI is runtime-proven | `UNAVAILABLE` / `NOT_CALIBRATED` | The production-shaped baseline does not invent taxonomy or a calibrated threshold, so T_delay-specific service/API availability remains intentionally fail-closed. |
 | `T_delay` full-chain indexed Role contribution | `UNAVAILABLE` | `PASS` fail-closed | N/A | N/A | `UNAVAILABLE` | `NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH`. Dense pairwise fallback is forbidden. |
 | `T_delay` full-chain indexed Audit contribution | `UNAVAILABLE` | `PASS` fail-closed | N/A | N/A | `UNAVAILABLE` | `NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH`. Eligibility metadata does not manufacture an exact indexed statistic. |
-| Structural Audit, attribution, deletion evaluation | `READY` under exact ceilings | `PASS` | `PASS` | `PASS` synthetic Docker stack for Audit/Review | Input/config-dependent | Ceiling exceedance is component `UNAVAILABLE`, not a fabricated approximation or a failed Tier-2 job. |
+| Structural Audit, attribution, deletion evaluation | `READY` under exact ceilings | `PASS` | `PASS` | `PASS` synthetic Docker stack for Audit/Review; raw 1072-member exact run completed | Input/config-dependent | A one-run local raw-export 1072-member Audit completed in 80.633 s with Audit/Attribution/deletion all exact. This is a measurement, not a P95/SLO. Ceiling exceedance is component `UNAVAILABLE`, not a fabricated approximation or a failed Tier-2 job. |
 | Similar Chains | `READY` | `PASS` | `PASS` | `PASS` raw-export replay | Degraded / input-dependent | Raw `group_name` can be used only as an observed source field; it does not establish authoritative production taxonomy. |
 | Evolution v1 persisted lineage projection | `READY` | `PASS` | `PASS` | `PASS` synthetic Docker stack | `BLOCKED_BY_DATA_AVAILABILITY` | The sequence slicer creates `DERIVED_REPLAY` windows from one export; production evolution requires verified sequential upstream snapshots. |
 | Directed topology P2 semantics | `READY` only for compatible synthetic inputs | `PASS` | `PASS` | `PASS` synthetic Docker stack | `UNAVAILABLE` | IP is structural adjacency and IT is unverified source relation. Display hierarchy never supplies dependency direction, active paths, dominators, propagation, or failure domains. |
 | Real topology navigation read model | `READY` | `PASS` | N/A | `PASS` local mock endpoint + Chromium tree preview | `READY` for source-record navigation only | `ALARM_ONLY` has no topology; IP is undirected adjacency; IT is `DIRECTED_SOURCE_RELATIONS`, not verified dependency. Tree primary paths are technical projection only. The full Explain snapshot workflow remains separately input-dependent. |
-| Exact alarm-to-topology identity mapping | `PARTIAL_EXACT_ONLY` | `PASS` | N/A | N/A | `UNAVAILABLE` as a complete P2 prerequisite | The current `alarmIP`/`topoIP` audit resolves 140,596/212,636 rows by exact `device_code` identity (1,294/2,908 distinct codes); `alarmIT`/`topoIT` resolves 241/258,344 rows by exact canonical resource ID. Unmapped/ambiguous alarms remain fail-closed; topoIT aliases are navigation-only. |
+| P2-eligible alarm-to-topology mapping | `PARTIAL_EXACT_ONLY` for IP; `UNAVAILABLE` for IT | `PASS` | N/A | N/A | `UNAVAILABLE` as a complete P2 prerequisite | The current `alarmIP`/`topoIP` audit resolves 140,596/212,636 rows (66.121%) by exact `device_code` identity, covering 1,294/2,908 distinct alarm device codes. `topoIT` source-field joins have substantial navigation coverage (measured separately below), but are not promoted to P2-eligible mappings without authoritative business semantics. |
 | IP `Dep_hop` proximity evidence | `READY` for exact-mapped IP endpoints | `PASS` | N/A | `PASS` targeted Kafka/PostgreSQL/API smoke | `PARTIAL_EXACT_ONLY` | Real `alarmIP` replay carries a content-hashed topoIP provenance; a mapped adjacent pair returns `Dep_hop=SUPPORT`. This is undirected hop proximity over `IP_ADJACENCY`, never upstream/dependency direction. |
 | IT source-relation contribution to Explain P2 | `UNAVAILABLE` | `PASS` fail-closed | N/A | N/A | `UNAVAILABLE` | `SOURCE_RELATION` / `UNVERIFIED` IT records must not enable dependency, ancestor, dominator, propagation, scope, or failure-domain semantics. |
 | Synthetic operator-feedback fixture | `READY` | `PASS` | `PASS` | N/A | `NOT_CALIBRATED` | Typed accepted/rejected labels exercise empirical-evaluation input only. It is `SYNTHETIC_TEST` and explicitly cannot serve as production ground truth. |
@@ -41,7 +41,7 @@ It separates **capability** from evidence that the capability was exercised;
 | Counterfactual `MERGE_CHAINS` | `READY` | `PASS` | `PASS` | `PASS` Kafka/PostgreSQL/restart/Chromium | `NOT_CALIBRATED` | Exact cross-chain evidence and persisted Review reload have runtime acceptance. |
 | Counterfactual `ADD_MEMBER` | `BLOCKED` | N/A | N/A | N/A | `BLOCKED` | `UNKNOWN_UPSTREAM_SEMANTICS`: first-class zero-membership alarms have not been verified upstream. A singleton-source transfer is canonical `MOVE_MEMBER`, never ADD. |
 | AI Advisor grounded narrative | `READY` (ADR-0024 epistemic boundaries) | `PASS` | `PASS` | `NOT_RUN` for current revision | `READY` for deterministic narrative only; `UNAVAILABLE` for ungrounded LLM inference | Deterministic adapter strictly extracts from verified member roles, descriptors, and Pareto recommendations. `provider_status=NOT_USED`; GET endpoint produces zero external LLM side effects or credential dependency. |
-| IT alias & topology mapping limits | `READY` fail-closed | `PASS` | `PASS` | `NOT_RUN` for real IT/IP navigation acceptance | `READY` for source-record navigation only; `PARTIAL_EXACT_ONLY` for identity matches; `UNAVAILABLE` for complete production mapping | Ambiguous aliases resolve to `AMBIGUOUS`. `topoIT` aliases strictly excluded from `build_it_resource_mapper()` to forbid unverified CSV columns from claiming `VERIFIED_ALIAS` status. |
+| IT source-field topology joins | `READY` for structural navigation; excluded from P2 mapping | `PASS` | `PASS` | `NOT_RUN` for alarm-rooted real IT navigation | `PARTIAL_SOURCE_FIELD_EXACT` for navigation; `UNAVAILABLE` for P2 promotion | The real files yield 169,836/258,344 uniquely resolved alarm rows (65.740%), 44,992 multi-resource conflicts, 441 rows touching an ambiguous alias, and 43,106 rows with no alias hit. These exact source-record joins are useful, but their direction and business meaning remain unverified. |
 
 ## AI Advisor boundary
 
@@ -66,8 +66,21 @@ IP alarms can use versioned, undirected `IP_ADJACENCY` to report hop distance.
 That distance does not promote the graph to directed dependency semantics.
 
 `build_it_resource_mapper()` strictly excludes `topoIT` alias join columns from
-acting as authoritative production alarm mappings; colliding aliases fail-closed
-to `AMBIGUOUS`. Alias fields remain structural navigation helpers only.
+acting as P2-eligible production alarm mappings; colliding aliases fail-closed
+to `AMBIGUOUS`. Alias fields remain structural navigation helpers only. This
+does not mean that the files have little overlap: a complete row-level audit of
+the local `alarmIT.csv` and `topoIT` source tables found 169,836 uniquely
+resolved rows out of 258,344 (65.740%). Another 44,992 rows produced more than
+one resource candidate and therefore cannot be collapsed to one resource
+without a separately frozen resolution rule; 43,106 rows had no exact alias
+hit. The loader extracted 111,311 unambiguous aliases and 161 ambiguous aliases
+over a normalized graph of 128,322 nodes and 218,635 source-relation edges.
+
+For IP, exact canonical `device_code` identity resolves 140,596 of 212,636
+alarm rows (66.121%) and 1,294 of the 2,908 distinct alarm device codes. This
+mapping can support bounded undirected `Dep_hop` proximity. It still does not
+establish directed dependency, active path, dominator, propagation, or failure
+domain semantics.
 
 ## T_delay boundary
 
@@ -132,7 +145,8 @@ defaults:
 - authoritative alarm TYPE/FAMILY/CATEGORY taxonomy;
 - verified sequential production snapshots;
 - operator-confirmed chain corrections for recommendation evaluation and policy calibration;
-- exact alarm-to-topology resource mapping;
+- completion and authoritative qualification of alarm-to-topology resource
+  mappings (the local files already provide substantial partial exact joins);
 - directed dependency/path semantics and, where needed, dominator/path truth;
 - failure-domain ground truth.
 
@@ -164,3 +178,9 @@ Only this Tier-1 matrix was measured by `run_benchmark.py`. The complete
 closure manifest intentionally continues to mark Audit, attribution,
 Counterfactual, persistence, and restart timings as `NOT_RUN` unless their
 specific benchmark/runtime workflow has supplied a measurement.
+
+One exact Tier-2 run was additionally completed for the 1,072-member chain
+`6907125`: Structural Audit completed in `80.633 s` with
+`NO_LOW_CONDUCTANCE_CUT`; Evidence Coverage Attribution and deterministic
+deletion evaluation both returned `AVAILABLE` / `EXACT`. This is a one-run
+raw-export characterisation, not a P95 measurement and not a production SLO.

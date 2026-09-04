@@ -1,7 +1,8 @@
-"""Deterministic synthetic correctness/latency benchmark for Review P0.
+"""Deterministic synthetic correctness/latency benchmark for Review v1.
 
-This benchmark is not production calibration evidence.  It measures the two
-explicitly-labelled mutation fixtures and one clean truth partition only.
+This benchmark is not production calibration evidence.  It measures the four
+explicitly-labelled REMOVE, SPLIT, MOVE, and MERGE mutation fixtures plus one
+clean truth partition.
 """
 
 from __future__ import annotations

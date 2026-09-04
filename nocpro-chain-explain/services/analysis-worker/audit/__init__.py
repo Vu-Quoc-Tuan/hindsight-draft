@@ -31,6 +31,7 @@ from .structural_role import (
     StructuralRole,
     StructuralRoleResult,
     classify_structural_role,
+    classify_structural_roles,
     connected_components,
     find_articulation_points,
 )
@@ -71,6 +72,7 @@ __all__ = [
     "build_audit_graph",
     "calibrate_epsilon",
     "classify_structural_role",
+    "classify_structural_roles",
     "conductance",
     "connected_components",
     "find_articulation_points",

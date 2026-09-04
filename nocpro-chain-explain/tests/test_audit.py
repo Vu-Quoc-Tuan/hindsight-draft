@@ -20,6 +20,7 @@ from audit import (
     build_audit_graph,
     calibrate_epsilon,
     classify_structural_role,
+    classify_structural_roles,
     conductance,
     connected_components,
     dependency_candidates,
@@ -34,6 +35,7 @@ from audit import (
     run_structural_audit,
     score_candidates,
 )
+from audit.graph import AuditEdge, AuditGraph
 from audit.conductance import AuditVerdict
 from channels.base import ChannelValue
 from descriptor import build_predicate_index
@@ -389,6 +391,37 @@ def test_bridge_node_is_a_connector():
     assert result.role is StructuralRole.CONNECTOR
     assert result.is_articulation_point is True
     assert result.blocks_supported == 2
+
+
+def test_articulation_detection_handles_a_path_beyond_python_recursion_limit():
+    """Exact Audit permits chains up to 2,000 members, including sparse paths."""
+    members = tuple(f"N{index:04d}" for index in range(1_101))
+    adjacency = {member: {} for member in members}
+    edges = []
+    for left, right in zip(members, members[1:]):
+        adjacency[left][right] = 1.0
+        adjacency[right][left] = 1.0
+        edges.append(
+            AuditEdge(
+                node_a=left,
+                node_b=right,
+                weight=1.0,
+                supporting_groups=("semantic", "entity"),
+            )
+        )
+    graph = AuditGraph(members=members, edges=tuple(edges), adjacency=adjacency)
+
+    articulation = find_articulation_points(graph)
+
+    assert len(articulation) == len(members) - 2
+    assert members[0] not in articulation
+    assert members[-1] not in articulation
+    assert members[1] in articulation
+    assert members[-2] in articulation
+    roles = classify_structural_roles(graph)
+    assert roles[members[1]].role is StructuralRole.CONNECTOR
+    assert roles[members[1]].blocks_supported == 2
+    assert roles[members[0]].role is StructuralRole.NON_CONNECTOR
 
 
 def test_leaf_of_a_dense_graph_is_non_connector():
