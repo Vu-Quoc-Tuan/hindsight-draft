@@ -2,15 +2,17 @@ version: "3.9"
 
 services:
   nocpro-mock:
-    build: .
+    build:
+      context: ..
+      dockerfile: nocpro-mock/Dockerfile
     container_name: nocpro-mock
     ports:
       - "${MOCK_UI_PORT:-8085}:8085"
     volumes:
-      - ./datasets:/app/datasets:ro
+      - ./datasets:/workspace/nocpro-mock/datasets:ro
     environment:
       - PYTHONUNBUFFERED=1
-    command: ["python", "-m", "nocpro_mock.cli", "ui", "--host", "0.0.0.0", "--port", "8085"]
+    command: [".venv/bin/python", "-m", "nocpro_mock.cli", "ui", "--host", "0.0.0.0", "--port", "8085"]
     # Standalone mock compose: provides read-only local topology and dataset exploration UI.
     # For full Kafka snapshot replay and end-to-end acceptance, use the canonical
     # stack in nocpro-chain-explain/docker-compose.yml.

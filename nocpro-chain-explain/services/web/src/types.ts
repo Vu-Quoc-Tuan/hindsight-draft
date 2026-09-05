@@ -510,4 +510,6 @@ export type AISuggestion = {
   grounded_claims: string[]
   disclaimer: string
   provider_status?: string | null
+  review_status: 'AVAILABLE' | 'NOT_AVAILABLE' | 'UNAVAILABLE'
+  review_reason?: string | null
 }

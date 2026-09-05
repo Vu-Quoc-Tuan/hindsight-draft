@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -36,6 +37,7 @@ from .workspace import SnapshotNotLoaded, Workspace
 
 
 router = APIRouter(prefix="/api/v1")
+logger = logging.getLogger(__name__)
 
 
 def workspace(request: Request) -> Workspace:
@@ -297,6 +299,8 @@ async def get_chain_ai_suggestion(
         service = workspace(request)
         analysis = service.analyze(chain_id)
         review_result = None
+        review_status = "NOT_AVAILABLE"
+        review_reason = None
         try:
             latest_review = await service.latest_review(chain_id)
             if latest_review and latest_review.result:
@@ -306,14 +310,19 @@ async def get_chain_ai_suggestion(
                     if hasattr(latest_review.result, "recommendations")
                     else latest_review.result
                 )
+                review_status = "AVAILABLE"
         except Exception:
-            pass
+            logger.exception("Could not load Review artifact for AI suggestion chain=%s", chain_id)
+            review_status = "UNAVAILABLE"
+            review_reason = "REVIEW_ARTIFACT_UNAVAILABLE"
 
         from .ai_advisor import generate_ai_suggestion
         suggestion = generate_ai_suggestion(
             chain_id=chain_id,
             analysis=analysis,
             review_result=review_result,
+            review_status=review_status,
+            review_reason=review_reason,
         )
         return ai_suggestion_view(suggestion)
     except Exception as exc:

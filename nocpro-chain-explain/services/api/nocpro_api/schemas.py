@@ -517,3 +517,5 @@ class AISuggestionView(ApiModel):
     grounded_claims: list[str]
     disclaimer: str
     provider_status: str | None = None
+    review_status: str
+    review_reason: str | None = None

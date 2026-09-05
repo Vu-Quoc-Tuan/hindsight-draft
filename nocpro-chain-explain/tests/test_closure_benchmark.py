@@ -63,3 +63,32 @@ def test_closure_manifest_reads_review_measurements_from_artifact(tmp_path):
     assert move["provenance"] == "benchmarks/results/counterfactual-latest.json"
     assert move["p95_seconds"] == 0.2
     assert remove["status"] == "NOT_RUN"
+
+
+def test_closure_manifest_does_not_claim_reliable_p95_without_reliable_samples(tmp_path):
+    (tmp_path / "latest.json").write_text(json.dumps({
+        "results": [{
+            "operation": "pair_on_click",
+            "workload": "chain-58",
+            "p50_s": 0.01,
+            "p95_s": 0.02,
+            "p95_reliable": False,
+            "n": 1,
+        }],
+    }))
+    output = run(tmp_path / "closure.json", results_dir=tmp_path)
+    payload = json.loads(output.read_text())
+    pair_why = next(item for item in payload["results"] if item["operation"] == "pair_why")
+    assert pair_why["status"] == "MEASURED"
+    assert pair_why["p95_reliable"] is False
+
+
+def test_closure_manifest_requires_complete_review_timing(tmp_path):
+    (tmp_path / "counterfactual-latest.json").write_text(json.dumps({
+        "operation_summaries": [{"operation": "MOVE_MEMBER"}],
+    }))
+    output = run(tmp_path / "closure.json", results_dir=tmp_path)
+    payload = json.loads(output.read_text())
+    move = next(item for item in payload["results"] if item["operation"] == "review_move_member")
+    assert move["status"] == "NOT_RUN"
+    assert move["reason"] == "SYNTHETIC_REVIEW_BENCHMARK_NOT_EXECUTED"

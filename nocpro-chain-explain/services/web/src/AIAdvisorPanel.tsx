@@ -126,6 +126,13 @@ export function AIAdvisorPanel({
             {renderNarrative(suggestion.narrative)}
           </div>
 
+          {suggestion.review_status === 'UNAVAILABLE' && (
+            <div className="ai-provider-notice" role="status">
+              <span>⚠️ Counterfactual Review:</span> không thể đọc artifact hiện tại
+              {suggestion.review_reason ? ` (${suggestion.review_reason})` : ''}.
+            </div>
+          )}
+
           {suggestion.grounded_claims.length > 0 && (
             <div className="ai-claims-section">
               <h4>Mệnh đề bằng chứng xác minh (Grounded Claims)</h4>

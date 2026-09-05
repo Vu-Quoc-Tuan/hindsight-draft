@@ -15,6 +15,7 @@ const mockSuggestion: AISuggestion = {
   ],
   disclaimer: 'ADR-0024: deterministic evidence only.',
   provider_status: 'NOT_USED',
+  review_status: 'AVAILABLE',
 }
 
 describe('AIAdvisorPanel', () => {

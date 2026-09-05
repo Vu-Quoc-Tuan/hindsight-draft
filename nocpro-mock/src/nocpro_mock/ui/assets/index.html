@@ -977,12 +977,12 @@
 
       <div class="form-row">
         <div class="form-group">
-          <label for="input-kafka-bootstrap">Bootstrap Broker</label>
-          <input type="text" id="input-kafka-bootstrap" value="localhost:9092">
+          <label for="input-kafka-bootstrap">Bootstrap Broker (server configured)</label>
+          <input type="text" id="input-kafka-bootstrap" value="localhost:9092" readonly aria-readonly="true">
         </div>
         <div class="form-group">
-          <label for="input-kafka-topic">Kafka Topic</label>
-          <input type="text" id="input-kafka-topic" value="nocpro.snapshot.v1">
+          <label for="input-kafka-topic">Kafka Topic (server configured)</label>
+          <input type="text" id="input-kafka-topic" value="nocpro.snapshot.v1" readonly aria-readonly="true">
         </div>
       </div>
 
@@ -1501,6 +1501,8 @@
         const resp = await fetch('/api/status');
         const data = await resp.json();
         if (data.ok) {
+          document.getElementById('input-kafka-bootstrap').value = data.defaults.kafka_bootstrap;
+          document.getElementById('input-kafka-topic').value = data.defaults.kafka_topic;
           // Datasets
           const alarmsOk = data.datasets.alarm_csv.exists;
           const topoOk = data.datasets.topo_ip.exists;

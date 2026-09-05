@@ -189,7 +189,7 @@ def consolidated_closure_results(
                     "provenance": "benchmarks/results/latest.json",
                     "chain_matrix": matrix,
                     "p95_seconds": p95,
-                    "p95_reliable": True,
+                    "p95_reliable": all(r.get("p95_reliable", False) for r in entries),
                     "repetitions": entries[0].get("n", 20),
                     "exact_only": exact_only,
                     "requires_runtime": requires_runtime,
@@ -215,7 +215,7 @@ def consolidated_closure_results(
                     "provenance": "benchmarks/results/latest.json",
                     "chain_matrix": matrix,
                     "p95_seconds": p95,
-                    "p95_reliable": True,
+                    "p95_reliable": all(r.get("p95_reliable", False) for r in entries),
                     "repetitions": entries[0].get("n", 20),
                     "exact_only": exact_only,
                     "requires_runtime": requires_runtime,
@@ -314,7 +314,13 @@ def consolidated_closure_results(
                 ),
                 None,
             )
-            if summary:
+            required_measurements = (
+                "latency_p50_seconds",
+                "latency_p95_seconds",
+                "latency_p95_reliable",
+                "repetitions_per_mutation",
+            )
+            if summary and all(summary.get(field) is not None for field in required_measurements):
                 results.append({
                     "operation": name,
                     "tier": tier,

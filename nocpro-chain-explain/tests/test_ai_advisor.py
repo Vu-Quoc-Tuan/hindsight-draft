@@ -98,6 +98,20 @@ def test_ai_advisor_uses_recommendation_refs_to_find_evaluated_detail() -> None:
     assert "does not infer root cause" in result.narrative
 
 
+def test_ai_advisor_distinguishes_unavailable_review_from_no_recommendation() -> None:
+    result = generate_ai_suggestion(
+        "C1",
+        _analysis(),
+        review_status="UNAVAILABLE",
+        review_reason="REVIEW_ARTIFACT_UNAVAILABLE",
+    )
+
+    assert result.review_status == "UNAVAILABLE"
+    assert result.review_reason == "REVIEW_ARTIFACT_UNAVAILABLE"
+    assert "could not be read" in result.narrative
+    assert "No operator-facing counterfactual recommendation" not in result.narrative
+
+
 def test_ai_suggestion_api_endpoint_is_deterministic_and_provider_free() -> None:
     async def exercise() -> None:
         app = create_app()

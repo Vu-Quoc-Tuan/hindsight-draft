@@ -62,11 +62,21 @@ def test_api_check_kafka(ui_server: str):
     status, data = _request_json(
         f"{ui_server}/api/check-kafka",
         method="POST",
-        data={"kafka_bootstrap": "127.0.0.1:65432"},  # unused port
+        data={},
     )
     assert status == 200
     assert data["ok"] is False  # expected offline on unused port
     assert "bootstrap" in data
+
+
+def test_api_rejects_client_selected_kafka_destination(ui_server: str):
+    status, data = _request_json(
+        f"{ui_server}/api/check-kafka",
+        method="POST",
+        data={"kafka_bootstrap": "127.0.0.1:65432"},
+    )
+    assert status == 400
+    assert "configured by the Mock server" in data["error"]
 
 
 def test_api_preview_golden(ui_server: str):
@@ -141,6 +151,16 @@ def test_api_preview_missing_file_error(ui_server: str):
     assert "not found" in data["error"].lower()
 
 
+def test_api_preview_rejects_paths_outside_mock_datasets(ui_server: str):
+    status, data = _request_json(
+        f"{ui_server}/api/preview",
+        method="POST",
+        data={"mode": "real", "alarm_csv": "/etc/passwd"},
+    )
+    assert status == 400
+    assert "outside approved" in data["error"].lower()
+
+
 def test_api_publish_unreachable_kafka(ui_server: str):
     # Publishing to an unreachable port should fail gracefully without crashing server
     status, data = _request_json(
@@ -149,8 +169,6 @@ def test_api_publish_unreachable_kafka(ui_server: str):
         data={
             "mode": "golden",
             "snapshot_version": "1",
-            "kafka_bootstrap": "127.0.0.1:65432",
-            "kafka_topic": "test.topic",
         },
     )
     assert status == 500

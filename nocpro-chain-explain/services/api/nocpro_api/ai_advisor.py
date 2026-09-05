@@ -22,6 +22,8 @@ class AISuggestionResult:
     grounded_claims: list[str]
     disclaimer: str
     provider_status: str | None = None
+    review_status: str = "NOT_AVAILABLE"
+    review_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -152,6 +154,8 @@ def extract_grounded_claims(
 def build_deterministic_narrative(
     chain_id: str,
     structured_data: dict[str, Any],
+    review_status: str = "NOT_AVAILABLE",
+    review_reason: str | None = None,
 ) -> str:
     """Render the grounded projection without causal or topology claims."""
     lines = [
@@ -176,7 +180,12 @@ def build_deterministic_narrative(
         lines.append(f"- Descriptor facts: {', '.join(descriptors)}.")
 
     lines.append("\n### Counterfactual review")
-    if proposals:
+    if review_status == "UNAVAILABLE":
+        lines.append(
+            "- Counterfactual Review could not be read; this is not equivalent "
+            "to having no recommendation."
+        )
+    elif proposals:
         for proposal in proposals:
             lines.append(
                 f"- {proposal['operation']} ({proposal['candidate_id']}) "
@@ -197,6 +206,8 @@ def generate_ai_suggestion(
     chain_id: str,
     analysis: Any,
     review_result: dict[str, Any] | None = None,
+    review_status: str = "NOT_AVAILABLE",
+    review_reason: str | None = None,
 ) -> AISuggestionResult:
     """Return an evidence-bound summary with no external model invocation."""
     structured, claims = extract_grounded_claims(chain_id, analysis, review_result)
@@ -204,11 +215,15 @@ def generate_ai_suggestion(
         chain_id=chain_id,
         status="AVAILABLE",
         model="DETERMINISTIC_EVIDENCE",
-        narrative=build_deterministic_narrative(chain_id, structured),
+        narrative=build_deterministic_narrative(
+            chain_id, structured, review_status, review_reason
+        ),
         grounded_claims=claims,
         disclaimer=(
             "ADR-0024: this response renders deterministic evidence only; it "
             "does not create evidence, infer causality, or change NocPro."
         ),
         provider_status="NOT_USED",
+        review_status=review_status,
+        review_reason=review_reason,
     )

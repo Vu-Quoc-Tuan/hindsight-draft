@@ -43,21 +43,32 @@ ASSETS_DIR = Path(__file__).parent / "assets"
 DEFAULT_ALARM_CSV = "datasets/raw/alarm/alarm_data.csv"
 DEFAULT_TOPO_IP_CSV = "datasets/raw/topo/topoIP.csv"
 DEFAULT_SYNTHETIC_DIR = "docs/examples/synthetic"
+MAX_REQUEST_BODY_BYTES = 1 * 1024 * 1024
+DEFAULT_KAFKA_TOPIC = "nocpro.snapshot.v1"
+
+
+def _allowed_input_roots() -> tuple[Path, ...]:
+    """Return the only directories a browser request may select input from.
+
+    The Mock UI is deliberately a dataset/fixture replay tool. A request must
+    never turn it into a generic filesystem reader merely by supplying an
+    absolute path. The roots are intentionally narrow rather than the whole
+    workspace because the sibling Explain service may contain local secrets.
+    """
+    return (
+        (MOCK_ROOT / "datasets").resolve(),
+        (MOCK_ROOT / "docs" / "examples" / "synthetic").resolve(),
+    )
 
 
 def _resolve_path(rel_or_abs: str | Path) -> Path:
-    p = Path(rel_or_abs)
-    if p.is_absolute():
-        return p
-    # Try mock root first
-    target = MOCK_ROOT / p
-    if target.exists():
-        return target
-    # Fallback to workspace root
-    target2 = WORKSPACE_ROOT / p
-    if target2.exists():
-        return target2
-    return target
+    """Resolve an input selected by the UI within approved dataset roots."""
+    raw = Path(rel_or_abs)
+    candidate = raw if raw.is_absolute() else MOCK_ROOT / raw
+    resolved = candidate.resolve(strict=False)
+    if not any(resolved.is_relative_to(root) for root in _allowed_input_roots()):
+        raise ValueError("Requested input path is outside approved Mock datasets or fixtures")
+    return resolved
 
 
 def _discover_sequences() -> list[dict[str, Any]]:
@@ -307,9 +318,16 @@ class MockUIRequestHandler(SimpleHTTPRequestHandler):
             return
 
     def _read_body_json(self) -> dict[str, Any]:
-        length = int(self.headers.get("Content-Length", 0))
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError as exc:
+            raise ValueError("Content-Length must be an integer") from exc
         if length <= 0:
             return {}
+        if length > MAX_REQUEST_BODY_BYTES:
+            raise ValueError(
+                f"Request body exceeds {MAX_REQUEST_BODY_BYTES} byte Mock UI limit"
+            )
         body = self.rfile.read(length).decode("utf-8")
         return json.loads(body)
 
@@ -401,7 +419,14 @@ class MockUIRequestHandler(SimpleHTTPRequestHandler):
             return
 
         if path == "/api/check-kafka":
-            bootstrap = body.get("kafka_bootstrap", getattr(self.server, "default_kafka", "localhost:9092"))
+            bootstrap = getattr(self.server, "default_kafka", "localhost:9092")
+            requested = body.get("kafka_bootstrap")
+            if requested not in (None, "", bootstrap):
+                self._send_json(
+                    HTTPStatus.BAD_REQUEST,
+                    {"ok": False, "error": "Kafka bootstrap is configured by the Mock server"},
+                )
+                return
             ok, msg = check_kafka_socket(bootstrap)
             self._send_json(HTTPStatus.OK, {"ok": ok, "message": msg, "bootstrap": bootstrap})
             return
@@ -419,8 +444,16 @@ class MockUIRequestHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/publish":
             start_t = time.perf_counter()
-            bootstrap = body.get("kafka_bootstrap") or getattr(self.server, "default_kafka", "localhost:9092")
-            topic = body.get("kafka_topic", "nocpro.snapshot.v1")
+            bootstrap = getattr(self.server, "default_kafka", "localhost:9092")
+            topic = DEFAULT_KAFKA_TOPIC
+            requested_bootstrap = body.get("kafka_bootstrap")
+            requested_topic = body.get("kafka_topic")
+            if requested_bootstrap not in (None, "", bootstrap) or requested_topic not in (None, "", topic):
+                self._send_json(
+                    HTTPStatus.BAD_REQUEST,
+                    {"ok": False, "error": "Kafka destination is configured by the Mock server"},
+                )
+                return
             chunk_bytes = int(body.get("chunk_target_bytes", 2 * 1024 * 1024))
 
             try:
@@ -540,14 +573,6 @@ def start_server_in_thread(
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server, f"http://{host}:{actual_port}"
-
-
-def _integer(value: str | None, default: int, *, minimum: int, maximum: int) -> int:
-    try:
-        result = int(value) if value is not None else default
-    except ValueError:
-        return default
-    return min(max(result, minimum), maximum)
 
 
 class TopologyRequestHandler(BaseHTTPRequestHandler):

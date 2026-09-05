@@ -658,4 +658,6 @@ def ai_suggestion_view(result: Any) -> AISuggestionView:
         grounded_claims=list(d.get("grounded_claims", [])),
         disclaimer=d["disclaimer"],
         provider_status=d.get("provider_status"),
+        review_status=d.get("review_status", "NOT_AVAILABLE"),
+        review_reason=d.get("review_reason"),
     )
