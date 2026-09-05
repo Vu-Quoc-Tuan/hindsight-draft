@@ -9,8 +9,9 @@ is intentionally unavailable or not run in the current environment.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from math import isfinite
+from math import ceil, isclose, isfinite
 from pathlib import Path
+from statistics import median
 from typing import Iterable
 
 
@@ -84,6 +85,70 @@ def _valid_entries(entries: list[dict]) -> bool:
     )
 
 
+def _valid_isolated_measurement(measurement: dict) -> bool:
+    repetitions = measurement.get("repetitions")
+    samples = measurement.get("samples_seconds")
+    return (
+        _valid_timing(
+            measurement.get("p50_seconds"),
+            measurement.get("p95_seconds"),
+            repetitions,
+            measurement.get("p95_reliable"),
+        )
+        and isinstance(measurement.get("scope"), str)
+        and bool(measurement["scope"])
+        and _valid_raw_samples(
+            samples,
+            repetitions,
+            measurement["p50_seconds"],
+            measurement["p95_seconds"],
+            measurement["p95_reliable"],
+        )
+    )
+
+
+def _valid_runtime_measurement(measurement: dict, repetitions: object) -> bool:
+    samples = measurement.get("samples_s")
+    return (
+        _valid_timing(
+            measurement.get("p50_s"),
+            measurement.get("p95_s"),
+            repetitions,
+            measurement.get("p95_reliable"),
+        )
+        and _valid_raw_samples(
+            samples,
+            repetitions,
+            measurement["p50_s"],
+            measurement["p95_s"],
+            measurement["p95_reliable"],
+        )
+    )
+
+
+def _valid_raw_samples(
+    samples: object,
+    repetitions: object,
+    p50: float,
+    p95: float,
+    reliable: bool,
+) -> bool:
+    if (
+        not isinstance(samples, list)
+        or not isinstance(repetitions, int)
+        or repetitions < 20
+        or len(samples) != repetitions
+        or reliable is not True
+        or not all(_finite_nonnegative(value) for value in samples)
+    ):
+        return False
+    observed_p50 = median(samples)
+    observed_p95 = sorted(samples)[ceil(0.95 * repetitions) - 1]
+    return isclose(p50, observed_p50, rel_tol=1e-12, abs_tol=1e-12) and isclose(
+        p95, observed_p95, rel_tol=1e-12, abs_tol=1e-12
+    )
+
+
 def _invalid_measurement_result(
     operation: ClosureBenchmarkOperation,
     reason: str = "INVALID_OR_INCOMPLETE_BENCHMARK_EVIDENCE",
@@ -147,6 +212,7 @@ def consolidated_closure_results(
     latest_file = base / "latest.json"
     runtime_file = base / "runtime-review-latest.json"
     review_file = base / "counterfactual-latest.json"
+    isolated_file = base / "isolated-latest.json"
 
     latest_data = (
         json.loads(latest_file.read_text(encoding="utf-8"))
@@ -163,11 +229,27 @@ def consolidated_closure_results(
         if review_file.is_file()
         else None
     )
+    isolated_data = (
+        json.loads(isolated_file.read_text(encoding="utf-8"))
+        if isolated_file.is_file()
+        else None
+    )
 
     by_op: dict[str, list[dict]] = {}
     if latest_data and "results" in latest_data:
         for r in latest_data["results"]:
             by_op.setdefault(r.get("operation", ""), []).append(r)
+    isolated_by_op = {
+        item.get("operation"): item
+        for item in (isolated_data or {}).get("measurements", [])
+        if isinstance(item, dict)
+    }
+    isolated_operations = {
+        "evidence_attribution",
+        "attribution_deletion_curve",
+        "merge_cross_chain_evidence",
+        "review_serialization",
+    }
 
     results: list[dict] = []
     for operation in operations:
@@ -175,6 +257,27 @@ def consolidated_closure_results(
         tier = operation.tier
         exact_only = operation.exact_only
         requires_runtime = operation.requires_runtime
+
+        if name in isolated_operations and name in isolated_by_op:
+            measurement = isolated_by_op[name]
+            if _valid_isolated_measurement(measurement):
+                results.append({
+                    "operation": name,
+                    "tier": tier,
+                    "status": "MEASURED",
+                    "scope": measurement["scope"],
+                    "provenance": "benchmarks/results/isolated-latest.json",
+                    "workload": measurement.get("workload"),
+                    "p50_seconds": measurement["p50_seconds"],
+                    "p95_seconds": measurement["p95_seconds"],
+                    "p95_reliable": measurement["p95_reliable"],
+                    "repetitions": measurement["repetitions"],
+                    "exact_only": exact_only,
+                    "requires_runtime": requires_runtime,
+                })
+            else:
+                results.append(_invalid_measurement_result(operation))
+            continue
 
         if name == "tier_1a_snapshot_background":
             entries = by_op.get("tier_1a_snapshot_background", [])
@@ -446,25 +549,44 @@ def consolidated_closure_results(
             continue
 
         if name == "review_persistence":
-            results.append({
-                "operation": name,
-                "tier": tier,
-                "status": "NOT_RUN",
-                "reason": "NO_ISOLATED_PERSISTENCE_MEASUREMENT",
-                "notes": "Restart-to-health is recorded separately and does not measure the persistence write path.",
-                "exact_only": exact_only,
-                "requires_runtime": requires_runtime,
-            })
+            persistence = (runtime_data or {}).get("review_persistence")
+            runtime_repetitions = (runtime_data or {}).get("repetitions")
+            if isinstance(persistence, dict) and _valid_runtime_measurement(
+                persistence, runtime_repetitions
+            ):
+                results.append({
+                    "operation": name,
+                    "tier": tier,
+                    "status": "MEASURED",
+                    "scope": runtime_data.get("scope", "LOCAL_DOCKER_RUNTIME_ONLY"),
+                    "provenance": "benchmarks/results/runtime-review-latest.json",
+                    "p50_seconds": persistence["p50_s"],
+                    "p95_seconds": persistence["p95_s"],
+                    "p95_reliable": persistence["p95_reliable"],
+                    "repetitions": runtime_repetitions,
+                    "notes": "Direct repository write plus committed read-back for unique Review lifecycle rows.",
+                    "exact_only": exact_only,
+                    "requires_runtime": requires_runtime,
+                })
+            elif persistence is not None:
+                results.append(_invalid_measurement_result(operation))
+            else:
+                results.append({
+                    "operation": name,
+                    "tier": tier,
+                    "status": "NOT_RUN",
+                    "reason": "NO_ISOLATED_PERSISTENCE_MEASUREMENT",
+                    "notes": "Restart-to-health is recorded separately and does not measure the persistence write path.",
+                    "exact_only": exact_only,
+                    "requires_runtime": requires_runtime,
+                })
             continue
 
         if name == "review_restart_hydration":
             hydration = (runtime_data or {}).get("persisted_review_hydration")
             runtime_repetitions = (runtime_data or {}).get("repetitions")
-            if isinstance(hydration, dict) and _valid_timing(
-                hydration.get("p50_s"),
-                hydration.get("p95_s"),
-                runtime_repetitions,
-                hydration.get("p95_reliable"),
+            if isinstance(hydration, dict) and _valid_runtime_measurement(
+                hydration, runtime_repetitions
             ):
                 results.append({
                     "operation": name,

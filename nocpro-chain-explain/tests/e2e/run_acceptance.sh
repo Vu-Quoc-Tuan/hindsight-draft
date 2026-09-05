@@ -182,6 +182,8 @@ done
 NOCPRO_RUN_DOCKER_E2E=1 PYTHONPATH="../nocpro-mock/src" \
   .venv/bin/python -m pytest tests/e2e/test_counterfactual_review.py -q
 pnpm --dir services/web exec playwright test e2e/counterfactual-review.spec.ts
+PYTHONPATH="services/api:services/analysis-worker" \
+  .venv/bin/python benchmarks/run_runtime_review_benchmark.py
 
 echo "acceptance_snapshot=${snapshot_id}"
 echo "production_delta_validation=BLOCKED_BY_DATA_AVAILABILITY"

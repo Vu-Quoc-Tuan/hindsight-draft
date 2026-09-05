@@ -438,8 +438,12 @@ function App() {
   const [job, setJob] = useState<Job | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [topologyProfile, setTopologyProfile] = useState<'ALARM_ONLY' | 'IP_NETWORK' | 'IT_SERVICES'>('IT_SERVICES')
-  const [topologyPayload, setTopologyPayload] = useState<TopologyTreePayload | null>(null)
   const [topologyRootId, setTopologyRootId] = useState<string | undefined>(undefined)
+  const topologyRequestKey = `${topologyProfile}\u0000${topologyRootId ?? ''}`
+  const [loadedTopology, setLoadedTopology] = useState<{
+    requestKey: string
+    payload: TopologyTreePayload
+  } | null>(null)
   const [topologySourceResolution, setTopologySourceResolution] = useState<TopologyNavigationResolution | null>(null)
 
   useEffect(() => {
@@ -498,15 +502,23 @@ function App() {
   useEffect(() => {
     if (tab !== 'topology') return
     const controller = new AbortController()
-    setTopologyPayload(null)
-    api.topologyProjection(topologyProfile, controller.signal, topologyRootId).then(setTopologyPayload).catch((cause: unknown) => {
-      if (!controller.signal.aborted) setTopologyPayload({
-        status: 'UNAVAILABLE', profile: topologyProfile, topology_kind: 'UNAVAILABLE',
-        reason: cause instanceof Error ? cause.message : 'TOPOLOGY_PROJECTION_UNAVAILABLE',
+    api.topologyProjection(topologyProfile, controller.signal, topologyRootId).then((payload) => {
+      if (!controller.signal.aborted) setLoadedTopology({ requestKey: topologyRequestKey, payload })
+    }).catch((cause: unknown) => {
+      if (!controller.signal.aborted) setLoadedTopology({
+        requestKey: topologyRequestKey,
+        payload: {
+          status: 'UNAVAILABLE', profile: topologyProfile, topology_kind: 'UNAVAILABLE',
+          reason: cause instanceof Error ? cause.message : 'TOPOLOGY_PROJECTION_UNAVAILABLE',
+        },
       })
     })
     return () => controller.abort()
-  }, [tab, topologyProfile, topologyRootId])
+  }, [tab, topologyProfile, topologyRequestKey, topologyRootId])
+
+  const topologyPayload = loadedTopology?.requestKey === topologyRequestKey
+    ? loadedTopology.payload
+    : null
 
   const filteredChains = useMemo(() => {
     const query = search.trim().toLowerCase()

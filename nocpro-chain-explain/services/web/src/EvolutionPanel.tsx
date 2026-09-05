@@ -9,19 +9,30 @@ function productionLabel(value: Evolution['production_validation']) {
 }
 
 export function EvolutionPanel({ chainId, initialResult = null }: { chainId: string; initialResult?: Evolution | null }) {
-  const [result, setResult] = useState<Evolution | null>(initialResult)
-  const [error, setError] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState<{
+    chainId: string
+    result: Evolution | null
+    error: string | null
+  }>({ chainId: initialResult?.chain_id ?? '', result: initialResult, error: null })
 
   useEffect(() => {
     if (initialResult?.chain_id === chainId) return
     const controller = new AbortController()
-    setResult(null)
-    setError(null)
-    api.evolution(chainId, controller.signal).then(setResult).catch((cause: unknown) => {
-      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Evolution unavailable')
+    api.evolution(chainId, controller.signal).then((result) => {
+      if (!controller.signal.aborted) setLoaded({ chainId, result, error: null })
+    }).catch((cause: unknown) => {
+      if (!controller.signal.aborted) setLoaded({
+        chainId,
+        result: null,
+        error: cause instanceof Error ? cause.message : 'Evolution unavailable',
+      })
     })
     return () => controller.abort()
   }, [chainId, initialResult])
+
+  const initial = initialResult?.chain_id === chainId ? initialResult : null
+  const result = initial ?? (loaded.chainId === chainId ? loaded.result : null)
+  const error = initial ? null : (loaded.chainId === chainId ? loaded.error : null)
 
   if (error) return <section className="unavailable-card" role="alert"><span>UNAVAILABLE</span><h2>Evolution could not be loaded.</h2><p>{error}</p></section>
   if (!result) return <section className="evolution-panel evolution-loading"><p>Loading persisted lineage artifact…</p></section>

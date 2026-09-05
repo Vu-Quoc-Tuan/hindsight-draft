@@ -36,7 +36,7 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | Similar Chains: fingerprint + cosine baseline (`similar_chains/`) | P1-Core | done |
 | Similar Chains production index (`history<t`, snapshot-versioned model) | P1-Core | done |
 | Evidence Coverage Attribution (exact indexed, derivation-group level) | P1-optional | done; fail-closed above configured ceiling |
-| Counterfactual Chain Review P0 + P1.1 (`REMOVE_MEMBER`, exact-Audit `SPLIT_CHAIN`, `MOVE_MEMBER`) | review extension | implemented; synthetic correctness verified, production calibration not established |
+| Counterfactual Chain Review P0 + P1.1 (`REMOVE_MEMBER`, exact-Audit `SPLIT_CHAIN`, `MOVE_MEMBER`, `MERGE_CHAINS`) | review extension | implemented; synthetic correctness and local persistence/restart acceptance verified, production calibration not established |
 | **P1-Core (3+1) feature set implemented** | | **4/4** |
 | Contrastive top-3: per-candidate `Margin_common` (§5, §11) | P0 | done |
 | Hybrid indexed Tier-1B + pairwise oracle | P0 | done |
@@ -51,7 +51,7 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | Kafka chunk/barrier ingest (`nocpro-mock` -> Explain) | infra | done |
 | Docker Compose: PostgreSQL, Kafka, API, Web, replay producer | infra | done |
 | Docker + Chromium operator-flow and recovery acceptance | infra | done |
-| NocPro Assistant deterministic registry/navigation | infra | done; exact snapshot-bound read-only targets only, current-revision Docker acceptance pending |
+| NocPro Assistant deterministic registry/navigation | infra | done; exact snapshot-bound read-only targets only; full-stack Chromium flow and current-component stale-context browser harness passed |
 
 Per ADR-0029, MVP + P0-complete must stand as a usable project **before** P1.
 The P1-Core feature set above is implemented, but the **P1 milestone is not
@@ -485,6 +485,23 @@ exact repair `1.0`, clean false-recommendation rate `0.0`, clean abstention
 analysis latency `0.163s`, and maximum `0.259s`. These are small synthetic
 correctness/latency measurements, not a production threshold or SLO. The
 isolated containers, network and PostgreSQL volume were removed after the run.
+
+On 2026-09-05 the full acceptance suite was run three times on the current
+feature worktree: at baseline, after the initial changes, and after benchmark
+evidence hardening. The latest full-stack run replayed raw
+snapshot `acceptance-real-20260905T164924Z` and passed migration/runtime failure
+tests (`6/6`), Chromium operator flows (`2/2`), Assistant Chromium (`1/1`),
+real-topology Chromium (`1/1`), IP `Dep_hop`, synthetic P2 Kafka tests (`3/3`),
+Evolution Chromium (`1/1`), H/T_delay model tests (`18/18`), Counterfactual
+Kafka/PostgreSQL/restart (`1/1`), and Counterfactual Chromium (`1/1`). The
+1,072-member Tier-1B request completed in `0.875132s`. The runner also measured
+20 committed Review writes with read-back and 20 restart/hydration cycles. It
+then removed its isolated containers, network, and PostgreSQL volume. This is
+local acceptance evidence; it does not close any production-data gate.
+The subsequent Assistant stale-context hardening was verified separately in
+headless Chromium against both a completed response and a deliberately delayed
+response while Pair context changed; the current component hid both stale
+results and produced no console warning or error.
 
 The unresolved external gates are recorded explicitly:
 
