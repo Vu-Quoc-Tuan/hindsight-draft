@@ -8,7 +8,7 @@ from urllib.request import urlopen
 
 from nocpro_mock.loaders.topology_it_csv import TopologyRelationEdge, TopologyRelationNode
 from nocpro_mock.ui.topology_projection import project_relation_tree
-from nocpro_mock.ui.topology_api import projection_payload, search_payload
+from nocpro_mock.ui.topology_api import projection_payload, resolve_navigation_payload, search_payload
 from nocpro_mock.ui.server import start_topology_server_in_thread
 from nocpro_mock.cli import main
 
@@ -30,7 +30,7 @@ def _write_csv(path, headers, rows) -> None:
 
 
 def _write_minimal_topoit(root) -> None:
-    _write_csv(root / "service_module_server.csv", ["service_id", "module_id", "instance_id"], [{"service_id": "s1", "module_id": "m1", "instance_id": "i1"}])
+    _write_csv(root / "service_module_server.csv", ["service_id", "service_code", "module_id", "module_code", "instance_id", "instance_ip"], [{"service_id": "s1", "service_code": "SVC-BILL", "module_id": "m1", "module_code": "MOD-API", "instance_id": "i1", "instance_ip": "10.0.0.1/24"}])
     _write_csv(root / "module_database.csv", ["module_id", "database_id"], [{"module_id": "m1", "database_id": "d1"}])
     _write_csv(root / "database.csv", ["database_id", "service_id", "instance_id"], [{"database_id": "d1", "service_id": "s1", "instance_id": "i1"}])
     _write_csv(root / "storage.csv", ["storage_name", "instance_id"], [{"storage_name": "st1", "instance_id": "i1"}])
@@ -96,6 +96,7 @@ def test_it_profile_payload_keeps_source_relation_boundary(tmp_path) -> None:
         "relation_model": "DIRECTED_SOURCE_RELATIONS",
         "direction_kind": "SOURCE_RELATION",
         "dependency_semantics": "UNVERIFIED",
+        "navigation_mapping": "PARTIAL_SOURCE_FIELD_EXACT",
         "alarm_resource_mapping": "UNAVAILABLE",
     }
 
@@ -135,7 +136,7 @@ def test_adjacency_projection_deduplicates_repeated_endpoint_pairs(monkeypatch, 
     from nocpro_mock.data_profiles import DatasetProfile
     from nocpro_mock.ui import topology_api
 
-    profile = DatasetProfile("IP_NETWORK", "fixture", "alarm.csv", "topo.csv", "UNDIRECTED_ADJACENCY", "NONE", "UNVERIFIED", "PARTIAL_EXACT_ONLY")
+    profile = DatasetProfile("IP_NETWORK", "fixture", "alarm.csv", "topo.csv", "UNDIRECTED_ADJACENCY", "NONE", "UNVERIFIED", "PARTIAL_EXACT_IDENTITY", "PARTIAL_EXACT_ONLY")
     monkeypatch.setattr(topology_api, "resolve_dataset_profile", lambda _: profile)
     topo = tmp_path / "topo.csv"
     topo.write_text(
@@ -151,6 +152,7 @@ def test_adjacency_projection_deduplicates_repeated_endpoint_pairs(monkeypatch, 
         "relation_model": "UNDIRECTED_ADJACENCY",
         "direction_kind": "NONE",
         "dependency_semantics": "UNAVAILABLE",
+        "navigation_mapping": "PARTIAL_EXACT_IDENTITY",
         "alarm_resource_mapping": "PARTIAL_EXACT_ONLY",
     }
 
@@ -159,7 +161,7 @@ def test_projection_reuses_cached_graph_until_source_signature_changes(monkeypat
     from nocpro_mock.ui import topology_api
     from nocpro_mock.data_profiles import DatasetProfile
 
-    profile = DatasetProfile("IP_NETWORK", "fixture", "alarm.csv", "topo.csv", "UNDIRECTED_ADJACENCY", "NONE", "UNVERIFIED", "PARTIAL_EXACT_ONLY")
+    profile = DatasetProfile("IP_NETWORK", "fixture", "alarm.csv", "topo.csv", "UNDIRECTED_ADJACENCY", "NONE", "UNVERIFIED", "PARTIAL_EXACT_IDENTITY", "PARTIAL_EXACT_ONLY")
     monkeypatch.setattr(topology_api, "resolve_dataset_profile", lambda _: profile)
     topology_api._GRAPH_CACHE.clear()
     topo = tmp_path / "topo.csv"
@@ -186,3 +188,81 @@ def test_read_only_topology_http_endpoint_requires_profile_id() -> None:
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_read_only_http_endpoint_resolves_it_alias_for_navigation_only(tmp_path) -> None:
+    topology_root = tmp_path / "datasets" / "raw" / "topo" / "topoIT"
+    _write_minimal_topoit(topology_root)
+    server, base = start_topology_server_in_thread(source_root=tmp_path)
+    try:
+        with urlopen(f"{base}/api/topology/resolve?profile_id=IT_SERVICES&identifier=SVC-BILL") as response:  # noqa: S310 - local test server
+            payload = json.loads(response.read())
+        assert payload["status"] == "AVAILABLE"
+        assert payload["resource_id"] == "it:service:s1"
+        assert payload["p2_mapping_eligible"] is False
+        assert payload["dependency_semantics"] == "UNVERIFIED"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_it_source_field_alias_opens_navigation_only_without_p2_promotion(tmp_path) -> None:
+    topology_root = tmp_path / "datasets" / "raw" / "topo" / "topoIT"
+    _write_minimal_topoit(topology_root)
+
+    resolved = resolve_navigation_payload("IT_SERVICES", "10.0.0.1/24", source_root=tmp_path)
+
+    assert resolved == {
+        "status": "AVAILABLE",
+        "dataset_profile": "IT_SERVICES",
+        "identifier": "10.0.0.1/24",
+        "resource_id": "it:instance:i1",
+        "mapping_status": "UNIQUE_SOURCE_FIELD_MATCH",
+        "source_field": "topoIT:service_module_server.csv:instance_ip",
+        "navigation_eligible": True,
+        "p2_mapping_eligible": False,
+        "dependency_semantics": "UNVERIFIED",
+    }
+    projection = projection_payload("IT_SERVICES", root_id=resolved["resource_id"], source_root=tmp_path)
+    assert projection["topology"]["alarm_resource_mapping"] == "UNAVAILABLE"
+    assert projection["topology"]["dependency_semantics"] == "UNVERIFIED"
+
+
+def test_it_navigation_alias_index_is_cached_with_the_graph(monkeypatch, tmp_path) -> None:
+    from nocpro_mock.ui import topology_api
+
+    topology_root = tmp_path / "datasets" / "raw" / "topo" / "topoIT"
+    _write_minimal_topoit(topology_root)
+    topology_api._GRAPH_CACHE.clear()
+    calls = 0
+    original = topology_api.ITTopologyLoader.load_aliases
+
+    def counted_aliases(loader):
+        nonlocal calls
+        calls += 1
+        return original(loader)
+
+    monkeypatch.setattr(topology_api.ITTopologyLoader, "load_aliases", counted_aliases)
+    first = topology_api.resolve_navigation_payload("IT_SERVICES", "SVC-BILL", source_root=tmp_path)
+    second = topology_api.resolve_navigation_payload("IT_SERVICES", "MOD-API", source_root=tmp_path)
+
+    assert first["status"] == second["status"] == "AVAILABLE"
+    assert calls == 1
+
+
+def test_ip_exact_identifier_can_open_adjacency_navigation(tmp_path, monkeypatch) -> None:
+    from nocpro_mock.data_profiles import DatasetProfile
+    from nocpro_mock.ui import topology_api
+
+    profile = DatasetProfile("IP_NETWORK", "fixture", "alarm.csv", "topo.csv", "UNDIRECTED_ADJACENCY", "NONE", "UNAVAILABLE", "PARTIAL_EXACT_IDENTITY", "PARTIAL_EXACT_ONLY")
+    monkeypatch.setattr(topology_api, "resolve_dataset_profile", lambda _: profile)
+    topo = tmp_path / "topo.csv"
+    topo.write_text("id,device_code,device_code_relation,network_class_name,network_class_name_relation,interface_port,interface_port_relation,update_time_vipa\n1,A,B,,,,,\n", encoding="utf-8")
+
+    resolved = topology_api.resolve_navigation_payload("IP_NETWORK", "A/eth0", source_root=tmp_path)
+
+    assert resolved["status"] == "AVAILABLE"
+    assert resolved["resource_id"] == "A"
+    assert resolved["mapping_status"] == "EXACT_IDENTITY"
+    assert resolved["p2_mapping_eligible"] is True
+    assert resolved["dependency_semantics"] == "UNAVAILABLE"

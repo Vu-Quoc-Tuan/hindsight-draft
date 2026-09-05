@@ -32,6 +32,19 @@ export type TopologySearchResult = {
   display_name: string
 }
 
+export type TopologyNavigationResolution = {
+  status: 'AVAILABLE' | 'UNAVAILABLE'
+  dataset_profile: 'ALARM_ONLY' | 'IP_NETWORK' | 'IT_SERVICES'
+  identifier: string
+  resource_id: string | null
+  mapping_status: 'EXACT_RESOURCE_ID' | 'EXACT_IDENTITY' | 'UNIQUE_SOURCE_FIELD_MATCH' | 'AMBIGUOUS' | 'UNMAPPED'
+  source_field: string | null
+  navigation_eligible: boolean
+  p2_mapping_eligible: boolean
+  dependency_semantics: 'UNVERIFIED' | 'UNAVAILABLE'
+  reason?: string
+}
+
 async function topologyRequest(
   profileId: string,
   signal?: AbortSignal,
@@ -64,6 +77,28 @@ async function topologySearchRequest(
   if (!response.ok) throw new ApiError(response.status, response.status + " " + response.statusText)
   const payload = (await response.json()) as { status: string; results?: TopologySearchResult[] }
   return payload.status === 'AVAILABLE' ? payload.results ?? [] : []
+}
+
+async function topologyResolveRequest(
+  profileId: string,
+  identifier: string,
+  signal?: AbortSignal,
+): Promise<TopologyNavigationResolution> {
+  const base = import.meta.env.VITE_NOCPRO_MOCK_URL
+  if (!base) {
+    return {
+      status: 'UNAVAILABLE', dataset_profile: profileId as TopologyNavigationResolution['dataset_profile'],
+      identifier, resource_id: null, mapping_status: 'UNMAPPED', source_field: null,
+      navigation_eligible: false, p2_mapping_eligible: false, dependency_semantics: 'UNAVAILABLE',
+      reason: 'MOCK_TOPOLOGY_ENDPOINT_NOT_CONFIGURED',
+    }
+  }
+  const url = new URL('/api/topology/resolve', base)
+  url.searchParams.set('profile_id', profileId)
+  url.searchParams.set('identifier', identifier)
+  const response = await fetch(url, { signal })
+  if (!response.ok) throw new ApiError(response.status, response.status + ' ' + response.statusText)
+  return (await response.json()) as TopologyNavigationResolution
 }
 
 export const api = {
@@ -158,4 +193,6 @@ export const api = {
     topologyRequest(profileId, signal, rootId),
   topologySearch: (profileId: string, query: string, signal?: AbortSignal) =>
     topologySearchRequest(profileId, query, signal),
+  topologyResolve: (profileId: string, identifier: string, signal?: AbortSignal) =>
+    topologyResolveRequest(profileId, identifier, signal),
 }

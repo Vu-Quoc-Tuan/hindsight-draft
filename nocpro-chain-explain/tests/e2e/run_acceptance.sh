@@ -9,6 +9,11 @@ export POSTGRES_HOST_PORT="${POSTGRES_HOST_PORT:-55432}"
 export KAFKA_HOST_PORT="${KAFKA_HOST_PORT:-29092}"
 export API_HOST_PORT="${API_HOST_PORT:-8800}"
 export WEB_HOST_PORT="${WEB_HOST_PORT:-3300}"
+export MOCK_UI_HOST_PORT="${MOCK_UI_HOST_PORT:-38085}"
+# This value is compiled into the browser bundle. Browser traffic goes to the
+# host-published read-only mock endpoint; it does not grant the Explain API
+# any topology P2 semantics.
+export VITE_NOCPRO_MOCK_URL="${VITE_NOCPRO_MOCK_URL:-http://127.0.0.1:${MOCK_UI_HOST_PORT}}"
 export TIER1A_RECOVERY_INTERVAL_SECONDS="${TIER1A_RECOVERY_INTERVAL_SECONDS:-0.25}"
 export NOCPRO_E2E_KAFKA="127.0.0.1:${KAFKA_HOST_PORT}"
 export NOCPRO_E2E_DATABASE_URL="postgresql://nocpro:nocpro@127.0.0.1:${POSTGRES_HOST_PORT}/nocpro"
@@ -28,9 +33,9 @@ docker compose down --volumes --remove-orphans
 if [[ "${NOCPRO_E2E_SKIP_BUILD:-0}" == "1" ]]; then
   # Useful when a verified local image already exists and the registry is
   # temporarily unavailable. CI and normal acceptance still rebuild by default.
-  docker compose up -d migrate api web
+  docker compose up -d migrate api web mock-ui
 else
-  docker compose up -d --build migrate api web
+  docker compose up -d --build migrate api web mock-ui
 fi
 
 wait_for_postgres() {
@@ -64,6 +69,27 @@ wait_for_snapshot_ready() {
 
 wait_for_postgres
 
+deadline=$((SECONDS + 60))
+until curl -fsS "http://127.0.0.1:${MOCK_UI_HOST_PORT}/api/topology/profiles" >/dev/null; do
+  if (( SECONDS >= deadline )); then
+    docker compose logs --no-color mock-ui
+    echo "NocPro mock topology UI did not become ready" >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+# Select a real, unambiguous IT source identifier from the same mounted data.
+# The browser test receives an input field value rather than a hard-coded
+# production identifier, so it remains valid if a later export changes IDs.
+export NOCPRO_E2E_IT_SOURCE_IDENTIFIER="$(PYTHONPATH=../nocpro-mock/src .venv/bin/python -c '
+from pathlib import Path
+from nocpro_mock.loaders.topology_it_csv import ITTopologyLoader
+aliases, _ = ITTopologyLoader(Path("../nocpro-mock/datasets/raw/topo/topoIT")).load_aliases()
+print(next(iter(sorted(aliases))))
+')"
+export NOCPRO_E2E_MOCK_URL="http://127.0.0.1:${MOCK_UI_HOST_PORT}"
+
 NOCPRO_RUN_DOCKER_E2E=1 PYTHONPATH="../nocpro-mock/src" \
   .venv/bin/python -m pytest tests/e2e/test_postgres_migrations_runtime.py -q
 
@@ -86,6 +112,7 @@ if [[ -f "$raw_alarm_csv" ]]; then
   # Counterfactual for Review.  Do not execute the whole suite against the
   # real replay before those later fixtures have been ingested.
   pnpm --dir services/web exec playwright test e2e/operator-flow.spec.ts
+  pnpm --dir services/web exec playwright test e2e/topology-navigation.spec.ts
 
   curl -fsS "http://127.0.0.1:${API_HOST_PORT}/api/v1/chains/6907125" \
     -o /tmp/nocpro-acceptance-largest-chain.json \

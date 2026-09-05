@@ -1,6 +1,6 @@
 import { Component, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from 'react'
 
-import { api, ApiError } from './api'
+import { api, ApiError, type TopologyNavigationResolution } from './api'
 import { duration, humanize, percent } from './format'
 import { TopologyHypotheses } from './TopologyHypotheses'
 import { EvidenceAttribution } from './EvidenceAttribution'
@@ -439,6 +439,7 @@ function App() {
   const [topologyProfile, setTopologyProfile] = useState<'ALARM_ONLY' | 'IP_NETWORK' | 'IT_SERVICES'>('IT_SERVICES')
   const [topologyPayload, setTopologyPayload] = useState<TopologyTreePayload | null>(null)
   const [topologyRootId, setTopologyRootId] = useState<string | undefined>(undefined)
+  const [topologySourceResolution, setTopologySourceResolution] = useState<TopologyNavigationResolution | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -496,7 +497,6 @@ function App() {
   useEffect(() => {
     if (tab !== 'topology') return
     const controller = new AbortController()
-    setTopologyPayload(null)
     setTopologyPayload(null)
     api.topologyProjection(topologyProfile, controller.signal, topologyRootId).then(setTopologyPayload).catch((cause: unknown) => {
       if (!controller.signal.aborted) setTopologyPayload({
@@ -752,6 +752,7 @@ function App() {
                         <select value={topologyProfile} onChange={(event) => {
                           setTopologyProfile(event.target.value as typeof topologyProfile)
                           setTopologyRootId(undefined)
+                          setTopologySourceResolution(null)
                         }}>
                           <option value="ALARM_ONLY">Alarm-only</option>
                           <option value="IP_NETWORK">IP network</option>
@@ -766,6 +767,12 @@ function App() {
                           : topologyPayload.profile + ':' + topologyPayload.reason}
                         payload={topologyPayload}
                         onSearchSource={(query) => api.topologySearch(topologyProfile, query)}
+                        onResolveSource={async (identifier) => {
+                          const resolution = await api.topologyResolve(topologyProfile, identifier)
+                          setTopologySourceResolution(resolution)
+                          return resolution
+                        }}
+                        sourceResolution={topologySourceResolution}
                         onRootChange={setTopologyRootId}
                       />
                     ) : (

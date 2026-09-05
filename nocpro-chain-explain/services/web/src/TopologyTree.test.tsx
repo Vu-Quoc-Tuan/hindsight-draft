@@ -9,6 +9,10 @@ const itProjection: TopologyTreePayload = {
   topology_kind: 'DIRECTED_SOURCE_RELATIONS',
   direction_kind: 'SOURCE_RELATION',
   dependency_semantics: 'UNVERIFIED',
+  topology: {
+    availability: 'AVAILABLE', relation_model: 'DIRECTED_SOURCE_RELATIONS', direction_kind: 'SOURCE_RELATION',
+    dependency_semantics: 'UNVERIFIED', navigation_mapping: 'PARTIAL_SOURCE_FIELD_EXACT', alarm_resource_mapping: 'UNAVAILABLE',
+  },
   source_version: 'sha256:fixture',
   semantic_notice: 'This relation-tree projection is for navigation. It does not imply dependency, causality, ownership, or propagation direction.',
   tree: {
@@ -37,6 +41,7 @@ describe('TopologyTree', () => {
     const html = renderToStaticMarkup(<TopologyTree payload={itProjection} />)
     expect(html).toContain('Linked to Billing')
     expect(html).toContain('Cycle reference')
+    expect(html).toContain('data-resource-id="it:service:s1"')
   })
 
   it('shows an explicit unavailable state rather than an empty graph', () => {
