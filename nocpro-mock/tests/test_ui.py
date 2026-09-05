@@ -161,6 +161,66 @@ def test_api_preview_rejects_paths_outside_mock_datasets(ui_server: str):
     assert "outside approved" in data["error"].lower()
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "mode": "sequence",
+            "sequence_path": "docs/examples/synthetic/history_positive_lift",
+            "sequence_snapshot": "/etc/passwd",
+        },
+        {
+            "mode": "sequence",
+            "sequence_path": "docs/examples/synthetic/history_positive_lift",
+            "sequence_snapshot": "../../golden_2214039/system_metadata.json",
+        },
+        {"mode": "golden", "fixture_dir": "/etc"},
+    ],
+)
+def test_api_preview_rejects_path_escape_after_mode_specific_resolution(
+    ui_server: str, payload: dict
+):
+    status, data = _request_json(f"{ui_server}/api/preview", method="POST", data=payload)
+    assert status == 400
+    assert "outside approved" in data["error"].lower() or "relative file" in data["error"].lower()
+
+
+def test_api_rejects_non_object_json_payload(ui_server: str):
+    req = urllib.request.Request(f"{ui_server}/api/preview", method="POST", data=b"[]")
+    req.add_header("Content-Type", "application/json")
+    with pytest.raises(urllib.error.HTTPError) as error:
+        urllib.request.urlopen(req, timeout=5)
+    assert error.value.code == 400
+    assert "object" in error.value.read().decode("utf-8").lower()
+
+
+@pytest.mark.parametrize("chunk_target_bytes", [0, -1, "not-a-number", 4 * 1024 * 1024 + 1])
+def test_api_rejects_invalid_chunk_target_bytes(ui_server: str, chunk_target_bytes: object):
+    status, data = _request_json(
+        f"{ui_server}/api/preview",
+        method="POST",
+        data={"mode": "golden", "chunk_target_bytes": chunk_target_bytes},
+    )
+    assert status == 400
+    assert "chunk_target_bytes" in data["error"]
+
+
+def test_mock_preview_template_does_not_interpolate_untrusted_fields_as_html():
+    from nocpro_mock.ui.server import ASSETS_DIR
+
+    source = (ASSETS_DIR / "index.html").read_text(encoding="utf-8")
+    for unsafe_interpolation in (
+        "${a.alarm_id}",
+        "${a.alarm_name}",
+        "${a.device_code}",
+        "${a.node_reference}",
+        "${c.chain_id}",
+        "${c.chain_name}",
+        "${text}</span>",
+    ):
+        assert unsafe_interpolation not in source
+
+
 def test_api_publish_unreachable_kafka(ui_server: str):
     # Publishing to an unreachable port should fail gracefully without crashing server
     status, data = _request_json(

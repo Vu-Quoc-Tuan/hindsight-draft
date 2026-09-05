@@ -15,7 +15,7 @@ import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 from urllib.parse import parse_qs, urlparse
 
 from ..config import load_config
@@ -44,6 +44,7 @@ DEFAULT_ALARM_CSV = "datasets/raw/alarm/alarm_data.csv"
 DEFAULT_TOPO_IP_CSV = "datasets/raw/topo/topoIP.csv"
 DEFAULT_SYNTHETIC_DIR = "docs/examples/synthetic"
 MAX_REQUEST_BODY_BYTES = 1 * 1024 * 1024
+MAX_CHUNK_TARGET_BYTES = 4 * 1024 * 1024
 DEFAULT_KAFKA_TOPIC = "nocpro.snapshot.v1"
 
 
@@ -58,6 +59,7 @@ def _allowed_input_roots() -> tuple[Path, ...]:
     return (
         (MOCK_ROOT / "datasets").resolve(),
         (MOCK_ROOT / "docs" / "examples" / "synthetic").resolve(),
+        (MOCK_ROOT / "docs" / "examples" / "golden_2214039").resolve(),
     )
 
 
@@ -69,6 +71,35 @@ def _resolve_path(rel_or_abs: str | Path) -> Path:
     if not any(resolved.is_relative_to(root) for root in _allowed_input_roots()):
         raise ValueError("Requested input path is outside approved Mock datasets or fixtures")
     return resolved
+
+
+def _resolve_sequence_snapshot(sequence_path: Path, snapshot_name: object) -> Path:
+    """Resolve a browser-selected sequence member without allowing path escape."""
+    if sequence_path.exists() and not sequence_path.is_dir():
+        if snapshot_name not in (None, "", "snapshot_000.json"):
+            raise ValueError("sequence_snapshot requires a sequence directory")
+        return sequence_path
+    if not isinstance(snapshot_name, str) or not snapshot_name:
+        raise ValueError("sequence_snapshot must be a relative file name")
+    child = Path(snapshot_name)
+    if child.is_absolute() or child.name != snapshot_name:
+        raise ValueError("sequence_snapshot must be a relative file name")
+    return _resolve_path(sequence_path / child)
+
+
+def _chunk_target_bytes(value: object) -> int:
+    """Validate the browser's chunk hint before preview or publish uses it."""
+    if isinstance(value, bool):
+        raise ValueError("chunk_target_bytes must be an integer")
+    try:
+        result = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("chunk_target_bytes must be an integer") from exc
+    if not 1 <= result <= MAX_CHUNK_TARGET_BYTES:
+        raise ValueError(
+            f"chunk_target_bytes must be between 1 and {MAX_CHUNK_TARGET_BYTES}"
+        )
+    return result
 
 
 def _discover_sequences() -> list[dict[str, Any]]:
@@ -127,15 +158,18 @@ def build_package_from_request(data: dict[str, Any]) -> MockSnapshotPackage:
             device_codes = TopoIPLoader(topo_path).device_codes()
         return build_golden_snapshot(
             config=config,
-            fixture=load_golden_fixture(fixture_dir),
+            fixture=load_golden_fixture(
+                _resolve_path(fixture_dir) if fixture_dir is not None else None
+            ),
             topo_ip_device_codes=device_codes,
             snapshot_version=snapshot_version,
         )
 
     if mode == "sequence":
         seq_path = _resolve_path(data.get("sequence_path", ""))
-        snap_file = data.get("sequence_snapshot", "snapshot_000.json")
-        target_file = seq_path / snap_file if seq_path.is_dir() else seq_path
+        target_file = _resolve_sequence_snapshot(
+            seq_path, data.get("sequence_snapshot", "snapshot_000.json")
+        )
         if not target_file.is_file():
             raise FileNotFoundError(f"Sequence snapshot file not found: {target_file}")
         raw = json.loads(target_file.read_text(encoding="utf-8"))
@@ -164,6 +198,7 @@ def build_package_from_request(data: dict[str, Any]) -> MockSnapshotPackage:
 
 
 def extract_package_summary(package: MockSnapshotPackage, chunk_target_bytes: int = 2 * 1024 * 1024) -> dict[str, Any]:
+    chunk_target_bytes = _chunk_target_bytes(chunk_target_bytes)
     validation = validate_package(package)
     canonical_json = package_to_json(package, indent=None)
     raw_bytes = canonical_json.encode("utf-8")
@@ -329,7 +364,10 @@ class MockUIRequestHandler(SimpleHTTPRequestHandler):
                 f"Request body exceeds {MAX_REQUEST_BODY_BYTES} byte Mock UI limit"
             )
         body = self.rfile.read(length).decode("utf-8")
-        return json.loads(body)
+        parsed = json.loads(body)
+        if not isinstance(parsed, Mapping):
+            raise ValueError("JSON request payload must be an object")
+        return dict(parsed)
 
     def do_HEAD(self) -> None:
         path = self.path.split("?")[0]
@@ -434,7 +472,9 @@ class MockUIRequestHandler(SimpleHTTPRequestHandler):
         if path == "/api/preview":
             try:
                 package = build_package_from_request(body)
-                chunk_bytes = int(body.get("chunk_target_bytes", 2 * 1024 * 1024))
+                chunk_bytes = _chunk_target_bytes(
+                    body.get("chunk_target_bytes", 2 * 1024 * 1024)
+                )
                 summary = extract_package_summary(package, chunk_target_bytes=chunk_bytes)
                 self._send_json(HTTPStatus.OK, {"ok": True, "preview": summary})
             except Exception as exc:
@@ -454,9 +494,10 @@ class MockUIRequestHandler(SimpleHTTPRequestHandler):
                     {"ok": False, "error": "Kafka destination is configured by the Mock server"},
                 )
                 return
-            chunk_bytes = int(body.get("chunk_target_bytes", 2 * 1024 * 1024))
-
             try:
+                chunk_bytes = _chunk_target_bytes(
+                    body.get("chunk_target_bytes", 2 * 1024 * 1024)
+                )
                 package = build_package_from_request(body)
                 config = KafkaSnapshotConfig(
                     topic=topic,

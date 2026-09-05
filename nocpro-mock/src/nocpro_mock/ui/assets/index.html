@@ -1238,7 +1238,16 @@
       const ts = d.toTimeString().split(' ')[0] + '.' + String(d.getMilliseconds()).padStart(3, '0');
       const line = document.createElement('div');
       line.className = 'log-line';
-      line.innerHTML = `<span class="log-ts">${ts}</span><span class="log-tag ${tagClass}">${tag}</span><span>${text}</span>`;
+      const timestamp = document.createElement('span');
+      timestamp.className = 'log-ts';
+      timestamp.textContent = ts;
+      const label = document.createElement('span');
+      const allowedTagClasses = new Set(['tag-init', 'tag-chunk', 'tag-comp', 'tag-err']);
+      label.className = `log-tag ${allowedTagClasses.has(tagClass) ? tagClass : 'tag-chunk'}`;
+      label.textContent = tag;
+      const detail = document.createElement('span');
+      detail.textContent = text;
+      line.append(timestamp, label, detail);
       viewConsole.appendChild(line);
       viewConsole.scrollTop = viewConsole.scrollHeight;
     }
@@ -1310,42 +1319,64 @@
 
       document.getElementById('label-checksum').textContent = `SHA256: ${preview.sha256_checksum.slice(0, 10)}...`;
 
+      function appendTextCell(row, value, { strong = false, className = '' } = {}) {
+        const cell = document.createElement('td');
+        if (className) cell.className = className;
+        const node = strong ? document.createElement('strong') : document.createElement('span');
+        node.textContent = value == null || value === '' ? '-' : String(value);
+        cell.appendChild(node);
+        row.appendChild(cell);
+        return cell;
+      }
+
+      function appendEmptyRow(table, columns, message) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = columns;
+        cell.style.textAlign = 'center';
+        cell.style.padding = '1.5rem';
+        cell.textContent = message;
+        row.appendChild(cell);
+        table.replaceChildren(row);
+      }
+
       // Render Alarms Table
       const tbodyAlarms = document.getElementById('tbody-alarms');
       if (preview.sample_alarms && preview.sample_alarms.length > 0) {
-        tbodyAlarms.innerHTML = preview.sample_alarms.map(a => {
+        const rows = preview.sample_alarms.map(a => {
           const sevClass = a.severity === 'CRITICAL' ? 'sev-critical' : (a.severity === 'MAJOR' ? 'sev-major' : 'sev-minor');
           const flags = a.quality_flags && a.quality_flags.length ? a.quality_flags.join(', ') : '-';
-          return `
-            <tr>
-              <td><strong>${a.alarm_id}</strong></td>
-              <td>${a.event_time}</td>
-              <td>${a.device_code || '-'}</td>
-              <td>${a.alarm_name || '-'}</td>
-              <td><span class="badge-sev ${sevClass}">${a.severity}</span></td>
-              <td>${a.node_reference || '-'}</td>
-              <td style="color:var(--text-faint);">${flags}</td>
-            </tr>
-          `;
-        }).join('');
+          const row = document.createElement('tr');
+          appendTextCell(row, a.alarm_id, { strong: true });
+          appendTextCell(row, a.event_time);
+          appendTextCell(row, a.device_code);
+          appendTextCell(row, a.alarm_name);
+          const severity = appendTextCell(row, a.severity);
+          severity.firstChild.className = `badge-sev ${sevClass}`;
+          appendTextCell(row, a.node_reference);
+          appendTextCell(row, flags, { className: 'preview-quality-flags' });
+          return row;
+        });
+        tbodyAlarms.replaceChildren(...rows);
       } else {
-        tbodyAlarms.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:1.5rem;">No alarms in this package.</td></tr>';
+        appendEmptyRow(tbodyAlarms, 7, 'No alarms in this package.');
       }
 
       // Render Chains Table
       const tbodyChains = document.getElementById('tbody-chains');
       if (preview.sample_chains && preview.sample_chains.length > 0) {
-        tbodyChains.innerHTML = preview.sample_chains.map(c => `
-          <tr>
-            <td><strong>${c.chain_id}</strong></td>
-            <td>${c.member_count}</td>
-            <td>${c.chain_name || '-'}</td>
-            <td>${c.event_span_seconds ?? '-'}</td>
-            <td>${c.source_kind || '-'}</td>
-          </tr>
-        `).join('');
+        const rows = preview.sample_chains.map(c => {
+          const row = document.createElement('tr');
+          appendTextCell(row, c.chain_id, { strong: true });
+          appendTextCell(row, c.member_count);
+          appendTextCell(row, c.chain_name);
+          appendTextCell(row, c.event_span_seconds);
+          appendTextCell(row, c.source_kind);
+          return row;
+        });
+        tbodyChains.replaceChildren(...rows);
       } else {
-        tbodyChains.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:1.5rem;">No chains found.</td></tr>';
+        appendEmptyRow(tbodyChains, 5, 'No chains found.');
       }
     }
 
@@ -1520,14 +1551,22 @@
           // Sequences
           availableSequences = data.sequences || [];
           const selectSeq = document.getElementById('select-sequence');
-          selectSeq.innerHTML = availableSequences.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+          function setOptions(select, values, valueOf, labelOf) {
+            select.replaceChildren(...values.map((value) => {
+              const option = document.createElement('option');
+              option.value = valueOf(value);
+              option.textContent = labelOf(value);
+              return option;
+            }));
+          }
+          setOptions(selectSeq, availableSequences, (sequence) => sequence.id, (sequence) => sequence.name);
 
           function updateSeqSnapshots() {
             const seq = availableSequences.find(s => s.id === selectSeq.value);
             const selectSnap = document.getElementById('select-seq-snapshot');
             const inputType = document.getElementById('input-seq-type');
             if (seq) {
-              selectSnap.innerHTML = seq.snapshots.map(snap => `<option value="${snap}">${snap}</option>`).join('');
+              setOptions(selectSnap, seq.snapshots, (snapshot) => snapshot, (snapshot) => snapshot);
               inputType.value = seq.sequence_type;
             }
           }
