@@ -40,18 +40,24 @@ It separates **capability** from evidence that the capability was exercised;
 | Counterfactual `REMOVE_MEMBER`, `SPLIT_CHAIN`, `MOVE_MEMBER`, connector annotation | `READY` | `PASS` | `PASS` | `PASS` Kafka/PostgreSQL/restart/Chromium | `NOT_CALIBRATED` | Proposal-only; feedback is persisted evaluation data and cannot mutate NocPro. Production recommendation policy requires operator corrections/calibration. |
 | Counterfactual `MERGE_CHAINS` | `READY` | `PASS` | `PASS` | `PASS` Kafka/PostgreSQL/restart/Chromium | `NOT_CALIBRATED` | Exact cross-chain evidence and persisted Review reload have runtime acceptance. |
 | Counterfactual `ADD_MEMBER` | `BLOCKED` | N/A | N/A | N/A | `BLOCKED` | `UNKNOWN_UPSTREAM_SEMANTICS`: first-class zero-membership alarms have not been verified upstream. A singleton-source transfer is canonical `MOVE_MEMBER`, never ADD. |
-| AI Advisor grounded narrative | `READY` (ADR-0024 epistemic boundaries) | `PASS` | `PASS` | `NOT_RUN` for current revision | `READY` for deterministic narrative only; `UNAVAILABLE` for ungrounded LLM inference | Deterministic adapter strictly extracts from verified member roles, descriptors, and Pareto recommendations. `provider_status=NOT_USED`; GET endpoint produces zero external LLM side effects or credential dependency. |
+| NocPro Assistant registry/search/navigation | `READY` (ADR-0024 epistemic boundaries) | `PASS` API/UI contract | N/A | `NOT_RUN` for current revision | `READY` for deterministic read-only navigation; `UNAVAILABLE` for ungrounded LLM inference | Snapshot-bound deterministic registry/tool router returns only verified facts and typed in-app actions. It cannot run analysis, submit feedback, mutate evidence, apply Review proposals, generate URLs, or infer resource-to-chain mappings. |
 | IT source-field topology joins | `READY` for structural navigation; excluded from P2 mapping | `PASS` | `PASS` | `PASS` resolver unit/HTTP contract + real IT Chromium navigation | `PARTIAL_SOURCE_FIELD_EXACT` for navigation; `UNAVAILABLE` for P2 promotion | The resolver opens only unambiguous source fields in the bounded relation tree and returns `p2_mapping_eligible=false`. The real files yield 169,836/258,344 uniquely resolved alarm rows (65.740%), 44,992 multi-resource conflicts, 441 rows touching an ambiguous alias, and 43,106 rows with no alias hit. These exact source-record joins are useful, but their direction and business meaning remain unverified. |
 
-## AI Advisor boundary
+## NocPro Assistant boundary
 
 ADR-0024 enforces strict epistemic boundaries on operator narrative generation.
-The AI Advisor adapter is deterministic and evidence-bound: it synthesizes
-only verified member roles (`support`, `representativeness`), descriptors, and
-evaluated Pareto recommendations. `provider_status` is explicitly `NOT_USED`.
-The HTTP GET endpoint performs zero external LLM network calls, requires no
-provider API secret at runtime, and never hallucinates unobserved topology or
-counterfactual operations.
+The legacy AI Advisor compatibility endpoint is deterministic and evidence-
+bound: it synthesizes only verified member roles (`support`,
+`representativeness`), descriptors, and evaluated Pareto recommendations.
+`provider_status` is explicitly `NOT_USED`.
+
+The NocPro Assistant extends this with a snapshot-bound Semantic Registry and
+an allowlisted deterministic tool router. It can explain registered concepts,
+search active chain IDs/titles, and return typed internal navigation actions.
+It cannot issue SQL, network, arbitrary URL, Deep Dive, Review, Apply, or
+feedback actions. A stale snapshot identity returns `STALE_CONTEXT`; missing
+resource-to-chain mapping returns
+`RESOURCE_TO_CHAIN_MAPPING_UNAVAILABLE`, never a topology-derived guess.
 
 ## Topology hierarchy and alias mapping boundary
 
