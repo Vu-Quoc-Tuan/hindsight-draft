@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -522,8 +522,8 @@ class AISuggestionView(ApiModel):
 
 
 class AssistantContextInput(ApiModel):
-    snapshot_id: str | None = None
-    snapshot_version: str | None = None
+    snapshot_id: str = Field(min_length=1)
+    snapshot_version: str = Field(min_length=1)
     page: str | None = None
     chain_id: str | None = None
     alarm_id: str | None = None
@@ -539,10 +539,21 @@ class AssistantQueryInput(ApiModel):
     context: AssistantContextInput
 
 
+class AssistantNavigationTargetView(ApiModel):
+    """Identity-bound destination for a read-only assistant navigation action."""
+
+    snapshot_id: str = Field(min_length=1)
+    snapshot_version: str = Field(min_length=1)
+    tab: str
+    chain_id: str | None = None
+    pair_alarm_id_a: str | None = None
+    pair_alarm_id_b: str | None = None
+
+
 class AssistantActionView(ApiModel):
-    kind: str
+    kind: Literal["NAVIGATE"]
     label: str
-    target: dict[str, str]
+    target: AssistantNavigationTargetView
 
 
 class AssistantResponseView(ApiModel):

@@ -430,6 +430,7 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<Tab>('tree')
+  const [reviewReadOnly, setReviewReadOnly] = useState(false)
   const [layer, setLayer] = useState<EvidenceLayer>('ALL')
   const [selectedMembers, setSelectedMembers] = useState<string[]>([])
   const [inspectMember, setInspectMember] = useState<Member | null>(null)
@@ -561,16 +562,30 @@ function App() {
   }
 
   function handleAssistantNavigation(action: AssistantAction) {
+    if (!chainList || action.target.snapshot_id !== chainList.snapshot_id || action.target.snapshot_version !== chainList.snapshot_version) {
+      setError('Assistant action is stale for the currently loaded snapshot.')
+      return
+    }
     const targetChainId = action.target.chain_id
     const targetTab = action.target.tab as Tab | undefined
-    if (targetChainId && chainList?.chains.some((chain) => chain.chain_id === targetChainId)) {
+    if (targetChainId && !chainList.chains.some((chain) => chain.chain_id === targetChainId)) {
+      setError('Assistant target chain is no longer available in the current snapshot.')
+      return
+    }
+    if (targetChainId) {
       setChainId(targetChainId)
-      setSelectedMembers([])
+      const pair = action.target.pair_alarm_id_a && action.target.pair_alarm_id_b
+        ? [action.target.pair_alarm_id_a, action.target.pair_alarm_id_b]
+        : []
+      setSelectedMembers(pair)
       setInspectMember(null)
       setPairWhy(null)
       setJob(null)
     }
-    if (targetTab && tabs.some((item) => item.id === targetTab)) setTab(targetTab)
+    if (targetTab && tabs.some((item) => item.id === targetTab)) {
+      setReviewReadOnly(targetTab === 'review')
+      setTab(targetTab)
+    }
   }
 
   if (!chainList) return <EmptyWorkspace apiStatus={apiStatus} loading={loadingSnapshot} error={error} onUpload={(file) => void uploadSnapshot(file)} />
@@ -651,7 +666,7 @@ function App() {
             <button
               key={item.id}
               className={`tab-btn-item ${tab === item.id ? 'is-active' : ''}`}
-              onClick={() => setTab(item.id)}
+              onClick={() => { setReviewReadOnly(false); setTab(item.id) }}
             >
               <small>{item.eyebrow}</small>
               <span>{item.label}</span>
@@ -796,7 +811,7 @@ function App() {
                     )}
                   </section>
                 )}
-                {tab === 'review' && <CounterfactualReview key={chainId} chainId={chainId} />}
+                {tab === 'review' && <CounterfactualReview key={`${chainId}:${reviewReadOnly ? 'assistant' : 'operator'}`} chainId={chainId} readOnly={reviewReadOnly} />}
                 {tab === 'evolution' && <EvolutionPanel chainId={chainId} />}
                 {tab === 'ai' && (
                   <NocProAssistantPanel

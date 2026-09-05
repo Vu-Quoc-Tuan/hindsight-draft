@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { api } from './api'
 import type { AssistantAction, AssistantContext, AssistantResponse } from './types'
@@ -22,19 +22,39 @@ export function NocProAssistantPanel({
   const [result, setResult] = useState<AssistantResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const requestRef = useRef<{ id: number; controller: AbortController } | null>(null)
+  const contextKey = [
+    context.snapshot_id,
+    context.snapshot_version,
+    context.chain_id ?? '',
+    context.pair_alarm_id_a ?? '',
+    context.pair_alarm_id_b ?? '',
+  ].join('\u0000')
+  const contextKeyRef = useRef(contextKey)
+  contextKeyRef.current = contextKey
+
+  useEffect(() => () => requestRef.current?.controller.abort(), [])
 
   async function ask(nextQuery = query) {
     const trimmed = nextQuery.trim()
     if (!trimmed) return
+    requestRef.current?.controller.abort()
+    const request = { id: (requestRef.current?.id ?? 0) + 1, controller: new AbortController() }
+    requestRef.current = request
+    const requestedContextKey = contextKey
     setLoading(true)
     setError(null)
+    setResult(null)
     try {
-      const response = await api.assistantQuery(trimmed, context)
-      setResult(response)
+      const response = await api.assistantQuery(trimmed, context, request.controller.signal)
+      if (requestRef.current?.id === request.id && contextKeyRef.current === requestedContextKey) setResult(response)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Không thể tải NocPro Assistant')
+      if (request.controller.signal.aborted) return
+      if (requestRef.current?.id === request.id) {
+        setError(cause instanceof Error ? cause.message : 'Không thể tải NocPro Assistant')
+      }
     } finally {
-      setLoading(false)
+      if (requestRef.current?.id === request.id) setLoading(false)
     }
   }
 
@@ -75,7 +95,7 @@ export function NocProAssistantPanel({
 
       <div className="assistant-quick-actions" aria-label="Assistant quick questions">
         {quickQuestions.map((item) => (
-          <button key={item} type="button" className="text-action-btn" onClick={() => { setQuery(item); void ask(item) }}>
+          <button key={item} type="button" className="text-action-btn" disabled={loading} onClick={() => { setQuery(item); void ask(item) }}>
             {item}
           </button>
         ))}
@@ -103,7 +123,7 @@ export function NocProAssistantPanel({
           )}
         </article>
       )}
-      <footer className="ai-advisor-footer"><small>Assistant can explain, search, compare and navigate. It does not change evidence, analysis results, recommendations or NocPro chains.</small></footer>
+      <footer className="ai-advisor-footer"><small>Assistant can explain registered concepts, search active chains, and navigate. It does not change evidence, analysis results, recommendations or NocPro chains.</small></footer>
     </section>
   )
 }

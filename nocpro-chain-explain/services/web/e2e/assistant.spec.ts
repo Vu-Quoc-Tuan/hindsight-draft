@@ -34,6 +34,15 @@ test('NocPro Assistant is snapshot-bound, read-only, and navigates with typed ac
   ])
   await page.getByRole('button', { name: 'Open Structural Audit' }).click()
   await expect(page.getByRole('button', { name: 'Structure' })).toHaveClass(/is-active/)
+
+  await page.getByRole('button', { name: 'NocPro Assistant' }).click()
+  await query.fill('Open review')
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes('/assistant/query') && response.ok()),
+    page.getByRole('button', { name: 'Hỏi' }).click(),
+  ])
+  await page.getByRole('button', { name: 'Open Counterfactual Review' }).click()
+  await expect(page.getByRole('button', { name: 'Review' })).toHaveClass(/is-active/)
   expect(mutationRequests, 'Assistant navigation must not start analysis or mutate Review/feedback').toEqual([])
   expect(consoleErrors, 'browser console must stay free of errors').toEqual([])
 })

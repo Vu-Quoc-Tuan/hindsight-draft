@@ -173,6 +173,23 @@ describe('CounterfactualReview', () => {
     )
   })
 
+  it('keeps persisted recommendations read-only when opened by Assistant navigation', () => {
+    const recommendedJob: CounterfactualJob = {
+      ...job,
+      result: job.result
+        ? { ...job.result, recommendations: [job.result.remove.candidates[0]] }
+        : null,
+    }
+    const html = renderToStaticMarkup(
+      <CounterfactualReview chainId="C1" initialJob={recommendedJob} readOnly />,
+    )
+
+    expect(html).toContain('Read-only navigation displays the persisted proposal')
+    expect(html).not.toContain('Phản hồi chuyên gia (Operator Feedback):')
+    expect(html).not.toContain('Chấp thuận đề xuất')
+    expect(html).not.toContain('Từ chối đề xuất')
+  })
+
   it('renders approved operator feedback as proposal-only review data', () => {
     const approvedFeedback = {
       feedback_id: 'fb-test-01',

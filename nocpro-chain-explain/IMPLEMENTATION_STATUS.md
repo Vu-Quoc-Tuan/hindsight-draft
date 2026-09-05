@@ -40,7 +40,7 @@ It separates **capability** from evidence that the capability was exercised;
 | Counterfactual `REMOVE_MEMBER`, `SPLIT_CHAIN`, `MOVE_MEMBER`, connector annotation | `READY` | `PASS` | `PASS` | `PASS` Kafka/PostgreSQL/restart/Chromium | `NOT_CALIBRATED` | Proposal-only; feedback is persisted evaluation data and cannot mutate NocPro. Production recommendation policy requires operator corrections/calibration. |
 | Counterfactual `MERGE_CHAINS` | `READY` | `PASS` | `PASS` | `PASS` Kafka/PostgreSQL/restart/Chromium | `NOT_CALIBRATED` | Exact cross-chain evidence and persisted Review reload have runtime acceptance. |
 | Counterfactual `ADD_MEMBER` | `BLOCKED` | N/A | N/A | N/A | `BLOCKED` | `UNKNOWN_UPSTREAM_SEMANTICS`: first-class zero-membership alarms have not been verified upstream. A singleton-source transfer is canonical `MOVE_MEMBER`, never ADD. |
-| NocPro Assistant registry/search/navigation | `READY` (ADR-0024 epistemic boundaries) | `PASS` API/UI contract | N/A | `NOT_RUN` for current revision | `READY` for deterministic read-only navigation; `UNAVAILABLE` for ungrounded LLM inference | Snapshot-bound deterministic registry/tool router returns only verified facts and typed in-app actions. It cannot run analysis, submit feedback, mutate evidence, apply Review proposals, generate URLs, or infer resource-to-chain mappings. |
+| NocPro Assistant registry/search/navigation | `READY` (ADR-0024 epistemic boundaries) | `PASS` API/UI contract | N/A | `NOT_RUN` for current revision | `READY` for deterministic read-only navigation; `UNAVAILABLE` for ungrounded LLM inference | Every action is bound to an exact snapshot/version and validated again by the client. Pair WHY actions require two current same-chain members; assistant Review navigation can display only a persisted Review and never submits a job. |
 | IT source-field topology joins | `READY` for structural navigation; excluded from P2 mapping | `PASS` | `PASS` | `PASS` resolver unit/HTTP contract + real IT Chromium navigation | `PARTIAL_SOURCE_FIELD_EXACT` for navigation; `UNAVAILABLE` for P2 promotion | The resolver opens only unambiguous source fields in the bounded relation tree and returns `p2_mapping_eligible=false`. The real files yield 169,836/258,344 uniquely resolved alarm rows (65.740%), 44,992 multi-resource conflicts, 441 rows touching an ambiguous alias, and 43,106 rows with no alias hit. These exact source-record joins are useful, but their direction and business meaning remain unverified. |
 
 ## NocPro Assistant boundary
@@ -58,6 +58,14 @@ It cannot issue SQL, network, arbitrary URL, Deep Dive, Review, Apply, or
 feedback actions. A stale snapshot identity returns `STALE_CONTEXT`; missing
 resource-to-chain mapping returns
 `RESOURCE_TO_CHAIN_MAPPING_UNAVAILABLE`, never a topology-derived guess.
+
+Every navigation target contains a non-empty `snapshot_id` and
+`snapshot_version`; the React client rejects a target for any other active
+snapshot. Pair WHY navigation additionally requires two distinct member IDs of
+the target chain. Assistant-triggered Review navigation is display-only: it
+loads a compatible persisted Review if one exists and returns `NOT_RUN` in the
+panel if it does not. It never uses the normal operator path that may submit a
+new Review job.
 
 ## Topology hierarchy and alias mapping boundary
 
@@ -117,7 +125,10 @@ boundary, not a deferred dense fallback.
   artifacts into the complete closure manifest. It intentionally records
   attribution/deletion, merge-cross-evidence, serialization, and persistence
   as `NOT_RUN` when no isolated timing exists; it never manufactures a number
-  from a parent operation or a source-code constant.
+  from a parent operation or a source-code constant. A measurement is accepted
+  only with finite non-negative P50/P95 values, `P50 <= P95`, explicit positive
+  repetitions, and an explicit P95-reliability flag; missing fields never
+  default to a reliable P95 or 20 repetitions.
 - `tests/spec_sanity/test_tier1_execution_boundary.py` pins the 1072-member
   anti-all-pairs invariant.
 - `tests/e2e/check_closure_acceptance.sh` validates the full acceptance inputs

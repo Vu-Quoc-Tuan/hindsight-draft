@@ -9,6 +9,7 @@ is intentionally unavailable or not run in the current environment.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from math import isfinite
 from pathlib import Path
 from typing import Iterable
 
@@ -45,6 +46,56 @@ OPERATIONS: tuple[ClosureBenchmarkOperation, ...] = (
     ClosureBenchmarkOperation("review_persistence", "Review", requires_runtime=True),
     ClosureBenchmarkOperation("review_restart_hydration", "Review", requires_runtime=True),
 )
+
+
+def _finite_nonnegative(value: object) -> bool:
+    """Benchmark timings are evidence only when they are real elapsed values."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(value) and value >= 0
+
+
+def _positive_repetitions(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _valid_timing(
+    p50: object,
+    p95: object,
+    repetitions: object,
+    reliable: object,
+) -> bool:
+    return (
+        _finite_nonnegative(p50)
+        and _finite_nonnegative(p95)
+        and p50 <= p95
+        and _positive_repetitions(repetitions)
+        and isinstance(reliable, bool)
+    )
+
+
+def _valid_entries(entries: list[dict]) -> bool:
+    return bool(entries) and all(
+        _valid_timing(
+            entry.get("p50_s"),
+            entry.get("p95_s"),
+            entry.get("n"),
+            entry.get("p95_reliable"),
+        )
+        for entry in entries
+    )
+
+
+def _invalid_measurement_result(
+    operation: ClosureBenchmarkOperation,
+    reason: str = "INVALID_OR_INCOMPLETE_BENCHMARK_EVIDENCE",
+) -> dict:
+    return {
+        "operation": operation.name,
+        "tier": operation.tier,
+        "status": "NOT_RUN",
+        "reason": reason,
+        "exact_only": operation.exact_only,
+        "requires_runtime": operation.requires_runtime,
+    }
 
 
 def closure_manifest() -> dict:
@@ -127,7 +178,7 @@ def consolidated_closure_results(
 
         if name == "tier_1a_snapshot_background":
             entries = by_op.get("tier_1a_snapshot_background", [])
-            if entries:
+            if _valid_entries(entries):
                 first = entries[0]
                 results.append({
                     "operation": name,
@@ -136,17 +187,20 @@ def consolidated_closure_results(
                     "provenance": "benchmarks/results/latest.json",
                     "p50_seconds": first.get("p50_s"),
                     "p95_seconds": first.get("p95_s"),
-                    "p95_reliable": first.get("p95_reliable", False),
-                    "repetitions": first.get("n", 3),
+                    "p95_reliable": first["p95_reliable"],
+                    "repetitions": first["n"],
                     "workload": first.get("workload", "full_export"),
                     "exact_only": exact_only,
                     "requires_runtime": requires_runtime,
                 })
                 continue
+            if entries:
+                results.append(_invalid_measurement_result(operation))
+                continue
 
         if name == "tier_1b_cold_on_chain_open":
             entries = by_op.get("tier_1b_on_chain_open_p95", [])
-            if entries:
+            if _valid_entries(entries):
                 matrix = [
                     {
                         "workload": r.get("workload"),
@@ -155,7 +209,7 @@ def consolidated_closure_results(
                     }
                     for r in entries
                 ]
-                p95 = max(r.get("p95_s", 0) for r in entries)
+                p95 = max(r["p95_s"] for r in entries)
                 results.append({
                     "operation": name,
                     "tier": tier,
@@ -163,16 +217,19 @@ def consolidated_closure_results(
                     "provenance": "benchmarks/results/latest.json",
                     "chain_matrix": matrix,
                     "p95_seconds": p95,
-                    "p95_reliable": all(r.get("p95_reliable", False) for r in entries),
-                    "repetitions": entries[0].get("n", 20),
+                    "p95_reliable": all(r["p95_reliable"] for r in entries),
+                    "repetitions": entries[0]["n"],
                     "exact_only": exact_only,
                     "requires_runtime": requires_runtime,
                 })
+                continue
+            if entries:
+                results.append(_invalid_measurement_result(operation))
                 continue
 
         if name == "tier_1b_cache_hit_on_chain_open":
             entries = by_op.get("tier_1b_workspace_cache_hit_on_chain_open", [])
-            if entries:
+            if _valid_entries(entries):
                 matrix = [
                     {
                         "workload": r.get("workload"),
@@ -181,7 +238,7 @@ def consolidated_closure_results(
                     }
                     for r in entries
                 ]
-                p95 = max(r.get("p95_s", 0) for r in entries)
+                p95 = max(r["p95_s"] for r in entries)
                 results.append({
                     "operation": name,
                     "tier": tier,
@@ -189,16 +246,19 @@ def consolidated_closure_results(
                     "provenance": "benchmarks/results/latest.json",
                     "chain_matrix": matrix,
                     "p95_seconds": p95,
-                    "p95_reliable": all(r.get("p95_reliable", False) for r in entries),
-                    "repetitions": entries[0].get("n", 20),
+                    "p95_reliable": all(r["p95_reliable"] for r in entries),
+                    "repetitions": entries[0]["n"],
                     "exact_only": exact_only,
                     "requires_runtime": requires_runtime,
                 })
                 continue
+            if entries:
+                results.append(_invalid_measurement_result(operation))
+                continue
 
         if name == "pair_why":
             entries = by_op.get("pair_on_click", [])
-            if entries:
+            if _valid_entries(entries):
                 matrix = [
                     {
                         "workload": r.get("workload"),
@@ -207,7 +267,7 @@ def consolidated_closure_results(
                     }
                     for r in entries
                 ]
-                p95 = max(r.get("p95_s", 0) for r in entries)
+                p95 = max(r["p95_s"] for r in entries)
                 results.append({
                     "operation": name,
                     "tier": tier,
@@ -215,11 +275,14 @@ def consolidated_closure_results(
                     "provenance": "benchmarks/results/latest.json",
                     "chain_matrix": matrix,
                     "p95_seconds": p95,
-                    "p95_reliable": all(r.get("p95_reliable", False) for r in entries),
-                    "repetitions": entries[0].get("n", 20),
+                    "p95_reliable": all(r["p95_reliable"] for r in entries),
+                    "repetitions": entries[0]["n"],
                     "exact_only": exact_only,
                     "requires_runtime": requires_runtime,
                 })
+                continue
+            if entries:
+                results.append(_invalid_measurement_result(operation))
                 continue
 
         if name == "historical_h_pair_why":
@@ -250,7 +313,7 @@ def consolidated_closure_results(
 
         if name == "tier_2_structural_audit":
             entries = by_op.get("tier_2_structural_audit", [])
-            if entries:
+            if _valid_entries(entries):
                 matrix = [
                     {
                         "workload": r.get("workload"),
@@ -259,7 +322,7 @@ def consolidated_closure_results(
                     }
                     for r in entries
                 ]
-                p95 = max(r.get("p95_s", 0) for r in entries)
+                p95 = max(r["p95_s"] for r in entries)
                 results.append({
                     "operation": name,
                     "tier": tier,
@@ -267,12 +330,15 @@ def consolidated_closure_results(
                     "provenance": "benchmarks/results/latest.json",
                     "chain_matrix": matrix,
                     "p95_seconds": p95,
-                    "p95_reliable": all(r.get("p95_reliable", False) for r in entries),
-                    "repetitions": entries[0].get("n", 20),
+                    "p95_reliable": all(r["p95_reliable"] for r in entries),
+                    "repetitions": entries[0]["n"],
                     "exact_only": exact_only,
                     "requires_runtime": requires_runtime,
                     "notes": "Includes exact conductance, candidate cuts, and over-merge verdict",
                 })
+                continue
+            if entries:
+                results.append(_invalid_measurement_result(operation))
                 continue
 
         if name == "evidence_attribution":
@@ -320,7 +386,12 @@ def consolidated_closure_results(
                 "latency_p95_reliable",
                 "repetitions_per_mutation",
             )
-            if summary and all(summary.get(field) is not None for field in required_measurements):
+            if summary and _valid_timing(
+                summary.get("latency_p50_seconds"),
+                summary.get("latency_p95_seconds"),
+                summary.get("repetitions_per_mutation"),
+                summary.get("latency_p95_reliable"),
+            ):
                 results.append({
                     "operation": name,
                     "tier": tier,
@@ -332,11 +403,13 @@ def consolidated_closure_results(
                     "ami": summary.get("mean_ami"),
                     "p50_seconds": summary.get("latency_p50_seconds"),
                     "p95_seconds": summary.get("latency_p95_seconds"),
-                    "p95_reliable": summary.get("latency_p95_reliable", False),
+                    "p95_reliable": summary["latency_p95_reliable"],
                     "repetitions": summary.get("repetitions_per_mutation"),
                     "exact_only": exact_only,
                     "requires_runtime": requires_runtime,
                 })
+            elif summary and any(summary.get(field) is not None for field in required_measurements):
+                results.append(_invalid_measurement_result(operation))
             else:
                 results.append({
                     "operation": name,
@@ -385,22 +458,31 @@ def consolidated_closure_results(
             continue
 
         if name == "review_restart_hydration":
-            if runtime_data and "persisted_review_hydration" in runtime_data:
+            hydration = (runtime_data or {}).get("persisted_review_hydration")
+            runtime_repetitions = (runtime_data or {}).get("repetitions")
+            if isinstance(hydration, dict) and _valid_timing(
+                hydration.get("p50_s"),
+                hydration.get("p95_s"),
+                runtime_repetitions,
+                hydration.get("p95_reliable"),
+            ):
                 results.append({
                     "operation": name,
                     "tier": tier,
                     "status": "MEASURED",
                     "scope": runtime_data.get("scope", "LOCAL_DOCKER_RUNTIME_ONLY"),
                     "provenance": "benchmarks/results/runtime-review-latest.json",
-                    "hydration_p50_seconds": round(runtime_data["persisted_review_hydration"]["p50_s"], 4),
-                    "hydration_p95_seconds": round(runtime_data["persisted_review_hydration"]["p95_s"], 4),
-                    "p95_seconds": round(runtime_data["persisted_review_hydration"]["p95_s"], 4),
-                    "p95_reliable": runtime_data["persisted_review_hydration"].get("p95_reliable", True),
-                    "repetitions": runtime_data.get("repetitions", 20),
-                    "notes": "Repository-backed Review hydration after API restart measured over 20 iterations",
+                    "hydration_p50_seconds": round(hydration["p50_s"], 4),
+                    "hydration_p95_seconds": round(hydration["p95_s"], 4),
+                    "p95_seconds": round(hydration["p95_s"], 4),
+                    "p95_reliable": hydration["p95_reliable"],
+                    "repetitions": runtime_repetitions,
+                    "notes": f"Repository-backed Review hydration after API restart measured over {runtime_repetitions} iterations",
                     "exact_only": exact_only,
                     "requires_runtime": requires_runtime,
                 })
+            elif hydration is not None:
+                results.append(_invalid_measurement_result(operation))
             else:
                 results.append({
                     "operation": name,

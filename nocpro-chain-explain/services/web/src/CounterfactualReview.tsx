@@ -133,7 +133,7 @@ function CandidateCard({
           </div>
           {feedback.reason ? <p className="review-feedback-reason">“{feedback.reason}”</p> : null}
         </div>
-      ) : recommended ? (
+      ) : recommended && onFeedbackSubmit ? (
         showForm ? (
           <form className="review-feedback-form" onSubmit={handleSubmit}>
             <div className="review-feedback-form-title">
@@ -203,6 +203,10 @@ function CandidateCard({
             </div>
           </div>
         )
+      ) : recommended ? (
+        <div className="review-feedback-non-recommended">
+          <small>Read-only navigation displays the persisted proposal but does not open operator-feedback controls.</small>
+        </div>
       ) : (
         <div className="review-feedback-non-recommended">
           <small>Chỉ các đề xuất thuộc biên Pareto (recommendation) mới mở tiếp nhận phản hồi vận hành.</small>
@@ -269,26 +273,35 @@ export function CounterfactualReview({
   chainId,
   initialJob = null,
   initialFeedbacks = {},
+  readOnly = false,
 }: {
   chainId: string
   initialJob?: CounterfactualJob | null
   initialFeedbacks?: Record<string, OperatorFeedback>
+  /** Assistant navigation may only display persisted results; it never starts Review. */
+  readOnly?: boolean
 }) {
   const [job, setJob] = useState<CounterfactualJob | null>(initialJob)
   const [feedbacks, setFeedbacks] = useState<Record<string, OperatorFeedback>>(initialFeedbacks)
   const [loading, setLoading] = useState(initialJob == null)
   const [error, setError] = useState<string | null>(null)
+  const [noPersistedReview, setNoPersistedReview] = useState(false)
 
   useEffect(() => {
     if (initialJob?.chain_id === chainId) return
     const controller = new AbortController()
     async function load() {
+      setNoPersistedReview(false)
       try {
         let current: CounterfactualJob
         try {
           current = await api.latestReview(chainId, controller.signal)
         } catch (cause) {
           if (!(cause instanceof ApiError && cause.status === 404)) throw cause
+          if (readOnly) {
+            if (!controller.signal.aborted) setNoPersistedReview(true)
+            return
+          }
           const submission = await api.submitReview(chainId)
           current = await api.reviewJob(submission.job_id, controller.signal)
         }
@@ -319,7 +332,7 @@ export function CounterfactualReview({
     }
     void load()
     return () => controller.abort()
-  }, [chainId, initialJob])
+  }, [chainId, initialJob, readOnly])
 
   useEffect(() => {
     if (!job || !['QUEUED', 'RUNNING'].includes(job.status)) return
@@ -350,6 +363,13 @@ export function CounterfactualReview({
 
   if (loading && !job) return <section className="review-shell review-loading"><span /><p>Evaluating bounded alternatives…</p></section>
   if (error) return <section className="review-shell review-unavailable" role="alert"><span>UNAVAILABLE</span><h2>Counterfactual review could not be loaded.</h2><p>{error}</p></section>
+  if (noPersistedReview) return (
+    <section className="review-shell review-unavailable">
+      <span>NOT_RUN</span>
+      <h2>No persisted Counterfactual Review is available.</h2>
+      <p>Assistant navigation is read-only and does not create Review jobs. Open Review directly to run the configured bounded evaluation.</p>
+    </section>
+  )
   if (!job) return null
   if (!job.result) return <section className="review-shell review-loading"><span>{job.progress_percent}%</span><p>{job.status}</p>{job.error ? <small>{job.error}</small> : null}</section>
 
@@ -386,7 +406,7 @@ export function CounterfactualReview({
             operation={operation}
             recommendationIds={recommendationIds}
             feedbacks={feedbacks}
-            onFeedbackSubmit={handleFeedbackSubmit}
+            onFeedbackSubmit={readOnly ? undefined : handleFeedbackSubmit}
           />
         ))}
       </div>

@@ -51,6 +51,7 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | Kafka chunk/barrier ingest (`nocpro-mock` -> Explain) | infra | done |
 | Docker Compose: PostgreSQL, Kafka, API, Web, replay producer | infra | done |
 | Docker + Chromium operator-flow and recovery acceptance | infra | done |
+| NocPro Assistant deterministic registry/navigation | infra | done; exact snapshot-bound read-only targets only, current-revision Docker acceptance pending |
 
 Per ADR-0029, MVP + P0-complete must stand as a usable project **before** P1.
 The P1-Core feature set above is implemented, but the **P1 milestone is not
@@ -63,6 +64,12 @@ on directed synthetic fixtures, while the current production topology remains
 unable to provide the required directed semantics, so production results stay
 `UNAVAILABLE`. Remaining P2 extensions are still `NOT_STARTED` and data/
 capability gated.
+
+For the capability/evidence distinction, current benchmark limits, topology
+promotion boundaries, and production data gates, see
+[`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md). In particular,
+`READY` means the implementation exists; it does not mean production taxonomy,
+sequential data, calibration, or operator-ground-truth validation is present.
 
 ### Alarm taxonomy source capability
 

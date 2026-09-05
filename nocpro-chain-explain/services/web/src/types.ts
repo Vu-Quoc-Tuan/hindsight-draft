@@ -519,8 +519,12 @@ export type AssistantAction = {
   kind: 'NAVIGATE'
   label: string
   target: {
-    chain_id?: string
-    tab?: string
+    snapshot_id: string
+    snapshot_version: string
+    chain_id?: string | null
+    tab: string
+    pair_alarm_id_a?: string | null
+    pair_alarm_id_b?: string | null
   }
 }
 

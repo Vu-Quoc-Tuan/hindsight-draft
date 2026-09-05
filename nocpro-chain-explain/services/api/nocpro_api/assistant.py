@@ -51,7 +51,7 @@ SEMANTIC_REGISTRY: dict[str, dict[str, str]] = {
 class AssistantAction:
     kind: str
     label: str
-    target: dict[str, str]
+    target: dict[str, str | None]
 
 
 def _normalize(value: str) -> str:
@@ -86,9 +86,76 @@ def _active_context_matches(service: Any, context: dict[str, Any]) -> bool:
     active = service.active_identity()
     return (
         active is not None
-        and (requested_id in (None, "", active[0]))
-        and (requested_version in (None, "", active[1]))
+        and requested_id == active[0]
+        and requested_version == active[1]
     )
+
+
+def _navigation_action(
+    service: Any,
+    *,
+    label: str,
+    tab: str,
+    chain_id: str | None = None,
+    pair_alarm_id_a: str | None = None,
+    pair_alarm_id_b: str | None = None,
+) -> dict[str, Any]:
+    """Make an identity-bound in-app action from the currently active snapshot."""
+    active = service.active_identity()
+    if active is None:
+        raise RuntimeError("assistant action requested without an active snapshot")
+    action = AssistantAction(
+        "NAVIGATE",
+        label,
+        {
+            "snapshot_id": active[0],
+            "snapshot_version": active[1],
+            "chain_id": chain_id,
+            "tab": tab,
+            "pair_alarm_id_a": pair_alarm_id_a,
+            "pair_alarm_id_b": pair_alarm_id_b,
+        },
+    )
+    return {"kind": action.kind, "label": action.label, "target": action.target}
+
+
+def _active_chain_id(service: Any, context: dict[str, Any]) -> str | None:
+    """Return a context chain only when it belongs to the active snapshot."""
+    chain_id = context.get("chain_id")
+    if not isinstance(chain_id, str) or not chain_id:
+        return None
+    package = service.require_package()
+    return chain_id if chain_id in package.chains else None
+
+
+def _active_pair(service: Any, context: dict[str, Any]) -> tuple[str, str, str] | None:
+    """Return a validated same-chain pair without evaluating Pair WHY."""
+    chain_id = _active_chain_id(service, context)
+    alarm_a = context.get("pair_alarm_id_a")
+    alarm_b = context.get("pair_alarm_id_b")
+    if (
+        chain_id is None
+        or not isinstance(alarm_a, str)
+        or not isinstance(alarm_b, str)
+        or not alarm_a
+        or not alarm_b
+        or alarm_a == alarm_b
+    ):
+        return None
+    package = service.require_package()
+    members = set(package.members_of(chain_id))
+    if alarm_a not in members or alarm_b not in members:
+        return None
+    return chain_id, alarm_a, alarm_b
+
+
+def _unavailable(message: str, reason: str) -> dict[str, Any]:
+    return {
+        "status": "UNAVAILABLE",
+        "message": message,
+        "fact_refs": [f"capability:{reason}"],
+        "actions": [],
+    }
 
 
 def answer_query(service: Any, query: str, context: dict[str, Any]) -> dict[str, Any]:
@@ -132,14 +199,28 @@ def answer_query(service: Any, query: str, context: dict[str, Any]) -> dict[str,
             return {"status": "AVAILABLE", "message": message, "fact_refs": refs, "actions": []}
 
     if any(phrase in text for phrase in ("root cause", "nguyên nhân gốc", "rca")):
+        chain_id = _active_chain_id(service, context)
+        actions = []
+        pair = _active_pair(service, context)
+        if pair is not None:
+            pair_chain, alarm_a, alarm_b = pair
+            actions.append(_navigation_action(
+                service,
+                label="Open Pair WHY",
+                tab="why",
+                chain_id=pair_chain,
+                pair_alarm_id_a=alarm_a,
+                pair_alarm_id_b=alarm_b,
+            ))
+        if chain_id is not None:
+            actions.append(_navigation_action(
+                service, label="Open Structural Audit", tab="structure", chain_id=chain_id
+            ))
         return {
             "status": "AVAILABLE",
             "message": "The available evidence can explain grouping and structural findings, but it does not establish a root cause. Open Pair WHY or Structural Audit to inspect the recorded evidence.",
             "fact_refs": ["semantic-registry:pair_why", "semantic-registry:topology"],
-            "actions": [
-                AssistantAction("NAVIGATE", "Open Pair WHY", {"tab": "why"}).__dict__,
-                AssistantAction("NAVIGATE", "Open Structural Audit", {"tab": "structure"}).__dict__,
-            ],
+            "actions": actions,
         }
 
     if any(phrase in text for phrase in ("service", "dịch vụ", "resource", "tài nguyên")):
@@ -147,7 +228,7 @@ def answer_query(service: Any, query: str, context: dict[str, Any]) -> dict[str,
             "status": "UNAVAILABLE",
             "message": "Resource-to-chain search is unavailable in this context. Topology source navigation does not establish an alarm-to-resource mapping or dependency semantics.",
             "fact_refs": ["capability:RESOURCE_TO_CHAIN_MAPPING_UNAVAILABLE", "semantic-registry:topology"],
-            "actions": [AssistantAction("NAVIGATE", "Open Topology", {"tab": "topology"}).__dict__],
+            "actions": [_navigation_action(service, label="Open Topology", tab="topology")],
         }
 
     tab_by_phrase = {
@@ -159,21 +240,48 @@ def answer_query(service: Any, query: str, context: dict[str, Any]) -> dict[str,
     }
     for phrase, (tab, label) in tab_by_phrase.items():
         if phrase in text and any(marker in text for marker in ("open", "mở", "go", "đến")):
+            if tab == "why":
+                pair = _active_pair(service, context)
+                if pair is None:
+                    return _unavailable(
+                        "Pair WHY requires two distinct alarms from the active chain.",
+                        "PAIR_CONTEXT_UNAVAILABLE",
+                    )
+                chain_id, alarm_a, alarm_b = pair
+                action = _navigation_action(
+                    service,
+                    label=label,
+                    tab=tab,
+                    chain_id=chain_id,
+                    pair_alarm_id_a=alarm_a,
+                    pair_alarm_id_b=alarm_b,
+                )
+            elif tab in {"structure", "review", "evolution"}:
+                chain_id = _active_chain_id(service, context)
+                if chain_id is None:
+                    return _unavailable(
+                        f"{label} requires a chain from the active snapshot.",
+                        "CHAIN_CONTEXT_UNAVAILABLE",
+                    )
+                action = _navigation_action(service, label=label, tab=tab, chain_id=chain_id)
+            else:
+                action = _navigation_action(service, label=label, tab=tab)
             return {
                 "status": "AVAILABLE",
                 "message": f"I can open {label.lower()} for the active chain. This navigation does not run analysis or change data.",
                 "fact_refs": [f"ui-context:{context.get('chain_id') or 'none'}"],
-                "actions": [AssistantAction("NAVIGATE", label, {"tab": tab}).__dict__],
+                "actions": [action],
             }
 
     matches = _find_chain_matches(service, query)
     if matches:
         actions = [
-            AssistantAction(
-                "NAVIGATE",
-                f"Open {chain.chain_id} ({chain.member_count} alarms)",
-                {"chain_id": chain.chain_id, "tab": "tree"},
-            ).__dict__
+            _navigation_action(
+                service,
+                label=f"Open {chain.chain_id} ({chain.member_count} alarms)",
+                tab="tree",
+                chain_id=chain.chain_id,
+            )
             for chain in matches
         ]
         return {

@@ -92,3 +92,37 @@ def test_closure_manifest_requires_complete_review_timing(tmp_path):
     move = next(item for item in payload["results"] if item["operation"] == "review_move_member")
     assert move["status"] == "NOT_RUN"
     assert move["reason"] == "SYNTHETIC_REVIEW_BENCHMARK_NOT_EXECUTED"
+
+
+def test_closure_manifest_rejects_invalid_timing_and_runtime_defaults(tmp_path):
+    (tmp_path / "latest.json").write_text(json.dumps({
+        "results": [{
+            "operation": "pair_on_click",
+            "workload": "chain-1072",
+            "p50_s": 2.0,
+            "p95_s": 1.0,
+            "p95_reliable": True,
+            "n": 0,
+        }],
+    }))
+    (tmp_path / "runtime-review-latest.json").write_text(json.dumps({
+        "persisted_review_hydration": {
+            "p50_s": 0.1,
+            "p95_s": 0.2,
+            # A missing reliability flag/repetition must never become True/20 by default.
+        },
+    }))
+    output = run(tmp_path / "closure.json", results_dir=tmp_path)
+    payload = json.loads(output.read_text())
+    pair_why = next(item for item in payload["results"] if item["operation"] == "pair_why")
+    hydration = next(item for item in payload["results"] if item["operation"] == "review_restart_hydration")
+    assert pair_why == {
+        "operation": "pair_why",
+        "tier": "Tier-1B",
+        "status": "NOT_RUN",
+        "reason": "INVALID_OR_INCOMPLETE_BENCHMARK_EVIDENCE",
+        "exact_only": False,
+        "requires_runtime": False,
+    }
+    assert hydration["status"] == "NOT_RUN"
+    assert hydration["reason"] == "INVALID_OR_INCOMPLETE_BENCHMARK_EVIDENCE"

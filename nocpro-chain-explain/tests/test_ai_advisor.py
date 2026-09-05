@@ -163,7 +163,14 @@ def test_assistant_query_is_snapshot_bound_and_only_returns_typed_navigation() -
                 assert body["actions"] == [{
                     "kind": "NAVIGATE",
                     "label": "Open Structural Audit",
-                    "target": {"tab": "structure"},
+                    "target": {
+                        "snapshot_id": "s1",
+                        "snapshot_version": "1",
+                        "chain_id": "C1",
+                        "tab": "structure",
+                        "pair_alarm_id_a": None,
+                        "pair_alarm_id_b": None,
+                    },
                 }]
                 assert "root cause" not in body["message"].lower()
 
@@ -174,6 +181,71 @@ def test_assistant_query_is_snapshot_bound_and_only_returns_typed_navigation() -
                 assert stale.status_code == 200
                 assert stale.json()["status"] == "STALE_CONTEXT"
                 assert stale.json()["actions"] == []
+        finally:
+            app.state.workspace.close()
+
+    asyncio.run(exercise())
+
+
+def test_assistant_rejects_missing_or_invalid_snapshot_bound_targets() -> None:
+    async def exercise() -> None:
+        app = create_app()
+        transport = httpx2.ASGITransport(app=app)
+        try:
+            async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                await client.post("/api/v1/snapshots", json=_payload())
+                missing_identity = await client.post(
+                    "/api/v1/assistant/query",
+                    json={"query": "open audit", "context": {"chain_id": "C1"}},
+                )
+                assert missing_identity.status_code == 422
+
+                missing_chain = await client.post(
+                    "/api/v1/assistant/query",
+                    json={
+                        "query": "open review",
+                        "context": {
+                            "snapshot_id": "s1", "snapshot_version": "1", "chain_id": "missing",
+                        },
+                    },
+                )
+                assert missing_chain.status_code == 200
+                assert missing_chain.json()["status"] == "UNAVAILABLE"
+                assert missing_chain.json()["actions"] == []
+
+                invalid_pair = await client.post(
+                    "/api/v1/assistant/query",
+                    json={
+                        "query": "open pair why",
+                        "context": {
+                            "snapshot_id": "s1", "snapshot_version": "1", "chain_id": "C1",
+                            "pair_alarm_id_a": "a1", "pair_alarm_id_b": "missing",
+                        },
+                    },
+                )
+                assert invalid_pair.status_code == 200
+                assert invalid_pair.json()["status"] == "UNAVAILABLE"
+                assert invalid_pair.json()["actions"] == []
+
+                valid_pair = await client.post(
+                    "/api/v1/assistant/query",
+                    json={
+                        "query": "open pair why",
+                        "context": {
+                            "snapshot_id": "s1", "snapshot_version": "1", "chain_id": "C1",
+                            "pair_alarm_id_a": "a1", "pair_alarm_id_b": "a2",
+                        },
+                    },
+                )
+                assert valid_pair.status_code == 200
+                assert valid_pair.json()["actions"] == [{
+                    "kind": "NAVIGATE",
+                    "label": "Open Pair WHY",
+                    "target": {
+                        "snapshot_id": "s1", "snapshot_version": "1", "chain_id": "C1", "tab": "why",
+                        "pair_alarm_id_a": "a1", "pair_alarm_id_b": "a2",
+                    },
+                }]
         finally:
             app.state.workspace.close()
 
@@ -223,7 +295,10 @@ def test_assistant_fails_closed_for_resource_to_chain_search() -> None:
                 assert body["status"] == "UNAVAILABLE"
                 assert "capability:RESOURCE_TO_CHAIN_MAPPING_UNAVAILABLE" in body["fact_refs"]
                 assert body["actions"] == [{
-                    "kind": "NAVIGATE", "label": "Open Topology", "target": {"tab": "topology"},
+                    "kind": "NAVIGATE", "label": "Open Topology", "target": {
+                        "snapshot_id": "s1", "snapshot_version": "1", "chain_id": None,
+                        "tab": "topology", "pair_alarm_id_a": None, "pair_alarm_id_b": None,
+                    },
                 }]
         finally:
             app.state.workspace.close()
