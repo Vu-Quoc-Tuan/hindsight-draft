@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -44,6 +47,17 @@ logger = logging.getLogger(__name__)
 
 def workspace(request: Request) -> Workspace:
     return request.app.state.workspace
+
+
+async def _run_grounded_provider(function: Any, **kwargs: Any) -> Any:
+    """Run one blocking provider call without retaining a default-executor thread."""
+    call = partial(function, **kwargs)
+    loop = asyncio.get_running_loop()
+    with ThreadPoolExecutor(
+        max_workers=1,
+        thread_name_prefix="nocpro-grounded-llm",
+    ) as executor:
+        return await loop.run_in_executor(executor, call)
 
 
 def translate_error(exc: Exception) -> HTTPException:
@@ -319,7 +333,8 @@ async def get_chain_ai_suggestion(
             review_reason = "REVIEW_ARTIFACT_UNAVAILABLE"
 
         from .ai_advisor import generate_ai_suggestion
-        suggestion = generate_ai_suggestion(
+        suggestion = await _run_grounded_provider(
+            generate_ai_suggestion,
             chain_id=chain_id,
             analysis=analysis,
             review_result=review_result,

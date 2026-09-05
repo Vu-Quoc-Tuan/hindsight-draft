@@ -13,6 +13,7 @@ from nocpro_api.ai_advisor import (
     extract_grounded_claims,
     generate_ai_suggestion,
 )
+from nocpro_api.grounded_llm import GroundedRenderResult
 from tests.test_api import _payload
 
 
@@ -88,17 +89,62 @@ def test_ai_advisor_never_converts_absence_of_weak_into_high_fit() -> None:
     assert "causal direction is" not in narrative.lower()
 
 
-def test_ai_advisor_uses_recommendation_refs_to_find_evaluated_detail() -> None:
+def test_ai_advisor_uses_recommendation_refs_to_find_evaluated_detail(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("AI_API_KEY", raising=False)
     result = generate_ai_suggestion("C1", _analysis(), _review())
 
     assert result.status == "AVAILABLE"
     assert result.model == "DETERMINISTIC_EVIDENCE"
-    assert result.provider_status == "NOT_USED"
+    assert result.provider_status == "NOT_CONFIGURED"
     assert "REMOVE_MEMBER (cf-1)" in result.narrative
     assert "does not infer root cause" in result.narrative
 
 
-def test_ai_advisor_distinguishes_unavailable_review_from_no_recommendation() -> None:
+def test_ai_advisor_uses_llm_only_for_grounded_narrative(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_render_grounded(**kwargs):
+        captured.update(kwargs)
+        return GroundedRenderResult(
+            message="Rendered grounded advisor text",
+            model="configured-model",
+            provider_status="OK",
+            used_provider=True,
+        )
+
+    monkeypatch.setattr(
+        "nocpro_api.ai_advisor.render_grounded",
+        fake_render_grounded,
+    )
+    result = generate_ai_suggestion("C1", _analysis(), _review())
+
+    assert result.narrative == "Rendered grounded advisor text"
+    assert result.model == "configured-model"
+    assert result.provider_status == "OK"
+    assert result.grounded_claims == [
+        "Chain C1 contains 3 analyzed members.",
+        "1 member(s) are classified WEAK: A2.",
+        "1 member(s) have INSUFFICIENT_DATA: A3.",
+        "Top descriptors: same entity (coverage 85%).",
+        "Operator-facing counterfactual recommendation: REMOVE_MEMBER (cf-1).",
+    ]
+    assert captured["purpose"] == "ADVISOR"
+    assert captured["fact_refs"] == result.grounded_claims
+    facts = captured["facts"]
+    assert isinstance(facts, dict)
+    assert facts["structured_analysis"]["weak_members"] == ["A2"]
+    assert facts["review_status"] == "NOT_AVAILABLE"
+    assert "does not infer root cause" in str(captured["draft"])
+
+
+def test_ai_advisor_distinguishes_unavailable_review_from_no_recommendation(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("AI_API_KEY", raising=False)
     result = generate_ai_suggestion(
         "C1",
         _analysis(),
@@ -112,7 +158,10 @@ def test_ai_advisor_distinguishes_unavailable_review_from_no_recommendation() ->
     assert "No operator-facing counterfactual recommendation" not in result.narrative
 
 
-def test_ai_suggestion_api_endpoint_is_deterministic_and_provider_free() -> None:
+def test_ai_suggestion_api_endpoint_falls_back_when_provider_is_not_configured(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("AI_API_KEY", raising=False)
     async def exercise() -> None:
         app = create_app()
         transport = httpx2.ASGITransport(app=app)
@@ -129,7 +178,7 @@ def test_ai_suggestion_api_endpoint_is_deterministic_and_provider_free() -> None
                 assert second.status_code == 200
                 assert first.json() == second.json()
                 assert first.json()["model"] == "DETERMINISTIC_EVIDENCE"
-                assert first.json()["provider_status"] == "NOT_USED"
+                assert first.json()["provider_status"] == "NOT_CONFIGURED"
                 assert "ADR-0024" in first.json()["disclaimer"]
         finally:
             app.state.workspace.close()

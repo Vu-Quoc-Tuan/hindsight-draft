@@ -1,16 +1,17 @@
-"""Deterministic, evidence-bound narrative for a chain analysis.
+"""Evidence-bound narrative for a chain analysis.
 
 ADR-0024 allows a language model to render structured evidence, but the
 operator-facing response itself must never acquire facts that the analysis did
-not produce. Until an independently validated constrained renderer exists,
-this module deliberately uses deterministic text only. It is therefore safe
-to call from a GET endpoint and needs no provider credential.
+not produce. The deterministic projection remains authoritative and is also
+the exact fallback whenever the optional renderer is unavailable.
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from typing import Any
+
+from .grounded_llm import render_grounded
 
 
 @dataclass(frozen=True)
@@ -209,21 +210,32 @@ def generate_ai_suggestion(
     review_status: str = "NOT_AVAILABLE",
     review_reason: str | None = None,
 ) -> AISuggestionResult:
-    """Return an evidence-bound summary with no external model invocation."""
+    """Render the evidence projection without granting the model authority."""
     structured, claims = extract_grounded_claims(chain_id, analysis, review_result)
+    deterministic = build_deterministic_narrative(
+        chain_id, structured, review_status, review_reason
+    )
+    rendered = render_grounded(
+        draft=deterministic,
+        facts={
+            "structured_analysis": structured,
+            "review_status": review_status,
+            "review_reason": review_reason,
+        },
+        fact_refs=claims,
+        purpose="ADVISOR",
+    )
     return AISuggestionResult(
         chain_id=chain_id,
         status="AVAILABLE",
-        model="DETERMINISTIC_EVIDENCE",
-        narrative=build_deterministic_narrative(
-            chain_id, structured, review_status, review_reason
-        ),
+        model=rendered.model,
+        narrative=rendered.message,
         grounded_claims=claims,
         disclaimer=(
-            "ADR-0024: this response renders deterministic evidence only; it "
-            "does not create evidence, infer causality, or change NocPro."
+            "ADR-0024: this response may use AI to render deterministic evidence; "
+            "it does not create evidence, infer causality, or change NocPro."
         ),
-        provider_status="NOT_USED",
+        provider_status=rendered.provider_status,
         review_status=review_status,
         review_reason=review_reason,
     )
