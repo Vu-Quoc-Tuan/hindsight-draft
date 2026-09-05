@@ -11,33 +11,43 @@ export function AIAdvisorPanel({
   chainId: string
   initialSuggestion?: AISuggestion | null
 }) {
-  const [suggestion, setSuggestion] = useState<AISuggestion | null>(initialSuggestion)
-  const [loading, setLoading] = useState(initialSuggestion == null)
-  const [error, setError] = useState<string | null>(null)
   const [refreshIndex, setRefreshIndex] = useState(0)
+  const requestKey = `${chainId}\u0000${refreshIndex}`
+  const [loaded, setLoaded] = useState<{
+    requestKey: string
+    suggestion: AISuggestion | null
+    error: string | null
+  }>({ requestKey: '', suggestion: null, error: null })
 
   useEffect(() => {
     if (initialSuggestion?.chain_id === chainId && refreshIndex === 0) return
     const controller = new AbortController()
-    setLoading(true)
-    setError(null)
 
     api.aiSuggestion(chainId, controller.signal)
       .then((data) => {
         if (!controller.signal.aborted) {
-          setSuggestion(data)
-          setLoading(false)
+          setLoaded({ requestKey, suggestion: data, error: null })
         }
       })
       .catch((err) => {
         if (!controller.signal.aborted) {
-          setError(err instanceof Error ? err.message : 'Không thể tải phân tích AI')
-          setLoading(false)
+          setLoaded({
+            requestKey,
+            suggestion: null,
+            error: err instanceof Error ? err.message : 'Không thể tải phân tích AI',
+          })
         }
       })
 
     return () => controller.abort()
-  }, [chainId, initialSuggestion, refreshIndex])
+  }, [chainId, initialSuggestion, refreshIndex, requestKey])
+
+  const initial = refreshIndex === 0 && initialSuggestion?.chain_id === chainId
+    ? initialSuggestion
+    : null
+  const suggestion = initial ?? (loaded.requestKey === requestKey ? loaded.suggestion : null)
+  const error = initial ? null : (loaded.requestKey === requestKey ? loaded.error : null)
+  const loading = initial == null && loaded.requestKey !== requestKey
 
   const renderNarrative = (text: string) => {
     const lines = text.split('\n')
