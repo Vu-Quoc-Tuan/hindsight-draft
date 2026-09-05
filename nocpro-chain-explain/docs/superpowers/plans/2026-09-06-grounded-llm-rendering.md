@@ -29,7 +29,7 @@
 - Consumes: `draft: str`, `facts: dict[str, Any]`, `fact_refs: Sequence[str]`, `purpose: Literal["ADVISOR", "ASSISTANT"]`.
 - Produces: `GroundedRenderResult(message: str, model: str, provider_status: str, used_provider: bool)` through `render_grounded(...)`.
 
-- [ ] **Step 1: Write failing provider tests**
+- [x] **Step 1: Write failing provider tests**
 
 Add tests with a patched `urllib.request.urlopen` for successful OpenAI-compatible JSON, missing configuration, HTTP failure, malformed/empty content, bounded input, and stable non-secret provider states. Assert the request contains the deterministic draft and facts but no API key in its JSON body.
 
@@ -49,13 +49,13 @@ def test_renderer_uses_configured_provider_without_changing_grounding(monkeypatc
     assert result.used_provider is True
 ```
 
-- [ ] **Step 2: Run the focused tests and verify they fail**
+- [x] **Step 2: Run the focused tests and verify they fail**
 
 Run: `.venv/bin/pytest tests/test_grounded_llm.py -q`
 
 Expected: collection fails because `nocpro_api.grounded_llm` does not exist.
 
-- [ ] **Step 3: Implement the provider adapter**
+- [x] **Step 3: Implement the provider adapter**
 
 Implement immutable configuration/result values, environment parsing without loading client configuration, an OpenAI-compatible POST to `${AI_BASE_URL}/chat/completions`, a strict ADR-0024 system prompt, bounded JSON facts/draft, response parsing, and stable failure categories:
 
@@ -75,7 +75,7 @@ def render_grounded(*, draft: str, facts: dict[str, Any],
 
 Use `DETERMINISTIC_EVIDENCE` plus `NOT_CONFIGURED`, `HTTP_ERROR`, `TIMEOUT`, `INVALID_RESPONSE`, or `PROVIDER_ERROR` for fallback. Never serialize raw exception/provider text.
 
-- [ ] **Step 4: Run provider tests**
+- [x] **Step 4: Run provider tests**
 
 Run: `.venv/bin/pytest tests/test_grounded_llm.py -q`
 
@@ -94,7 +94,7 @@ Expected: all tests pass without a live network call.
 - Consumes: Task 1 `render_grounded(...)` and the existing `extract_grounded_claims(...)` projection.
 - Produces: the existing `AISuggestionResult` contract, with provider model/status when rendering succeeds and deterministic content on failure.
 
-- [ ] **Step 1: Add failing Advisor tests**
+- [x] **Step 1: Add failing Advisor tests**
 
 Patch the provider boundary and assert:
 
@@ -108,13 +108,13 @@ assert result.review_status == "AVAILABLE"
 
 Also assert missing/error provider keeps the exact deterministic narrative and the route does not block the event loop by running the synchronous provider call through `asyncio.to_thread`.
 
-- [ ] **Step 2: Run the Advisor tests and verify the new cases fail**
+- [x] **Step 2: Run the Advisor tests and verify the new cases fail**
 
 Run: `.venv/bin/pytest tests/test_ai_advisor.py -q`
 
 Expected: new provider assertions fail while existing deterministic tests pass.
 
-- [ ] **Step 3: Integrate rendering after deterministic fact extraction**
+- [x] **Step 3: Integrate rendering after deterministic fact extraction**
 
 Keep `extract_grounded_claims` and `build_deterministic_narrative` authoritative. Pass the structured projection, claims, Review status, and Review reason to `render_grounded`; copy only its `message`, `model`, and `provider_status` into `AISuggestionResult`.
 
@@ -131,7 +131,7 @@ suggestion = await asyncio.to_thread(
 )
 ```
 
-- [ ] **Step 4: Run Advisor tests**
+- [x] **Step 4: Run Advisor tests**
 
 Run: `.venv/bin/pytest tests/test_ai_advisor.py -q`
 
@@ -152,7 +152,7 @@ Expected: all Advisor/API cases pass with mocked provider behavior.
 - Consumes: existing `answer_query(...)` deterministic response and Task 1 `render_grounded(...)`.
 - Produces: the existing Assistant v1 response plus additive `model` and `provider_status` fields.
 
-- [ ] **Step 1: Add failing Assistant provider tests**
+- [x] **Step 1: Add failing Assistant provider tests**
 
 For a valid definition, chain search, and navigation request, assert the rendered message is used while `status`, `fact_refs`, and `actions` are byte-for-byte equal to the deterministic response. Assert stale context and input validation never invoke the provider. Assert provider failure returns the original deterministic message.
 
@@ -163,13 +163,13 @@ assert rendered["fact_refs"] == deterministic["fact_refs"]
 assert rendered["provider_status"] == "OK"
 ```
 
-- [ ] **Step 2: Run the Assistant tests and verify failure**
+- [x] **Step 2: Run the Assistant tests and verify failure**
 
 Run: `.venv/bin/pytest tests/test_ai_advisor.py -q`
 
 Expected: additive provider fields/rendering tests fail before integration.
 
-- [ ] **Step 3: Add a post-routing render function**
+- [x] **Step 3: Add a post-routing render function**
 
 Keep `answer_query` deterministic. Add a function that refuses rendering for `STALE_CONTEXT`, calls the grounded renderer for eligible results, and copies only the rendered message/provider provenance:
 
@@ -188,7 +188,7 @@ provider_status: string
 
 No model output is parsed as an action, reference, status, or target.
 
-- [ ] **Step 4: Run backend Assistant tests**
+- [x] **Step 4: Run backend Assistant tests**
 
 Run: `.venv/bin/pytest tests/test_ai_advisor.py -q`
 
@@ -211,23 +211,23 @@ Expected: all Assistant action/context tests and provider tests pass.
 - Consumes: API provider status/model fields from Tasks 2 and 3.
 - Produces: visible but non-alarming provider provenance and server-only Docker configuration.
 
-- [ ] **Step 1: Write failing UI tests**
+- [x] **Step 1: Write failing UI tests**
 
 Assert successful LLM rendering displays `AI-assisted · <model>`, fallback displays `Deterministic fallback`, and no HTML contains `AI_API_KEY`, the configured credential, an Apply control, or causal wording.
 
-- [ ] **Step 2: Run Vitest and verify the new cases fail**
+- [x] **Step 2: Run Vitest and verify the new cases fail**
 
 Run: `npm test -- --run`
 
 Expected: provider provenance assertions fail before UI integration.
 
-- [ ] **Step 3: Add deployment and presentation wiring**
+- [x] **Step 3: Add deployment and presentation wiring**
 
 Document only variable names/placeholders in `.env.example`. Pass `AI_API_KEY`, `AI_BASE_URL`, and `AI_MODEL` to the API service in Compose. Do not create `VITE_AI_*` variables. Update both panels to render safe model/provider provenance without exposing provider errors or secrets.
 
 Update `IMPLEMENTATION_STATUS.md` to distinguish optional grounded LLM rendering from deterministic core correctness and to state that LLM does not fill H, T_delay full-chain, taxonomy, topology, or ground-truth gaps.
 
-- [ ] **Step 4: Run focused and full verification**
+- [x] **Step 4: Run focused and full verification**
 
 Run:
 
@@ -242,10 +242,10 @@ git diff --check
 
 Expected: all available suites pass; live provider access is not required.
 
-- [ ] **Step 5: Optional configured-provider smoke test**
+- [x] **Step 5: Optional configured-provider smoke test**
 
 With the existing local `.env`, call the Advisor and Assistant through the API without printing any secret. Verify `provider_status=OK`, a configured model name, typed actions unchanged, and no causal/mutation claim. If network/provider access is unavailable, report the smoke test as `NOT_RUN` or `UNAVAILABLE`, not PASS.
 
-- [ ] **Step 6: Review scope and status**
+- [x] **Step 6: Review scope and status**
 
 Run `git status --short` and confirm the change set excludes `nocpro-chain-explain/ui/`. Report exact tests, live-provider status, and the unchanged production/data limitations before any implementation commit.
