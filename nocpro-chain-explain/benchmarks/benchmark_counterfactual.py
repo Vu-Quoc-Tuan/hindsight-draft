@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections import Counter
 from math import comb, log
 import json
+import os
 from pathlib import Path
 import statistics
 import sys
@@ -265,6 +266,35 @@ def run(repetitions: int = 5) -> dict:
         "SYN-CHAIN-REMOVE-TRUTH",
     )
     clean_abstained = not clean_result.recommendations
+    def percentile(values: list[float], percentile: float) -> float:
+        if not values:
+            raise ValueError("percentile requires at least one measurement")
+        return sorted(values)[max(0, int(len(values) * percentile + 0.999999) - 1)]
+
+    operation_summaries = []
+    for operation in ("REMOVE_MEMBER", "SPLIT_CHAIN", "MOVE_MEMBER", "MERGE_CHAINS"):
+        matching = [case for case in cases if case["operation"] == operation]
+        operation_latencies = [
+            latency
+            for case in matching
+            for latency in case["latency_seconds"]
+        ]
+        operation_summaries.append({
+            "operation": operation,
+            "case_count": len(matching),
+            "repair_accuracy": (
+                sum(case["repair_exact"] for case in matching) / len(matching)
+                if matching
+                else 0.0
+            ),
+            "mean_ari": statistics.mean(case["ari"] for case in matching) if matching else 0.0,
+            "mean_ami": statistics.mean(case["ami"] for case in matching) if matching else 0.0,
+            "latency_p50_seconds": statistics.median(operation_latencies) if operation_latencies else None,
+            "latency_p95_seconds": percentile(operation_latencies, 0.95) if operation_latencies else None,
+            "latency_p95_reliable": len(operation_latencies) >= 20,
+            "repetitions_per_mutation": repetitions,
+        })
+
     return {
         "scope": "SYNTHETIC_CORRECTNESS_ONLY",
         "config_version": CONFIG.counterfactual.config_version,
@@ -279,12 +309,28 @@ def run(repetitions: int = 5) -> dict:
         "mean_ari": statistics.mean(ari_values),
         "mean_ami": statistics.mean(ami_values),
         "latency_p50_seconds": statistics.median(latencies),
+        "latency_p95_seconds": percentile(latencies, 0.95),
+        "latency_p95_reliable": len(latencies) >= 20,
         "latency_max_seconds": max(latencies),
         "repetitions_per_mutation": repetitions,
         "cases": cases,
+        "operation_summaries": operation_summaries,
         "production_calibration": "NOT_ESTABLISHED",
     }
 
 
+def write_report(output: Path, *, repetitions: int = 20) -> Path:
+    """Write a synthetic-only Review benchmark artifact for closure projection."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(run(repetitions=repetitions), indent=2) + "\n")
+    return output
+
+
 if __name__ == "__main__":
-    print(json.dumps(run(), indent=2))
+    repetitions = int(os.environ.get("BENCHMARK_REVIEW_REPETITIONS", "20"))
+    output = os.environ.get("BENCHMARK_REVIEW_OUTPUT")
+    if output:
+        report = write_report(Path(output), repetitions=repetitions)
+        print(f"Synthetic Review benchmark written to {report}")
+    else:
+        print(json.dumps(run(repetitions=repetitions), indent=2))

@@ -143,64 +143,175 @@
     {
       "operation": "tier_1a_snapshot_background",
       "tier": "Tier-1A",
-      "status": "NOT_RUN",
-      "reason": "BENCHMARK_NOT_EXECUTED",
+      "status": "MEASURED",
+      "provenance": "benchmarks/results/latest.json",
+      "p50_seconds": 0.9897,
+      "p95_seconds": 1.039,
+      "p95_reliable": false,
+      "repetitions": 3,
+      "workload": "full_export",
       "exact_only": false,
       "requires_runtime": false
     },
     {
       "operation": "tier_1b_cold_on_chain_open",
       "tier": "Tier-1B",
-      "status": "NOT_RUN",
-      "reason": "BENCHMARK_NOT_EXECUTED",
+      "status": "MEASURED",
+      "provenance": "benchmarks/results/latest.json",
+      "chain_matrix": [
+        {
+          "workload": "target_58_chain_6905665_n_42",
+          "p50_seconds": 0.0398,
+          "p95_seconds": 0.0475
+        },
+        {
+          "workload": "target_200_chain_6907750_n_215",
+          "p50_seconds": 0.1079,
+          "p95_seconds": 0.1234
+        },
+        {
+          "workload": "target_500_chain_6906084_n_256",
+          "p50_seconds": 0.1212,
+          "p95_seconds": 0.1334
+        },
+        {
+          "workload": "target_1072_chain_6907125_n_1072",
+          "p50_seconds": 0.4404,
+          "p95_seconds": 0.4546
+        }
+      ],
+      "p95_seconds": 0.4546,
+      "p95_reliable": true,
+      "repetitions": 20,
       "exact_only": false,
       "requires_runtime": false
     },
     {
       "operation": "tier_1b_cache_hit_on_chain_open",
       "tier": "Tier-1B",
-      "status": "NOT_RUN",
-      "reason": "BENCHMARK_NOT_EXECUTED",
+      "status": "MEASURED",
+      "provenance": "benchmarks/results/latest.json",
+      "chain_matrix": [
+        {
+          "workload": "target_58_chain_6905665_n_42",
+          "p50_seconds": 0.0,
+          "p95_seconds": 0.0
+        },
+        {
+          "workload": "target_200_chain_6907750_n_215",
+          "p50_seconds": 0.0,
+          "p95_seconds": 0.0
+        },
+        {
+          "workload": "target_500_chain_6906084_n_256",
+          "p50_seconds": 0.0,
+          "p95_seconds": 0.0
+        },
+        {
+          "workload": "target_1072_chain_6907125_n_1072",
+          "p50_seconds": 0.0001,
+          "p95_seconds": 0.0001
+        }
+      ],
+      "p95_seconds": 0.0001,
+      "p95_reliable": true,
+      "repetitions": 20,
       "exact_only": false,
       "requires_runtime": false
     },
     {
       "operation": "pair_why",
       "tier": "Tier-1B",
-      "status": "NOT_RUN",
-      "reason": "BENCHMARK_NOT_EXECUTED",
+      "status": "MEASURED",
+      "provenance": "benchmarks/results/latest.json",
+      "chain_matrix": [
+        {
+          "workload": "target_58_chain_6905665_n_42",
+          "p50_seconds": 0.0001,
+          "p95_seconds": 0.0001
+        },
+        {
+          "workload": "target_200_chain_6907750_n_215",
+          "p50_seconds": 0.0002,
+          "p95_seconds": 0.0003
+        },
+        {
+          "workload": "target_500_chain_6906084_n_256",
+          "p50_seconds": 0.0003,
+          "p95_seconds": 0.0003
+        },
+        {
+          "workload": "target_1072_chain_6907125_n_1072",
+          "p50_seconds": 0.001,
+          "p95_seconds": 0.0012
+        }
+      ],
+      "p95_seconds": 0.0012,
+      "p95_reliable": true,
+      "repetitions": 20,
       "exact_only": false,
       "requires_runtime": false
     },
     {
       "operation": "historical_h_pair_why",
       "tier": "Tier-1B",
-      "status": "NOT_RUN",
-      "reason": "BENCHMARK_NOT_EXECUTED",
+      "status": "UNAVAILABLE",
+      "reason": "ALARM_TAXONOMY_NOT_USED_BY_SOURCE",
+      "provenance": "docs/adr/0024-deterministic-evidence-synthesis.md",
+      "notes": "Production export does not supply operational alarm_type_name or alarm_family; synthetic fixture verified separately",
       "exact_only": false,
       "requires_runtime": false
     },
     {
       "operation": "temporal_delay_pair_why",
       "tier": "Tier-1B",
-      "status": "NOT_RUN",
-      "reason": "BENCHMARK_NOT_EXECUTED",
+      "status": "UNAVAILABLE",
+      "reason": "PRODUCTION_DELAY_THRESHOLD_NOT_ESTABLISHED",
+      "provenance": "IMPLEMENTATION_STATUS.md",
+      "notes": "Frozen model and synthetic distribution verified; empirical production threshold blocked by data availability",
       "exact_only": false,
       "requires_runtime": false
     },
     {
       "operation": "tier_2_structural_audit",
       "tier": "Tier-2",
-      "status": "NOT_RUN",
-      "reason": "BENCHMARK_NOT_EXECUTED",
+      "status": "MEASURED",
+      "provenance": "benchmarks/results/latest.json",
+      "chain_matrix": [
+        {
+          "workload": "target_58_chain_6905665_n_42",
+          "p50_seconds": 0.1687,
+          "p95_seconds": 0.1808
+        },
+        {
+          "workload": "target_200_chain_6907750_n_215",
+          "p50_seconds": 2.0721,
+          "p95_seconds": 2.1295
+        },
+        {
+          "workload": "target_500_chain_6906084_n_256",
+          "p50_seconds": 2.9896,
+          "p95_seconds": 3.0592
+        },
+        {
+          "workload": "target_1072_chain_6907125_n_1072",
+          "p50_seconds": 83.3679,
+          "p95_seconds": 101.0488
+        }
+      ],
+      "p95_seconds": 101.0488,
+      "p95_reliable": true,
+      "repetitions": 20,
       "exact_only": true,
-      "requires_runtime": false
+      "requires_runtime": false,
+      "notes": "Includes exact conductance, candidate cuts, and over-merge verdict"
     },
     {
       "operation": "evidence_attribution",
       "tier": "Tier-2",
       "status": "NOT_RUN",
-      "reason": "BENCHMARK_NOT_EXECUTED",
+      "reason": "NO_ISOLATED_MEASUREMENT",
+      "notes": "Executed within the measured Tier-2 Audit path, but has no independent latency measurement.",
       "exact_only": true,
       "requires_runtime": false
     },
@@ -208,31 +319,56 @@
       "operation": "attribution_deletion_curve",
       "tier": "Tier-2",
       "status": "NOT_RUN",
-      "reason": "BENCHMARK_NOT_EXECUTED",
+      "reason": "NO_ISOLATED_MEASUREMENT",
+      "notes": "Executed within the measured Tier-2 Audit path, but has no independent latency measurement.",
       "exact_only": true,
       "requires_runtime": false
     },
     {
       "operation": "review_remove_member",
       "tier": "Review",
-      "status": "NOT_RUN",
-      "reason": "BENCHMARK_NOT_EXECUTED",
+      "status": "MEASURED",
+      "scope": "SYNTHETIC_CORRECTNESS_ONLY",
+      "provenance": "benchmarks/results/counterfactual-latest.json",
+      "repair_accuracy": 1.0,
+      "ari": 1.0,
+      "ami": 0.9999999999999998,
+      "p50_seconds": 0.08785197599996764,
+      "p95_seconds": 0.1064808140000082,
+      "p95_reliable": true,
+      "repetitions": 20,
       "exact_only": true,
       "requires_runtime": false
     },
     {
       "operation": "review_split_chain",
       "tier": "Review",
-      "status": "NOT_RUN",
-      "reason": "BENCHMARK_NOT_EXECUTED",
+      "status": "MEASURED",
+      "scope": "SYNTHETIC_CORRECTNESS_ONLY",
+      "provenance": "benchmarks/results/counterfactual-latest.json",
+      "repair_accuracy": 1.0,
+      "ari": 1.0,
+      "ami": 1.0,
+      "p50_seconds": 0.2591342050000094,
+      "p95_seconds": 0.3386248099999989,
+      "p95_reliable": true,
+      "repetitions": 20,
       "exact_only": true,
       "requires_runtime": false
     },
     {
       "operation": "review_move_member",
       "tier": "Review",
-      "status": "NOT_RUN",
-      "reason": "BENCHMARK_NOT_EXECUTED",
+      "status": "MEASURED",
+      "scope": "SYNTHETIC_CORRECTNESS_ONLY",
+      "provenance": "benchmarks/results/counterfactual-latest.json",
+      "repair_accuracy": 1.0,
+      "ari": 1.0,
+      "ami": 1.0,
+      "p50_seconds": 0.23102608649998047,
+      "p95_seconds": 0.2535466200000087,
+      "p95_reliable": true,
+      "repetitions": 20,
       "exact_only": true,
       "requires_runtime": false
     },
@@ -240,15 +376,24 @@
       "operation": "merge_cross_chain_evidence",
       "tier": "Review",
       "status": "NOT_RUN",
-      "reason": "BENCHMARK_NOT_EXECUTED",
+      "reason": "NO_ISOLATED_MEASUREMENT",
+      "notes": "Exercised by the synthetic MERGE fixture, but has no standalone latency measurement.",
       "exact_only": true,
       "requires_runtime": false
     },
     {
       "operation": "review_merge_chains",
       "tier": "Review",
-      "status": "NOT_RUN",
-      "reason": "BENCHMARK_NOT_EXECUTED",
+      "status": "MEASURED",
+      "scope": "SYNTHETIC_CORRECTNESS_ONLY",
+      "provenance": "benchmarks/results/counterfactual-latest.json",
+      "repair_accuracy": 1.0,
+      "ari": 1.0,
+      "ami": 1.0,
+      "p50_seconds": 0.6039162700000134,
+      "p95_seconds": 0.6786004840000146,
+      "p95_reliable": true,
+      "repetitions": 20,
       "exact_only": true,
       "requires_runtime": false
     },
@@ -256,7 +401,8 @@
       "operation": "review_serialization",
       "tier": "Review",
       "status": "NOT_RUN",
-      "reason": "BENCHMARK_NOT_EXECUTED",
+      "reason": "NO_ISOLATED_MEASUREMENT",
+      "notes": "Serialization correctness is covered by tests, but it has no standalone latency measurement.",
       "exact_only": false,
       "requires_runtime": false
     },
@@ -264,15 +410,23 @@
       "operation": "review_persistence",
       "tier": "Review",
       "status": "NOT_RUN",
-      "reason": "BENCHMARK_NOT_EXECUTED",
+      "reason": "NO_ISOLATED_PERSISTENCE_MEASUREMENT",
+      "notes": "Restart-to-health is recorded separately and does not measure the persistence write path.",
       "exact_only": false,
       "requires_runtime": true
     },
     {
       "operation": "review_restart_hydration",
       "tier": "Review",
-      "status": "NOT_RUN",
-      "reason": "BENCHMARK_NOT_EXECUTED",
+      "status": "MEASURED",
+      "scope": "LOCAL_DOCKER_RUNTIME_ONLY",
+      "provenance": "benchmarks/results/runtime-review-latest.json",
+      "hydration_p50_seconds": 0.0472,
+      "hydration_p95_seconds": 0.071,
+      "p95_seconds": 0.071,
+      "p95_reliable": true,
+      "repetitions": 20,
+      "notes": "Repository-backed Review hydration after API restart measured over 20 iterations",
       "exact_only": false,
       "requires_runtime": true
     }

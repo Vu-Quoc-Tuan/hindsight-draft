@@ -32,7 +32,7 @@ It separates **capability** from evidence that the capability was exercised;
 | Similar Chains | `READY` | `PASS` | `PASS` | `PASS` raw-export replay | Degraded / input-dependent | Raw `group_name` can be used only as an observed source field; it does not establish authoritative production taxonomy. |
 | Evolution v1 persisted lineage projection | `READY` | `PASS` | `PASS` | `PASS` synthetic Docker stack | `BLOCKED_BY_DATA_AVAILABILITY` | The sequence slicer creates `DERIVED_REPLAY` windows from one export; production evolution requires verified sequential upstream snapshots. |
 | Directed topology P2 semantics | `READY` only for compatible synthetic inputs | `PASS` | `PASS` | `PASS` synthetic Docker stack | `UNAVAILABLE` | IP is structural adjacency and IT is unverified source relation. Display hierarchy never supplies dependency direction, active paths, dominators, propagation, or failure domains. |
-| Real topology navigation read model | `READY` | `PASS` | N/A | `PASS` local mock endpoint + Chromium tree preview | `READY` for source-record navigation only | `ALARM_ONLY` has no topology; IP is undirected adjacency; IT is `DIRECTED_SOURCE_RELATIONS`, not verified dependency. Tree primary paths are technical projection only. The full Explain snapshot workflow remains separately input-dependent. |
+| Real topology navigation read model | `READY` | `PASS` | N/A | `PASS` local mock endpoint + Chromium tree preview | `READY` for source-record navigation only | `ALARM_ONLY` has no topology; IP is undirected adjacency; IT is `DIRECTED_SOURCE_RELATIONS`, not verified dependency. The bounded tree has free-text search and an exact source-key resolver; both are navigation only. Tree primary paths are technical projection only. The full Explain snapshot workflow remains separately input-dependent. |
 | P2-eligible alarm-to-topology mapping | `PARTIAL_EXACT_ONLY` for IP; `UNAVAILABLE` for IT | `PASS` | N/A | N/A | `UNAVAILABLE` as a complete P2 prerequisite | The current `alarmIP`/`topoIP` audit resolves 140,596/212,636 rows (66.121%) by exact `device_code` identity, covering 1,294/2,908 distinct alarm device codes. `topoIT` source-field joins have substantial navigation coverage (measured separately below), but are not promoted to P2-eligible mappings without authoritative business semantics. |
 | IP `Dep_hop` proximity evidence | `READY` for exact-mapped IP endpoints | `PASS` | N/A | `PASS` targeted Kafka/PostgreSQL/API smoke | `PARTIAL_EXACT_ONLY` | Real `alarmIP` replay carries a content-hashed topoIP provenance; a mapped adjacent pair returns `Dep_hop=SUPPORT`. This is undirected hop proximity over `IP_ADJACENCY`, never upstream/dependency direction. |
 | IT source-relation contribution to Explain P2 | `UNAVAILABLE` | `PASS` fail-closed | N/A | N/A | `UNAVAILABLE` | `SOURCE_RELATION` / `UNVERIFIED` IT records must not enable dependency, ancestor, dominator, propagation, scope, or failure-domain semantics. |
@@ -41,7 +41,7 @@ It separates **capability** from evidence that the capability was exercised;
 | Counterfactual `MERGE_CHAINS` | `READY` | `PASS` | `PASS` | `PASS` Kafka/PostgreSQL/restart/Chromium | `NOT_CALIBRATED` | Exact cross-chain evidence and persisted Review reload have runtime acceptance. |
 | Counterfactual `ADD_MEMBER` | `BLOCKED` | N/A | N/A | N/A | `BLOCKED` | `UNKNOWN_UPSTREAM_SEMANTICS`: first-class zero-membership alarms have not been verified upstream. A singleton-source transfer is canonical `MOVE_MEMBER`, never ADD. |
 | AI Advisor grounded narrative | `READY` (ADR-0024 epistemic boundaries) | `PASS` | `PASS` | `NOT_RUN` for current revision | `READY` for deterministic narrative only; `UNAVAILABLE` for ungrounded LLM inference | Deterministic adapter strictly extracts from verified member roles, descriptors, and Pareto recommendations. `provider_status=NOT_USED`; GET endpoint produces zero external LLM side effects or credential dependency. |
-| IT source-field topology joins | `READY` for structural navigation; excluded from P2 mapping | `PASS` | `PASS` | `NOT_RUN` for alarm-rooted real IT navigation | `PARTIAL_SOURCE_FIELD_EXACT` for navigation; `UNAVAILABLE` for P2 promotion | The real files yield 169,836/258,344 uniquely resolved alarm rows (65.740%), 44,992 multi-resource conflicts, 441 rows touching an ambiguous alias, and 43,106 rows with no alias hit. These exact source-record joins are useful, but their direction and business meaning remain unverified. |
+| IT source-field topology joins | `READY` for structural navigation; excluded from P2 mapping | `PASS` | `PASS` | `PASS` resolver unit/HTTP contract + real IT Chromium navigation | `PARTIAL_SOURCE_FIELD_EXACT` for navigation; `UNAVAILABLE` for P2 promotion | The resolver opens only unambiguous source fields in the bounded relation tree and returns `p2_mapping_eligible=false`. The real files yield 169,836/258,344 uniquely resolved alarm rows (65.740%), 44,992 multi-resource conflicts, 441 rows touching an ambiguous alias, and 43,106 rows with no alias hit. These exact source-record joins are useful, but their direction and business meaning remain unverified. |
 
 ## AI Advisor boundary
 
@@ -75,6 +75,10 @@ one resource candidate and therefore cannot be collapsed to one resource
 without a separately frozen resolution rule; 43,106 rows had no exact alias
 hit. The loader extracted 111,311 unambiguous aliases and 161 ambiguous aliases
 over a normalized graph of 128,322 nodes and 218,635 source-relation edges.
+The separate `GET /api/topology/resolve` read model exposes those exact,
+unambiguous aliases only to open a bounded tree root. Its payload makes the
+boundary explicit: IT returns `p2_mapping_eligible=false` and
+`dependency_semantics=UNVERIFIED`; ambiguous aliases stay unavailable.
 
 For IP, exact canonical `device_code` identity resolves 140,596 of 212,636
 alarm rows (66.121%) and 1,294 of the 2,908 distinct alarm device codes. This
@@ -102,11 +106,12 @@ boundary, not a deferred dense fallback.
 
 ## Closure benchmark and acceptance harness
 
-- `benchmarks/run_benchmark.py` measures the current real-export Tier-1 matrix.
-- `benchmarks/run_closure_benchmark.py` writes the complete closure measurement
-  manifest, including `H`, `T_delay`, Audit, attribution, all Review operations,
-  persistence, and restart hydration. It intentionally records unexecuted
-  measurements as `NOT_RUN` rather than inventing timings.
+- `benchmarks/run_benchmark.py` measures the current real-export Tier-1 / Tier-2 exact matrix.
+- `benchmarks/run_closure_benchmark.py` projects only persisted benchmark
+  artifacts into the complete closure manifest. It intentionally records
+  attribution/deletion, merge-cross-evidence, serialization, and persistence
+  as `NOT_RUN` when no isolated timing exists; it never manufactures a number
+  from a parent operation or a source-code constant.
 - `tests/spec_sanity/test_tier1_execution_boundary.py` pins the 1072-member
   anti-all-pairs invariant.
 - `tests/e2e/check_closure_acceptance.sh` validates the full acceptance inputs
@@ -154,33 +159,42 @@ The three available production exports are not treated as a sequential snapshot
 series. No overlap threshold, topology direction, taxonomy, or production
 recommendation threshold is inferred from them.
 
-### Measured local raw-export Tier-1 matrix
+### Measured local raw-export Tier-1 / Tier-2 matrix
 
 `benchmarks/run_benchmark.py` was run on 2026-09-04 against the local raw
 export (`8,714` alarms, `2,824` chains). This is a local performance
 characterisation, not a production SLO or empirical recommendation validation.
 
-| Requested size | Actual chain size | Tier-1B cold-open P95 | Cache-hit P95 | Pair WHY P95 | Peak process allocation |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 1 | 0.0117 s | < 0.0001 s | N/A | 0.12 MB |
-| 10 | 10 | 0.0184 s | < 0.0001 s | 0.0001 s | 0.21 MB |
-| 50 | 42 | 0.0456 s | < 0.0001 s | 0.0001 s | 0.95 MB |
-| 200 | 215 | 0.1094 s | < 0.0001 s | 0.0003 s | 3.06 MB |
-| 500 | 256 | 0.1281 s | < 0.0001 s | 0.0003 s | 3.78 MB |
-| 1072 | 1072 | 0.4514 s | 0.0002 s | 0.0012 s | 14.98 MB |
+The current repeatable matrix uses 20 observations per Tier-1B/Tier-2
+workload; its observed nearest-rank P95 is therefore marked reliable by the
+benchmark harness. Requested sizes select the nearest available chain.
 
-The full-snapshot Tier-1A background precompute measured P95 `0.9485 s`
+| Requested size | Actual chain size | Tier-1B cold-open P95 | Cache-hit P95 | Pair WHY P95 | Exact Tier-2 Audit P95 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 58 | 42 | 0.0475 s | < 0.0001 s | 0.0001 s | 0.1808 s |
+| 200 | 215 | 0.1234 s | < 0.0001 s | 0.0003 s | 2.1295 s |
+| 500 | 256 | 0.1334 s | < 0.0001 s | 0.0003 s | 3.0592 s |
+| 1072 | 1072 | 0.4546 s | 0.0001 s | 0.0012 s | 101.0488 s |
+
+The full-snapshot Tier-1A background precompute measured P95 `1.0390 s`
 (three repetitions; the report correctly labels that P95 as not statistically
 reliable) and peak process allocation `2.83 MB` for its single memory sample.
 The architectural 1072-member anti-dense test passed separately (`3 passed`).
 
-Only this Tier-1 matrix was measured by `run_benchmark.py`. The complete
-closure manifest intentionally continues to mark Audit, attribution,
-Counterfactual, persistence, and restart timings as `NOT_RUN` unless their
-specific benchmark/runtime workflow has supplied a measurement.
+Each exact Tier-2 timing includes the existing Structural Audit call path,
+including exact indexed attribution and deletion evaluation. The 1,072-member
+chain `6907125` returned `NO_LOW_CONDUCTANCE_CUT`; attribution and deterministic
+deletion evaluation returned `AVAILABLE` / `EXACT` throughout the measured
+path. This is a machine-local performance characterisation, not a production
+SLO or a calibration result.
 
-One exact Tier-2 run was additionally completed for the 1,072-member chain
-`6907125`: Structural Audit completed in `80.633 s` with
-`NO_LOW_CONDUCTANCE_CUT`; Evidence Coverage Attribution and deterministic
-deletion evaluation both returned `AVAILABLE` / `EXACT`. This is a one-run
-raw-export characterisation, not a P95 measurement and not a production SLO.
+The persisted synthetic Review benchmark artifact
+(`benchmarks/results/counterfactual-latest.json`) ran 20 repetitions per
+operation: `REMOVE`, `SPLIT`, `MOVE`, and `MERGE` all retained exact repair
+accuracy, ARI, and AMI of `1.0`; combined Review latency P50/P95 was
+`0.2444 s` / `0.6711 s`. This is synthetic correctness/performance only. A separate local
+Docker runtime benchmark restarted the API 20 times and then hydrated the
+persisted MOVE Review on every restart: restart-to-health P50/P95 was `1.2203 s`
+/ `1.2261 s`, and repository-backed Review hydration P50/P95 was `0.0472 s` /
+`0.0710 s`. Those timings are acceptance-stack characterisation, not a
+production SLO.

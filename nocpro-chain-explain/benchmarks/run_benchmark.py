@@ -27,7 +27,7 @@ from benchmarks.harness import (
     check_against_objectives,
     measure,
 )
-from benchmarks.closure import closure_manifest
+from benchmarks.closure import TARGET_CHAIN_SIZES, closure_manifest
 from channels import build_indexed_statistics, evaluate_pair_channels
 from configuration import load_analysis_config
 from descriptor import build_predicate_index
@@ -38,7 +38,9 @@ from tier2 import AuditExecutionPolicy, analyze_structural_audit
 
 MOCK_ROOT = Path(__file__).resolve().parents[2] / "nocpro-mock"
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
-TARGET_SIZES = (1, 10, 50, 200, 500, 1072)
+# Keep the executable real-export matrix aligned with the published closure
+# contract.  The nearest chain is selected when a requested size is absent.
+TARGET_SIZES = TARGET_CHAIN_SIZES
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config/thresholds/v1.yaml"
 ANALYSIS_CONFIG = load_analysis_config(CONFIG_PATH)
@@ -142,12 +144,18 @@ def _cached_tier1b_analysis(package, chain_id: str, *, predicate_index, cache):
 def run() -> BenchmarkReport:
     tier1b_repetitions = int(os.environ.get("BENCHMARK_REPETITIONS", "20"))
     tier1a_repetitions = int(os.environ.get("BENCHMARK_TIER1A_REPETITIONS", "3"))
+    tier2_repetitions = int(os.environ.get("BENCHMARK_TIER2_REPETITIONS", "20"))
+    tier2_exact_max_members = int(
+        ANALYSIS_CONFIG.value("audit.exact_max_members")
+    )
     report = BenchmarkReport(
         metadata={
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "p95_method": "observed nearest-rank",
             "tier_1b_repetitions": tier1b_repetitions,
             "tier_1a_repetitions": tier1a_repetitions,
+            "tier_2_repetitions": tier2_repetitions,
+            "tier_2_exact_max_members": tier2_exact_max_members,
             "analysis_config_version": ANALYSIS_CONFIG.config_version,
             # The real-export runner measures a subset of the closure matrix.
             # Keep the complete contract beside its output so unsupported or
@@ -326,10 +334,13 @@ def run() -> BenchmarkReport:
             )
         )
 
-        if actual <= 50 and actual >= 2:
+        # This intentionally measures every requested chain for which the
+        # exact-Audit contract permits execution.  No benchmark-only sampling
+        # or approximation is introduced for a larger chain.
+        if 2 <= actual <= tier2_exact_max_members:
             report.results.append(
                 measure(
-                    "tier_2_exact_audit",
+                    "tier_2_structural_audit",
                     workload,
                     lambda cid=chain_id, bound=actual: analyze_structural_audit(
                         package,
@@ -340,7 +351,7 @@ def run() -> BenchmarkReport:
                             ANALYSIS_CONFIG.value("audit.global_weak_baseline")
                         ),
                     ),
-                    repetitions=3,
+                    repetitions=tier2_repetitions,
                     track_memory=False,
                 )
             )
