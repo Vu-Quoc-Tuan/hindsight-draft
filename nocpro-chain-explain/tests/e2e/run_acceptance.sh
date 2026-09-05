@@ -112,6 +112,7 @@ if [[ -f "$raw_alarm_csv" ]]; then
   # Counterfactual for Review.  Do not execute the whole suite against the
   # real replay before those later fixtures have been ingested.
   pnpm --dir services/web exec playwright test e2e/operator-flow.spec.ts
+  pnpm --dir services/web exec playwright test e2e/assistant.spec.ts
   pnpm --dir services/web exec playwright test e2e/topology-navigation.spec.ts
 
   curl -fsS "http://127.0.0.1:${API_HOST_PORT}/api/v1/chains/6907125" \
