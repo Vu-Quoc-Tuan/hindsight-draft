@@ -350,14 +350,20 @@ async def get_chain_ai_suggestion(
 async def query_assistant(
     request_body: AssistantQueryInput, request: Request
 ) -> AssistantResponseView:
-    """Read-only deterministic assistant endpoint for active UI context."""
+    """Read-only Assistant; the optional LLM can render text but not actions."""
     try:
-        from .assistant import answer_query
+        from .assistant import answer_query, render_answer
 
-        result = answer_query(
+        context = request_body.context.model_dump()
+        deterministic = answer_query(
             workspace(request),
             request_body.query,
-            request_body.context.model_dump(),
+            context,
+        )
+        result = await _run_grounded_provider(
+            render_answer,
+            context=context,
+            deterministic=deterministic,
         )
         return AssistantResponseView(
             contract_version="nocpro-assistant-v1",

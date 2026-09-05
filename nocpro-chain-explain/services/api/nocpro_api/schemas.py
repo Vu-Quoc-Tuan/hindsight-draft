@@ -562,3 +562,5 @@ class AssistantResponseView(ApiModel):
     message: str
     fact_refs: list[str]
     actions: list[AssistantActionView]
+    model: str
+    provider_status: str

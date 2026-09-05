@@ -534,6 +534,8 @@ export type AssistantResponse = {
   message: string
   fact_refs: string[]
   actions: AssistantAction[]
+  model: string
+  provider_status: string
 }
 
 export type AssistantContext = {
