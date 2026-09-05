@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import urllib.error
 from typing import Any
 
@@ -131,6 +132,28 @@ def test_renderer_provider_failures_are_stable_and_do_not_expose_details(
     assert result.provider_status == expected_status
     assert "test-secret" not in result.provider_status
     assert "contains-test-secret" not in result.provider_status
+
+
+def test_unexpected_provider_error_does_not_log_secret_text(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _configure(monkeypatch)
+
+    def fail(*_args: object, **_kwargs: object) -> _Response:
+        raise RuntimeError("test-secret must not be logged")
+
+    monkeypatch.setattr("nocpro_api.grounded_llm.urllib.request.urlopen", fail)
+    with caplog.at_level(logging.ERROR):
+        result = render_grounded(
+            draft="Safe deterministic fallback",
+            facts={},
+            fact_refs=[],
+            purpose="ADVISOR",
+        )
+
+    assert result.provider_status == "PROVIDER_ERROR"
+    assert "test-secret" not in caplog.text
 
 
 @pytest.mark.parametrize(

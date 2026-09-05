@@ -188,5 +188,7 @@ def render_grounded(
         logger.info("Grounded LLM provider failed status=INVALID_RESPONSE")
         return _fallback(draft, "INVALID_RESPONSE")
     except Exception:
-        logger.exception("Unexpected grounded LLM provider failure")
+        # Do not include exception text: provider libraries and test doubles may
+        # attach request headers or other sensitive details to an exception.
+        logger.error("Grounded LLM provider failed status=PROVIDER_ERROR")
         return _fallback(draft, "PROVIDER_ERROR")

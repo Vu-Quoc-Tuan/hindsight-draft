@@ -14,19 +14,19 @@ const mockSuggestion: AISuggestion = {
     '1 member is classified WEAK: ALARM-1.',
   ],
   disclaimer: 'ADR-0024: deterministic evidence only.',
-  provider_status: 'NOT_USED',
+  provider_status: 'NOT_CONFIGURED',
   review_status: 'AVAILABLE',
 }
 
 describe('AIAdvisorPanel', () => {
-  it('renders deterministic grounded facts without causal or provider claims', () => {
+  it('renders deterministic grounded facts with a clear fallback state', () => {
     const html = renderToStaticMarkup(
       <AIAdvisorPanel chainId="CHAIN-VN-001" initialSuggestion={mockSuggestion} />,
     )
 
     expect(html).toContain('ADR-0024 Grounded Narrative')
-    expect(html).toContain('DETERMINISTIC_EVIDENCE')
-    expect(html).toContain('AVAILABLE')
+    expect(html).toContain('Deterministic fallback')
+    expect(html).toContain('Not configured')
     expect(html).toContain('Evidence summary for chain CHAIN-VN-001')
     expect(html).toContain('Analyzed members: 3.')
     expect(html).toContain('Members classified WEAK: ALARM-1.')
@@ -36,5 +36,25 @@ describe('AIAdvisorPanel', () => {
     expect(html).toContain('ADR-0024: deterministic evidence only.')
     expect(html).not.toContain('Root-cause')
     expect(html).not.toContain('Thông báo nhà cung cấp LLM')
+  })
+
+  it('shows successful server-side AI rendering without exposing credentials', () => {
+    const html = renderToStaticMarkup(
+      <AIAdvisorPanel
+        chainId="CHAIN-VN-001"
+        initialSuggestion={{
+          ...mockSuggestion,
+          model: 'mistral-large',
+          provider_status: 'OK',
+          narrative: 'Grounded AI-rendered narrative.',
+        }}
+      />,
+    )
+
+    expect(html).toContain('AI-assisted')
+    expect(html).toContain('mistral-large')
+    expect(html).toContain('Grounded AI-rendered narrative.')
+    expect(html).not.toContain('AI_API_KEY')
+    expect(html).not.toContain('test-secret')
   })
 })

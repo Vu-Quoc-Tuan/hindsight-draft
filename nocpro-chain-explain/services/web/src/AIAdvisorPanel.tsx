@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { api } from './api'
+import { GroundedProviderBadge } from './GroundedProviderBadge'
 import type { AISuggestion } from './types'
 
 export function AIAdvisorPanel({
@@ -78,9 +79,10 @@ export function AIAdvisorPanel({
         </div>
         <div className="ai-advisor-actions">
           {suggestion ? (
-            <span className={`pill pill--${suggestion.status === 'AVAILABLE' ? 'positive' : 'neutral'}`}>
-              {suggestion.model} · {suggestion.status}
-            </span>
+            <GroundedProviderBadge
+              model={suggestion.model}
+              providerStatus={suggestion.provider_status ?? 'NOT_CONFIGURED'}
+            />
           ) : null}
           <button
             type="button"
@@ -116,12 +118,6 @@ export function AIAdvisorPanel({
         </div>
       ) : suggestion ? (
         <article className="ai-suggestion-body">
-          {suggestion.provider_status === 'ERROR' && (
-            <div className="ai-provider-notice">
-              <span>⚠️ Provider status:</span> {suggestion.provider_status}.
-            </div>
-          )}
-
           <div className="ai-narrative-content">
             {renderNarrative(suggestion.narrative)}
           </div>
