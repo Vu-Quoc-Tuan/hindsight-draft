@@ -519,3 +519,35 @@ class AISuggestionView(ApiModel):
     provider_status: str | None = None
     review_status: str
     review_reason: str | None = None
+
+
+class AssistantContextInput(ApiModel):
+    snapshot_id: str | None = None
+    snapshot_version: str | None = None
+    page: str | None = None
+    chain_id: str | None = None
+    alarm_id: str | None = None
+    pair_alarm_id_a: str | None = None
+    pair_alarm_id_b: str | None = None
+    selected_metric: str | None = None
+    topology_resource_id: str | None = None
+    filters: dict[str, str] = Field(default_factory=dict)
+
+
+class AssistantQueryInput(ApiModel):
+    query: str = Field(max_length=500)
+    context: AssistantContextInput
+
+
+class AssistantActionView(ApiModel):
+    kind: str
+    label: str
+    target: dict[str, str]
+
+
+class AssistantResponseView(ApiModel):
+    contract_version: str
+    status: str
+    message: str
+    fact_refs: list[str]
+    actions: list[AssistantActionView]

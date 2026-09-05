@@ -7,6 +7,7 @@ export type ChainSummary = {
 
 export type ChainList = {
   snapshot_id: string
+  snapshot_version: string
   chains: ChainSummary[]
 }
 
@@ -512,4 +513,34 @@ export type AISuggestion = {
   provider_status?: string | null
   review_status: 'AVAILABLE' | 'NOT_AVAILABLE' | 'UNAVAILABLE'
   review_reason?: string | null
+}
+
+export type AssistantAction = {
+  kind: 'NAVIGATE'
+  label: string
+  target: {
+    chain_id?: string
+    tab?: string
+  }
+}
+
+export type AssistantResponse = {
+  contract_version: 'nocpro-assistant-v1'
+  status: 'AVAILABLE' | 'NO_FINDING' | 'STALE_CONTEXT' | 'UNAVAILABLE'
+  message: string
+  fact_refs: string[]
+  actions: AssistantAction[]
+}
+
+export type AssistantContext = {
+  snapshot_id: string
+  snapshot_version: string
+  page: string
+  chain_id?: string
+  alarm_id?: string
+  pair_alarm_id_a?: string
+  pair_alarm_id_b?: string
+  selected_metric?: string
+  topology_resource_id?: string
+  filters: Record<string, string>
 }

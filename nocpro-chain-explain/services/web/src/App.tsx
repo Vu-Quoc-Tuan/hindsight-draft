@@ -8,8 +8,8 @@ import { CounterfactualReview } from './CounterfactualReview'
 import { EvolutionPanel } from './EvolutionPanel'
 import { ChainTree } from './ChainTree'
 import { TopologyTree, type TopologyTreePayload } from './TopologyTree'
-import { AIAdvisorPanel } from './AIAdvisorPanel'
-import type { ChainAnalysis, ChainList, Job, Member, PairEvidence, PairWhy } from './types'
+import { NocProAssistantPanel } from './NocProAssistantPanel'
+import type { AssistantAction, ChainAnalysis, ChainList, Job, Member, PairEvidence, PairWhy } from './types'
 import './App.css'
 
 type Tab = 'tree' | 'members' | 'why' | 'topology' | 'structure' | 'review' | 'evolution' | 'ai'
@@ -23,7 +23,7 @@ const tabs: Array<{ id: Tab; label: string; eyebrow: string }> = [
   { id: 'topology', label: 'Topology', eyebrow: 'Source view' },
   { id: 'review', label: 'Review', eyebrow: 'What-if' },
   { id: 'evolution', label: 'Evolution', eyebrow: 'Snapshots' },
-  { id: 'ai', label: 'Evidence summary', eyebrow: 'Grounded facts' },
+  { id: 'ai', label: 'NocPro Assistant', eyebrow: 'Grounded navigation' },
 ]
 
 const evidenceLayers: Array<{ id: EvidenceLayer; label: string }> = [
@@ -560,6 +560,19 @@ function App() {
     }
   }
 
+  function handleAssistantNavigation(action: AssistantAction) {
+    const targetChainId = action.target.chain_id
+    const targetTab = action.target.tab as Tab | undefined
+    if (targetChainId && chainList?.chains.some((chain) => chain.chain_id === targetChainId)) {
+      setChainId(targetChainId)
+      setSelectedMembers([])
+      setInspectMember(null)
+      setPairWhy(null)
+      setJob(null)
+    }
+    if (targetTab && tabs.some((item) => item.id === targetTab)) setTab(targetTab)
+  }
+
   if (!chainList) return <EmptyWorkspace apiStatus={apiStatus} loading={loadingSnapshot} error={error} onUpload={(file) => void uploadSnapshot(file)} />
 
   const pairMatchesSelection = pairWhy != null
@@ -785,7 +798,22 @@ function App() {
                 )}
                 {tab === 'review' && <CounterfactualReview key={chainId} chainId={chainId} />}
                 {tab === 'evolution' && <EvolutionPanel chainId={chainId} />}
-                {tab === 'ai' && <AIAdvisorPanel key={chainId} chainId={chainId} />}
+                {tab === 'ai' && (
+                  <NocProAssistantPanel
+                    key={`${chainList.snapshot_id}:${chainList.snapshot_version}:${chainId}`}
+                    context={{
+                      snapshot_id: chainList.snapshot_id,
+                      snapshot_version: chainList.snapshot_version,
+                      page: tab,
+                      chain_id: chainId || undefined,
+                      alarm_id: inspectMember?.alarm_id,
+                      pair_alarm_id_a: selectedMembers[0],
+                      pair_alarm_id_b: selectedMembers[1],
+                      filters: search ? { chain_filter: search } : {},
+                    }}
+                    onNavigate={handleAssistantNavigation}
+                  />
+                )}
               </ErrorBoundary>
             </div>
 

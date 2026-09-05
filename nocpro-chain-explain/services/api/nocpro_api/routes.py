@@ -17,6 +17,8 @@ from .schemas import (
     OperatorFeedbackSubmission,
     OperatorFeedbackView,
     AISuggestionView,
+    AssistantQueryInput,
+    AssistantResponseView,
     EvolutionView,
     JobSubmissionView,
     JobView,
@@ -325,5 +327,26 @@ async def get_chain_ai_suggestion(
             review_reason=review_reason,
         )
         return ai_suggestion_view(suggestion)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.post("/assistant/query", response_model=AssistantResponseView)
+async def query_assistant(
+    request_body: AssistantQueryInput, request: Request
+) -> AssistantResponseView:
+    """Read-only deterministic assistant endpoint for active UI context."""
+    try:
+        from .assistant import answer_query
+
+        result = answer_query(
+            workspace(request),
+            request_body.query,
+            request_body.context.model_dump(),
+        )
+        return AssistantResponseView(
+            contract_version="nocpro-assistant-v1",
+            **result,
+        )
     except Exception as exc:
         raise translate_error(exc) from exc

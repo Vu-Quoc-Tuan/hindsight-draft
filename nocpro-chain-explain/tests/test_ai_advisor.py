@@ -135,3 +135,97 @@ def test_ai_suggestion_api_endpoint_is_deterministic_and_provider_free() -> None
             app.state.workspace.close()
 
     asyncio.run(exercise())
+
+
+def test_assistant_query_is_snapshot_bound_and_only_returns_typed_navigation() -> None:
+    async def exercise() -> None:
+        app = create_app()
+        transport = httpx2.ASGITransport(app=app)
+        try:
+            async with httpx2.AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as client:
+                loaded = await client.post("/api/v1/snapshots", json=_payload())
+                assert loaded.status_code == 201
+                context = {
+                    "snapshot_id": "s1",
+                    "snapshot_version": "1",
+                    "page": "tree",
+                    "chain_id": "C1",
+                }
+                response = await client.post(
+                    "/api/v1/assistant/query",
+                    json={"query": "open audit", "context": context},
+                )
+                assert response.status_code == 200
+                body = response.json()
+                assert body["contract_version"] == "nocpro-assistant-v1"
+                assert body["actions"] == [{
+                    "kind": "NAVIGATE",
+                    "label": "Open Structural Audit",
+                    "target": {"tab": "structure"},
+                }]
+                assert "root cause" not in body["message"].lower()
+
+                stale = await client.post(
+                    "/api/v1/assistant/query",
+                    json={"query": "open audit", "context": {**context, "snapshot_version": "99"}},
+                )
+                assert stale.status_code == 200
+                assert stale.json()["status"] == "STALE_CONTEXT"
+                assert stale.json()["actions"] == []
+        finally:
+            app.state.workspace.close()
+
+    asyncio.run(exercise())
+
+
+def test_assistant_explains_registry_without_claiming_root_cause() -> None:
+    async def exercise() -> None:
+        app = create_app()
+        transport = httpx2.ASGITransport(app=app)
+        try:
+            async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                await client.post("/api/v1/snapshots", json=_payload())
+                response = await client.post(
+                    "/api/v1/assistant/query",
+                    json={
+                        "query": "conductance là gì",
+                        "context": {"snapshot_id": "s1", "snapshot_version": "1"},
+                    },
+                )
+                assert response.status_code == 200
+                body = response.json()
+                assert "root-cause claim" in body["message"]
+                assert body["fact_refs"] == ["semantic-registry:conductance"]
+        finally:
+            app.state.workspace.close()
+
+    asyncio.run(exercise())
+
+
+def test_assistant_fails_closed_for_resource_to_chain_search() -> None:
+    async def exercise() -> None:
+        app = create_app()
+        transport = httpx2.ASGITransport(app=app)
+        try:
+            async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                await client.post("/api/v1/snapshots", json=_payload())
+                response = await client.post(
+                    "/api/v1/assistant/query",
+                    json={
+                        "query": "find service billing-api",
+                        "context": {"snapshot_id": "s1", "snapshot_version": "1"},
+                    },
+                )
+                assert response.status_code == 200
+                body = response.json()
+                assert body["status"] == "UNAVAILABLE"
+                assert "capability:RESOURCE_TO_CHAIN_MAPPING_UNAVAILABLE" in body["fact_refs"]
+                assert body["actions"] == [{
+                    "kind": "NAVIGATE", "label": "Open Topology", "target": {"tab": "topology"},
+                }]
+        finally:
+            app.state.workspace.close()
+
+    asyncio.run(exercise())

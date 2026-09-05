@@ -1,4 +1,4 @@
-import type { AISuggestion, ChainAnalysis, ChainList, CounterfactualJob, Evolution, Job, OperatorFeedback, PairWhy } from './types'
+import type { AISuggestion, AssistantContext, AssistantResponse, ChainAnalysis, ChainList, CounterfactualJob, Evolution, Job, OperatorFeedback, PairWhy } from './types'
 import type { TopologyTreePayload } from './TopologyTree'
 
 export class ApiError extends Error {
@@ -189,6 +189,13 @@ export const api = {
       `/api/v1/chains/${encodeURIComponent(chainId)}/ai-suggestion`,
       { signal },
     ),
+  assistantQuery: (query: string, context: AssistantContext, signal?: AbortSignal) =>
+    request<AssistantResponse>('/api/v1/assistant/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, context }),
+      signal,
+    }),
   topologyProjection: (profileId: string, signal?: AbortSignal, rootId?: string) =>
     topologyRequest(profileId, signal, rootId),
   topologySearch: (profileId: string, query: string, signal?: AbortSignal) =>
