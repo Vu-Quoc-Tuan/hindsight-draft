@@ -7,7 +7,7 @@ import pytest
 
 from nocpro_api.persistence import Database, SnapshotRepository
 from tier2.audit_artifact import build_review_audit_artifact
-from tests.test_audit_artifact import _audit
+from tests.test_audit_artifact import _audit, _visualization
 
 
 pytestmark = pytest.mark.postgres
@@ -20,6 +20,7 @@ def _artifact(artifact_id: str, created_at: str, *, config: str = "v1"):
         chain_id="C1",
         members=("a1", "a2", "a3", "a4"),
         structural_audit=_audit(),
+        visualization=_visualization(),
         analysis_version="tier2-audit-v1",
         analysis_config_version=config,
         artifact_id=artifact_id,

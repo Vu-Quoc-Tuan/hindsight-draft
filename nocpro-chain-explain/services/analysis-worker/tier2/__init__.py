@@ -23,6 +23,8 @@ from .audit_visualization import (
     AuditVisualization,
     AuditVisualizationEdge,
     AuditVisualizationNode,
+    audit_visualization_from_dict,
+    audit_visualization_to_dict,
     build_audit_visualization,
     unavailable_audit_visualization,
 )
@@ -75,6 +77,8 @@ __all__ = [
     "AuditVisualization",
     "AuditVisualizationEdge",
     "AuditVisualizationNode",
+    "audit_visualization_from_dict",
+    "audit_visualization_to_dict",
     "build_audit_visualization",
     "unavailable_audit_visualization",
     "JobStatus",

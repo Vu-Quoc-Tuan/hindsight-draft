@@ -16,9 +16,15 @@ from audit import (
     ScoredCandidate,
     StructuralAuditResult,
 )
+from .audit_visualization import (
+    AuditVisualization,
+    audit_visualization_from_dict,
+    audit_visualization_to_dict,
+)
 
 
-AUDIT_ARTIFACT_VERSION = "review-audit-v1"
+LEGACY_AUDIT_ARTIFACT_VERSION = "review-audit-v1"
+AUDIT_ARTIFACT_VERSION = "review-audit-v2"
 AUDIT_ANALYSIS_VERSION = "tier2-audit-v1"
 
 
@@ -76,6 +82,7 @@ class ReviewAuditArtifact:
     reason: str
     best_cut_index: int | None
     scored_cuts: tuple[ReviewAuditCut, ...]
+    visualization: AuditVisualization | None
     created_at: str
 
     @property
@@ -144,7 +151,7 @@ def _cut_to_dict(value: ReviewAuditCut) -> dict:
 
 
 def _payload_without_fingerprint(value: ReviewAuditArtifact) -> dict:
-    return {
+    payload = {
         "artifact_id": value.artifact_id,
         "artifact_version": value.artifact_version,
         "snapshot_id": value.snapshot_id,
@@ -163,6 +170,13 @@ def _payload_without_fingerprint(value: ReviewAuditArtifact) -> dict:
         "scored_cuts": [_cut_to_dict(cut) for cut in value.scored_cuts],
         "created_at": value.created_at,
     }
+    if value.artifact_version == AUDIT_ARTIFACT_VERSION:
+        payload["visualization"] = (
+            audit_visualization_to_dict(value.visualization)
+            if value.visualization is not None
+            else None
+        )
+    return payload
 
 
 def _fingerprint(payload: dict) -> str:
@@ -177,6 +191,7 @@ def build_review_audit_artifact(
     chain_id: str,
     members: tuple[str, ...] | list[str],
     structural_audit: StructuralAuditResult,
+    visualization: AuditVisualization | None = None,
     analysis_version: str,
     analysis_config_version: str,
     artifact_id: str | None = None,
@@ -211,6 +226,7 @@ def build_review_audit_artifact(
         reason=structural_audit.reason,
         best_cut_index=best_cut_index,
         scored_cuts=cuts,
+        visualization=visualization,
         created_at=created_at or datetime.now(timezone.utc).isoformat(),
     )
     return ReviewAuditArtifact(
@@ -233,7 +249,11 @@ def audit_artifact_to_dict(value: ReviewAuditArtifact) -> dict:
 def audit_artifact_from_dict(
     payload: dict, *, verify_fingerprint: bool = True
 ) -> ReviewAuditArtifact:
-    if payload.get("artifact_version") != AUDIT_ARTIFACT_VERSION:
+    artifact_version = payload.get("artifact_version")
+    if artifact_version not in {
+        LEGACY_AUDIT_ARTIFACT_VERSION,
+        AUDIT_ARTIFACT_VERSION,
+    }:
         raise ValueError("unsupported Audit artifact version")
     if payload.get("status") != "AVAILABLE" or payload.get("mode") != "EXACT":
         raise ValueError("Review requires an available exact Audit artifact")
@@ -256,6 +276,13 @@ def audit_artifact_from_dict(
                 reason=conductance.get("reason"),
             )
         )
+    visualization_payload = payload.get("visualization")
+    visualization = (
+        audit_visualization_from_dict(visualization_payload)
+        if artifact_version == AUDIT_ARTIFACT_VERSION
+        and visualization_payload is not None
+        else None
+    )
     artifact = ReviewAuditArtifact(
         artifact_id=payload["artifact_id"],
         artifact_version=payload["artifact_version"],
@@ -274,6 +301,7 @@ def audit_artifact_from_dict(
         reason=payload["reason"],
         best_cut_index=payload.get("best_cut_index"),
         scored_cuts=tuple(cuts),
+        visualization=visualization,
         created_at=payload["created_at"],
     )
     if artifact.best_cut_index is not None and not (

@@ -236,6 +236,7 @@ class Tier2JobManager:
             chain_id=chain_id,
             members=package.members_of(chain_id),
             structural_audit=structural_audit,
+            visualization=getattr(result, "audit_visualization", None),
             analysis_version=AUDIT_ANALYSIS_VERSION,
             analysis_config_version=analysis_config.config_version,
         )
