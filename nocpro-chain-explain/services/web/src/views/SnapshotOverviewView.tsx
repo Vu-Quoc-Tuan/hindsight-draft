@@ -396,13 +396,7 @@ export function SnapshotOverviewView({
         </div>
 
         <div className="px-space-md py-space-xs bg-surface-container-lowest flex items-center justify-between font-code-sm text-code-sm text-on-surface-variant rounded-b">
-          <span>Displaying 5 critical triage targets</span>
-          <button
-            className="text-secondary hover:underline font-semibold flex items-center gap-1 cursor-pointer"
-            onClick={() => onNavigate('chains-explorer')}
-          >
-            [View all {totalChains.toLocaleString()} chains in Chains Explorer →]
-          </button>
+          <span>Displaying 5 critical triage targets prioritized by structural risk</span>
         </div>
       </div>
     </div>
