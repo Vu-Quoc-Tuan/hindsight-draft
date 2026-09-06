@@ -147,7 +147,7 @@ export function SubNavBar({
           <span>Topology</span>
         </button>
 
-        {/* 18 Validation & Consensus Protocol */}
+        {/* Persisted operator feedback */}
         <button
           className={`px-3 py-1.5 font-body-sm text-xs rounded-md flex items-center gap-1.5 transition-all cursor-pointer font-medium ${
             currentTab === 'validation'
@@ -155,7 +155,7 @@ export function SubNavBar({
               : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
           }`}
           onClick={() => onSelectTab('validation')}
-          title="Màn 18: Thẩm định an toàn SLA & Chữ ký số ca trực (Validation & Consensus)"
+          title="Persisted operator feedback for evaluated counterfactual candidates"
         >
           <span className="material-symbols-outlined text-[15px]">verified_user</span>
           <span>Validation</span>

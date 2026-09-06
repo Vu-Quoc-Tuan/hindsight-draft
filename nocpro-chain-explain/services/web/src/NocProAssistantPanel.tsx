@@ -10,71 +10,6 @@ const quickQuestions = [
   'Open audit',
 ]
 
-const SEMANTIC_DEFINITIONS: Record<string, { title: string; message: string; fact_refs: string[] }> = {
-  conductance: {
-    title: 'Audit Conductance',
-    message: 'Conductance (độ dẫn cắt) là chỉ số đo lường tỷ lệ liên kết cắt ngang giữa 2 phân vùng con so với thể tích cụm nhỏ hơn trong thuật toán Cheeger Normalized Laplacian. Conductance thấp cảnh báo chuỗi có nguy cơ Over-merged hoặc rò rỉ ranh giới (Boundary Leak).',
-    fact_refs: ['semantic-registry:conductance'],
-  },
-  'độ dẫn': {
-    title: 'Audit Conductance',
-    message: 'Conductance (độ dẫn cắt) là chỉ số đo lường tỷ lệ liên kết cắt ngang giữa 2 phân vùng con so với thể tích cụm nhỏ hơn trong thuật toán Cheeger Normalized Laplacian. Conductance thấp cảnh báo chuỗi có nguy cơ Over-merged hoặc rò rỉ ranh giới (Boundary Leak).',
-    fact_refs: ['semantic-registry:conductance'],
-  },
-  'pair why': {
-    title: 'Pair WHY',
-    message: 'Pair WHY phân tích bằng chứng quan hệ giữa 2 cảnh báo theo 3 kênh: Temporal Proximity (Độ gần thời gian), Network Topology (Cấu trúc mạng) và Rule Correlation.',
-    fact_refs: ['semantic-registry:pair_why'],
-  },
-  why: {
-    title: 'Pair WHY',
-    message: 'Pair WHY phân tích bằng chứng quan hệ giữa 2 cảnh báo theo 3 kênh: Temporal Proximity (Độ gần thời gian), Network Topology (Cấu trúc mạng) và Rule Correlation.',
-    fact_refs: ['semantic-registry:pair_why'],
-  },
-  audit: {
-    title: 'Structural Audit',
-    message: 'Audit & Structure phân tích phổ đồ thị phân rã chuỗi sự cố và biểu đồ vết cắt Conductance để phát hiện các thành viên yếu hoặc nút thắt cổ chai.',
-    fact_refs: ['semantic-registry:audit'],
-  },
-  'root cause': {
-    title: 'Root Cause Boundary',
-    message: 'Trong mạng viễn thông, thứ tự thời gian cảnh báo đến sớm nhất (t_A < t_B) không đồng nghĩa với nguyên nhân gốc (Root Cause) do trễ truyền dẫn hoặc bộ đệm thiết bị. Cần kết hợp topology phụ thuộc dịch vụ có hướng.',
-    fact_refs: ['semantic-registry:root_cause'],
-  },
-}
-
-function buildActions(key: string, ctx: AssistantContext): AssistantAction[] {
-  if (key === 'pair why' || key === 'why') {
-    return [
-      {
-        kind: 'NAVIGATE',
-        label: 'Open Pair WHY',
-        target: {
-          snapshot_id: ctx.snapshot_id,
-          snapshot_version: ctx.snapshot_version,
-          chain_id: ctx.chain_id ?? null,
-          tab: 'why',
-        },
-      },
-    ]
-  }
-  if (key === 'audit') {
-    return [
-      {
-        kind: 'NAVIGATE',
-        label: 'Open Structural Audit',
-        target: {
-          snapshot_id: ctx.snapshot_id,
-          snapshot_version: ctx.snapshot_version,
-          chain_id: ctx.chain_id ?? null,
-          tab: 'structure',
-        },
-      },
-    ]
-  }
-  return []
-}
-
 interface MessageItem {
   id: string
   role: 'assistant' | 'user'
@@ -158,32 +93,13 @@ export function NocProAssistantPanel({
       if (requestRef.current?.id === request.id) {
         setLoading(false)
 
-        // Provide grounded semantic fallback if backend returned STALE_CONTEXT for conceptual questions
-        let effectiveResponse = response
-        if (response.status === 'STALE_CONTEXT') {
-          const lower = trimmed.toLowerCase()
-          const matchKey = Object.keys(SEMANTIC_DEFINITIONS).find(k => lower.includes(k))
-          if (matchKey) {
-            const sem = SEMANTIC_DEFINITIONS[matchKey]
-            effectiveResponse = {
-              contract_version: response.contract_version || 'nocpro-assistant-v1',
-              status: 'AVAILABLE',
-              message: sem.message,
-              fact_refs: sem.fact_refs,
-              actions: buildActions(matchKey, context),
-              model: response.model ?? 'mistral-large',
-              provider_status: 'OK',
-            }
-          }
-        }
-
         setMessages(prev => [
           ...prev,
           {
             id: String(Date.now() + 1),
             role: 'assistant',
-            text: effectiveResponse.message,
-            response: effectiveResponse,
+            text: response.message,
+            response,
           },
         ])
       }
@@ -191,32 +107,6 @@ export function NocProAssistantPanel({
       if (request.controller.signal.aborted) return
       if (requestRef.current?.id === request.id) {
         setLoading(false)
-
-        // Check if query is in semantic definitions
-        const lower = trimmed.toLowerCase()
-        const matchKey = Object.keys(SEMANTIC_DEFINITIONS).find(k => lower.includes(k))
-        if (matchKey) {
-          const sem = SEMANTIC_DEFINITIONS[matchKey]
-          const fallbackRes: AssistantResponse = {
-            contract_version: 'nocpro-assistant-v1',
-            status: 'AVAILABLE',
-            message: sem.message,
-            fact_refs: sem.fact_refs,
-            actions: buildActions(matchKey, context),
-            model: 'mistral-large',
-            provider_status: 'OK',
-          }
-          setMessages(prev => [
-            ...prev,
-            {
-              id: String(Date.now() + 1),
-              role: 'assistant',
-              text: sem.message,
-              response: fallbackRes,
-            },
-          ])
-          return
-        }
 
         const errMsg = cause instanceof Error ? cause.message : 'Không thể tải NocPro Assistant'
         setError(errMsg)
@@ -275,7 +165,7 @@ export function NocProAssistantPanel({
               <div className="w-7 h-7 rounded-full bg-primary/20 text-primary flex items-center justify-center shrink-0 mt-0.5">
                 <span className="material-symbols-outlined text-[15px]">auto_awesome</span>
               </div>
-              <div className="bg-surface-container-high text-on-surface p-3 rounded-2xl rounded-tl-xs text-[13px] leading-relaxed shadow-xs flex flex-col gap-2">
+              <div className={`${res ? 'assistant-result ' : ''}bg-surface-container-high text-on-surface p-3 rounded-2xl rounded-tl-xs text-[13px] leading-relaxed shadow-xs flex flex-col gap-2`}>
                 {res && (
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className={`pill pill--${res.status === 'AVAILABLE' ? 'positive' : 'neutral'}`}>

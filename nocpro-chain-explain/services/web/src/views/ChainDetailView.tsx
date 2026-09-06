@@ -9,7 +9,7 @@ interface ChainDetailViewProps {
   activeSubTab: 'OVERVIEW' | 'WHY' | 'MEMBERS'
   onSubTabChange: (tab: 'OVERVIEW' | 'WHY' | 'MEMBERS') => void
   onInspectMember?: (member: Member) => void
-  onOpenDrawer?: () => void
+  onPairContextChange?: (pair: [string, string] | null) => void
 }
 
 type WhyScope = 'Chain' | 'Member' | 'Pair' | 'Group'
@@ -19,7 +19,7 @@ export function ChainDetailView({
   activeSubTab,
   onSubTabChange,
   onInspectMember,
-  onOpenDrawer: _onOpenDrawer,
+  onPairContextChange,
 }: ChainDetailViewProps) {
   const [whyScope, setWhyScope] = useState<WhyScope>('Chain')
   const [isScopeMenuOpen, setIsScopeMenuOpen] = useState(false)
@@ -47,6 +47,18 @@ export function ChainDetailView({
       : pairWhyReason
         ? 'UNAVAILABLE'
         : 'LOADING'
+
+  useEffect(() => {
+    if (pairRequestKey && selectedMemberIds.length === 2) {
+      onPairContextChange?.([selectedMemberIds[0], selectedMemberIds[1]])
+    } else {
+      onPairContextChange?.(null)
+    }
+  }, [onPairContextChange, pairRequestKey, selectedMemberIds])
+
+  useEffect(() => () => {
+    onPairContextChange?.(null)
+  }, [onPairContextChange])
 
   useEffect(() => {
     if (!pairRequestKey) return

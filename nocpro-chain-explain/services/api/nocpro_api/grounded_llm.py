@@ -175,6 +175,7 @@ _FORBIDDEN_NARRATIVE_CLAIMS = re.compile(
     re.IGNORECASE,
 )
 _IDENTIFIER = re.compile(r"\b[A-Za-z][A-Za-z0-9]*(?:[-_][A-Za-z0-9]+)+\b")
+_NUMBER = re.compile(r"(?<![A-Za-z0-9_])-?\d+(?:\.\d+)?%?")
 
 
 def _grounding_is_preserved(content: str, draft: str, facts: dict[str, Any], fact_refs: Sequence[str]) -> bool:
@@ -188,7 +189,47 @@ def _grounding_is_preserved(content: str, draft: str, facts: dict[str, Any], fac
         return False
     allowed = " ".join((draft, json.dumps(facts, ensure_ascii=False, default=str), *fact_refs))
     allowed_identifiers = {item.casefold() for item in _IDENTIFIER.findall(allowed)}
-    return all(item.casefold() in allowed_identifiers for item in _IDENTIFIER.findall(content))
+    if not all(item.casefold() in allowed_identifiers for item in _IDENTIFIER.findall(content)):
+        return False
+    # A deterministic draft is the authoritative public projection. Raw fact
+    # payloads can contain incidental curve points that must not be promoted to
+    # a different named metric by narrative wording.
+    allowed_numbers = set(_NUMBER.findall(" ".join((draft, *fact_refs))))
+    return all(item in allowed_numbers for item in _NUMBER.findall(content))
+
+
+def validate_grounded_content(
+    *,
+    content: str,
+    draft: str,
+    facts: dict[str, Any],
+    fact_refs: Sequence[str],
+    model: str,
+    provider_status: str,
+) -> GroundedRenderResult:
+    """Validate an already returned provider narrative without another provider call."""
+    if provider_status != "OK" or not content.strip():
+        return _fallback(draft, provider_status or "INVALID_RESPONSE")
+    # Chart explanations are factual projections of a frozen artifact.  Token-
+    # and number-level checks cannot prove that an added qualitative sentence
+    # (for example, an over-merge verdict) follows from that artifact.  Keep the
+    # provider on the read-only rendering boundary by accepting only the exact
+    # deterministic projection, modulo whitespace.  Any embellishment fails
+    # closed to the authoritative draft.
+    normalized_content = " ".join(content.split())
+    normalized_draft = " ".join(draft.split())
+    if normalized_content != normalized_draft:
+        logger.info("Grounded LLM provider failed status=GROUNDING_VIOLATION")
+        return _fallback(draft, "GROUNDING_VIOLATION")
+    if not _grounding_is_preserved(content, draft, facts, fact_refs):
+        logger.info("Grounded LLM provider failed status=GROUNDING_VIOLATION")
+        return _fallback(draft, "GROUNDING_VIOLATION")
+    return GroundedRenderResult(
+        message=_bounded(content.strip(), _MAX_OUTPUT_CHARS),
+        model=model,
+        provider_status="OK",
+        used_provider=True,
+    )
 
 
 def render_grounded(

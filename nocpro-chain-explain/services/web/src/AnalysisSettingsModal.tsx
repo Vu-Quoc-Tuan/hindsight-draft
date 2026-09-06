@@ -8,95 +8,14 @@ export interface AnalysisSettingsModalProps {
   onConfigChanged: (config: AnalysisConfigView) => void
 }
 
-const DEFAULT_CONFIG: AnalysisConfigView = {
-  config_version: 'v1.0 (production-default)',
-  status: 'CALIBRATED_BASELINE',
-  editable_parameters: {
-    time_window_seconds: 900,
-    burst_lead_time_seconds: 60,
-    min_cohesion_support: 0.35,
-    conductance_cut_threshold: 0.25,
-    spectral_clustering_tau: 0.6,
-    max_chain_size: 200,
-  },
-  parameters_detail: [
-    {
-      path: 'temporal.time_window_seconds',
-      key: 'time_window_seconds',
-      label: 'Sliding Window ΔT',
-      value: 900,
-      description: 'Cửa sổ trượt thời gian (sliding window ΔT) cho tương quan khoảng cách thời gian',
-      source: 'DOCUMENTED_DEFAULT',
-      min: 60,
-      max: 3600,
-      step: 60,
-    },
-    {
-      path: 'temporal.burst_lead_time_seconds',
-      key: 'burst_lead_time_seconds',
-      label: 'Burst Lead Time',
-      value: 60,
-      description: 'Khoảng thời gian dẫn trước phát hiện đỉnh bùng nổ (burst peak lead time)',
-      source: 'DOCUMENTED_DEFAULT',
-      min: 10,
-      max: 300,
-      step: 10,
-    },
-    {
-      path: 'cohesion.min_cohesion_support',
-      key: 'min_cohesion_support',
-      label: 'Min Cohesion Support',
-      value: 0.35,
-      description: 'Ngưỡng hỗ trợ thành viên tối thiểu (membership support score)',
-      source: 'DOCUMENTED_DEFAULT',
-      min: 0.1,
-      max: 0.9,
-      step: 0.05,
-    },
-    {
-      path: 'graph.conductance_cut_threshold',
-      key: 'conductance_cut_threshold',
-      label: 'Conductance Cut Threshold',
-      value: 0.25,
-      description: 'Ngưỡng độ dẫn Cheeger Φ để đề xuất phân hoạch chuỗi con (cut threshold)',
-      source: 'DOCUMENTED_DEFAULT',
-      min: 0.05,
-      max: 0.8,
-      step: 0.05,
-    },
-    {
-      path: 'graph.spectral_clustering_tau',
-      key: 'spectral_clustering_tau',
-      label: 'Spectral Laplacian Tau',
-      value: 0.6,
-      description: 'Biên độ phân hoạch Laplacian phổ chuẩn hóa (spectral partition boundary)',
-      source: 'DOCUMENTED_DEFAULT',
-      min: 0.1,
-      max: 1.0,
-      step: 0.05,
-    },
-    {
-      path: 'limits.max_chain_size',
-      key: 'max_chain_size',
-      label: 'Max Bound Chain Size',
-      value: 200,
-      description: 'Giới hạn số phần tử chuỗi để kiểm soát độ phức tạp tính toán O(N²)',
-      source: 'DOCUMENTED_DEFAULT',
-      min: 50,
-      max: 500,
-      step: 10,
-    },
-  ],
-}
-
 export function AnalysisSettingsModal({
   isOpen,
   onClose,
   onConfigChanged,
 }: AnalysisSettingsModalProps) {
-  const [config, setConfig] = useState<AnalysisConfigView>(DEFAULT_CONFIG)
-  const [values, setValues] = useState<Record<string, number>>(DEFAULT_CONFIG.editable_parameters)
-  const [loading, setLoading] = useState(false)
+  const [config, setConfig] = useState<AnalysisConfigView | null>(null)
+  const [values, setValues] = useState<Record<string, number>>({})
+  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [calibrating, setCalibrating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -109,16 +28,14 @@ export function AnalysisSettingsModal({
     api.getConfig()
       .then((cfg) => {
         if (!active) return
-        setError(null)
-        setSuccess(null)
         setConfig(cfg)
         setValues({ ...cfg.editable_parameters })
       })
-      .catch((_err) => {
+      .catch((err: unknown) => {
         if (!active) return
-        setConfig(DEFAULT_CONFIG)
-        setValues({ ...DEFAULT_CONFIG.editable_parameters })
-        // Note: keeping default config active for offline demo
+        setConfig(null)
+        setValues({})
+        setError(err instanceof Error ? err.message : 'Analysis configuration unavailable')
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -132,13 +49,15 @@ export function AnalysisSettingsModal({
 
   const handleFieldChange = (key: string, rawVal: string) => {
     const num = parseFloat(rawVal)
+    if (!Number.isFinite(num)) return
     setValues((prev) => ({
       ...prev,
-      [key]: isNaN(num) ? 0 : num,
+      [key]: num,
     }))
   }
 
   const handleSave = async () => {
+    if (!config) return
     setError(null)
     setSuccess(null)
     setSaving(true)
@@ -148,20 +67,8 @@ export function AnalysisSettingsModal({
       setValues({ ...updated.editable_parameters })
       setSuccess(`Tham số đã được cập nhật thành công! Active version: ${updated.config_version}`)
       onConfigChanged(updated)
-    } catch {
-      // Fallback for offline client
-      const offlineUpdated: AnalysisConfigView = {
-        ...config,
-        config_version: `v1.0 (local-${Date.now().toString().slice(-4)})`,
-        editable_parameters: values,
-        parameters_detail: config.parameters_detail.map((p) => ({
-          ...p,
-          value: values[p.key] ?? p.value,
-        })),
-      }
-      setConfig(offlineUpdated)
-      setSuccess(`Đã lưu cấu hình tham số cục bộ! Version: ${offlineUpdated.config_version}`)
-      onConfigChanged(offlineUpdated)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update analysis configuration')
     } finally {
       setSaving(false)
     }
@@ -177,11 +84,8 @@ export function AnalysisSettingsModal({
       setValues({ ...reset.editable_parameters })
       setSuccess(`Đã khôi phục cấu hình mặc định an toàn! Active version: ${reset.config_version}`)
       onConfigChanged(reset)
-    } catch {
-      setConfig(DEFAULT_CONFIG)
-      setValues({ ...DEFAULT_CONFIG.editable_parameters })
-      setSuccess(`Đã khôi phục cấu hình mặc định (chế độ độc lập)!`)
-      onConfigChanged(DEFAULT_CONFIG)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reset analysis configuration')
     } finally {
       setSaving(false)
     }
@@ -337,80 +241,6 @@ export function AnalysisSettingsModal({
             </div>
           </div>
 
-          {/* System Capabilities & Engine Runtime */}
-          <div style={{ marginBottom: '1.5rem' }}>
-            <h3 style={{ fontSize: '0.85rem', color: '#cbd5e1', marginBottom: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              System Capabilities &amp; Engine Runtime
-            </h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem' }}>
-              {[
-                {
-                  label: 'Pattern Memory',
-                  status: 'ready',
-                  value: 'Available',
-                  tip: 'Mô hình tương đồng lịch sử và bộ nhớ chuỗi đã kích hoạt.',
-                },
-                {
-                  label: 'Temporal Proximity',
-                  status: 'ready',
-                  value: 'Window 15m',
-                  tip: 'Phân tích độ gần thời gian cửa sổ trượt (sliding window ΔT 900s). Khống chế tuyến tính O(N).',
-                },
-                {
-                  label: 'Topology Mapping',
-                  status: 'partial',
-                  value: 'Partial',
-                  tip: 'Ánh xạ topo mạng IP và tầng dịch vụ CNTT (NetBox CMDB).',
-                },
-                {
-                  label: 'Service Dependency',
-                  status: 'ready',
-                  value: 'Service Graph',
-                  tip: 'Xác thực đồ thị phụ thuộc nghiệp vụ. Phân biệt IP adjacency (vô hướng) với service dependency (có hướng).',
-                },
-              ].map((cap) => (
-                <div
-                  key={cap.label}
-                  style={{
-                    backgroundColor: 'rgba(15, 23, 42, 0.6)',
-                    border: '1px solid #1e293b',
-                    borderRadius: '8px',
-                    padding: '0.6rem 0.8rem',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
-                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#f1f5f9' }}>{cap.label}</span>
-                    <span
-                      style={{
-                        fontSize: '0.68rem',
-                        padding: '0.15rem 0.4rem',
-                        borderRadius: '4px',
-                        backgroundColor:
-                          cap.status === 'ready'
-                            ? 'rgba(34, 197, 94, 0.2)'
-                            : cap.status === 'partial'
-                            ? 'rgba(234, 179, 8, 0.2)'
-                            : 'rgba(148, 163, 184, 0.2)',
-                        color:
-                          cap.status === 'ready'
-                            ? '#4ade80'
-                            : cap.status === 'partial'
-                            ? '#facc15'
-                            : '#94a3b8',
-                        fontWeight: 600,
-                      }}
-                    >
-                      {cap.value}
-                    </span>
-                  </div>
-                  <p style={{ fontSize: '0.72rem', color: '#94a3b8', margin: 0, lineHeight: 1.4 }}>
-                    {cap.tip}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-
           {/* Parameter Inputs List */}
           <h3 style={{ fontSize: '0.9rem', color: '#cbd5e1', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
             Raw Engine Parameters
@@ -536,7 +366,7 @@ export function AnalysisSettingsModal({
               type="button"
               className="secondary-action"
               onClick={handleCalibrate}
-              disabled={saving || calibrating || loading}
+              disabled={saving || calibrating || loading || !config}
               style={{
                 padding: '0.45rem 0.9rem',
                 fontSize: '0.85rem',
@@ -562,7 +392,7 @@ export function AnalysisSettingsModal({
               type="button"
               className="primary-action"
               onClick={handleSave}
-              disabled={saving || calibrating || loading}
+              disabled={saving || calibrating || loading || !config}
               style={{ padding: '0.45rem 1.2rem', fontSize: '0.85rem' }}
             >
               {saving ? 'Saving…' : 'Save Changes'}

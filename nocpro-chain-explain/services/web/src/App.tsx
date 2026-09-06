@@ -57,8 +57,9 @@ export default function App() {
 
   // Navigation & Drawer UI states
   const [currentTab, setCurrentTab] = useState<SubNavTab>('snapshot-overview')
-  const [comparePair, setComparePair] = useState<[string, string]>(['C2214039', 'C2214048'])
+  const [comparePair, setComparePair] = useState<[string, string]>(['', ''])
   const [isDrawerOpen, setDrawerOpen] = useState(false)
+  const [assistantPair, setAssistantPair] = useState<[string, string] | null>(null)
 
   const snapshotKey = chainList ? `${chainList.snapshot_id}:${chainList.snapshot_version}` : null
   const currentAnalysisKey = snapshotKey && chainId
@@ -67,6 +68,14 @@ export default function App() {
   const analysis = analysisMatchesContext(analysisState, currentAnalysisKey, chainId)
     ? analysisState!.payload
     : null
+  const availableChainIds = chainList?.chains.map(chain => chain.chain_id) ?? []
+  const resolvedComparePair: [string, string] = (
+    availableChainIds.includes(comparePair[0])
+    && availableChainIds.includes(comparePair[1])
+    && comparePair[0] !== comparePair[1]
+  )
+    ? comparePair
+    : [availableChainIds[0] ?? '', availableChainIds[1] ?? '']
 
   // Initial Connect & API Health Check
   useEffect(() => {
@@ -178,6 +187,7 @@ export default function App() {
       setAnalysisState(null)
       setAnalysisError(null)
       setPairWhyState(null)
+      setAssistantPair(null)
       setJob(null)
       setApiStatus('online')
     } catch (cause) {
@@ -189,6 +199,7 @@ export default function App() {
 
   // Chain selection handler
   const handleSelectChain = (id: string) => {
+    setAssistantPair(null)
     setChainId(id)
     setCurrentTab('chain-overview')
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -196,12 +207,14 @@ export default function App() {
 
   // Clear selected chain (back to snapshot overview)
   const handleClearSelectedChain = () => {
+    setAssistantPair(null)
     setChainId('')
     setCurrentTab('snapshot-overview')
   }
 
   // Compare 2 chains
   const handleCompareChains = (chainA: string, chainB: string) => {
+    setAssistantPair(null)
     setComparePair([chainA, chainB])
     setChainId('')
     setCurrentTab('compare-chains')
@@ -232,7 +245,11 @@ export default function App() {
     const targetChainId = action.target.chain_id
     const targetTab = action.target.tab as SubNavTab | undefined
     if (targetChainId) {
+      if (targetChainId !== chainId) setAssistantPair(null)
       setChainId(targetChainId)
+    }
+    if (action.target.pair_alarm_id_a && action.target.pair_alarm_id_b) {
+      setAssistantPair([action.target.pair_alarm_id_a, action.target.pair_alarm_id_b])
     }
     if (targetTab) {
       setCurrentTab(targetTab)
@@ -246,8 +263,10 @@ export default function App() {
     snapshot_version: chainList?.snapshot_version ?? 'NO_VERSION',
     page: currentTab,
     chain_id: chainId || undefined,
+    pair_alarm_id_a: assistantPair?.[0],
+    pair_alarm_id_b: assistantPair?.[1],
     filters: {},
-  }), [chainList, chainId, currentTab])
+  }), [assistantPair, chainList, chainId, currentTab])
 
   const selectedAnalysisError = currentAnalysisKey && analysisError?.requestKey === currentAnalysisKey
     ? analysisError.message
@@ -366,8 +385,8 @@ export default function App() {
 
         {currentTab === 'compare-chains' && (
           <CompareChainsView
-            chainAId={comparePair[0]}
-            chainBId={comparePair[1]}
+            chainAId={resolvedComparePair[0]}
+            chainBId={resolvedComparePair[1]}
             chains={chainList?.chains ?? []}
             onSelectChain={handleSelectChain}
             onChangeSelection={() => setCurrentTab('chains-explorer')}
@@ -391,7 +410,7 @@ export default function App() {
               else if (tab === 'WHY') setCurrentTab('why')
               else if (tab === 'MEMBERS') setCurrentTab('members')
             }}
-            onOpenDrawer={() => setDrawerOpen(true)}
+            onPairContextChange={setAssistantPair}
           />
         )}
 
@@ -435,14 +454,16 @@ export default function App() {
         onNavigate={handleAssistantNavigation}
       />
 
-      <AnalysisSettingsModal
-        isOpen={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        onConfigChanged={cfg => {
-          setActiveConfigVersion(cfg.config_version)
-          setConfigEpoch(e => e + 1)
-        }}
-      />
+      {settingsOpen && (
+        <AnalysisSettingsModal
+          isOpen
+          onClose={() => setSettingsOpen(false)}
+          onConfigChanged={cfg => {
+            setActiveConfigVersion(cfg.config_version)
+            setConfigEpoch(e => e + 1)
+          }}
+        />
+      )}
 
       {/* 7. Footer Status Bar - clean, without redundant snapshot info or mock gateway */}
       <footer className="w-full h-8 bg-surface-container-lowest border-t border-surface-container-highest px-space-lg flex items-center justify-between text-[11px] font-code-sm text-on-surface-variant select-none">

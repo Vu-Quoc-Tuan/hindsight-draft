@@ -14,6 +14,12 @@ from nocpro_api.grounded_llm import GroundedAssistantCallResult, LLMToolCall
 from tests.test_api import _payload
 
 
+def _run_deep_dive_explicitly(workspace: Any, chain_id: str = "C1") -> None:
+    submission = workspace.submit_deep_dive(chain_id)
+    completed = workspace.jobs.wait(submission.job_id, timeout=5)
+    assert completed.status.value == "SUCCEEDED"
+
+
 def test_tool_dispatch_explain_metric() -> None:
     app = create_app()
     try:
@@ -180,7 +186,7 @@ def test_llm_tool_calling_integration(monkeypatch: pytest.MonkeyPatch) -> None:
                 # Test 3: LLM direct conversational answer without tool
                 def fake_llm_chat(**kwargs: Any) -> GroundedAssistantCallResult:
                     return GroundedAssistantCallResult(
-                        content="Hệ thống đang hoạt động bình thường, chuỗi C1 có 3 cảnh báo.",
+                        content="Có, tôi có thể trả lời bằng tiếng Việt.",
                         tool_calls=[],
                         model="mock-model",
                         provider_status="OK",
@@ -192,14 +198,14 @@ def test_llm_tool_calling_integration(monkeypatch: pytest.MonkeyPatch) -> None:
                 resp = await client.post(
                     "/api/v1/assistant/query",
                     json={
-                        "query": "tình hình thế nào?",
+                        "query": "bạn có thể trả lời bằng tiếng Việt không?",
                         "context": {"snapshot_id": "s1", "snapshot_version": "1", "chain_id": "C1"},
                     },
                 )
                 assert resp.status_code == 200
                 data = resp.json()
                 assert data["status"] == "AVAILABLE"
-                assert data["message"] == "Hệ thống đang hoạt động bình thường, chuỗi C1 có 3 cảnh báo."
+                assert data["message"] == "Có, tôi có thể trả lời bằng tiếng Việt."
                 assert data["actions"] == []
 
         asyncio.run(run())
@@ -219,6 +225,25 @@ def test_tool_dispatch_inspect_chart() -> None:
         asyncio.run(run())
         ws = app.state.workspace
         context = {"snapshot_id": "s1", "snapshot_version": "1", "chain_id": "C1"}
+
+        submit_calls = 0
+        original_submit = ws.submit_deep_dive
+
+        def tracked_submit(chain_id: str) -> Any:
+            nonlocal submit_calls
+            submit_calls += 1
+            return original_submit(chain_id)
+
+        ws.submit_deep_dive = tracked_submit
+        unavailable = asyncio.run(dispatch_assistant_tool(
+            ws, "inspect_chart", {"chart_type": "attribution_deletion_curve"}, context
+        ))
+        assert unavailable["status"] == "UNAVAILABLE"
+        assert submit_calls == 0
+
+        # The operator starts Tier 2 explicitly; Assistant only reads the completed result.
+        _run_deep_dive_explicitly(ws)
+        assert submit_calls == 1
 
         # 1. Inspect deletion curve
         res_del = asyncio.run(dispatch_assistant_tool(
@@ -465,6 +490,7 @@ def test_llm_tool_calling_inspect_chart_multi_turn(monkeypatch: pytest.MonkeyPat
             async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
                 res = await client.post("/api/v1/snapshots", json=_payload())
                 assert res.status_code == 201
+                _run_deep_dive_explicitly(app.state.workspace)
 
                 calls_count = 0
 
@@ -492,7 +518,7 @@ def test_llm_tool_calling_inspect_chart_multi_turn(monkeypatch: pytest.MonkeyPat
                         assert last_msg["role"] == "tool"
                         assert "primary_auc" in last_msg["content"]
                         return GroundedAssistantCallResult(
-                            content="Đường Primary AUC = 0.45 giảm mạnh tại bước 5 do loại bỏ temporal_burst.",
+                            content="Đường Primary AUC = 9.999 giảm mạnh tại bước 5 do loại bỏ temporal_burst.",
                             tool_calls=[],
                             model="mock-model",
                             provider_status="OK",
@@ -511,9 +537,10 @@ def test_llm_tool_calling_inspect_chart_multi_turn(monkeypatch: pytest.MonkeyPat
                 assert resp.status_code == 200
                 data = resp.json()
                 assert data["status"] == "AVAILABLE"
-                assert "Đường Primary AUC = 0.45" in data["message"]
-                assert data["model"] == "mock-model"
-                assert data["provider_status"] == "OK"
+                assert "Đường Primary AUC = 9.999" not in data["message"]
+                assert "Số liệu biểu đồ Deletion Curve" in data["message"]
+                assert data["model"] == "DETERMINISTIC_EVIDENCE"
+                assert data["provider_status"] == "GROUNDING_VIOLATION"
                 assert len(data["actions"]) == 1
                 assert data["actions"][0]["target"]["tab"] == "structure"
                 assert calls_count == 2
@@ -538,6 +565,12 @@ def test_fallback_chart_route() -> None:
 
         from nocpro_api.assistant import _fallback_route
 
+        result = asyncio.run(
+            _fallback_route(ws, "giải thích biểu đồ deletion curve chuỗi này", context)
+        )
+        assert result["status"] == "UNAVAILABLE"
+
+        _run_deep_dive_explicitly(ws)
         result = asyncio.run(
             _fallback_route(ws, "giải thích biểu đồ deletion curve chuỗi này", context)
         )

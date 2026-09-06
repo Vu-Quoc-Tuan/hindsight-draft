@@ -16,6 +16,14 @@ export function AIAnalystDrawer({
   context,
   onNavigate,
 }: AIAnalystDrawerProps) {
+  const assistantContextKey = [
+    context.snapshot_id,
+    context.snapshot_version,
+    context.chain_id ?? '',
+    context.pair_alarm_id_a ?? '',
+    context.pair_alarm_id_b ?? '',
+  ].join('\u0000')
+
   if (!isOpen) {
     return (
       <button
@@ -55,7 +63,11 @@ export function AIAnalystDrawer({
 
       {/* Main Chat Body */}
       <div className="flex-1 overflow-hidden flex flex-col">
-        <NocProAssistantPanel context={context} onNavigate={onNavigate} />
+        <NocProAssistantPanel
+          key={assistantContextKey}
+          context={context}
+          onNavigate={onNavigate}
+        />
       </div>
     </div>
   )

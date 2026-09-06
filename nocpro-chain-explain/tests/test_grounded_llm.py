@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from nocpro_api.grounded_llm import render_grounded
+from nocpro_api.grounded_llm import render_grounded, validate_grounded_content
 
 
 class _Response:
@@ -32,6 +32,36 @@ def _configure(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AI_API_KEY", "test-secret")
     monkeypatch.setenv("AI_BASE_URL", "https://provider.invalid/v1")
     monkeypatch.setenv("AI_MODEL", "test-model")
+
+
+def test_returned_chart_narrative_rejects_unsupported_qualitative_claim() -> None:
+    result = validate_grounded_content(
+        content="Biểu đồ chứng minh tình trạng đang xấu đi nghiêm trọng.",
+        draft="Số liệu biểu đồ lấy từ persisted Audit artifact.",
+        facts={"status": "AVAILABLE"},
+        fact_refs=["audit-job:J1"],
+        model="test-model",
+        provider_status="OK",
+    )
+
+    assert result.message == "Số liệu biểu đồ lấy từ persisted Audit artifact."
+    assert result.provider_status == "GROUNDING_VIOLATION"
+    assert result.used_provider is False
+
+
+def test_returned_chart_narrative_accepts_exact_projection_modulo_whitespace() -> None:
+    result = validate_grounded_content(
+        content="Số liệu  biểu đồ\n lấy từ persisted Audit artifact.",
+        draft="Số liệu biểu đồ lấy từ persisted Audit artifact.",
+        facts={"status": "AVAILABLE"},
+        fact_refs=["audit-job:J1"],
+        model="test-model",
+        provider_status="OK",
+    )
+
+    assert result.message == "Số liệu  biểu đồ\n lấy từ persisted Audit artifact."
+    assert result.provider_status == "OK"
+    assert result.used_provider is True
 
 
 def test_renderer_uses_configured_provider_with_bounded_grounded_payload(

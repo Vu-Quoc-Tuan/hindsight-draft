@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 import httpx2
 import pytest
@@ -132,6 +133,13 @@ def test_update_config_validation_failures(app) -> None:
 
 @pytest.mark.postgres
 def test_calibrate_config_endpoint(app, monkeypatch, tmp_path) -> None:
+    database_url = os.environ.get("TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("TEST_DATABASE_URL is not configured")
+
+    from benchmarks import calibrate_thresholds
+
+    monkeypatch.setattr(calibrate_thresholds, "DEFAULT_DATABASE_URL", database_url)
     temp_yaml = tmp_path / "calibrated.yaml"
     monkeypatch.setenv("NOCPRO_CALIBRATED_OUTPUT_PATH", str(temp_yaml))
 

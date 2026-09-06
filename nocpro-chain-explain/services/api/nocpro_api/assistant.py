@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -19,6 +18,7 @@ from .grounded_llm import (
     call_grounded_assistant,
     is_provider_configured,
     render_grounded,
+    validate_grounded_content,
 )
 
 logger = logging.getLogger(__name__)
@@ -304,7 +304,7 @@ def _unavailable(message: str, reason: str) -> dict[str, Any]:
     }
 
 
-def _get_or_run_audit(service: Any, chain_id: str) -> Any | None:
+def _get_persisted_audit(service: Any, chain_id: str) -> Any | None:
     package = service.require_package()
     if chain_id not in package.chains:
         return None
@@ -314,17 +314,6 @@ def _get_or_run_audit(service: Any, chain_id: str) -> Any | None:
     if job_view is not None and job_view.result is not None:
         return job_view.result
 
-    try:
-        service.submit_deep_dive(chain_id)
-        for _ in range(25):
-            job_view = service.jobs.latest_succeeded(
-                package.snapshot.snapshot_id, package.snapshot.snapshot_version, chain_id
-            )
-            if job_view is not None and job_view.result is not None:
-                return job_view.result
-            time.sleep(0.04)
-    except Exception as exc:
-        logger.warning("Failed running Tier 2 deep dive for chain %s: %s", chain_id, exc)
     return None
 
 
@@ -335,7 +324,7 @@ async def _handle_inspect_chart(
     context: dict[str, Any],
 ) -> dict[str, Any]:
     if chart_kind == "conductance_cut":
-        audit_res = _get_or_run_audit(service, chain_id)
+        audit_res = _get_persisted_audit(service, chain_id)
         if audit_res is None:
             return _unavailable(
                 f"Không thể tải kết quả kiểm định cấu trúc Tier 2 cho chuỗi {chain_id}.",
@@ -536,7 +525,7 @@ async def _handle_inspect_chart(
         }
 
     # Default: attribution_deletion_curve
-    audit_res = _get_or_run_audit(service, chain_id)
+    audit_res = _get_persisted_audit(service, chain_id)
     if audit_res is None:
         return _unavailable(
             f"Không thể tải kết quả kiểm định Tier 2 cho chuỗi {chain_id}.",
@@ -980,11 +969,19 @@ async def answer_query(
                         tools=None,
                     )
                 if explained_result.used_provider and explained_result.content:
+                    validated = validate_grounded_content(
+                        content=explained_result.content,
+                        draft=str(dispatched.get("message", "")),
+                        facts=chart_data,
+                        fact_refs=[str(ref) for ref in dispatched.get("fact_refs", [])],
+                        model=explained_result.model,
+                        provider_status=explained_result.provider_status,
+                    )
                     return {
                         **dispatched,
-                        "message": explained_result.content,
-                        "model": explained_result.model,
-                        "provider_status": explained_result.provider_status,
+                        "message": validated.message,
+                        "model": validated.model,
+                        "provider_status": validated.provider_status,
                         "used_llm_tools": True,
                     }
 
@@ -1025,8 +1022,9 @@ def render_answer(
             "provider_status": "NOT_APPLIED",
         }
 
-    # If the LLM already executed via native tool calling, keep its result directly
-    if deterministic.get("used_llm_tools") and deterministic.get("provider_status") == "OK":
+    # Native tool-calling output has already been either grounded or replaced by
+    # its deterministic draft. Never invoke a third provider pass here.
+    if deterministic.get("used_llm_tools"):
         return {key: val for key, val in deterministic.items() if key != "used_llm_tools"}
 
     actions = deterministic.get("actions", [])

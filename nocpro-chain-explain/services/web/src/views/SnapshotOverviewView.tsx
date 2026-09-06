@@ -1,4 +1,4 @@
-import type { ChainList } from '../types'
+import type { ChainList, ChainSummary } from '../types'
 
 interface SnapshotOverviewViewProps {
   chainList?: ChainList | null
@@ -6,412 +6,164 @@ interface SnapshotOverviewViewProps {
   onNavigate: (view: string) => void
 }
 
-export function SnapshotOverviewView({
-  chainList,
-  onSelectChain,
-  onNavigate,
-}: SnapshotOverviewViewProps) {
-  const chains = chainList?.chains ?? []
-  const totalAlarms = chains.reduce((acc, c) => acc + c.member_count, 0) || 8714
-  const totalChains = chains.length || 2824
-  const singletons = chains.filter((c) => c.is_singleton).length || 2072
-  const multiAlarmChains = totalChains - singletons
+function median(values: number[]): number | null {
+  if (values.length === 0) return null
+  const ordered = [...values].sort((a, b) => a - b)
+  const middle = Math.floor(ordered.length / 2)
+  return ordered.length % 2 === 0
+    ? (ordered[middle - 1] + ordered[middle]) / 2
+    : ordered[middle]
+}
 
-  // Top 5 attention chains (matches triage benchmark)
-  const topAttentionChains = [
-    {
-      id: 'C2214039',
-      size: 58,
-      descriptor: 'IT_K8S_INGRESS • 504 Gateway Surge',
-      badge: 'OVER-MERGED',
-      badgeClass: 'bg-error-container text-on-error-container',
-      icon: 'error',
-      iconClass: 'text-primary',
-      reason: 'Conductance bottleneck & 4 weak members',
-    },
-    {
-      id: 'C2214051',
-      size: 37,
-      descriptor: 'CORE_AGG_SW01 • BGP Peer Flap Cascade',
-      badge: 'BOUNDARY LEAK',
-      badgeClass: 'bg-tertiary-container/50 text-on-tertiary',
-      icon: 'warning',
-      iconClass: 'text-tertiary',
-      reason: '5 weak members across IP Core & GPON',
-    },
-    {
-      id: 'C2214048',
-      size: 25,
-      descriptor: 'GPON_OLT_039 • Power Distribution Failure',
-      badge: 'WEAK BRIDGE',
-      badgeClass: 'bg-tertiary-container/30 text-tertiary',
-      icon: 'warning',
-      iconClass: 'text-tertiary',
-      reason: 'GPON OLT surge isolation split candidate',
-    },
-    {
-      id: 'C2214088',
-      size: 19,
-      descriptor: 'TRANS_MPLS_PE09 • Optical Degradation',
-      badge: 'NOISE',
-      badgeClass: 'bg-secondary-container/30 text-secondary',
-      icon: 'info',
-      iconClass: 'text-secondary',
-      reason: '2 trailing leaf alarms with low correlation',
-    },
-    {
-      id: 'C2214102',
-      size: 14,
-      descriptor: 'IT_ORACLE_RAC02 • Interconnect Latency',
-      badge: 'LINEAGE DRIFT',
-      badgeClass: 'bg-surface-container-high text-on-surface-variant',
-      icon: 'check_circle',
-      iconClass: 'text-secondary',
-      reason: 'Alternative re-link counterfactual ready',
-    },
+function percentile(values: number[], fraction: number): number | null {
+  if (values.length === 0) return null
+  const ordered = [...values].sort((a, b) => a - b)
+  return ordered[Math.max(0, Math.ceil(ordered.length * fraction) - 1)]
+}
+
+function formatTimestamp(value: string | null): string {
+  if (!value) return 'N/A'
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
+}
+
+function MetricCard({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <article className="min-w-0 rounded-lg border border-surface-container-high bg-surface-container p-space-md shadow-sm">
+      <p className="font-label-caps text-label-caps uppercase text-on-surface-variant">{label}</p>
+      <p className="mt-space-xs break-words font-headline-xl text-headline-xl font-bold text-on-surface">{value}</p>
+      <p className="mt-space-2xs break-words font-code-sm text-code-sm text-on-surface-variant">{detail}</p>
+    </article>
+  )
+}
+
+function bucketCount(chains: ChainSummary[], lower: number, upper?: number): number {
+  return chains.filter(chain => chain.member_count >= lower && (upper === undefined || chain.member_count <= upper)).length
+}
+
+export function SnapshotOverviewView({ chainList, onSelectChain, onNavigate }: SnapshotOverviewViewProps) {
+  if (!chainList) {
+    return (
+      <section className="mx-auto max-w-3xl rounded-lg border border-surface-container-highest bg-surface-container p-space-xl text-center" role="status">
+        <span className="material-symbols-outlined text-3xl text-on-surface-variant">database_off</span>
+        <h1 className="mt-space-sm font-headline-md text-headline-md font-bold">Snapshot unavailable</h1>
+        <p className="mt-space-xs text-on-surface-variant">Load a snapshot to view observed chain statistics.</p>
+      </section>
+    )
+  }
+
+  const chains = chainList.chains
+  const sizes = chains.map(chain => chain.member_count)
+  const totalAlarms = sizes.reduce((sum, value) => sum + value, 0)
+  const singletons = chains.filter(chain => chain.is_singleton).length
+  const largest = [...chains].sort((a, b) => b.member_count - a.member_count || a.chain_id.localeCompare(b.chain_id))[0] ?? null
+  const observedStarts = chains.map(chain => chain.start_time).filter((value): value is string => Boolean(value)).sort()
+  const observedEnds = chains.map(chain => chain.end_time).filter((value): value is string => Boolean(value)).sort()
+  const topChains = [...chains]
+    .sort((a, b) => b.member_count - a.member_count || a.chain_id.localeCompare(b.chain_id))
+    .slice(0, 5)
+  const buckets = [
+    { label: 'Singleton (1)', count: bucketCount(chains, 1, 1) },
+    { label: '2–5 alarms', count: bucketCount(chains, 2, 5) },
+    { label: '6–20 alarms', count: bucketCount(chains, 6, 20) },
+    { label: '>20 alarms', count: bucketCount(chains, 21) },
   ]
 
   return (
-    <div className="w-full flex flex-col gap-space-lg select-none animate-fadeIn">
-      {/* 1. Top Macro KPI Metric Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-space-md">
-        {/* Card 1: TOTAL RAW ALARMS */}
-        <div className="bg-surface-container p-space-md rounded shadow-sm flex flex-col justify-between border border-surface-container-high">
-          <div className="flex items-center justify-between">
-            <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">TOTAL RAW ALARMS</span>
-            <span className="material-symbols-outlined text-secondary text-[18px]">notifications</span>
-          </div>
-          <div className="mt-space-sm">
-            <div className="font-headline-xl text-headline-xl text-on-surface font-bold">
-              {totalAlarms.toLocaleString()}
-            </div>
-            <div className="font-code-sm text-code-sm text-secondary mt-space-2xs flex items-center gap-1">
-              <span>In-scope window:</span>
-              <span className="text-on-surface font-semibold">10:00 - 12:00 UTC</span>
-            </div>
-          </div>
-        </div>
+    <div className="flex w-full min-w-0 flex-col gap-space-lg animate-fadeIn">
+      <section className="grid grid-cols-1 gap-space-md sm:grid-cols-2 xl:grid-cols-5" aria-label="Observed snapshot metrics">
+        <MetricCard label="Observed alarms" value={totalAlarms.toLocaleString()} detail="Sum of returned chain member counts" />
+        <MetricCard label="Observed chains" value={chains.length.toLocaleString()} detail={`${chains.length - singletons} multi-alarm chains`} />
+        <MetricCard
+          label="Singletons"
+          value={singletons.toLocaleString()}
+          detail={chains.length > 0 ? `${((singletons / chains.length) * 100).toFixed(1)}% of returned chains` : 'No chains returned'}
+        />
+        <MetricCard
+          label="Largest chain"
+          value={largest ? largest.member_count.toLocaleString() : 'N/A'}
+          detail={largest ? largest.chain_id : 'No chains returned'}
+        />
+        <MetricCard
+          label="Chain size"
+          value={median(sizes)?.toLocaleString() ?? 'N/A'}
+          detail={`Median · P95 ${percentile(sizes, 0.95)?.toLocaleString() ?? 'N/A'}`}
+        />
+      </section>
 
-        {/* Card 2: CORRELATED CHAINS */}
-        <div
-          className="bg-surface-container p-space-md rounded shadow-sm flex flex-col justify-between border border-surface-container-high hover:border-secondary/60 hover:bg-surface-container-high transition-all cursor-pointer"
-          onClick={() => onNavigate('chains-explorer')}
-          title="Nhấn để mở Chains Explorer"
-        >
-          <div className="flex items-center justify-between">
-            <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">CORRELATED CHAINS</span>
-            <span className="material-symbols-outlined text-secondary text-[18px]">device_hub</span>
+      <section className="grid min-w-0 grid-cols-1 gap-space-md lg:grid-cols-2">
+        <article className="min-w-0 rounded-lg border border-surface-container-high bg-surface-container p-space-md shadow-sm">
+          <h2 className="font-headline-md text-headline-md font-bold">Observed chain-size distribution</h2>
+          <div className="mt-space-md space-y-space-sm">
+            {buckets.map(bucket => {
+              const share = chains.length > 0 ? (bucket.count / chains.length) * 100 : 0
+              return (
+                <div key={bucket.label}>
+                  <div className="flex items-center justify-between gap-space-sm text-code-sm">
+                    <span>{bucket.label}</span>
+                    <span>{bucket.count.toLocaleString()} ({share.toFixed(1)}%)</span>
+                  </div>
+                  <div className="mt-1 h-2 overflow-hidden rounded bg-surface-container-lowest">
+                    <div className="h-full bg-secondary" style={{ width: `${share}%` }} />
+                  </div>
+                </div>
+              )
+            })}
           </div>
-          <div className="mt-space-sm">
-            <div className="font-headline-xl text-headline-xl text-on-surface font-bold">
-              {totalChains.toLocaleString()}
-            </div>
-            <div className="font-code-sm text-code-sm text-secondary-fixed mt-space-2xs flex items-center gap-1">
-              <span>Aggregated Clusters:</span>
-              <span className="text-on-surface font-semibold">{multiAlarmChains.toLocaleString()} multi-alarm</span>
-            </div>
+          <p className="mt-space-md text-code-sm text-on-surface-variant">
+            These counts are derived from the current ChainList response. Structural findings require an explicit per-chain Audit.
+          </p>
+        </article>
+
+        <article className="min-w-0 rounded-lg border border-surface-container-high bg-surface-container p-space-md shadow-sm">
+          <h2 className="font-headline-md text-headline-md font-bold">Observed temporal coverage</h2>
+          <dl className="mt-space-md grid grid-cols-[auto_minmax(0,1fr)] gap-x-space-md gap-y-space-sm text-code-sm">
+            <dt className="text-on-surface-variant">First observed start</dt>
+            <dd className="break-words text-right">{formatTimestamp(observedStarts[0] ?? null)}</dd>
+            <dt className="text-on-surface-variant">Last observed end</dt>
+            <dd className="break-words text-right">{formatTimestamp(observedEnds.at(-1) ?? null)}</dd>
+            <dt className="text-on-surface-variant">Snapshot identity</dt>
+            <dd className="break-all text-right">{chainList.snapshot_id}@{chainList.snapshot_version}</dd>
+          </dl>
+          <button className="mt-space-md rounded border border-surface-container-highest px-space-sm py-space-xs text-secondary" onClick={() => onNavigate('multi-chain-timeline')}>
+            Open factual timeline
+          </button>
+        </article>
+      </section>
+
+      <section className="min-w-0 overflow-hidden rounded-lg border border-surface-container-high bg-surface-container shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-space-sm border-b border-surface-container-high px-space-md py-space-sm">
+          <div>
+            <h2 className="font-headline-md text-headline-md font-bold">Largest observed chains</h2>
+            <p className="text-code-sm text-on-surface-variant">Ordered only by returned member count; this is not an Audit ranking.</p>
           </div>
-        </div>
-
-        {/* Card 3: SINGLETON RATIO */}
-        <div
-          className="bg-surface-container p-space-md rounded shadow-sm flex flex-col justify-between border border-surface-container-high hover:border-tertiary/60 hover:bg-surface-container-high transition-all cursor-pointer"
-          onClick={() => onNavigate('chains-explorer')}
-          title="Nhấn để mở Chains Explorer (danh sách Singletons)"
-        >
-          <div className="flex items-center justify-between">
-            <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">SINGLETON RATIO</span>
-            <span className="material-symbols-outlined text-tertiary text-[18px]">grain</span>
-          </div>
-          <div className="mt-space-sm">
-            <div className="flex items-baseline gap-space-xs">
-              <span className="font-headline-xl text-headline-xl text-tertiary font-bold">
-                {singletons.toLocaleString()}
-              </span>
-              <span className="font-headline-md text-headline-md text-on-surface-variant font-semibold">
-                / {((singletons / totalChains) * 100).toFixed(1)}%
-              </span>
-            </div>
-            <div className="font-code-sm text-code-sm text-on-surface-variant mt-space-2xs">
-              Isolated unlinked signals
-            </div>
-          </div>
-        </div>
-
-        {/* Card 4: LARGEST CHAIN */}
-        <div
-          className="bg-surface-container p-space-md rounded shadow-sm flex flex-col justify-between border border-surface-container-high hover:border-primary/60 hover:bg-surface-container-high transition-all cursor-pointer"
-          onClick={() => onSelectChain('C2214001')}
-          title="Nhấn để mở chi tiết chuỗi C2214001"
-        >
-          <div className="flex items-center justify-between">
-            <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">LARGEST CHAIN</span>
-            <span className="material-symbols-outlined text-primary text-[18px]">warning</span>
-          </div>
-          <div className="mt-space-sm">
-            <div className="flex items-baseline gap-space-xs">
-              <span className="font-headline-xl text-headline-xl text-primary font-bold">1,072</span>
-              <span className="font-code-sm text-code-sm text-on-surface-variant">alarms</span>
-            </div>
-            <div className="font-code-sm text-code-sm text-primary-fixed mt-space-2xs">
-              Ref: <span className="text-on-surface font-semibold font-code-sm">C2214001</span> (Over-merged)
-            </div>
-          </div>
-        </div>
-
-        {/* Card 5: MEDIAN CHAIN SIZE */}
-        <div className="bg-surface-container p-space-md rounded shadow-sm flex flex-col justify-between border border-surface-container-high">
-          <div className="flex items-center justify-between">
-            <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">MEDIAN CHAIN SIZE</span>
-            <span className="material-symbols-outlined text-secondary text-[18px]">straighten</span>
-          </div>
-          <div className="mt-space-sm">
-            <div className="flex items-baseline gap-space-xs">
-              <span className="font-headline-xl text-headline-xl text-on-surface font-bold">1</span>
-              <span className="font-code-sm text-code-sm text-on-surface-variant">
-                alarm (Avg: {(totalAlarms / totalChains).toFixed(2)})
-              </span>
-            </div>
-            <div className="font-code-sm text-code-sm text-secondary mt-space-2xs">
-              P95 size: <span className="text-on-surface font-semibold font-code-sm">26 alarms</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 2. Middle Tier: Chain Size Distribution & Needs Attention Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-space-md">
-        {/* Left: Chain Size Distribution */}
-        <div className="bg-surface-container rounded shadow-sm flex flex-col border border-surface-container-high">
-          <div className="h-space-panel-header-h px-space-md bg-surface-container-high flex items-center justify-between rounded-t">
-            <div className="flex items-center gap-space-xs">
-              <span className="material-symbols-outlined text-secondary text-[18px]">bar_chart</span>
-              <span className="font-headline-md text-headline-md text-on-surface font-bold">
-                Chain Size Distribution
-              </span>
-            </div>
-          </div>
-          <div className="p-space-md flex flex-col justify-between flex-grow">
-            <div className="space-y-space-sm">
-              <div className="flex flex-col gap-1">
-                <div className="flex justify-between font-code-sm text-code-sm">
-                  <span className="text-on-surface font-medium">Singletons (1 alarm)</span>
-                  <span className="text-on-surface-variant font-bold">2,072 chains (73.4%)</span>
-                </div>
-                <div className="w-full h-3 bg-surface-container-lowest rounded-sm overflow-hidden flex">
-                  <div className="h-full bg-secondary" style={{ width: '73.4%' }}></div>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <div className="flex justify-between font-code-sm text-code-sm">
-                  <span className="text-on-surface font-medium">2 - 5 alarms</span>
-                  <span className="text-on-surface-variant font-bold">514 chains (18.2%)</span>
-                </div>
-                <div className="w-full h-3 bg-surface-container-lowest rounded-sm overflow-hidden flex">
-                  <div className="h-full bg-secondary-fixed-dim" style={{ width: '18.2%' }}></div>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <div className="flex justify-between font-code-sm text-code-sm">
-                  <span className="text-on-surface font-medium">6 - 20 alarms</span>
-                  <span className="text-on-surface-variant font-bold">172 chains (6.1%)</span>
-                </div>
-                <div className="w-full h-3 bg-surface-container-lowest rounded-sm overflow-hidden flex">
-                  <div className="h-full bg-tertiary" style={{ width: '6.1%' }}></div>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <div className="flex justify-between font-code-sm text-code-sm">
-                  <span className="text-on-surface font-medium">&gt; 20 alarms (Mega-chains)</span>
-                  <span className="text-on-surface-variant font-bold">66 chains (2.3%)</span>
-                </div>
-                <div className="w-full h-3 bg-surface-container-lowest rounded-sm overflow-hidden flex">
-                  <div className="h-full bg-primary" style={{ width: '2.3%' }}></div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-space-sm pt-space-xs bg-surface-container-low p-space-xs rounded flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
-              <span title="Độ lệch đuôi nặng (Heavy Tail): Đa số chuỗi nhỏ (1-5 cảnh báo), số ít chuỗi gom cụm quy mô lớn (>20-50 cảnh báo) do bão sự cố">
-                Heavy Tail Skew: <strong className="text-primary font-bold">High</strong>
-              </span>
-              <span title="Shannon Entropy (nats): Mức độ đa dạng và phân tán kích thước của các chuỗi sự cố trong snapshot">
-                Entropy: <strong className="text-on-surface font-bold">1.84 nats</strong>
-              </span>
-              <span title="Hệ số gom cụm (Clustering Coefficient): Mật độ liên kết chéo giữa các cảnh báo trong chuỗi (0 đến 1). 0.69 là mức cao chứng tỏ chuỗi có cấu trúc liên kết chặt chẽ.">
-                Clustering Coeff: <strong className="text-secondary font-bold">0.69</strong>
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Right: Needs Attention Summary */}
-        <div className="bg-surface-container rounded shadow-sm flex flex-col border border-surface-container-high">
-          <div className="h-space-panel-header-h px-space-md bg-surface-container-high flex items-center justify-between rounded-t">
-            <div className="flex items-center gap-space-xs">
-              <span className="material-symbols-outlined text-tertiary text-[18px]">crisis_alert</span>
-              <span className="font-headline-md text-headline-md text-on-surface font-bold">
-                Needs Attention Summary
-              </span>
-            </div>
-            <span className="font-label-caps text-label-caps text-tertiary uppercase bg-tertiary-container/30 px-space-xs py-0.5 rounded font-bold">
-              3 PRIORITY CATEGORIES
-            </span>
-          </div>
-
-          <div className="p-space-md flex flex-col gap-space-sm justify-around flex-grow">
-            <div
-              className="p-space-sm bg-surface-container-low rounded flex items-center justify-between hover:bg-surface-container-highest transition-colors cursor-pointer"
-              onClick={() => onNavigate('chains-explorer')}
-            >
-              <div className="flex items-center gap-space-sm">
-                <div className="w-8 h-8 rounded bg-tertiary-container/30 flex items-center justify-center text-tertiary">
-                  <span className="material-symbols-outlined text-[20px]">troubleshoot</span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="font-body-md text-body-md text-on-surface font-semibold">
-                    37 Structural Findings
-                  </span>
-                  <span className="font-body-sm text-body-sm text-on-surface-variant">
-                    Conductance bottleneck or boundary leak
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center gap-space-xs">
-                <span className="font-code-lg text-code-lg text-tertiary font-bold">37</span>
-                <span className="font-label-caps text-label-caps uppercase text-tertiary bg-tertiary-container/40 px-1 py-0.5 rounded font-bold">
-                  Action
-                </span>
-              </div>
-            </div>
-
-            <div
-              className="p-space-sm bg-surface-container-low rounded flex items-center justify-between hover:bg-surface-container-highest transition-colors cursor-pointer"
-              onClick={() => onNavigate('chains-explorer')}
-            >
-              <div className="flex items-center gap-space-sm">
-                <div className="w-8 h-8 rounded bg-surface-variant flex items-center justify-center text-on-surface-variant">
-                  <span className="material-symbols-outlined text-[20px]">link_off</span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="font-body-md text-body-md text-on-surface font-semibold">
-                    84 Weak Members
-                  </span>
-                  <span className="font-body-sm text-body-sm text-on-surface-variant">
-                    Low correlation score (&lt; 0.45 threshold)
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center gap-space-xs">
-                <span className="font-code-lg text-code-lg text-on-surface font-bold">84</span>
-                <span className="font-label-caps text-label-caps uppercase text-on-surface-variant bg-surface-container-high px-1 py-0.5 rounded font-bold">
-                  Inspect
-                </span>
-              </div>
-            </div>
-
-            <div
-              className="p-space-sm bg-surface-container-low rounded flex items-center justify-between hover:bg-surface-container-highest transition-colors cursor-pointer"
-              onClick={() => onNavigate('chains-explorer')}
-            >
-              <div className="flex items-center gap-space-sm">
-                <div className="w-8 h-8 rounded bg-secondary-container/30 flex items-center justify-center text-secondary">
-                  <span className="material-symbols-outlined text-[20px]">alt_route</span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="font-body-md text-body-md text-on-surface font-semibold">
-                    21 Alternative Partitions
-                  </span>
-                  <span className="font-body-sm text-body-sm text-on-surface-variant">
-                    Alternative counterfactual suggestions ready
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center gap-space-xs">
-                <span className="font-code-lg text-code-lg text-secondary font-bold">21</span>
-                <span className="font-label-caps text-label-caps uppercase text-secondary bg-secondary-container/20 px-1 py-0.5 rounded font-bold">
-                  Ready
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 3. Bottom Tier: Top 5 Chains Needing Attention (Triage Table) */}
-      <div className="bg-surface-container rounded shadow-sm flex flex-col border border-surface-container-high">
-        <div className="h-space-panel-header-h px-space-md bg-surface-container-high flex items-center justify-between rounded-t">
-          <div className="flex items-center gap-space-sm">
-            <span className="material-symbols-outlined text-primary text-[18px]">priority_high</span>
-            <span className="font-headline-md text-headline-md text-on-surface font-bold">
-              Top 5 Chains Needing Attention
-            </span>
-          </div>
-          <button
-            className="px-space-sm py-1 bg-surface-container-lowest hover:bg-surface-container text-secondary font-code-sm text-code-sm rounded transition-colors flex items-center gap-1 font-semibold border border-surface-container-highest cursor-pointer"
-            onClick={() => onNavigate('chains-explorer')}
-          >
-            <span>View all {totalChains.toLocaleString()} chains in Chains Explorer →</span>
+          <button className="rounded border border-surface-container-highest px-space-sm py-space-xs text-secondary" onClick={() => onNavigate('chains-explorer')}>
+            View all chains
           </button>
         </div>
-
-        <div className="w-full overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-surface-container-lowest font-label-caps text-label-caps uppercase text-on-surface-variant">
-                <th className="py-space-xs px-space-md">Chain ID</th>
-                <th className="py-space-xs px-space-md text-right">Size</th>
-                <th className="py-space-xs px-space-md">Key Descriptor</th>
-                <th className="py-space-xs px-space-md">Why attention?</th>
-                <th className="py-space-xs px-space-md text-center">Action</th>
-              </tr>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[560px] text-left text-code-sm">
+            <thead className="bg-surface-container-low text-on-surface-variant">
+              <tr><th className="px-space-md py-space-xs">Chain</th><th className="px-space-md py-space-xs">Title</th><th className="px-space-md py-space-xs text-right">Members</th><th className="px-space-md py-space-xs">Analysis</th></tr>
             </thead>
-            <tbody className="font-code-sm text-code-sm divide-y divide-surface-container-high/40">
-              {topAttentionChains.map((c) => (
-                <tr
-                  key={c.id}
-                  onClick={() => onSelectChain(c.id)}
-                  className="hover:bg-surface-container-high transition-colors bg-surface-container cursor-pointer group"
-                  title={`Nhấn để mở chi tiết chuỗi ${c.id}`}
-                >
-                  <td className="py-space-xs px-space-md font-bold text-primary flex items-center gap-space-xs">
-                    <span className={`material-symbols-outlined ${c.iconClass} text-[16px]`}>
-                      {c.icon}
-                    </span>
-                    <span className="group-hover:underline">{c.id}</span>
-                  </td>
-                  <td className="py-space-xs px-space-md text-right font-bold text-on-surface text-code-md">
-                    {c.size} alarms
-                  </td>
-                  <td className="py-space-xs px-space-md text-on-surface font-medium">
-                    {c.descriptor}
-                  </td>
-                  <td className="py-space-xs px-space-md text-on-surface-variant font-medium">
-                    <span className={`px-space-xs py-0.5 rounded font-label-caps text-label-caps uppercase mr-2 font-bold ${c.badgeClass}`}>
-                      {c.badge}
-                    </span>
-                    <span>{c.reason}</span>
-                  </td>
-                  <td className="py-space-xs px-space-md text-center">
-                    <button
-                      className="px-space-sm py-0.5 bg-surface-container-low group-hover:bg-secondary group-hover:text-surface-container-lowest hover:bg-secondary text-secondary rounded font-code-sm text-code-sm font-semibold transition-colors border border-surface-container-highest flex items-center gap-1 mx-auto cursor-pointer"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onSelectChain(c.id)
-                      }}
-                    >
-                      Open Chain →
+            <tbody className="divide-y divide-surface-container-high">
+              {topChains.map(chain => (
+                <tr key={chain.chain_id} className="hover:bg-surface-container-high">
+                  <td className="px-space-md py-space-sm font-bold text-primary">
+                    <button type="button" className="rounded text-left hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-secondary" onClick={() => onSelectChain(chain.chain_id)}>
+                      {chain.chain_id}
                     </button>
                   </td>
+                  <td className="px-space-md py-space-sm">{chain.title}</td>
+                  <td className="px-space-md py-space-sm text-right">{chain.member_count}</td>
+                  <td className="px-space-md py-space-sm text-on-surface-variant">Audit on demand</td>
                 </tr>
               ))}
+              {topChains.length === 0 && <tr><td colSpan={4} className="px-space-md py-space-lg text-center text-on-surface-variant">No chains returned.</td></tr>}
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
     </div>
   )
 }

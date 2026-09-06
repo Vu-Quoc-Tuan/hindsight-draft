@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest'
 import { ChainsExplorerView } from './views/ChainsExplorerView'
 import { MultiChainTimelineView } from './views/MultiChainTimelineView'
 import { CompareChainsView } from './views/CompareChainsView'
+import { SnapshotOverviewView } from './views/SnapshotOverviewView'
+import { NocHeader } from './components/NocHeader'
 import type { ChainList } from './types'
 
 const chainList: ChainList = {
@@ -21,6 +23,46 @@ const chainList: ChainList = {
 }
 
 describe('snapshot views use only factual chain summary fields', () => {
+  it('renders overview metrics only from the returned chain list', () => {
+    const html = renderToStaticMarkup(
+      <SnapshotOverviewView chainList={chainList} onSelectChain={() => {}} onNavigate={() => {}} />,
+    )
+
+    expect(html).toContain('S-REAL@v2')
+    expect(html).toContain('Observed chain')
+    expect(html).toContain('Audit on demand')
+    expect(html).not.toContain('8,714')
+    expect(html).not.toContain('Structural Findings')
+    expect(html).not.toContain('Alternative Partitions')
+  })
+
+  it('renders an unavailable overview instead of a demo snapshot', () => {
+    const html = renderToStaticMarkup(
+      <SnapshotOverviewView chainList={null} onSelectChain={() => {}} onNavigate={() => {}} />,
+    )
+
+    expect(html).toContain('Snapshot unavailable')
+    expect(html).not.toContain('C2214039')
+    expect(html).not.toContain('8,714')
+  })
+
+  it('keeps topology profile selection separate from backend snapshot identity', () => {
+    const html = renderToStaticMarkup(
+      <NocHeader
+        datasetName="IT_SERVICES"
+        snapshotId="S-REAL@v2"
+        currentView="snapshot-overview"
+        onNavigate={() => {}}
+        onOpenSettings={() => {}}
+      />,
+    )
+
+    expect(html).toContain('S-REAL@v2')
+    expect(html).toContain('IT Services')
+    expect(html).not.toContain('real_alarm_20260801')
+    expect(html).not.toContain('Gần nhất từ PostgreSQL')
+  })
+
   it('does not fabricate conductance, weak members or severity', () => {
     const html = renderToStaticMarkup(
       <ChainsExplorerView chainList={chainList} onSelectChain={() => {}} onCompareChains={() => {}} />,
