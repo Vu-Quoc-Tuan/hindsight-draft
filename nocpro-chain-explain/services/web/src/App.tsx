@@ -215,6 +215,22 @@ export default function App() {
     setCurrentTab('compare-chains')
   }
 
+  async function runDeepDive() {
+    if (!chainId) return
+    setError(null)
+    try {
+      const submission = await api.submitDeepDive(chainId)
+      const submittedJob = await api.job(submission.job_id)
+      if (submittedJob.chain_id !== chainId) {
+        setError('DEEP_DIVE_CONTEXT_MISMATCH')
+        return
+      }
+      setJob(submittedJob)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Deep Dive submission failed')
+    }
+  }
+
   // Assistant navigation handler
   function handleAssistantNavigation(action: AssistantAction) {
     if (!chainList || action.target.snapshot_id !== chainList.snapshot_id || action.target.snapshot_version !== chainList.snapshot_version) {
@@ -366,6 +382,7 @@ export default function App() {
         {/* CHAIN LEVEL VIEWS */}
         {analysis && (currentTab === 'chain-overview' || currentTab === 'why' || currentTab === 'members') && (
           <ChainDetailView
+            key={analysis.chain_id}
             analysis={analysis}
             activeSubTab={
               currentTab === 'chain-overview'
@@ -386,7 +403,8 @@ export default function App() {
         {analysis && currentTab === 'structure' && (
           <AuditStructureView
             analysis={analysis}
-            onOpenValidationModal={handleOpenValidationModal}
+            job={job}
+            onRunDeepDive={() => void runDeepDive()}
           />
         )}
 

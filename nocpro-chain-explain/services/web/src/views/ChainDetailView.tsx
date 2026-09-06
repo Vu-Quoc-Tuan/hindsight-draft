@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react'
-import type { ChainAnalysis, Member } from '../types'
-import { EvidenceAttribution } from '../EvidenceAttribution'
+import { useEffect, useState, useMemo } from 'react'
+import { api } from '../api'
+import type { ChainAnalysis, Member, PairWhy } from '../types'
 import { ChainTree } from '../ChainTree'
 import { InfoTip } from '../components/InfoTip'
 
@@ -27,15 +27,64 @@ export function ChainDetailView({
   const [searchMember, setSearchMember] = useState('')
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([])
   const [inspectedMember, setInspectedMember] = useState<Member | null>(null)
+  const [pairWhyLoad, setPairWhyLoad] = useState<{
+    requestKey: string
+    payload: PairWhy | null
+    reason: string | null
+  } | null>(null)
 
   const members = useMemo(() => analysis.members ?? [], [analysis.members])
+
+  const pairRequestKey = activeSubTab === 'WHY' && whyScope === 'Pair' && selectedMemberIds.length === 2
+    ? `${analysis.chain_id}\u0000${selectedMemberIds[0]}\u0000${selectedMemberIds[1]}`
+    : null
+  const pairWhy = pairWhyLoad?.requestKey === pairRequestKey ? pairWhyLoad.payload : null
+  const pairWhyReason = pairWhyLoad?.requestKey === pairRequestKey ? pairWhyLoad.reason : null
+  const pairWhyState = !pairRequestKey
+    ? 'IDLE'
+    : pairWhy
+      ? 'AVAILABLE'
+      : pairWhyReason
+        ? 'UNAVAILABLE'
+        : 'LOADING'
+
+  useEffect(() => {
+    if (!pairRequestKey) return
+    const [alarmA, alarmB] = selectedMemberIds
+    if (alarmA === alarmB) return
+    const controller = new AbortController()
+    api.pairWhy(analysis.chain_id, alarmA, alarmB, controller.signal).then(payload => {
+      if (controller.signal.aborted) return
+      if (payload.chain_id !== analysis.chain_id || payload.alarm_id_a !== alarmA || payload.alarm_id_b !== alarmB) {
+        setPairWhyLoad({ requestKey: pairRequestKey, payload: null, reason: 'PAIR_WHY_CONTEXT_MISMATCH' })
+        return
+      }
+      setPairWhyLoad({ requestKey: pairRequestKey, payload, reason: null })
+    }).catch((cause: unknown) => {
+      if (!controller.signal.aborted) {
+        setPairWhyLoad({
+          requestKey: pairRequestKey,
+          payload: null,
+          reason: cause instanceof Error ? cause.message : 'PAIR_WHY_UNAVAILABLE',
+        })
+      }
+    })
+    return () => controller.abort()
+  }, [analysis.chain_id, pairRequestKey, selectedMemberIds])
 
   // Metrics calculation
   const totalMembers = members.length
   const coreCount = members.filter(m => m.role?.toUpperCase().includes('CORE') || m.role?.toUpperCase().includes('ROOT')).length
   const weakCount = members.filter(m => m.role?.toUpperCase().includes('WEAK') || m.role?.toUpperCase().includes('LEAF')).length
   const connectorCount = members.filter(m => m.role?.toUpperCase().includes('CONNECT')).length
+  const spofCount = members.filter(m => m.redundancy_role?.toUpperCase().includes('SPOF')).length
   const peripheralCount = Math.max(0, totalMembers - coreCount - weakCount - connectorCount)
+  const observedTimes = members
+    .map(member => member.canonical_start_time)
+    .filter((value): value is string => value !== null)
+    .sort((left, right) => Date.parse(left) - Date.parse(right))
+  const observedStart = observedTimes[0] ?? null
+  const observedEnd = observedTimes.at(-1) ?? null
 
   const filteredMembers = useMemo(() => {
     return members.filter(m => {
@@ -57,7 +106,7 @@ export function ChainDetailView({
 
   const toggleSelectMember = (alarmId: string) => {
     setSelectedMemberIds(prev =>
-      prev.includes(alarmId) ? prev.filter(id => id !== alarmId) : [...prev, alarmId]
+      prev.includes(alarmId) ? prev.filter(id => id !== alarmId) : [...prev.slice(-1), alarmId]
     )
   }
 
@@ -97,30 +146,26 @@ export function ChainDetailView({
             </div>
           </div>
 
-          {/* Right Col: Dynamics & Temporal Burst Density */}
+          {/* Right Col: persisted member facts */}
           <div className="xl:col-span-7 bg-surface-container-low rounded p-space-md flex flex-col gap-space-md shadow-md">
             <div className="flex items-center justify-between h-space-panel-header-h border-b border-surface-container-highest pb-space-xs">
               <div className="flex items-center gap-space-xs">
                 <span className="material-symbols-outlined text-secondary text-[18px]">query_stats</span>
                 <span className="font-headline-md text-headline-md text-on-surface font-semibold">
-                  Chain Dynamics & Roles
+                  Chain members & roles
                 </span>
               </div>
-              <div className="flex items-center gap-space-xs bg-surface-container px-space-xs py-space-2xs rounded">
-                <span className="font-label-caps text-label-caps uppercase text-on-surface-variant">BURST RATE:</span>
-                <span className="font-code-sm text-code-sm text-secondary font-bold">93.1% IN 22s</span>
-              </div>
+              <span className="font-code-sm text-code-sm text-on-surface-variant">{analysis.statistics_mode}</span>
             </div>
 
-            {/* 4 Role KPI Badges */}
-            <div className="grid grid-cols-4 gap-space-xs">
+            <div className="grid grid-cols-2 gap-space-xs sm:grid-cols-4">
               <div className="bg-surface-container p-space-sm rounded flex flex-col items-start border-t-2 border-primary">
                 <span className="font-label-caps text-label-caps uppercase text-primary font-bold">CORE</span>
                 <div className="flex items-baseline gap-space-xs mt-space-2xs">
                   <span className="font-headline-lg text-headline-lg font-bold text-on-surface">{coreCount}</span>
                   <span className="font-code-sm text-code-sm text-on-surface-variant">/{totalMembers}</span>
                 </div>
-                <span className="font-body-sm text-body-sm text-on-surface-variant mt-space-2xs">Root incident base</span>
+                <span className="font-body-sm text-body-sm text-on-surface-variant mt-space-2xs">Assigned member role</span>
               </div>
               <div className="bg-surface-container p-space-sm rounded flex flex-col items-start border-t-2 border-secondary">
                 <span className="font-label-caps text-label-caps uppercase text-secondary font-bold">PERIPHERAL</span>
@@ -128,7 +173,7 @@ export function ChainDetailView({
                   <span className="font-headline-lg text-headline-lg font-bold text-on-surface">{peripheralCount}</span>
                   <span className="font-code-sm text-code-sm text-on-surface-variant">/{totalMembers}</span>
                 </div>
-                <span className="font-body-sm text-body-sm text-on-surface-variant mt-space-2xs">Cascading propagation</span>
+                <span className="font-body-sm text-body-sm text-on-surface-variant mt-space-2xs">Assigned member role</span>
               </div>
               <div className="bg-surface-container p-space-sm rounded flex flex-col items-start border-t-2 border-tertiary">
                 <span className="font-label-caps text-label-caps uppercase text-tertiary font-bold">WEAK</span>
@@ -136,7 +181,7 @@ export function ChainDetailView({
                   <span className="font-headline-lg text-headline-lg font-bold text-tertiary">{weakCount}</span>
                   <span className="font-code-sm text-code-sm text-on-surface-variant">/{totalMembers}</span>
                 </div>
-                <span className="font-body-sm text-body-sm text-tertiary mt-space-2xs">Low cohesion link</span>
+                <span className="font-body-sm text-body-sm text-tertiary mt-space-2xs">Assigned member role</span>
               </div>
               <div className="bg-surface-container p-space-sm rounded flex flex-col items-start border-t-2 border-surface-variant">
                 <span className="font-label-caps text-label-caps uppercase text-on-surface-variant font-bold">CONNECTORS</span>
@@ -144,67 +189,24 @@ export function ChainDetailView({
                   <span className="font-headline-lg text-headline-lg font-bold text-on-surface-variant">{connectorCount}</span>
                   <span className="font-code-sm text-code-sm text-on-surface-variant">/{totalMembers}</span>
                 </div>
-                <span className="font-body-sm text-body-sm text-on-surface-variant mt-space-2xs">Cross-rack bridge</span>
+                <span className="font-body-sm text-body-sm text-on-surface-variant mt-space-2xs">Assigned member role</span>
               </div>
             </div>
 
-            {/* Temporal Burst Density SVG Graph */}
-            <div className="bg-surface-container rounded p-space-md flex flex-col gap-space-sm">
-              <div className="flex items-center justify-between">
-                <span className="font-label-caps text-label-caps uppercase text-on-surface-variant font-bold">
-                  TEMPORAL BURST DENSITY GRAPH
-                </span>
-                <span className="font-code-sm text-code-sm text-secondary">
-                  Peak: 14 alarms/sec @ T+2.4s
-                </span>
-              </div>
-              <div className="h-32 w-full bg-surface-container-lowest rounded p-space-xs flex flex-col justify-end">
-                <svg className="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 400 90">
-                  <defs>
-                    <linearGradient id="detailChartGrad" x1="0%" x2="0%" y1="0%" y2="100%">
-                      <stop offset="0%" stopColor="#ff5451" stopOpacity="0.35" />
-                      <stop offset="100%" stopColor="#00a6e0" stopOpacity="0.0" />
-                    </linearGradient>
-                  </defs>
-                  <path
-                    d="M0,85 L20,85 L35,80 L50,40 L65,10 L80,25 L95,20 L120,45 L150,60 L180,68 L220,74 L280,82 L340,84 L400,85 L400,90 L0,90 Z"
-                    fill="url(#detailChartGrad)"
-                  />
-                  <path
-                    d="M0,85 L20,85 L35,80 L50,40 L65,10 L80,25 L95,20 L120,45 L150,60 L180,68 L220,74 L280,82 L340,84 L400,85"
-                    fill="none"
-                    stroke="#7bd0ff"
-                    strokeWidth="2"
-                  />
-                  <circle cx="65" cy="10" fill="#ff5451" r="4" />
-                  <line stroke="#ff5451" strokeDasharray="2,2" strokeWidth="1" x1="65" x2="65" y1="10" y2="90" />
-                </svg>
-              </div>
-              <div className="flex items-center justify-between font-code-sm text-code-sm text-on-surface-variant px-space-xs">
-                <span>T+0.0s (10:14:00)</span>
-                <span className="text-secondary font-bold">54 / 58 alarms in primary 22s window</span>
-                <span>T+22.4s (10:14:22.4)</span>
-              </div>
+            <div className="rounded bg-surface-container p-space-md">
+              <p className="font-label-caps text-label-caps uppercase text-on-surface-variant">Observed timestamp range</p>
+              <p className="mt-space-xs font-code-sm text-code-sm text-on-surface">
+                {observedStart && observedEnd ? `${observedStart} → ${observedEnd}` : 'UNAVAILABLE'}
+              </p>
             </div>
 
-            {/* Conductance & Cut Info Banner */}
-            <div className="p-space-md bg-surface-container rounded flex items-center justify-between">
-              <div className="flex items-center gap-space-sm">
-                <span className="material-symbols-outlined text-primary text-[24px]">shield_with_heart</span>
-                <div className="flex flex-col">
-                  <span className="font-label-caps text-label-caps uppercase text-on-surface-variant">
-                    Conductance Cut Health
-                  </span>
-                  <span className="font-code-md text-code-md text-on-surface font-bold">
-                    Φ = {((analysis as any).conductance ?? 0.12).toFixed(2)} (Bottleneck Detected)
-                  </span>
-                </div>
-              </div>
+            <div className="p-space-md bg-surface-container rounded flex flex-wrap items-center justify-between gap-space-sm">
+              <p className="text-on-surface-variant">Structural conductance is computed only by an explicit Deep Dive.</p>
               <button
                 onClick={() => onSubTabChange('MEMBERS')}
                 className="px-space-md py-space-xs bg-surface-container-high hover:bg-surface-bright text-secondary font-code-sm text-code-sm font-semibold rounded flex items-center gap-space-xs transition-colors"
               >
-                Inspect Weak Members ({weakCount})
+                Inspect members
               </button>
             </div>
           </div>
@@ -232,12 +234,12 @@ export function ChainDetailView({
                 <InfoTip
                   text={
                     whyScope === 'Chain'
-                      ? 'Đánh giá liên kết toàn chuỗi qua 4 kênh bằng chứng độc lập: Graph Support, Directed Temporal Delay, Topology Mapping, và Historical Co-occurrence.'
+                      ? 'Chain-level summaries use only the evidence channels available in the current analysis artifact.'
                       : whyScope === 'Member'
-                      ? 'Vai trò thành viên cá thể, độ phù hợp cohesion fit và biên phân tách đối thủ giữa các cụm sự cố lân cận.'
+                      ? 'Member role, availability and support are read directly from the current chain analysis.'
                       : whyScope === 'Pair'
-                      ? 'Trọng số tương quan cạnh giữa cặp cảnh báo: trễ thời gian A → B, mức độ liên kết thiết bị và luồng lan truyền.'
-                      : 'Gom nhóm theo khung máy, card và giao thức đường truyền. Cô lập bán kính ảnh hưởng đa card với tuyến truyền dẫn quá cảnh.'
+                      ? 'The server evaluates the selected pair lazily and preserves unavailable, neutral and support states.'
+                      : 'Group facts are shown only when a compatible grouped-evidence artifact exists.'
                   }
                 />
               </div>
@@ -277,88 +279,96 @@ export function ChainDetailView({
             </div>
           </div>
 
-          {/* Evidence Attribution & Channel Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-space-md">
-            <div className="lg:col-span-8 flex flex-col gap-space-md">
-              {/* Evidence Coverage Attribution Embedding */}
-              <EvidenceAttribution
-                result={(analysis as any).evidence_coverage_attribution}
-                evaluation={(analysis as any).attribution_deletion_evaluation}
-              />
-
-              {/* 4 Multi-Evidence Channels Matrix - Compact with ? InfoTip */}
-              <div className="bg-surface-container rounded-lg p-space-md shadow-sm">
-                <span className="font-label-caps text-label-caps uppercase text-on-surface-variant font-bold block mb-space-sm">
-                  Evidence Channels Grounding Ledger
-                </span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-space-sm font-code-sm text-code-sm">
-                  <div className="p-space-sm bg-surface-container-low rounded flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-secondary"></span>
-                      <span className="text-on-surface font-semibold">1. Pattern Memory</span>
-                      <InfoTip text="Historical co-occurrence pattern matched with 94.2% confidence against cluster archive." />
-                    </div>
-                    <span className="text-secondary font-bold font-mono">READY (0.84)</span>
+            <section className="lg:col-span-8 bg-surface-container rounded-lg p-space-md shadow-sm" aria-label="Pair WHY evidence">
+              <h3 className="font-label-caps text-label-caps uppercase text-on-surface-variant font-bold">
+                Evidence grounding ledger
+              </h3>
+              {whyScope !== 'Pair' ? (
+                <p className="mt-space-sm text-on-surface-variant">
+                  Pair-level evidence is loaded only when Pair scope is selected. Chain and member facts remain available in their dedicated views.
+                </p>
+              ) : (
+                <>
+                  <div className="mt-space-sm grid grid-cols-1 gap-space-sm sm:grid-cols-2">
+                    {[0, 1].map(index => (
+                      <label key={index} className="flex flex-col gap-space-2xs font-code-sm text-code-sm text-on-surface-variant">
+                        Endpoint {index === 0 ? 'A' : 'B'}
+                        <select
+                          aria-label={`Pair endpoint ${index === 0 ? 'A' : 'B'}`}
+                          value={selectedMemberIds[index] ?? ''}
+                          onChange={event => {
+                            const next = [...selectedMemberIds]
+                            next[index] = event.target.value
+                            setSelectedMemberIds(next.filter(Boolean).slice(0, 2))
+                          }}
+                          className="rounded bg-surface-container-low px-space-sm py-space-xs text-on-surface"
+                        >
+                          <option value="">Select an alarm</option>
+                          {members.map(member => (
+                            <option
+                              key={member.alarm_id}
+                              value={member.alarm_id}
+                              disabled={selectedMemberIds[1 - index] === member.alarm_id}
+                            >
+                              {member.alarm_id} · {member.alarm_name ?? 'unnamed alarm'}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ))}
                   </div>
+                  {pairWhyState === 'IDLE' && (
+                    <p className="mt-space-md text-on-surface-variant">Select two distinct alarms to query Pair WHY.</p>
+                  )}
+                  {pairWhyState === 'LOADING' && (
+                    <p className="mt-space-md text-on-surface-variant" role="status">Loading exact pair evidence…</p>
+                  )}
+                  {pairWhyState === 'UNAVAILABLE' && (
+                    <p className="mt-space-md text-error" role="alert">UNAVAILABLE · {pairWhyReason}</p>
+                  )}
+                  {pairWhyState === 'AVAILABLE' && pairWhy && (
+                    <div className="mt-space-md flex flex-col gap-space-sm">
+                      <div className="rounded bg-surface-container-low p-space-sm font-code-sm text-code-sm">
+                        <strong>{pairWhy.alarm_id_a} ↔ {pairWhy.alarm_id_b}</strong>
+                        <span className="ml-space-sm text-on-surface-variant">
+                          System fact: {pairWhy.system_fact.status}
+                        </span>
+                      </div>
+                      {pairWhy.evidence.map((item, index) => (
+                        <article key={`${item.channel_family}-${item.derivation_tag}-${index}`} className="rounded border border-surface-container-highest bg-surface-container-low p-space-sm">
+                          <div className="flex flex-wrap items-center justify-between gap-space-xs">
+                            <strong>{item.channel_family}</strong>
+                            <span className={item.state === 'SUPPORT' ? 'text-secondary' : 'text-on-surface-variant'}>{item.state}</span>
+                          </div>
+                          <dl className="mt-space-xs grid grid-cols-2 gap-space-xs font-code-sm text-code-sm">
+                            <div><dt className="text-on-surface-variant">score</dt><dd>{item.score === null ? 'N/A' : item.score.toFixed(4)}</dd></div>
+                            <div><dt className="text-on-surface-variant">threshold</dt><dd>{item.threshold === null ? 'N/A' : item.threshold.toFixed(4)}</dd></div>
+                            <div><dt className="text-on-surface-variant">group</dt><dd>{item.derivation_tag}</dd></div>
+                            <div><dt className="text-on-surface-variant">provenance</dt><dd>{item.provenance_class}</dd></div>
+                          </dl>
+                          {item.detail && <p className="mt-space-xs text-on-surface-variant">{item.detail}</p>}
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </section>
 
-                  <div className="p-space-sm bg-surface-container-low rounded flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-secondary"></span>
-                      <span className="text-on-surface font-semibold">2. Temporal Delay (T_delay)</span>
-                      <InfoTip text="Learned directed delay A → B confirms root trigger at T0 + 1.2s propagation." />
-                    </div>
-                    <span className="text-secondary font-bold font-mono">AVAILABLE (0.91)</span>
-                  </div>
-
-                  <div className="p-space-sm bg-surface-container-low rounded flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-tertiary"></span>
-                      <span className="text-on-surface font-semibold">3. Topology Mapping</span>
-                      <InfoTip text="NetBox IP layer matched 41/58 nodes; DWDM optical transponders lack live port telemetry." />
-                    </div>
-                    <span className="text-tertiary font-bold font-mono">PARTIAL (0.64)</span>
-                  </div>
-
-                  <div className="p-space-sm bg-surface-container-low rounded flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-secondary"></span>
-                      <span className="text-on-surface font-semibold">4. Counterfactual Policy</span>
-                      <InfoTip text="Pareto frontier computed; partition candidate generated for weak cut boundary." />
-                    </div>
-                    <span className="text-secondary font-bold font-mono">ENGAGED (5 Ops)</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Right Side: Scope Inspector & Pair Focus */}
-            <div className="lg:col-span-4 flex flex-col gap-space-md">
-              <div className="bg-surface-container rounded-lg p-space-md shadow-sm flex flex-col gap-space-sm">
-                <span className="font-label-caps text-label-caps uppercase text-on-surface-variant font-bold">
-                  Active Member Focus
-                </span>
-                {inspectedMember ? (
-                  <div className="p-space-sm bg-surface-container-low rounded flex flex-col gap-space-xs font-code-sm text-code-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-secondary">{inspectedMember.alarm_id}</span>
-                      <span className="font-label-caps text-label-caps uppercase px-space-xs py-0.5 rounded bg-surface-container text-primary font-bold">
-                        {inspectedMember.role ?? 'CORE'}
-                      </span>
-                    </div>
-                    <span className="text-on-surface">{inspectedMember.alarm_name ?? inspectedMember.alarm_id}</span>
-                    <span className="text-on-surface-variant">{inspectedMember.device_code ?? inspectedMember.node_reference ?? 'DEHL01'}</span>
-                    <div className="mt-space-xs pt-space-xs border-t border-surface-container-highest flex items-center justify-between">
-                      <span className="text-on-surface-variant">Support:</span>
-                      <span className="text-secondary font-bold">{(inspectedMember.membership_support ?? 0.88).toFixed(2)}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="font-body-sm text-body-sm text-on-surface-variant">
-                    Click any alarm in the Hierarchy tree or Member Diagnostics table to isolate its causality proof here.
-                  </p>
-                )}
-              </div>
-            </div>
+            <section className="lg:col-span-4 bg-surface-container rounded-lg p-space-md shadow-sm" aria-label="Active member focus">
+              <h3 className="font-label-caps text-label-caps uppercase text-on-surface-variant font-bold">Active member focus</h3>
+              {inspectedMember ? (
+                <dl className="mt-space-sm rounded bg-surface-container-low p-space-sm font-code-sm text-code-sm">
+                  <div><dt className="text-on-surface-variant">alarm</dt><dd>{inspectedMember.alarm_id}</dd></div>
+                  <div><dt className="text-on-surface-variant">role</dt><dd>{inspectedMember.role || 'UNAVAILABLE'}</dd></div>
+                  <div><dt className="text-on-surface-variant">resource</dt><dd>{inspectedMember.device_code ?? inspectedMember.node_reference ?? 'N/A'}</dd></div>
+                  <div><dt className="text-on-surface-variant">membership support</dt><dd>{inspectedMember.membership_support === null ? 'N/A' : inspectedMember.membership_support.toFixed(2)}</dd></div>
+                </dl>
+              ) : (
+                <p className="mt-space-sm text-on-surface-variant">Inspect a member to view its persisted analysis facts.</p>
+              )}
+            </section>
           </div>
         </div>
       )}
@@ -407,9 +417,9 @@ export function ChainDetailView({
             </div>
             <div className="p-space-sm rounded bg-surface-container flex flex-col justify-between shadow-sm">
               <span className="font-label-caps text-label-caps uppercase text-primary font-bold">Redundancy</span>
-              <span className="font-headline-md text-headline-md font-bold text-primary mt-1">1 SPOF</span>
+              <span className="font-headline-md text-headline-md font-bold text-primary mt-1">{spofCount}</span>
               <div className="w-full h-1 bg-surface-container-highest rounded-full mt-2">
-                <div className="h-full bg-primary w-[25%]"></div>
+                <div className="h-full bg-primary" style={{ width: `${Math.round((spofCount / Math.max(1, totalMembers)) * 100)}%` }}></div>
               </div>
             </div>
           </div>
@@ -525,15 +535,15 @@ export function ChainDetailView({
                             )}
                           </div>
                           <span className="font-body-sm text-body-sm text-on-surface truncate max-w-xs">
-                            {m.alarm_name ?? 'System Alarm'}
+                            {m.alarm_name ?? 'N/A'}
                           </span>
                         </div>
                       </td>
                       <td className="px-space-md py-space-xs text-on-surface-variant font-mono">
-                        {m.canonical_start_time ?? '10:14:02.108'}
+                        {m.canonical_start_time ?? 'N/A'}
                       </td>
                       <td className="px-space-md py-space-xs text-on-surface font-mono">
-                        {m.device_code ?? m.node_reference ?? 'DEHL01-CR01'}
+                        {m.device_code ?? m.node_reference ?? 'N/A'}
                       </td>
                       <td className="px-space-md py-space-xs">
                         <span
@@ -541,17 +551,17 @@ export function ChainDetailView({
                             isWeak ? 'bg-error-container text-error' : 'bg-surface-container-high text-secondary'
                           }`}
                         >
-                          {m.role ?? 'CORE'}
+                          {m.role || 'UNAVAILABLE'}
                         </span>
                       </td>
                       <td className="px-space-md py-space-xs">
                         <span className="font-label-caps text-label-caps px-space-xs py-0.5 rounded bg-surface-container text-on-surface-variant uppercase">
-                          {m.redundancy_role ?? 'LEAF'}
+                          {m.redundancy_role ?? 'N/A'}
                         </span>
                       </td>
                       <td className="px-space-md py-space-xs text-right">
                         <span className={`font-bold ${isWeak ? 'text-error' : 'text-secondary'}`}>
-                          {(m.membership_support ?? (isWeak ? 0.28 : 0.88)).toFixed(2)}
+                          {m.membership_support === null ? 'N/A' : m.membership_support.toFixed(2)}
                         </span>
                       </td>
                       <td className="px-space-md py-space-xs text-center">

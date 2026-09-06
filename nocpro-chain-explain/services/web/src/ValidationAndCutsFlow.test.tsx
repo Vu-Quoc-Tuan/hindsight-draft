@@ -91,14 +91,15 @@ describe('Validation and Cut Flows Differentiation', () => {
     expect(html).toContain('Conductance Φ: <strong class="text-primary">0.038</strong>')
   })
 
-  it('AuditStructureView subheader renders Inspect Candidate Cuts navigation button instead of blind modal', () => {
+  it('AuditStructureView is unavailable until an explicit Deep Dive result exists', () => {
     const html = renderToStaticMarkup(
       <AuditStructureView analysis={mockAnalysis} />
     )
 
-    expect(html).toContain('Inspect Candidate Cuts (3 Options)')
-    // Does NOT render Review Partition Sign-off blind modal trigger button anymore
+    expect(html).toContain('Structural Audit unavailable')
+    expect(html).toContain('Run Deep Dive')
     expect(html).not.toContain('Review Partition Sign-off')
+    expect(html).not.toContain('0.038')
   })
 
   it('renders HindsightLogo with magnifying glass and alarm chain vector graphics', async () => {
