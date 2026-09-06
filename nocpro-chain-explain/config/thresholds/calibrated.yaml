@@ -155,7 +155,7 @@ similar_chains:
     value: 5
     source: DOCUMENTED_DEFAULT
 notes:
-- Calibrated at 2026-09-06T06:11:23.950091+00:00 from PostgreSQL system of record.
+- Calibrated at 2026-09-06T06:33:31.922824+00:00 from PostgreSQL system of record.
 - Evaluated 1 snapshots, 1 chains, 2 alarms.
 - Calibrated DATA_DRIVEN values preserve their empirical distribution evidence.
 counterfactual:

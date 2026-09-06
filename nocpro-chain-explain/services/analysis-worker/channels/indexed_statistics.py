@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import bisect
 from collections import Counter
+from datetime import datetime
 
 from libs.contracts import IngestedAlarm, IngestedPackage
 from libs.provenance import ProvenanceClass, ProvenanceSubtype
@@ -71,12 +73,140 @@ def _entry(
     )
 
 
+def _get_alarm_timestamp(alarm: IngestedAlarm) -> float | None:
+    time_str = (
+        getattr(alarm, "canonical_start_time", None)
+        or alarm.raw.get("canonical_start_time")
+        or alarm.raw.get("cah.start_time")
+    )
+    if not time_str:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(time_str).replace("Z", "+00:00"))
+        return dt.timestamp()
+    except Exception:
+        return None
+
+
+def _add_temporal_delay_statistics(
+    alarms: list[IngestedAlarm],
+    positions: dict[str, int],
+    statistics: IndexedChainStatistics,
+    *,
+    delay_window_seconds: float | None,
+) -> None:
+    delay_channel = "T_delay"
+    delay_tag = "temporal_delay"
+    statistics.channel_meta[delay_channel] = (
+        delay_tag,
+        ProvenanceClass.POST_HOC,
+        None,
+    )
+    if delay_window_seconds is None:
+        for alarm in alarms:
+            statistics.fits[(alarm.alarm_id, delay_channel)] = ChannelFitFromIndex(
+                channel_id=delay_channel,
+                derivation_tag=delay_tag,
+                provenance_class=ProvenanceClass.POST_HOC,
+                fit=None,
+                domain_size=0,
+                supporting=0,
+                unavailable_reason=NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH,
+            )
+            statistics.support_peer_bitmaps[(alarm.alarm_id, delay_channel)] = 0
+        return
+
+    alarm_ts: list[tuple[str, float]] = []
+    unparseable: set[str] = set()
+    for alarm in alarms:
+        ts = _get_alarm_timestamp(alarm)
+        if ts is not None:
+            alarm_ts.append((alarm.alarm_id, ts))
+        else:
+            unparseable.add(alarm.alarm_id)
+
+    valid_count = len(alarm_ts)
+    domain_size = valid_count - 1 if valid_count > 1 else 0
+
+    for alarm_id in unparseable:
+        statistics.fits[(alarm_id, delay_channel)] = ChannelFitFromIndex(
+            channel_id=delay_channel,
+            derivation_tag=delay_tag,
+            provenance_class=ProvenanceClass.POST_HOC,
+            fit=None,
+            domain_size=0,
+            supporting=0,
+            unavailable_reason="UNPARSEABLE_TIMESTAMP",
+        )
+        statistics.support_peer_bitmaps[(alarm_id, delay_channel)] = 0
+
+    if valid_count <= 1:
+        for alarm_id, _ in alarm_ts:
+            statistics.fits[(alarm_id, delay_channel)] = ChannelFitFromIndex(
+                channel_id=delay_channel,
+                derivation_tag=delay_tag,
+                provenance_class=ProvenanceClass.POST_HOC,
+                fit=None,
+                domain_size=0,
+                supporting=0,
+            )
+            statistics.support_peer_bitmaps[(alarm_id, delay_channel)] = 0
+        return
+
+    # Small chains (N <= 200): direct pairwise comparison O(N^2)
+    # Large chains (N > 200): sorted sliding window with bisect O(N log N)
+    if valid_count <= 200:
+        for i, (alarm_id_i, ts_i) in enumerate(alarm_ts):
+            peer_bitmap = 0
+            supporting = 0
+            for j, (alarm_id_j, ts_j) in enumerate(alarm_ts):
+                if i == j:
+                    continue
+                if abs(ts_j - ts_i) <= delay_window_seconds:
+                    supporting += 1
+                    peer_bitmap |= (1 << positions[alarm_id_j])
+
+            statistics.fits[(alarm_id_i, delay_channel)] = _entry(
+                channel_id=delay_channel,
+                derivation_tag=delay_tag,
+                provenance_class=ProvenanceClass.POST_HOC,
+                domain_size=domain_size,
+                supporting=supporting,
+            )
+            statistics.support_peer_bitmaps[(alarm_id_i, delay_channel)] = peer_bitmap
+    else:
+        sorted_items = sorted(alarm_ts, key=lambda item: item[1])
+        timestamps = [item[1] for item in sorted_items]
+
+        for alarm_id_i, ts_i in sorted_items:
+            left_idx = bisect.bisect_left(timestamps, ts_i - delay_window_seconds)
+            right_idx = bisect.bisect_right(timestamps, ts_i + delay_window_seconds)
+
+            peer_bitmap = 0
+            supporting = 0
+            for k in range(left_idx, right_idx):
+                other_id, _ = sorted_items[k]
+                if other_id != alarm_id_i:
+                    supporting += 1
+                    peer_bitmap |= (1 << positions[other_id])
+
+            statistics.fits[(alarm_id_i, delay_channel)] = _entry(
+                channel_id=delay_channel,
+                derivation_tag=delay_tag,
+                provenance_class=ProvenanceClass.POST_HOC,
+                domain_size=domain_size,
+                supporting=supporting,
+            )
+            statistics.support_peer_bitmaps[(alarm_id_i, delay_channel)] = peer_bitmap
+
+
 def build_indexed_statistics(
     package: IngestedPackage,
     chain_id: str,
     *,
     taxonomy: AlarmTaxonomy = EMPTY_TAXONOMY,
     silent_gap_seconds: int = DEFAULT_SILENT_GAP_SECONDS,
+    delay_window_seconds: float | None = None,
     d_max: int = DEFAULT_D_MAX,
     lambda_dep: float = DEFAULT_LAMBDA_DEP,
     common_dependency_threshold: float = DEFAULT_THETA_CD,
@@ -165,22 +295,12 @@ def build_indexed_statistics(
         )
         statistics.support_peer_bitmaps[(alarm.alarm_id, burst_channel)] = peer_bitmap
 
-    statistics.channel_meta["T_delay"] = (
-        "temporal_delay",
-        ProvenanceClass.POST_HOC,
-        None,
+    _add_temporal_delay_statistics(
+        alarms,
+        positions,
+        statistics,
+        delay_window_seconds=delay_window_seconds,
     )
-    for alarm in alarms:
-        statistics.fits[(alarm.alarm_id, "T_delay")] = ChannelFitFromIndex(
-            channel_id="T_delay",
-            derivation_tag="temporal_delay",
-            provenance_class=ProvenanceClass.POST_HOC,
-            fit=None,
-            domain_size=0,
-            supporting=0,
-            unavailable_reason=NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH,
-        )
-        statistics.support_peer_bitmaps[(alarm.alarm_id, "T_delay")] = 0
 
     _add_dep_hop_statistics(
         package,
