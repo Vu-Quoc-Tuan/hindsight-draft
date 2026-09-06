@@ -1,0 +1,156 @@
+{
+  "contract": "isolated-closure-benchmark-v1",
+  "generated_at_utc": "2026-09-05T16:56:06.692831+00:00",
+  "input_provenance": {
+    "snapshot_id": "bench_full",
+    "snapshot_version": "1",
+    "analysis_config_version": "v1",
+    "counterfactual_config_version": "synthetic-counterfactual-v1",
+    "raw_export": {
+      "path": "nocpro-mock/datasets/raw/alarm/alarm_data.csv",
+      "sha256": "c3d1fe5a7f8391142e72aec241f473ab83ee581d0a10cbd1a96ad31e974976c6"
+    },
+    "analysis_config": {
+      "path": "nocpro-chain-explain/config/thresholds/v1.yaml",
+      "sha256": "2e0ee3631cdab9debfbf0e563b5f9e820489a720b52a186581254b7a5bc53f6f"
+    },
+    "counterfactual_config": {
+      "path": "nocpro-chain-explain/config/thresholds/e2e-counterfactual.yaml",
+      "sha256": "97151dfcc2e2991d4a766c722564795bfba484ceb000cea508f9c1584dcc19a8"
+    },
+    "merge_snapshot": {
+      "path": "nocpro-mock/docs/examples/synthetic/counterfactual_merge/snapshot_000.json",
+      "sha256": "a987bc67532489f3d32f2e29ba308aab43962f59172357fa8f700079b8e70a68"
+    },
+    "merge_assertions": {
+      "path": "nocpro-mock/docs/examples/synthetic/counterfactual_merge/expected_assertions.yaml",
+      "sha256": "ee6d6b43d0d3a561fb3789792e8a599e48d491839f435fd81c947be947b634a2"
+    }
+  },
+  "measurements": [
+    {
+      "operation": "evidence_attribution",
+      "scope": "LOCAL_RAW_EXPORT_PERFORMANCE_ONLY",
+      "workload": "raw_chain_6907125_n_1072",
+      "repetitions": 20,
+      "p50_seconds": 0.01324778949992833,
+      "p95_seconds": 0.01340321199995742,
+      "p95_reliable": true,
+      "samples_seconds": [
+        0.013406005999968329,
+        0.013321585000085179,
+        0.01340321199995742,
+        0.013179372999729821,
+        0.01324962599983337,
+        0.013104520000069897,
+        0.01334849699969709,
+        0.013384062000113772,
+        0.01330857900029514,
+        0.01333124000029784,
+        0.013381087000198022,
+        0.013166013000045496,
+        0.013132968999798322,
+        0.013236118999884638,
+        0.013246664999769564,
+        0.013116310999976122,
+        0.013248914000087098,
+        0.013093577999825357,
+        0.013189108000005945,
+        0.013078946999939944
+      ]
+    },
+    {
+      "operation": "attribution_deletion_curve",
+      "scope": "LOCAL_RAW_EXPORT_PERFORMANCE_ONLY",
+      "workload": "raw_chain_6907125_n_1072",
+      "repetitions": 20,
+      "p50_seconds": 0.001594350499999564,
+      "p95_seconds": 0.001608313999895472,
+      "p95_reliable": true,
+      "samples_seconds": [
+        0.001618456999949558,
+        0.001608313999895472,
+        0.0016068620002442913,
+        0.0015960729997459566,
+        0.0015868350001255749,
+        0.0015811030002623738,
+        0.001578301999870746,
+        0.0015956739998728153,
+        0.0016013120002753567,
+        0.0016048379998210294,
+        0.0015930270001263125,
+        0.0015822250002202054,
+        0.0015991290001693415,
+        0.0015882980001151736,
+        0.0015726369997537404,
+        0.0015924570002425753,
+        0.0015904070000942738,
+        0.0015974319999259023,
+        0.0015975019996403717,
+        0.0015711860000919842
+      ]
+    },
+    {
+      "operation": "merge_cross_chain_evidence",
+      "scope": "SYNTHETIC_CORRECTNESS_ONLY",
+      "workload": "synthetic_counterfactual_merge_v1",
+      "repetitions": 20,
+      "p50_seconds": 0.005477629500092007,
+      "p95_seconds": 0.005504633999862563,
+      "p95_reliable": true,
+      "samples_seconds": [
+        0.005490177999945445,
+        0.0055151750002551125,
+        0.005463897000026918,
+        0.005484152999997605,
+        0.005504633999862563,
+        0.005502227999841125,
+        0.005472782000197185,
+        0.005495539000094141,
+        0.005481947000134824,
+        0.0054488359996867075,
+        0.005460726999899634,
+        0.0054913599997235,
+        0.00544814300019425,
+        0.005460734000280354,
+        0.005459831999814924,
+        0.005473312000049191,
+        0.005485640000188141,
+        0.005492425000284129,
+        0.005452423999940947,
+        0.0054529900003217335
+      ]
+    },
+    {
+      "operation": "review_serialization",
+      "scope": "SYNTHETIC_CORRECTNESS_ONLY",
+      "workload": "synthetic_counterfactual_merge_v1",
+      "repetitions": 20,
+      "p50_seconds": 0.00014186900034474093,
+      "p95_seconds": 0.00016521700035809772,
+      "p95_reliable": true,
+      "samples_seconds": [
+        0.000187756000286754,
+        0.00016521700035809772,
+        0.00014496500034510973,
+        0.00014382300014403882,
+        0.0001409030001013889,
+        0.000142047000281309,
+        0.00014508499998555635,
+        0.00014145799968900974,
+        0.00015574899998682668,
+        0.00014169100040817284,
+        0.00014125999996394967,
+        0.00015355799996541464,
+        0.0001412980000168318,
+        0.00014114600026005064,
+        0.00014526999984809663,
+        0.00014205199977368466,
+        0.00013914100009060348,
+        0.00013769399993179832,
+        0.00013875900003768038,
+        0.00013650299979417468
+      ]
+    }
+  ]
+}
