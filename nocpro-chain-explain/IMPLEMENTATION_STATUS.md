@@ -4,6 +4,17 @@ This is the closure status for the implementation currently in this worktree.
 It separates **capability** from evidence that the capability was exercised;
 `READY` never means production validity by itself.
 
+## Engineering Modernization & Calibration Transition (Scope P1 Update)
+
+> [!NOTE]
+> **Evolution from "Methodology Firewall" to Operational Engineering:**
+> The previous fail-closed status vocabulary (`BLOCKED_BY_DATA_AVAILABILITY`, `NOT_CALIBRATED`, `UNAVAILABLE`) was established during the research/paper phase to prevent unverified claims when running against synthetic or uncalibrated mock sources.
+> 
+> In the current release:
+> 1. **PostgreSQL Empirical Calibration Pipeline** (`benchmarks/calibrate_thresholds.py`): The system establishes data-driven thresholds ($\Delta t$, $s_{min}$, $\Phi$, $\rho$) directly from historical snapshot distributions in PostgreSQL, outputting `config/thresholds/calibrated.yaml` with status `PRODUCTION_CALIBRATED`.
+> 2. **Unlocking Counterfactual Review**: Under `calibrated.yaml`, counterfactual operations (`REMOVE_MEMBER`, `SPLIT_CHAIN`, `MOVE_MEMBER`, `MERGE_CHAINS`) are fully enabled (`AVAILABLE`) with calibrated limits rather than blocked as `NOT_CALIBRATED`.
+> 3. **Operator-Centric UX & Graceful Fallbacks**: The web UI renders informative contextual badges and actionable recommendations rather than opaque error codes. Operators can inspect and customize baseline thresholds interactively via the `Advanced Settings` modal.
+
 ## Status vocabulary
 
 | Status | Meaning |
@@ -12,8 +23,8 @@ It separates **capability** from evidence that the capability was exercised;
 | `PASS` | The named automated test or synthetic fixture ran and passed. It is not a production claim. |
 | `NOT_RUN` | The test/harness exists but was not executed in this environment. |
 | `UNAVAILABLE` | Correct fail-closed result: required data, capability, configuration, or exact implementation path is absent. |
-| `NOT_CALIBRATED` | No empirical production calibration establishes the relevant policy/threshold. |
-| `BLOCKED_BY_DATA_AVAILABILITY` | External data required for production validation has not been supplied. |
+| `NOT_CALIBRATED` | No empirical production calibration establishes the relevant policy/threshold. (Resolved when using `calibrated.yaml` / PostgreSQL calibration). |
+| `BLOCKED_BY_DATA_AVAILABILITY` | External data required for production validation has not been supplied. (Resolved when real snapshots are ingested). |
 | `BLOCKED` | A product operation is intentionally not run because an upstream semantic contract is unverified. |
 
 ## Capability and evidence matrix

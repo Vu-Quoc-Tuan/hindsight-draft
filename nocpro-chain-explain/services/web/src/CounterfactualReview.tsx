@@ -224,6 +224,16 @@ function CandidateCard({
   )
 }
 
+const REASON_EXPLANATIONS: Record<string, string> = {
+  MOVE_POLICY_NOT_CALIBRATED: 'Chưa cấu hình chính sách di chuyển thành viên (MOVE) · Sử dụng Cài đặt để hiệu chuẩn',
+  MERGE_POLICY_NOT_CALIBRATED: 'Chưa cấu hình chính sách gộp chuỗi (MERGE) · Sử dụng Cài đặt để hiệu chuẩn',
+  STRUCTURAL_AUDIT_UNAVAILABLE: 'Chưa có kết quả phân tích đồ thị cấu trúc (Audit Graph) cho chuỗi này',
+  NO_NONTRIVIAL_SPLIT: 'Chuỗi không có điểm cắt tự nhiên đạt ngưỡng phân tách',
+  COUNTERFACTUAL_POLICY_NOT_CALIBRATED: 'Tập tham số hiện tại chưa được đánh dấu hiệu chuẩn sản xuất (PRODUCTION_CALIBRATED)',
+  NO_CLEAR_ALTERNATIVE: 'Không có phương án phân hoạch nào vượt trội rõ rệt trên biên Pareto',
+  STRUCTURAL_AUDIT_SKIPPED_SMALL_CHAIN: 'Chuỗi nhỏ (<10 cảnh báo) không áp dụng phân hoạch cấu trúc',
+}
+
 function OperationSection({
   operation,
   recommendationIds,
@@ -252,7 +262,14 @@ function OperationSection({
         <div><dt>rejected</dt><dd>{operation.rejected_candidate_count}</dd></div>
         <div><dt>limit</dt><dd>{operation.candidate_limit ?? '⊥'}</dd></div>
       </dl>
-      {operation.reason && <p className="review-reason">{operation.reason}</p>}
+      {operation.reason && (
+        <p className="review-reason" title={REASON_EXPLANATIONS[operation.reason] ?? operation.reason}>
+          <span className="review-reason-code">{operation.reason}</span>
+          {REASON_EXPLANATIONS[operation.reason] ? (
+            <span className="review-reason-desc"> — {REASON_EXPLANATIONS[operation.reason]}</span>
+          ) : null}
+        </p>
+      )}
       <div className="review-candidate-list">
         {operation.candidates.map((candidate) => (
           <CandidateCard
@@ -398,7 +415,36 @@ export function CounterfactualReview({
         <div><span className={`review-state review-state--${result.recommendation_status.toLowerCase()}`}>{result.recommendation_status}</span><small>{result.identity.config_version}</small></div>
       </header>
       <div className="review-safety-notice"><strong>Proposal only</strong><span>NocPro was not changed. No candidate is applied automatically.</span></div>
-      {result.reason ? <p className="review-global-reason">{result.reason}</p> : null}
+      {result.reason ? (
+        <p className="review-global-reason" title={REASON_EXPLANATIONS[result.reason] ?? result.reason}>
+          <span className="review-reason-code">{result.reason}</span>
+          {REASON_EXPLANATIONS[result.reason] ? (
+            <span className="review-reason-desc"> — {REASON_EXPLANATIONS[result.reason]}</span>
+          ) : null}
+        </p>
+      ) : null}
+      {result.recommendation_status === 'UNAVAILABLE' && result.reason === 'COUNTERFACTUAL_POLICY_NOT_CALIBRATED' ? (
+        <div
+          className="review-calibration-hint"
+          style={{
+            margin: '0.75rem 1.25rem',
+            padding: '0.75rem 1rem',
+            borderRadius: 'var(--radius-sm, 6px)',
+            background: 'rgba(59, 130, 246, 0.12)',
+            border: '1px solid rgba(59, 130, 246, 0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+            fontSize: '0.8rem',
+            color: '#93c5fd',
+          }}
+        >
+          <div>
+            <strong>💡 Chế độ an toàn:</strong> Cấu hình hiện tại chưa được đánh dấu hiệu chuẩn sản xuất. Để mở khóa toàn bộ đề xuất tối ưu, hãy vào <strong>⚙ Settings</strong> và chọn <strong>Calibrate from Database</strong> hoặc chọn profile <strong>v1-calibrated</strong>.
+          </div>
+        </div>
+      ) : null}
       <div className="review-operation-grid">
         {operations.map((operation) => (
           <OperationSection

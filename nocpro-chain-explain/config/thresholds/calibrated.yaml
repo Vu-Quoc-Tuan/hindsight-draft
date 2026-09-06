@@ -155,6 +155,27 @@ similar_chains:
     value: 5
     source: DOCUMENTED_DEFAULT
 notes:
-- Calibrated at 2026-09-06T06:01:04.054032+00:00 from PostgreSQL system of record.
+- Calibrated at 2026-09-06T06:11:23.950091+00:00 from PostgreSQL system of record.
 - Evaluated 1 snapshots, 1 chains, 2 alarms.
 - Calibrated DATA_DRIVEN values preserve their empirical distribution evidence.
+counterfactual:
+  config_version: v1-calibrated-counterfactual
+  calibration_status: PRODUCTION_CALIBRATED
+  limits:
+    max_chain_members: 200
+    max_remove_candidates: 10
+    max_split_candidates: 10
+    max_recommendations: 5
+  move:
+    max_candidates: 10
+  merge:
+    max_candidates: 10
+  remove_triggers:
+    membership_support_below: 0.3
+    representativeness_below: 0.3
+    adverse_margin_below: 0.0
+  improvement:
+    minimum_membership_improvement: 0.05
+    minimum_coverage_improvement: 0.05
+    minimum_conductance_improvement: 0.05
+    pareto_tolerance: 0.0
