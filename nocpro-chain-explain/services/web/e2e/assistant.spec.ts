@@ -23,6 +23,7 @@ async function selectPairContext(page: import('@playwright/test').Page) {
 
 test('NocPro Assistant is snapshot-bound, read-only, and navigates with typed actions', async ({ page }) => {
   const consoleErrors: string[] = []
+  const expectedMissingReviewResponses: string[] = []
   const mutationRequests: string[] = []
   page.on('console', (message) => {
     if (message.type() === 'error') consoleErrors.push(message.text())
@@ -32,6 +33,14 @@ test('NocPro Assistant is snapshot-bound, read-only, and navigates with typed ac
     if (request.method() === 'POST' && (
       url.includes('/deep-dive') || url.includes('/review') || url.includes('/feedback')
     )) mutationRequests.push(`${request.method()} ${url}`)
+  })
+  page.on('response', (response) => {
+    if (
+      response.status() === 404
+      && /\/api\/v1\/chains\/[^/]+\/review$/.test(new URL(response.url()).pathname)
+    ) {
+      expectedMissingReviewResponses.push(response.url())
+    }
   })
 
   await page.goto('/')
@@ -66,8 +75,20 @@ test('NocPro Assistant is snapshot-bound, read-only, and navigates with typed ac
   ])
   await page.getByRole('button', { name: 'Open Counterfactual Review' }).click()
   await expect(page.getByRole('button', { name: 'Review' })).toHaveClass(/is-active/)
+  await expect(page.getByRole('heading', { name: 'No persisted Counterfactual Review is available.' })).toBeVisible()
   expect(mutationRequests, 'Assistant navigation must not start analysis or mutate Review/feedback').toEqual([])
-  expect(consoleErrors, 'browser console must stay free of errors').toEqual([])
+  expect(expectedMissingReviewResponses, 'read-only navigation must probe exactly one persisted Review').toHaveLength(1)
+  const expected404Messages = consoleErrors.filter((message) => (
+    message === 'Failed to load resource: the server responded with a status of 404 (Not Found)'
+  ))
+  expect(
+    consoleErrors.filter((message) => !expected404Messages.includes(message)),
+    'browser console must stay free of unexpected errors',
+  ).toEqual([])
+  expect(
+    expected404Messages.length,
+    'the browser may log at most the one expected missing persisted-Review probe',
+  ).toBeLessThanOrEqual(expectedMissingReviewResponses.length)
 })
 
 test('Assistant hides completed and delayed responses when pair context changes', async ({ page }) => {
