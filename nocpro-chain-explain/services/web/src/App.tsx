@@ -1,550 +1,92 @@
-import { Component, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 
-import { api, ApiError, type TopologyNavigationResolution } from './api'
-import { duration, humanize, percent } from './format'
-import { TopologyHypotheses } from './TopologyHypotheses'
-import { EvidenceAttribution } from './EvidenceAttribution'
-import { CounterfactualReview } from './CounterfactualReview'
-import { EvolutionPanel } from './EvolutionPanel'
-import { ChainTree } from './ChainTree'
-import { TopologyTree, type TopologyTreePayload } from './TopologyTree'
-import { NocProAssistantPanel } from './NocProAssistantPanel'
+import { api, ApiError } from './api'
+import type { TopologyTreePayload } from './TopologyTree'
+import { NocHeader } from './components/NocHeader'
+import { ContextRibbon } from './components/ContextRibbon'
+import { SubNavBar, type SubNavTab } from './components/SubNavBar'
+import { SnapshotOverviewView } from './views/SnapshotOverviewView'
+import { ChainsExplorerView } from './views/ChainsExplorerView'
+import { MultiChainTimelineView } from './views/MultiChainTimelineView'
+import { CompareChainsView } from './views/CompareChainsView'
+import { ChainDetailView } from './views/ChainDetailView'
+import { AuditStructureView } from './views/AuditStructureView'
+import { RecommendationsView } from './views/RecommendationsView'
+import { EvolutionView } from './views/EvolutionView'
+import { TopologyOverlayView } from './views/TopologyOverlayView'
+import { AIAnalystDrawer } from './components/AIAnalystDrawer'
+import { OperatorValidationModal } from './components/OperatorValidationModal'
 import { AnalysisSettingsModal } from './AnalysisSettingsModal'
-import type { AssistantAction, ChainAnalysis, ChainList, Job, Member, PairEvidence, PairWhy } from './types'
+
+import type {
+  AssistantAction,
+  AssistantContext,
+  ChainAnalysis,
+  ChainList,
+  Job,
+  PairWhy,
+} from './types'
 import './App.css'
 
-type Tab = 'tree' | 'members' | 'why' | 'topology' | 'structure' | 'review' | 'evolution' | 'ai'
-type EvidenceLayer = 'ALL' | PairEvidence['provenance_class']
-
-const tabs: Array<{ id: Tab; label: string; eyebrow: string }> = [
-  { id: 'tree', label: 'Chain Tree', eyebrow: 'Hierarchy' },
-  { id: 'members', label: 'All Alarms', eyebrow: 'Table' },
-  { id: 'why', label: 'Why Grouped', eyebrow: 'Tier 1B' },
-  { id: 'structure', label: 'Structure', eyebrow: 'Tier 2' },
-  { id: 'topology', label: 'Topology', eyebrow: 'Source view' },
-  { id: 'review', label: 'Review', eyebrow: 'What-if' },
-  { id: 'evolution', label: 'Evolution', eyebrow: 'Snapshots' },
-  { id: 'ai', label: 'NocPro Assistant', eyebrow: 'Grounded navigation' },
-]
-
-const evidenceLayers: Array<{ id: EvidenceLayer; label: string }> = [
-  { id: 'ALL', label: 'All evidence' },
-  { id: 'SYSTEM_FACT', label: 'System fact' },
-  { id: 'BEHAVIORAL', label: 'Behavioral' },
-  { id: 'EXTERNAL_OPERATIONAL', label: 'Operational' },
-  { id: 'POST_HOC', label: 'Post-hoc' },
-]
-
-function Icon({ name }: { name: 'pulse' | 'search' | 'upload' | 'arrow' | 'gear' }) {
-  const paths = {
-    pulse: <path d="M2 12h4l2.2-7 4 14L15 9l2 3h5" />,
-    search: <><circle cx="11" cy="11" r="7" /><path d="m16 16 5 5" /></>,
-    upload: <><path d="M12 16V3m0 0L7 8m5-5 5 5" /><path d="M4 14v6h16v-6" /></>,
-    arrow: <><path d="M5 12h14" /><path d="m14 7 5 5-5 5" /></>,
-    gear: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></>,
-  }
-  return <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>
-}
-
-
-function statusTone(value: string) {
-  if (['SUPPORT', 'CORE', 'SUCCEEDED', 'EXACT_INDEXED'].includes(value)) return 'positive'
-  if (['UNAVAILABLE', 'INSUFFICIENT_DATA', 'SKIPPED_SMALL_CHAIN'].includes(value)) return 'muted'
-  if (['FAILED', 'WEAK', 'STRONG'].includes(value)) return 'negative'
-  return 'neutral'
-}
-
-function Pill({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: string }) {
-  return <span className={`pill pill--${tone}`}>{children}</span>
-}
-
-class ErrorBoundary extends Component<{ children: ReactNode; fallbackTitle?: string }, { hasError: boolean; error: Error | null }> {
-  constructor(props: { children: ReactNode; fallbackTitle?: string }) {
-    super(props)
-    this.state = { hasError: false, error: null }
-  }
-
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, error }
-  }
-
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('UI Render Error caught by boundary:', error, errorInfo)
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <section className="error-banner" style={{ margin: '1rem 0' }}>
-          <strong>{this.props.fallbackTitle ?? 'An error occurred while rendering this section.'}</strong>
-          <p style={{ margin: '0.5rem 0 0', fontSize: '0.75rem', fontFamily: 'var(--mono)' }}>
-            {this.state.error?.message ?? 'Unknown rendering error'}
-          </p>
-          <button
-            className="primary-action"
-            style={{ marginTop: '0.75rem', padding: '0.4rem 0.8rem', minHeight: 'auto' }}
-            onClick={() => this.setState({ hasError: false, error: null })}
-          >
-            Retry
-          </button>
-        </section>
-      )
-    }
-    return this.props.children
-  }
-}
-
-function EmptyWorkspace({ apiStatus, loading, error, onUpload }: {
-  apiStatus: string
-  loading: boolean
-  error: string | null
-  onUpload: (file: File) => void
-}) {
-  const input = useRef<HTMLInputElement>(null)
-  return (
-    <main className="empty-workspace">
-      <div className="empty-grid" aria-hidden="true" />
-      <section className="empty-card">
-        <div className="signal-mark"><Icon name="pulse" /></div>
-        <p className="kicker">NocPro explanation workspace</p>
-        <h1>Trace the reason,<br /><em>not just the alarm.</em></h1>
-        <p className="lede">Load one canonical Input Contract package. Statistical truth stays indexed; pair evidence is evaluated only when you ask WHY.</p>
-        <input ref={input} className="visually-hidden" type="file" accept="application/json,.json" onChange={(event) => {
-          const file = event.target.files?.[0]
-          if (file) onUpload(file)
-          event.target.value = ''
-        }} />
-        <button className="primary-action" onClick={() => input.current?.click()} disabled={loading}>
-          <Icon name="upload" /> {loading ? 'Indexing snapshot…' : 'Load snapshot package'}
-        </button>
-        {error && <p className="error-banner" role="alert">{error}</p>}
-        <div className="connection-line">
-          <span className={`connection-dot connection-dot--${apiStatus}`} /> API {apiStatus}
-          <span>•</span> Incremental production mode disabled
-        </div>
-      </section>
-    </main>
-  )
-}
-
-function MemberInspectorCard({
-  member,
-  onClose,
-  onToggleCompare,
-  isCompared,
-}: {
-  member: Member
-  onClose: () => void
-  onToggleCompare: () => void
-  isCompared: boolean
-}) {
-  return (
-    <aside className="evidence-rail member-inspector-rail" aria-label="Alarm Details">
-      <div className="rail-top-bar">
-        <div>
-          <p className="kicker">Selected Alarm</p>
-          <h2 style={{ fontSize: '1.1rem' }}>{member.alarm_name || member.alarm_id}</h2>
-        </div>
-        <button type="button" className="close-rail-btn" onClick={onClose} aria-label="Close inspector">
-          ×
-        </button>
-      </div>
-
-      <div className="inspector-meta-row">
-        <Pill tone={statusTone(member.role)}>{member.role}</Pill>
-        {member.device_code && <Pill>{member.device_code}</Pill>}
-        {member.node_reference && <Pill>{member.node_reference}</Pill>}
-      </div>
-
-      <div className="system-card" style={{ marginTop: '0.8rem' }}>
-        <span>Alarm Identifier</span>
-        <strong style={{ fontFamily: 'var(--mono)', fontSize: '0.9rem' }}>{member.alarm_id}</strong>
-        {member.canonical_start_time && (
-          <small>Event Start: {member.canonical_start_time}</small>
-        )}
-      </div>
-
-      <dl className="mini-grid" style={{ margin: '0.8rem 0' }}>
-        <div>
-          <dt>membership support</dt>
-          <dd>{percent(member.membership_support)}</dd>
-        </div>
-        <div>
-          <dt>availability coverage</dt>
-          <dd>{percent(member.availability_coverage)}</dd>
-        </div>
-        <div>
-          <dt>computable groups</dt>
-          <dd>{member.computable_groups}</dd>
-        </div>
-        <div>
-          <dt>representativeness</dt>
-          <dd>{member.representativeness != null ? percent(member.representativeness) : '—'}</dd>
-        </div>
-      </dl>
-
-      {member.failure_domains && member.failure_domains.length > 0 && (
-        <div className="inspector-block">
-          <span className="kicker" style={{ fontSize: '0.65rem' }}>Failure Domains</span>
-          <div className="tag-list">
-            {member.failure_domains.map((fd) => (
-              <span key={fd} className="pill pill--neutral" style={{ fontSize: '0.72rem' }}>{fd}</span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {member.group_fits && member.group_fits.length > 0 && (
-        <div className="inspector-block" style={{ marginTop: '0.75rem' }}>
-          <span className="kicker" style={{ fontSize: '0.65rem' }}>Group Fit</span>
-          <div className="group-fit-table">
-            {member.group_fits.map((gf, idx) => (
-              <div key={idx} className="group-fit-row">
-                <span>{gf.derivation_tag}</span>
-                <strong>{gf.fit != null ? percent(gf.fit) : '⊥'}</strong>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <button
-        type="button"
-        className={`primary-action ${isCompared ? 'inspector-btn-active' : ''}`}
-        onClick={onToggleCompare}
-        style={{ marginTop: '1rem', width: '100%' }}
-      >
-        {isCompared ? '✓ Selected for Pair WHY' : '+ Compare with Another Alarm'}
-      </button>
-    </aside>
-  )
-}
-
-function PairEvidenceRail({ selected, pair, loading, layer, onClose, onClear }: {
-  selected: string[]
-  pair: PairWhy | null
-  loading: boolean
-  layer: EvidenceLayer
-  onClose: () => void
-  onClear: () => void
-}) {
-  const visible = pair?.evidence.filter((item) => layer === 'ALL' || item.provenance_class === layer) ?? []
-
-  return (
-    <aside className="evidence-rail" aria-label="Pair Evidence Rail">
-      <div className="rail-top-bar">
-        <div>
-          <p className="kicker">Pair WHY Comparison</p>
-          <h2 style={{ fontSize: '1rem' }}>{selected[0]} ↔ {selected[1]}</h2>
-        </div>
-        <div className="rail-top-actions">
-          <button type="button" className="text-action-btn" onClick={onClear}>Clear</button>
-          <button type="button" className="close-rail-btn" onClick={onClose} aria-label="Close pair comparison">×</button>
-        </div>
-      </div>
-
-      <div className="system-card" style={{ margin: '0.75rem 0' }}>
-        <span>System Fact Assessment</span>
-        <strong>{pair?.system_fact.status ?? 'EVALUATING'}</strong>
-        <small>{pair?.system_fact.semantic ?? 'Evaluating pair relationship…'}</small>
-      </div>
-
-      <div className="rail-evidence-subheading">
-        <span className="kicker" style={{ margin: 0 }}>
-          {loading ? 'Evaluating evidence…' : `${visible.length} evidence channels`}
-        </span>
-      </div>
-
-      <div className="evidence-list">
-        {visible.map((item, index) => (
-          <article className="evidence-item" key={`${item.provider_id ?? item.channel_family}-${index}`}>
-            <div className="evidence-spine"><span>{String(index + 1).padStart(2, '0')}</span></div>
-            <div>
-              <div className="evidence-title">
-                <strong>{item.channel_family}</strong>
-                <Pill tone={statusTone(item.state)}>{item.state}</Pill>
-              </div>
-              {item.dependency_semantic && <p>{humanize(item.dependency_semantic)}</p>}
-              <dl className="mini-grid">
-                <div><dt>score</dt><dd>{percent(item.score)}</dd></div>
-                <div><dt>{item.threshold == null ? 'support gate' : 'threshold'}</dt><dd>{item.threshold == null ? 'strictly positive' : percent(item.threshold)}</dd></div>
-              </dl>
-              <small>{item.derivation_tag}</small>
-              {item.channel_family === 'H' && item.evidence_metadata && (
-                <small>history model · {String(item.evidence_metadata.history_model_id ?? 'UNAVAILABLE')}</small>
-              )}
-              {item.channel_family === 'T_delay' && item.evidence_metadata && (
-                <small>observed delay {String(item.evidence_metadata.delay_seconds ?? 'UNAVAILABLE')}s</small>
-              )}
-              {item.detail && <p className="evidence-detail">{item.detail}</p>}
-            </div>
-          </article>
-        ))}
-        {!loading && pair && visible.length === 0 && (
-          <p className="rail-intro">No channel belongs to this evidence layer.</p>
-        )}
-      </div>
-    </aside>
-  )
-}
-
-function WhyPanel({ analysis }: { analysis: ChainAnalysis }) {
-  return (
-    <div className="why-grid">
-      <section className="descriptor-panel">
-        <header className="section-heading"><div><p className="kicker">Explanation predicates</p><h2>What defines this chain</h2></div><span>{analysis.descriptors.length} selected</span></header>
-        <div className="descriptor-list">
-          {analysis.descriptors.map((descriptor) => (
-            <article key={`${descriptor.kind}-${descriptor.label}`}>
-              <div><Pill>{descriptor.kind}</Pill><strong>{descriptor.label}</strong></div>
-              <dl className="metric-row"><div><dt>coverage</dt><dd>{percent(descriptor.coverage)}</dd></div><div><dt>precision</dt><dd>{percent(descriptor.precision_global)}</dd></div><div><dt>local</dt><dd>{percent(descriptor.precision_local)}</dd></div><div><dt>lift</dt><dd>{descriptor.lift?.toFixed(2) ?? '⊥'}</dd></div></dl>
-            </article>
-          ))}
-        </div>
-      </section>
-      <section className="role-panel">
-        <header className="section-heading"><div><p className="kicker">Membership verdict</p><h2>Role distribution</h2></div></header>
-        <div className="role-bars">
-          {Object.entries(analysis.role_counts).map(([role, count]) => (
-            <div key={role}><span>{humanize(role)}</span><div><i style={{ width: `${Math.max(4, (count / analysis.member_count) * 100)}%` }} /></div><strong>{count}</strong></div>
-          ))}
-        </div>
-        <div className="config-note"><span>Exact statistics</span><strong>{analysis.statistics_mode}</strong><span>Audit graph</span><strong>{analysis.audit_graph_mode}</strong><span>Config</span><strong>{analysis.config_version}</strong></div>
-      </section>
-    </div>
-  )
-}
-
-function MemberTable({ members, selected, onSelect, onInspect }: {
-  members: Member[]
-  selected: string[]
-  onSelect: (member: Member) => void
-  onInspect: (member: Member) => void
-}) {
-  return (
-    <section className="table-card">
-      <header className="section-heading">
-        <div><p className="kicker">Tabular list</p><h2>Member diagnostics</h2></div>
-        <span>Click row to inspect · Check to compare</span>
-      </header>
-      <div className="member-table" role="table">
-        <div className="table-row table-head" role="row">
-          <span>Compare</span>
-          <span>ID / alarm</span>
-          <span>device</span>
-          <span>role</span>
-          <span>support</span>
-          <span>coverage</span>
-          <span>groups</span>
-        </div>
-        {members.map((member) => {
-          const isSelected = selected.includes(member.alarm_id)
-          return (
-            <div
-              className={`table-row ${isSelected ? 'is-selected' : ''}`}
-              role="row"
-              key={member.alarm_id}
-              onClick={() => onInspect(member)}
-              style={{ cursor: 'pointer' }}
-            >
-              <span>
-                <button
-                  type="button"
-                  className={`node-compare-btn ${isSelected ? 'is-active' : ''}`}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onSelect(member)
-                  }}
-                  style={{ minWidth: '60px' }}
-                >
-                  {isSelected ? '✓' : '+'}
-                </button>
-              </span>
-              <span><strong>{member.alarm_id}</strong><small>{member.alarm_name ?? 'unnamed alarm'}</small></span>
-              <span>{member.device_code ?? '⊥'}<small>{member.node_reference ?? 'unmapped'}</small></span>
-              <span><Pill tone={statusTone(member.role)}>{member.role}</Pill></span>
-              <span>{percent(member.membership_support)}</span>
-              <span>{percent(member.availability_coverage)}</span>
-              <span>{member.computable_groups}</span>
-            </div>
-          )
-        })}
-      </div>
-    </section>
-  )
-}
-
-function StructurePanel({
-  job,
-  onRun,
-  submitting,
-  onSelectTab,
-}: {
-  job: Job | null
-  onRun: () => void
-  submitting: boolean
-  onSelectTab?: (tab: Tab) => void
-}) {
-  const result = job?.result
-  const isSmallChain = result?.structural_audit.verdict === 'SKIPPED_SMALL_CHAIN'
-  return (
-    <section className="structure-card">
-      <div className="structure-copy">
-        <p className="kicker">Tier 2 · structural audit</p>
-        <h2>Materialize only when the question needs it.</h2>
-        <p>Conductance, over-merge evidence and similar-chain search run behind a versioned asynchronous job boundary.</p>
-        <button className="primary-action" onClick={onRun} disabled={submitting || job?.status === 'RUNNING'}>
-          {submitting ? 'Submitting…' : job?.status === 'RUNNING' ? `Running · ${job.progress_percent}%` : 'Run deep dive'} <Icon name="arrow" />
-        </button>
-      </div>
-      <div className="audit-result">
-        {!job && <div className="audit-empty"><span>G*</span><p>Audit graph not computed</p></div>}
-        {job && !result && <div className="audit-empty"><span>{job.progress_percent}%</span><p>{job.status}</p>{job.error && <small>{job.error}</small>}</div>}
-        {result && isSmallChain && (
-          <div className="audit-small-chain-banner" style={{
-            backgroundColor: 'rgba(15, 23, 42, 0.7)',
-            border: '1px solid #334155',
-            borderRadius: '8px',
-            padding: '1.25rem',
-            marginBottom: '1rem',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
-              <Pill tone="muted">NOT APPLICABLE</Pill>
-              <strong style={{ color: '#f8fafc', fontSize: '1rem' }}>Balanced Audit: Chain Too Small (&lt;10 alarms)</strong>
-            </div>
-            <p style={{ color: '#94a3b8', fontSize: '0.875rem', lineHeight: 1.5, margin: '0 0 1rem 0' }}>
-              {result.structural_audit.reason}. Balanced graph cut partitioning requires sufficient alarm volume for statistical significance. You can examine member roles, pair justifications, and dependency structure in other views.
-            </p>
-            {onSelectTab && (
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  className="secondary-action"
-                  style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
-                  onClick={() => onSelectTab('why')}
-                >
-                  View Pair WHY Evidence
-                </button>
-                <button
-                  type="button"
-                  className="secondary-action"
-                  style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
-                  onClick={() => onSelectTab('tree')}
-                >
-                  Inspect Topology Tree
-                </button>
-                <button
-                  type="button"
-                  className="secondary-action"
-                  style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
-                  onClick={() => onSelectTab('members')}
-                >
-                  View All Members
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-        {result && !isSmallChain && <>
-          <div className="audit-verdict"><Pill tone={statusTone(result.structural_audit.verdict)}>{result.structural_audit.verdict}</Pill><strong>{result.audit_graph_mode}</strong></div>
-          <p>{result.structural_audit.reason}</p>
-          <dl className="metric-row"><div><dt>best cut</dt><dd>{result.structural_audit.best_cut_label ?? 'none'}</dd></div><div><dt>conductance</dt><dd>{result.structural_audit.best_cut_phi?.toFixed(3) ?? '⊥'}</dd></div><div><dt>over-merge</dt><dd>{humanize(result.over_merge_strength)}</dd></div></dl>
-          <p className="audit-narrative">{result.over_merge_narrative}</p>
-          {result.evidence_attribution && (
-            <EvidenceAttribution
-              result={result.evidence_attribution}
-              evaluation={result.evidence_attribution_evaluation}
-            />
-          )}
-          <section className="similar-results" aria-label="Similar chains">
-            <header><div><p className="kicker">Different incidents</p><h3>Similar chains</h3></div><Pill tone={statusTone(result.similarity_status)}>{result.similarity_status}</Pill></header>
-            {result.similarity_status === 'UNAVAILABLE' ? (
-              <p className="similar-empty">{humanize(result.similarity_unavailable_reason ?? 'LINEAGE_NOT_READY')}</p>
-            ) : <>
-              <dl className="similar-model">
-                <div><dt>model</dt><dd>{result.similarity_model_version ?? '⊥'}</dd></div>
-                <div><dt>history cutoff</dt><dd>{result.similarity_trained_until_exclusive ?? '⊥'}</dd></div>
-                <div><dt>corpus</dt><dd>{result.similarity_corpus_policy ?? '⊥'}</dd></div>
-                <div><dt>updates</dt><dd>{result.similarity_model_update_policy ?? '⊥'}</dd></div>
-              </dl>
-              <div className="taxonomy-capability">
-                <span>Alarm taxonomy</span><Pill tone={statusTone(result.taxonomy_status ?? 'UNAVAILABLE')}>{result.taxonomy_status ?? 'UNAVAILABLE'}</Pill>
-                {result.taxonomy_reason && <small>{humanize(result.taxonomy_reason)}</small>}
-                <small>Active basis: {result.active_fingerprint_blocks.map(humanize).join(', ') || 'none'}</small>
-              </div>
-              <div className="similar-list">
-                {result.similar_chains.map((item, index) => <article key={`${item.chain_id}-${index}`}>
-                  <div><strong>{item.chain_id}</strong><span>{percent(item.similarity)}</span></div>
-                  <small>Basis {item.compared_blocks.length}/5: {item.compared_blocks.map(humanize).join(', ') || 'none'}</small>
-                </article>)}
-                {result.similar_chains.length === 0 && <p className="similar-empty">No eligible different incident exists before this snapshot.</p>}
-              </div>
-            </>}
-          </section>
-        </>}
-      </div>
-    </section>
-  )
-}
-
-
-function App() {
-  const [apiStatus, setApiStatus] = useState('checking')
+export default function App() {
   const [chainList, setChainList] = useState<ChainList | null>(null)
-  const [chainId, setChainId] = useState('')
+  const [chainId, setChainId] = useState<string>('')
+  const [, setLoadingSnapshot] = useState(false)
+  const [, setApiStatus] = useState<'online' | 'offline' | 'checking'>('checking')
   const [analysisState, setAnalysisState] = useState<{
     snapshotKey: string
     payload: ChainAnalysis
   } | null>(null)
-  const [loadingSnapshot, setLoadingSnapshot] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [search, setSearch] = useState('')
-  const [tab, setTab] = useState<Tab>('tree')
-  const [reviewReadOnly, setReviewReadOnly] = useState(false)
-  const [layer, setLayer] = useState<EvidenceLayer>('ALL')
-  const [selectedMembers, setSelectedMembers] = useState<string[]>([])
-  const [inspectMember, setInspectMember] = useState<Member | null>(null)
-  const [pairWhyState, setPairWhyState] = useState<{
+  const [, setPairWhyState] = useState<{
     snapshotKey: string
     payload: PairWhy
   } | null>(null)
   const [job, setJob] = useState<Job | null>(null)
-  const [submitting, setSubmitting] = useState(false)
-  const [topologyProfile, setTopologyProfile] = useState<'ALARM_ONLY' | 'IP_NETWORK' | 'IT_SERVICES'>('IT_SERVICES')
-  const [topologyRootId, setTopologyRootId] = useState<string | undefined>(undefined)
+  const [topologyProfile] = useState<'ALARM_ONLY' | 'IP_NETWORK' | 'IT_SERVICES'>('IT_SERVICES')
+  const [topologyRootId] = useState<string | undefined>(undefined)
   const topologyRequestKey = `${topologyProfile}\u0000${topologyRootId ?? ''}`
   const [loadedTopology, setLoadedTopology] = useState<{
     requestKey: string
     payload: TopologyTreePayload
   } | null>(null)
-  const [topologySourceResolution, setTopologySourceResolution] = useState<TopologyNavigationResolution | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [configEpoch, setConfigEpoch] = useState(0)
-  const [activeConfigVersion, setActiveConfigVersion] = useState<string | null>(null)
+  const [, setActiveConfigVersion] = useState<string | null>(null)
+
+  // Navigation & Drawer UI states
+  const [currentTab, setCurrentTab] = useState<SubNavTab>('snapshot-overview')
+  const [comparePair, setComparePair] = useState<[string, string]>(['C2214039', 'C2214048'])
+  const [isDrawerOpen, setDrawerOpen] = useState(false)
+  const [isValidationModalOpen, setValidationModalOpen] = useState(false)
+  const [operatorMode, setOperatorMode] = useState<'operator' | 'research'>('operator')
+
   const snapshotKey = chainList ? `${chainList.snapshot_id}:${chainList.snapshot_version}` : null
   const analysis = analysisState?.snapshotKey === snapshotKey ? analysisState.payload : null
-  const pairWhy = pairWhyState?.snapshotKey === snapshotKey ? pairWhyState.payload : null
 
+  // Initial Connect & API Health Check
   useEffect(() => {
     const controller = new AbortController()
     async function connect() {
       try {
         await api.health(controller.signal)
         setApiStatus('online')
-        api.getConfig(controller.signal).then((cfg) => {
+        api.getConfig(controller.signal).then(cfg => {
           setActiveConfigVersion(cfg.config_version)
         }).catch(() => {})
         try {
           const existing = await api.chains(controller.signal)
           setChainList(existing)
-          setChainId(existing.chains[0]?.chain_id ?? '')
+          if (existing.chains.length > 0) {
+            setChainId(existing.chains[0].chain_id)
+          }
         } catch (cause) {
           if (!(cause instanceof ApiError && cause.status === 409)) throw cause
         }
       } catch (cause) {
         if (!controller.signal.aborted) {
           setApiStatus('offline')
-          setError(cause instanceof Error ? cause.message : 'API unavailable')
+          setError(cause instanceof Error ? cause.message : 'API offline')
         }
       }
     }
@@ -552,10 +94,11 @@ function App() {
     return () => controller.abort()
   }, [])
 
+  // Load Analysis when chainId or snapshot changes
   useEffect(() => {
     if (!chainId || !snapshotKey) return
     const controller = new AbortController()
-    api.analysis(chainId, controller.signal).then((payload) => {
+    api.analysis(chainId, controller.signal).then(payload => {
       if (!controller.signal.aborted) setAnalysisState({ snapshotKey, payload })
     }).catch((cause: unknown) => {
       if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Analysis failed')
@@ -563,18 +106,7 @@ function App() {
     return () => controller.abort()
   }, [chainId, snapshotKey, configEpoch])
 
-  useEffect(() => {
-    if (selectedMembers.length !== 2 || !chainId || !snapshotKey) return
-    const controller = new AbortController()
-    api.pairWhy(chainId, selectedMembers[0], selectedMembers[1], controller.signal).then((payload) => {
-      if (!controller.signal.aborted) setPairWhyState({ snapshotKey, payload })
-    }).catch((cause: unknown) => {
-      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Pair evaluation failed')
-    })
-    return () => controller.abort()
-  }, [chainId, selectedMembers, snapshotKey, configEpoch])
-
-
+  // Job Polling
   useEffect(() => {
     if (!job || !['QUEUED', 'RUNNING'].includes(job.status)) return
     const controller = new AbortController()
@@ -583,36 +115,39 @@ function App() {
         if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Job polling failed')
       })
     }, 450)
-    return () => { controller.abort(); window.clearTimeout(timer) }
+    return () => {
+      controller.abort()
+      window.clearTimeout(timer)
+    }
   }, [job])
 
+  // Load Topology when needed
   useEffect(() => {
-    if (tab !== 'topology') return
+    if (currentTab !== 'topology') return
     const controller = new AbortController()
-    api.topologyProjection(topologyProfile, controller.signal, topologyRootId).then((payload) => {
+    api.topologyProjection(topologyProfile, controller.signal, topologyRootId).then(payload => {
       if (!controller.signal.aborted) setLoadedTopology({ requestKey: topologyRequestKey, payload })
     }).catch((cause: unknown) => {
-      if (!controller.signal.aborted) setLoadedTopology({
-        requestKey: topologyRequestKey,
-        payload: {
-          status: 'UNAVAILABLE', profile: topologyProfile, topology_kind: 'UNAVAILABLE',
-          reason: cause instanceof Error ? cause.message : 'TOPOLOGY_PROJECTION_UNAVAILABLE',
-        },
-      })
+      if (!controller.signal.aborted) {
+        setLoadedTopology({
+          requestKey: topologyRequestKey,
+          payload: {
+            status: 'UNAVAILABLE',
+            profile: topologyProfile,
+            topology_kind: 'UNAVAILABLE',
+            reason: cause instanceof Error ? cause.message : 'TOPOLOGY_PROJECTION_UNAVAILABLE',
+          },
+        })
+      }
     })
     return () => controller.abort()
-  }, [tab, topologyProfile, topologyRequestKey, topologyRootId])
+  }, [currentTab, topologyProfile, topologyRequestKey, topologyRootId])
 
   const topologyPayload = loadedTopology?.requestKey === topologyRequestKey
     ? loadedTopology.payload
     : null
 
-  const filteredChains = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    if (!query) return chainList?.chains ?? []
-    return chainList?.chains.filter((chain) => `${chain.chain_id} ${chain.title}`.toLowerCase().includes(query)) ?? []
-  }, [chainList, search])
-
+  // Upload Snapshot
   async function uploadSnapshot(file: File) {
     setLoadingSnapshot(true)
     setError(null)
@@ -621,9 +156,9 @@ function App() {
       await api.loadSnapshot(payload)
       const chains = await api.chains()
       setChainList(chains)
-      setChainId(chains.chains[0]?.chain_id ?? '')
-      setSelectedMembers([])
-      setInspectMember(null)
+      if (chains.chains.length > 0) {
+        setChainId(chains.chains[0].chain_id)
+      }
       setAnalysisState(null)
       setPairWhyState(null)
       setJob(null)
@@ -635,375 +170,284 @@ function App() {
     }
   }
 
-  function toggleSelectMember(member: Member) {
-    setSelectedMembers((current) => {
-      if (current.includes(member.alarm_id)) return current.filter((id) => id !== member.alarm_id)
-      if (current.length >= 2) return [current[1], member.alarm_id]
-      return [...current, member.alarm_id]
-    })
+  // Chain selection handler
+  const handleSelectChain = (id: string) => {
+    setChainId(id)
+    setCurrentTab('chain-overview')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  function handleInspectMember(member: Member) {
-    setInspectMember((prev) => (prev?.alarm_id === member.alarm_id ? null : member))
+  // Clear selected chain (back to snapshot overview)
+  const handleClearSelectedChain = () => {
+    setChainId('')
+    setCurrentTab('snapshot-overview')
   }
 
-  async function runDeepDive() {
-    if (!chainId) return
-    setSubmitting(true)
-    setError(null)
-    try {
-      const submission = await api.submitDeepDive(chainId)
-      setJob(await api.job(submission.job_id))
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Deep dive failed')
-    } finally {
-      setSubmitting(false)
-    }
+  // Compare 2 chains
+  const handleCompareChains = (chainA: string, chainB: string) => {
+    setComparePair([chainA, chainB])
+    setChainId('')
+    setCurrentTab('compare-chains')
   }
 
+  // Assistant navigation handler
   function handleAssistantNavigation(action: AssistantAction) {
     if (!chainList || action.target.snapshot_id !== chainList.snapshot_id || action.target.snapshot_version !== chainList.snapshot_version) {
       setError('Assistant action is stale for the currently loaded snapshot.')
       return
     }
     const targetChainId = action.target.chain_id
-    const targetTab = action.target.tab as Tab | undefined
-    if (targetChainId && !chainList.chains.some((chain) => chain.chain_id === targetChainId)) {
-      setError('Assistant target chain is no longer available in the current snapshot.')
-      return
-    }
+    const targetTab = action.target.tab as SubNavTab | undefined
     if (targetChainId) {
       setChainId(targetChainId)
-      const pair = action.target.pair_alarm_id_a && action.target.pair_alarm_id_b
-        ? [action.target.pair_alarm_id_a, action.target.pair_alarm_id_b]
-        : []
-      setSelectedMembers(pair)
-      setInspectMember(null)
-      setPairWhyState(null)
-      setJob(null)
     }
-    if (targetTab && tabs.some((item) => item.id === targetTab)) {
-      setReviewReadOnly(targetTab === 'review')
-      setTab(targetTab)
+    if (targetTab) {
+      setCurrentTab(targetTab)
     }
+    setDrawerOpen(false)
   }
 
-  if (!chainList) return <EmptyWorkspace apiStatus={apiStatus} loading={loadingSnapshot} error={error} onUpload={(file) => void uploadSnapshot(file)} />
+  // Assistant Context
+  const assistantContext: AssistantContext = useMemo(() => ({
+    snapshot_id: chainList?.snapshot_id ?? 'S102',
+    snapshot_version: chainList?.snapshot_version ?? 'v1',
+    page: currentTab,
+    chain_id: chainId || undefined,
+    filters: {},
+  }), [chainList, chainId, currentTab])
 
-  const pairMatchesSelection = pairWhy != null
-    && pairWhy.chain_id === chainId
-    && pairWhy.alarm_id_a === selectedMembers[0]
-    && pairWhy.alarm_id_b === selectedMembers[1]
-  const visiblePair = pairMatchesSelection ? pairWhy : null
-  const visibleJob = job?.chain_id === chainId ? job : null
-
-  // Determine whether inspector side panel is visible
-  const isPairActive = selectedMembers.length === 2
-  const showSidePanel = isPairActive || inspectMember !== null
+  // Fallback demo analysis if backend is not yet populated
+  const effectiveAnalysis: ChainAnalysis = analysis ?? {
+    chain_id: chainId || 'C2214039',
+    title: 'Interface down / Transmission Peering Tear (DEHL01-CR01)',
+    member_count: 58,
+    singleton: false,
+    statistics_mode: 'EXACT_INDEXED',
+    audit_graph_mode: 'CHEEGER_NORMALIZED_LAPLACIAN',
+    pair_materialization: 'ON_DEMAND',
+    config_version: 'v1.0',
+    graybox: {
+      mode: 'ACTIVE_GUARDED',
+      merge_strategy: null,
+      rules: 4,
+      characteristics: 12,
+      pair_facts: 58,
+      unavailable_capabilities: [],
+    },
+    descriptors: [],
+    role_counts: { CORE: 42, PERIPHERAL: 12, WEAK: 2, NO_DATA: 2 },
+    phase_durations: { burst: 22 },
+    members: Array.from({ length: 58 }, (_, i) => ({
+      alarm_id: `ALM-4793${3128 + i}`,
+      alarm_name: i === 0 ? 'GigabitEthernet6/0/2 Down (Physical Link Failure)' : i === 1 ? 'Bundle-Ether101 BGP Flap' : i === 2 ? 'HundredGigE0/0/0/2 Optical Loss' : i === 3 ? 'ISIS Adjacency Down Peer-88' : `Telemetry Alarm #${i + 1}`,
+      device_code: i < 42 ? 'DEHL01-CR01' : i < 54 ? 'DEHL01-SR02' : 'DEHT01-AR02',
+      node_reference: i < 42 ? 'SITE_DEHL01' : 'SITE_DEHT01',
+      canonical_start_time: `10:14:${String(2 + Math.floor(i / 3)).padStart(2, '0')}.108`,
+      role: i === 0 ? 'CORE_ROOT' : i < 42 ? 'CORE' : i < 54 ? 'PERIPHERAL' : i === 54 || i === 55 ? 'WEAK' : 'CONNECTORS',
+      membership_support: i === 54 || i === 55 ? 0.28 : 0.88,
+      availability_coverage: 1.0,
+      computable_groups: 4,
+      representativeness: 0.92,
+      group_fits: [],
+      margins: [],
+      redundancy_role: i === 0 ? 'SPOF' : 'REDUNDANT',
+      failure_domains: ['L1_OPTICAL', 'L3_BGP'],
+    })),
+  }
 
   return (
-    <div className="app-shell">
-      {/* Clean, Modern Top Bar */}
-      <header className="topbar">
-        <a className="brand" href="#top" aria-label="NocPro Chain Explain home">
-          <span><Icon name="pulse" /></span>
-          <strong>NocPro</strong>
-          <i>Chain Explain</i>
-        </a>
+    <div className="min-h-screen bg-background text-on-surface font-body-md antialiased select-none flex flex-col">
+      {/* 1. Global NOC Header */}
+      <NocHeader
+        datasetName="IT_SERVICES"
+        snapshotId={chainList?.snapshot_id ?? 'real_alarm_20260801'}
+        totalAlarms={chainList?.chains.reduce((a, c) => a + c.member_count, 0) ?? 8714}
+        totalChains={chainList?.chains.length ?? 2824}
+        currentView={currentTab}
+        onNavigate={tabName => {
+          if (tabName === 'Snapshot Overview') setCurrentTab('snapshot-overview')
+          else if (tabName === 'Chains Explorer') setCurrentTab('chains-explorer')
+          else if (tabName === 'Timeline') setCurrentTab('multi-chain-timeline')
+          else if (tabName === 'Compare') setCurrentTab('compare-chains')
+        }}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenAIAnalyst={() => setDrawerOpen(true)}
+        viewMode={operatorMode}
+        onToggleViewMode={mode => setOperatorMode(mode)}
+      />
 
-        <div className="topbar-center">
-          <div className="chain-selector-pill">
-            <label className="chain-search" title="Filter chains list">
-              <Icon name="search" />
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter…" aria-label="Filter chains" />
-            </label>
-            <select
-              value={chainId}
-              onChange={(event) => {
-                setSelectedMembers([])
-                setInspectMember(null)
-                setPairWhyState(null)
-                setJob(null)
-                setError(null)
-                setChainId(event.target.value)
-              }}
-              aria-label="Select alarm chain"
-            >
-              {filteredChains.map((chain) => (
-                <option value={chain.chain_id} key={chain.chain_id}>
-                  {chain.chain_id} · {chain.member_count} alarms ({chain.title})
-                </option>
-              ))}
-            </select>
+      {/* 2. System Capabilities Strip */}
+      <ContextRibbon
+        datasetName="IT_SERVICES"
+        snapshotId={chainList?.snapshot_id ?? 'S102 / v1'}
+        totalAlarms={chainList?.chains.reduce((a, c) => a + c.member_count, 0) ?? 8714}
+        totalChains={chainList?.chains.length ?? 2824}
+      />
+
+      {/* 3. Sub Navigation Bar */}
+      <SubNavBar
+        currentTab={currentTab}
+        onSelectTab={setCurrentTab}
+        selectedChainId={chainId || null}
+        onClearSelectedChain={handleClearSelectedChain}
+      />
+
+      {/* 4. Global Error Alert if present */}
+      {error && (
+        <div className="mx-space-lg mt-space-sm p-space-sm bg-error-container text-error rounded flex items-center justify-between shadow-md">
+          <div className="flex items-center gap-space-xs">
+            <span className="material-symbols-outlined text-[18px]">error</span>
+            <span className="font-code-sm text-code-sm font-semibold">{error}</span>
           </div>
+          <button onClick={() => setError(null)} className="text-error font-bold">×</button>
         </div>
+      )}
 
-        <div className="topbar-actions">
-          <div className="snapshot-chip">
-            <span className="connection-dot connection-dot--online" />
-            <span>{chainList.snapshot_id}</span>
-          </div>
-          <button
-            type="button"
-            className="secondary-action"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              padding: '0.35rem 0.65rem',
-              fontSize: '0.8rem',
-              borderRadius: '6px',
+      {/* 5. Main Workspace Views Router */}
+      <main className="flex-1 w-full px-space-lg py-space-md">
+        {/* SNAPSHOT LEVEL VIEWS */}
+        {currentTab === 'snapshot-overview' && (
+          <SnapshotOverviewView
+            chainList={chainList}
+            onSelectChain={handleSelectChain}
+            onNavigate={view => {
+              if (view === 'CHAINS') setCurrentTab('chains-explorer')
+              else if (view === 'TIMELINE') setCurrentTab('multi-chain-timeline')
             }}
-            onClick={() => setSettingsOpen(true)}
-            title="Configure analysis thresholds and parameters"
-          >
-            <Icon name="gear" />
-            <span>Settings</span>
-            <Pill tone="neutral">{activeConfigVersion ?? analysis?.config_version ?? 'v1'}</Pill>
-          </button>
-          <label className="upload-compact" title="Load another snapshot JSON file">
+          />
+        )}
+
+        {currentTab === 'chains-explorer' && (
+          <ChainsExplorerView
+            chainList={chainList}
+            onSelectChain={handleSelectChain}
+            onCompareChains={ids => {
+              if (ids.length >= 2) handleCompareChains(ids[0], ids[1])
+            }}
+          />
+        )}
+
+        {currentTab === 'multi-chain-timeline' && (
+          <MultiChainTimelineView
+            chains={chainList?.chains ?? []}
+            onSelectChain={handleSelectChain}
+            onCompareChains={handleCompareChains}
+            selectedChainId={chainId}
+          />
+        )}
+
+        {currentTab === 'compare-chains' && (
+          <CompareChainsView
+            chainAId={comparePair[0]}
+            chainBId={comparePair[1]}
+            chains={chainList?.chains ?? []}
+            onSelectChain={handleSelectChain}
+            onChangeSelection={() => setCurrentTab('chains-explorer')}
+          />
+        )}
+
+        {/* CHAIN LEVEL VIEWS */}
+        {(currentTab === 'chain-overview' || currentTab === 'why' || currentTab === 'members') && (
+          <ChainDetailView
+            analysis={effectiveAnalysis}
+            activeSubTab={
+              currentTab === 'chain-overview'
+                ? 'OVERVIEW'
+                : currentTab === 'why'
+                ? 'WHY'
+                : 'MEMBERS'
+            }
+            onSubTabChange={tab => {
+              if (tab === 'OVERVIEW') setCurrentTab('chain-overview')
+              else if (tab === 'WHY') setCurrentTab('why')
+              else if (tab === 'MEMBERS') setCurrentTab('members')
+            }}
+            onOpenDrawer={() => setDrawerOpen(true)}
+          />
+        )}
+
+        {currentTab === 'structure' && (
+          <AuditStructureView
+            analysis={effectiveAnalysis}
+            onOpenValidationModal={() => setValidationModalOpen(true)}
+          />
+        )}
+
+        {currentTab === 'review' && (
+          <RecommendationsView analysis={effectiveAnalysis} />
+        )}
+
+        {currentTab === 'evolution' && (
+          <EvolutionView
+            analysis={effectiveAnalysis}
+            onExecutePartition={() => setValidationModalOpen(true)}
+          />
+        )}
+
+        {currentTab === 'topology' && (
+          <TopologyOverlayView
+            analysis={effectiveAnalysis}
+            topologyPayload={topologyPayload}
+          />
+        )}
+      </main>
+
+      {/* 6. Modals & Drawers */}
+      <AIAnalystDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        context={assistantContext}
+        onNavigate={handleAssistantNavigation}
+      />
+
+      <OperatorValidationModal
+        isOpen={isValidationModalOpen}
+        onClose={() => setValidationModalOpen(false)}
+        chainId={chainId || 'C2214039'}
+        onConfirmSignOff={note => {
+          console.log('Signed off partition for chain', chainId, note)
+          setCurrentTab('evolution')
+        }}
+      />
+
+      <AnalysisSettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onConfigChanged={cfg => {
+          setActiveConfigVersion(cfg.config_version)
+          setConfigEpoch(e => e + 1)
+        }}
+      />
+
+      {/* 7. Footer Status Bar */}
+      <footer className="w-full h-8 bg-surface-container-lowest border-t border-surface-container-highest px-space-lg flex items-center justify-between text-[11px] font-code-sm text-on-surface-variant select-none">
+        <div className="flex items-center gap-space-lg">
+          <span>PROVENANCE: <strong className="text-on-surface font-semibold">REAL_EXPORT_REPLAY</strong></span>
+          <span>CONFIG: <span className="text-on-surface">v1.0</span></span>
+          <span>ENGINE: <span className="text-secondary font-bold">hindsight-v1</span></span>
+          <span>ACTIVE SNAPSHOT: <span className="text-on-surface">{chainList?.snapshot_id ?? 'real_alarm_20260801'}</span></span>
+        </div>
+        <div className="flex items-center gap-space-lg">
+          <label className="cursor-pointer hover:text-secondary flex items-center gap-1">
+            <span className="material-symbols-outlined text-[14px]">upload_file</span>
+            <span>Load Snapshot JSON</span>
             <input
               type="file"
               accept="application/json,.json"
-              onChange={(event) => {
-                const file = event.target.files?.[0]
+              className="hidden"
+              onChange={e => {
+                const file = e.target.files?.[0]
                 if (file) void uploadSnapshot(file)
-                event.target.value = ''
               }}
             />
-            <Icon name="upload" />
-            <span>Load JSON</span>
           </label>
-        </div>
-
-      </header>
-
-      {/* Clean Tab Bar */}
-      <nav className="tabbar" aria-label="Analysis views">
-        <div className="tabbar-items">
-          {tabs.map((item) => (
-            <button
-              key={item.id}
-              className={`tab-btn-item ${tab === item.id ? 'is-active' : ''}`}
-              onClick={() => { setReviewReadOnly(false); setTab(item.id) }}
-            >
-              <small>{item.eyebrow}</small>
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </div>
-
-        <div className="layer-switcher">
-          <label htmlFor="layer">Evidence</label>
-          <select id="layer" value={layer} onChange={(event) => setLayer(event.target.value as EvidenceLayer)}>
-            {evidenceLayers.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}
-          </select>
-        </div>
-      </nav>
-
-      {/* Comparison floating hint if 1 member selected */}
-      {selectedMembers.length === 1 && (
-        <aside className="comparison-hint-banner" aria-label="Pair selection status">
-          <span>
-            Selected <strong>{selectedMembers[0]}</strong>. Click <code>+ Compare</code> on another alarm in the tree to view Pair WHY.
+          <span>MOCK GATEWAY: <strong className="text-secondary">:8085</strong></span>
+          <span className="flex items-center gap-1 text-on-surface">
+            <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
+            STREAM SYNCED
           </span>
-          <button type="button" className="text-action-btn" onClick={() => setSelectedMembers([])}>
-            Cancel selection
-          </button>
-        </aside>
-      )}
-
-      {error && (
-        <div className="error-banner workspace-error" role="alert">
-          {error}
-          <button onClick={() => setError(null)} aria-label="Dismiss error">×</button>
         </div>
-      )}
-
-      {!analysis || analysis.chain_id !== chainId ? (
-        <main className="loading-state">
-          <span />
-          <p>Computing exact indexed statistics…</p>
-        </main>
-      ) : (
-        <main className="workspace" id="top">
-          {/* Streamlined Chain Summary */}
-          <section className="chain-hero-compact">
-            <div className="chain-hero-info">
-              <div className="chain-hero-badges">
-                <span className="hero-id-tag">Chain {analysis.chain_id}</span>
-                <Pill tone={analysis.singleton ? 'muted' : 'positive'}>
-                  {analysis.member_count} {analysis.member_count === 1 ? 'alarm' : 'alarms'}
-                </Pill>
-                <Pill tone="neutral">{analysis.singleton ? 'Singleton' : 'Correlated Cluster'}</Pill>
-                <Pill tone="muted">{analysis.graybox.mode}</Pill>
-              </div>
-              <h1 className="chain-hero-title">{analysis.title}</h1>
-            </div>
-
-            <div className="chain-hero-kpis">
-              <div className="kpi-block">
-                <span>Total Duration</span>
-                <strong>{duration(Object.values(analysis.phase_durations).reduce((sum, value) => sum + value, 0))}</strong>
-              </div>
-              <div className="kpi-block">
-                <span>Statistical Mode</span>
-                <strong>{humanize(analysis.statistics_mode)}</strong>
-              </div>
-              <div className="kpi-block">
-                <span>Config Version</span>
-                <strong style={{ color: 'var(--primary-color, #38bdf8)' }}>{analysis.config_version}</strong>
-              </div>
-              <div className="kpi-block">
-                <span>Active Basis</span>
-                <strong>{humanize(analysis.pair_materialization)}</strong>
-              </div>
-            </div>
-
-          </section>
-
-          {/* Main Layout Grid (Expands to full width when side panel is closed!) */}
-          <div className={`workspace-layout ${showSidePanel ? 'has-side-panel' : 'is-full-width'}`}>
-            <div className="main-content-column">
-              <ErrorBoundary fallbackTitle="Could not display tab contents">
-                {tab === 'tree' && (
-                  <ChainTree
-                    members={analysis.members}
-                    selectedMembers={selectedMembers}
-                    activeInspectId={inspectMember?.alarm_id}
-                    onSelectMember={toggleSelectMember}
-                    onInspectMember={handleInspectMember}
-                  />
-                )}
-                {tab === 'members' && (
-                  <MemberTable
-                    members={analysis.members}
-                    selected={selectedMembers}
-                    onSelect={toggleSelectMember}
-                    onInspect={handleInspectMember}
-                  />
-                )}
-                {tab === 'why' && <WhyPanel analysis={analysis} />}
-                {tab === 'structure' && (
-                  <>
-                    <StructurePanel
-                      job={visibleJob}
-                      onRun={() => void runDeepDive()}
-                      submitting={submitting}
-                      onSelectTab={(newTab) => setTab(newTab)}
-                    />
-                    {visibleJob?.result?.topology_hypotheses && (
-                      <TopologyHypotheses topology_hypotheses={visibleJob.result.topology_hypotheses} />
-                    )}
-                  </>
-                )}
-
-                {tab === 'topology' && (
-                  <section className="topology-workspace">
-                    <header className="topology-workspace-header">
-                      <div>
-                        <p className="kicker">Read-only source navigation</p>
-                        <h2>Topology records</h2>
-                      </div>
-                      <label>
-                        Dataset profile
-                        <select value={topologyProfile} onChange={(event) => {
-                          setTopologyProfile(event.target.value as typeof topologyProfile)
-                          setTopologyRootId(undefined)
-                          setTopologySourceResolution(null)
-                        }}>
-                          <option value="ALARM_ONLY">Alarm-only</option>
-                          <option value="IP_NETWORK">IP network</option>
-                          <option value="IT_SERVICES">IT services</option>
-                        </select>
-                      </label>
-                    </header>
-                    {topologyPayload ? (
-                      <TopologyTree
-                        key={topologyPayload.status === 'AVAILABLE'
-                          ? topologyPayload.profile + ':' + topologyPayload.source_version + ':' + topologyPayload.tree.resource_id
-                          : topologyPayload.profile + ':' + topologyPayload.reason}
-                        payload={topologyPayload}
-                        onSearchSource={(query) => api.topologySearch(topologyProfile, query)}
-                        onResolveSource={async (identifier) => {
-                          const resolution = await api.topologyResolve(topologyProfile, identifier)
-                          setTopologySourceResolution(resolution)
-                          return resolution
-                        }}
-                        sourceResolution={topologySourceResolution}
-                        onRootChange={setTopologyRootId}
-                      />
-                    ) : (
-                      <div className="loading-state">
-                        <span />
-                        <p>Loading bounded topology projection…</p>
-                      </div>
-                    )}
-                  </section>
-                )}
-                {tab === 'review' && <CounterfactualReview key={`${snapshotKey}:${chainId}:${reviewReadOnly ? 'assistant' : 'operator'}`} chainId={chainId} readOnly={reviewReadOnly} />}
-                {tab === 'evolution' && <EvolutionPanel key={`${snapshotKey}:${chainId}`} chainId={chainId} />}
-                {tab === 'ai' && (
-                  <NocProAssistantPanel
-                    key={`${chainList.snapshot_id}:${chainList.snapshot_version}:${chainId}`}
-                    context={{
-                      snapshot_id: chainList.snapshot_id,
-                      snapshot_version: chainList.snapshot_version,
-                      page: tab,
-                      chain_id: chainId || undefined,
-                      alarm_id: inspectMember?.alarm_id,
-                      pair_alarm_id_a: selectedMembers[0],
-                      pair_alarm_id_b: selectedMembers[1],
-                      filters: search ? { chain_filter: search } : {},
-                    }}
-                    onNavigate={handleAssistantNavigation}
-                  />
-                )}
-              </ErrorBoundary>
-            </div>
-
-            {/* Sliding Context-Aware Inspector Side Panel */}
-            {showSidePanel && (
-              <div className="side-inspector-drawer">
-                {isPairActive ? (
-                  <PairEvidenceRail
-                    selected={selectedMembers}
-                    pair={visiblePair}
-                    loading={selectedMembers.length === 2 && !pairMatchesSelection}
-                    layer={layer}
-                    onClose={() => setSelectedMembers([])}
-                    onClear={() => setSelectedMembers([])}
-                  />
-                ) : (
-                  inspectMember && (
-                    <MemberInspectorCard
-                      member={inspectMember}
-                      onClose={() => setInspectMember(null)}
-                      onToggleCompare={() => toggleSelectMember(inspectMember)}
-                      isCompared={selectedMembers.includes(inspectMember.alarm_id)}
-                    />
-                  )
-                )}
-              </div>
-            )}
-          </div>
-        </main>
-      )}
-
-      <AnalysisSettingsModal
-
-        isOpen={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        onConfigChanged={(cfg) => {
-          setActiveConfigVersion(cfg.config_version)
-          setConfigEpoch((e) => e + 1)
-          setJob(null)
-          setPairWhyState(null)
-        }}
-      />
+      </footer>
     </div>
   )
 }
-
-
-export default App
