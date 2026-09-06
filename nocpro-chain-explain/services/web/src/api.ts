@@ -3,6 +3,7 @@ import type {
   AnalysisConfigView,
   AssistantContext,
   AssistantResponse,
+  AuditVisualizationArtifact,
   CalibrationReport,
   ChainAnalysis,
   ChainList,
@@ -156,6 +157,11 @@ export const api = {
     ),
   job: (jobId: string, signal?: AbortSignal) =>
     request<Job>(`/api/v1/jobs/${encodeURIComponent(jobId)}`, { signal }),
+  auditVisualization: (chainId: string, signal?: AbortSignal) =>
+    request<AuditVisualizationArtifact>(
+      `/api/v1/chains/${encodeURIComponent(chainId)}/audit-visualization`,
+      { signal },
+    ),
   submitReview: (chainId: string) =>
     request<{ job_id: string; cache_hit: boolean; deduplicated: boolean }>(
       `/api/v1/chains/${encodeURIComponent(chainId)}/review`,
@@ -235,4 +241,3 @@ export const api = {
       signal,
     }),
 }
-

@@ -63,6 +63,25 @@ async function installApi(page: Page, delayedB?: Promise<void>, assistantContext
         model: 'DETERMINISTIC_EVIDENCE', provider_status: 'OK',
       })
     }
+    if (url.pathname === '/api/v1/chains/C-A/audit-visualization') return fulfillJson(route, {
+      snapshot_id: 'S-BROWSER', snapshot_version: 'v1', chain_id: 'C-A',
+      audit_artifact_id: 'audit-browser-1', audit_artifact_fingerprint: 'fingerprint-browser-1',
+      visualization: {
+        status: 'AVAILABLE', reason: null, projection_version: 'audit-visualization-v1',
+        selection_strategy: 'BEST_CUT_BALANCED_WEIGHTED_DEGREE_V1', max_nodes: 80, max_edges: 160,
+        total_node_count: 3, shown_node_count: 3, hidden_node_count: 0,
+        total_edge_count: 2, shown_edge_count: 2, hidden_edge_count: 0, truncated: false,
+        nodes: [
+          { alarm_id: 'A-1', weighted_degree: 1.2, cut_side: 'A', structural_role: 'NON_CONNECTOR' },
+          { alarm_id: 'A-2', weighted_degree: 1.8, cut_side: 'A', structural_role: 'CONNECTOR' },
+          { alarm_id: 'A-3', weighted_degree: 0.7, cut_side: 'B', structural_role: 'NON_CONNECTOR' },
+        ],
+        edges: [
+          { source_alarm_id: 'A-1', target_alarm_id: 'A-2', weight: 0.8, supporting_groups: ['entity'], crosses_best_cut: false },
+          { source_alarm_id: 'A-2', target_alarm_id: 'A-3', weight: 0.7, supporting_groups: ['temporal'], crosses_best_cut: true },
+        ],
+      },
+    })
     if (url.pathname === '/api/v1/chains/C-A/evolution') return fulfillJson(route, {
       status: 'UNAVAILABLE', reason: 'SEQUENTIAL_SNAPSHOTS_NOT_AVAILABLE', source_kind: null,
       sequence_status: 'UNAVAILABLE', production_validation: 'NOT_ESTABLISHED', lineage_component_id: null,
@@ -117,6 +136,28 @@ test('missing lineage and topology are explicit unavailable states', async ({ pa
   await page.getByRole('button', { name: 'Topology' }).click()
   await expect(page.getByRole('heading', { name: 'Topology unavailable' })).toBeVisible()
   await expect(page.getByText('TOPOLOGY_FIXTURE_UNAVAILABLE')).toBeVisible()
+})
+
+test('Structure reads and renders the persisted bounded Audit graph without submitting work', async ({ page }) => {
+  const mutations: string[] = []
+  page.on('request', request => {
+    if (request.method() !== 'GET') mutations.push(`${request.method()} ${request.url()}`)
+  })
+  await installApi(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Chains Explorer' }).click()
+  await page.getByText('C-A', { exact: true }).click()
+  await page.getByRole('button', { name: 'Audit & Structure' }).click()
+
+  const graph = page.getByRole('img', { name: 'Audit graph with 3 nodes and 2 edges' })
+  await expect(graph).toBeVisible()
+  await expect(page.getByText('3 / 3 nodes')).toBeVisible()
+  await expect(graph.locator('circle')).toHaveCount(3)
+  await expect(graph.locator('line')).toHaveCount(2)
+  expect(mutations).toEqual([])
+  const dimensions = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }))
+  expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.client)
 })
 
 test('Assistant history is discarded when the selected chain context changes', async ({ page }) => {

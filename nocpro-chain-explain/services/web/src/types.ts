@@ -157,6 +157,7 @@ export type DeepDive = {
     best_cut_label: string | null
     best_cut_phi: number | null
   }
+  audit_visualization: AuditVisualization
   over_merge_strength: string
   over_merge_narrative: string
   similar_chains: Array<{
@@ -177,6 +178,44 @@ export type DeepDive = {
   topology_hypotheses: TopologyHypothesesResult
   evidence_attribution: EvidenceCoverageAttributionResult
   evidence_attribution_evaluation: AttributionDeletionEvaluationResult
+}
+
+export type AuditVisualization = {
+  status: 'AVAILABLE' | 'UNAVAILABLE'
+  reason: string | null
+  projection_version: string
+  selection_strategy: string
+  max_nodes: number
+  max_edges: number
+  total_node_count: number
+  shown_node_count: number
+  hidden_node_count: number
+  total_edge_count: number
+  shown_edge_count: number
+  hidden_edge_count: number
+  truncated: boolean
+  nodes: Array<{
+    alarm_id: string
+    weighted_degree: number
+    cut_side: 'A' | 'B' | 'NONE'
+    structural_role: string | null
+  }>
+  edges: Array<{
+    source_alarm_id: string
+    target_alarm_id: string
+    weight: number
+    supporting_groups: string[]
+    crosses_best_cut: boolean
+  }>
+}
+
+export type AuditVisualizationArtifact = {
+  snapshot_id: string
+  snapshot_version: string
+  chain_id: string
+  audit_artifact_id: string | null
+  audit_artifact_fingerprint: string | null
+  visualization: AuditVisualization
 }
 
 export type EvidenceCoverageAttributionResult = {

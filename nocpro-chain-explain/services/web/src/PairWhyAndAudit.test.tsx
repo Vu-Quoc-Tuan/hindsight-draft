@@ -35,6 +35,17 @@ const deepDive = {
   chain_id: 'C-REAL',
   audit_graph_mode: 'EXACT',
   structural_audit: { verdict: 'SPLIT_CANDIDATE', reason: 'LOW_CONDUCTANCE_CUT', epsilon: 0.2, best_cut_label: 'cut-real', best_cut_phi: 0.072 },
+  audit_visualization: {
+    status: 'AVAILABLE', reason: null, projection_version: 'audit-visualization-v1',
+    selection_strategy: 'BEST_CUT_BALANCED_WEIGHTED_DEGREE_V1', max_nodes: 80, max_edges: 160,
+    total_node_count: 2, shown_node_count: 2, hidden_node_count: 0,
+    total_edge_count: 1, shown_edge_count: 1, hidden_edge_count: 0, truncated: false,
+    nodes: [
+      { alarm_id: 'A', weighted_degree: 0.8, cut_side: 'A', structural_role: 'NON_CONNECTOR' },
+      { alarm_id: 'B', weighted_degree: 0.8, cut_side: 'B', structural_role: 'CONNECTOR' },
+    ],
+    edges: [{ source_alarm_id: 'A', target_alarm_id: 'B', weight: 0.8, supporting_groups: ['entity'], crosses_best_cut: true }],
+  },
   over_merge_strength: 'MODERATE',
   over_merge_narrative: 'Observed exact cut candidate.',
   similar_chains: [], similarity_status: 'UNAVAILABLE', similarity_unavailable_reason: 'NO_MODEL',
@@ -82,7 +93,22 @@ describe('Pair WHY and structural Audit data truth', () => {
     expect(html).toContain('cut-real')
     expect(html).toContain('0.072')
     expect(html).toContain('0.720')
-    expect(html).toContain('BOUNDED_PUBLIC_AUDIT_GRAPH_ARTIFACT_NOT_AVAILABLE')
+    expect(html).toContain('2 / 2 nodes')
+    expect(html).toContain('A')
+    expect(html).toContain('B')
+    expect(html).not.toContain('BOUNDED_PUBLIC_AUDIT_GRAPH_ARTIFACT_NOT_AVAILABLE')
+  })
+
+  it('shows the explicit persisted-artifact reason when visualization is unavailable', () => {
+    const unavailable = {
+      snapshot_id: 's1', snapshot_version: '1', chain_id: 'C-REAL',
+      audit_artifact_id: null, audit_artifact_fingerprint: null,
+      visualization: { ...deepDive.audit_visualization, status: 'UNAVAILABLE' as const, reason: 'AUDIT_ARTIFACT_NOT_AVAILABLE', shown_node_count: 0, shown_edge_count: 0, hidden_node_count: 2, hidden_edge_count: 1, truncated: true, nodes: [], edges: [] },
+    }
+    const html = renderToStaticMarkup(<AuditStructureView analysis={analysis} auditVisualization={unavailable} />)
+
+    expect(html).toContain('AUDIT_ARTIFACT_NOT_AVAILABLE')
+    expect(html).not.toContain('<svg')
   })
 
   it('rejects a completed result belonging to another chain context', () => {

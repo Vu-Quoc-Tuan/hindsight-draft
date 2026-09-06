@@ -1,9 +1,11 @@
 import { EvidenceAttribution } from '../EvidenceAttribution'
-import type { ChainAnalysis, DeepDive, Job } from '../types'
+import { AuditGraphVisualization } from '../components/AuditGraphVisualization'
+import type { AuditVisualizationArtifact, ChainAnalysis, DeepDive, Job } from '../types'
 
 interface AuditStructureViewProps {
   analysis: ChainAnalysis
   job?: Job | null
+  auditVisualization?: AuditVisualizationArtifact | null
   onRunDeepDive?: () => void
 }
 
@@ -34,15 +36,7 @@ function AuditResult({ result }: { result: DeepDive }) {
         <p className="mt-space-md text-on-surface-variant">{result.over_merge_narrative}</p>
       </section>
 
-      <section className="rounded-lg border border-surface-container-highest bg-surface-container p-space-md shadow-sm" aria-label="Audit graph availability">
-        <h3 className="font-headline-md text-headline-md font-bold">Audit graph visualization</h3>
-        <p className="mt-space-xs text-on-surface-variant">
-          UNAVAILABLE · BOUNDED_PUBLIC_AUDIT_GRAPH_ARTIFACT_NOT_AVAILABLE
-        </p>
-        <p className="mt-space-xs text-body-sm text-on-surface-variant">
-          The API exposes the exact verdict and best-cut summary, but not a bounded node/edge read model. No display graph is synthesized.
-        </p>
-      </section>
+      <AuditGraphVisualization value={result.audit_visualization} />
 
       <EvidenceAttribution
         result={result.evidence_attribution}
@@ -52,7 +46,7 @@ function AuditResult({ result }: { result: DeepDive }) {
   )
 }
 
-export function AuditStructureView({ analysis, job = null, onRunDeepDive }: AuditStructureViewProps) {
+export function AuditStructureView({ analysis, job = null, auditVisualization = null, onRunDeepDive }: AuditStructureViewProps) {
   const matchingJob = job?.chain_id === analysis.chain_id ? job : null
   const result = matchingJob?.status === 'SUCCEEDED' ? matchingJob.result : null
 
@@ -88,6 +82,9 @@ export function AuditStructureView({ analysis, job = null, onRunDeepDive }: Audi
             {matchingJob ? 'The explicit Deep Dive job has not completed.' : 'No compatible Deep Dive result is loaded for this chain.'}
           </p>
         </section>
+      )}
+      {!result && auditVisualization?.chain_id === analysis.chain_id && (
+        <AuditGraphVisualization value={auditVisualization.visualization} />
       )}
       {result && <AuditResult result={result} />}
     </div>

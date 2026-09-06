@@ -25,6 +25,7 @@ import {
 import type {
   AssistantAction,
   AssistantContext,
+  AuditVisualizationArtifact,
   ChainList,
   Job,
   PairWhy,
@@ -40,6 +41,10 @@ export default function App() {
   const [analysisError, setAnalysisError] = useState<{ requestKey: string; message: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [job, setJob] = useState<Job | null>(null)
+  const [auditVisualizationState, setAuditVisualizationState] = useState<{
+    requestKey: string
+    payload: AuditVisualizationArtifact
+  } | null>(null)
   const [, setPairWhyState] = useState<{
     snapshotKey: string
     payload: PairWhy
@@ -146,6 +151,36 @@ export default function App() {
     }
   }, [job])
 
+  // Read an already-persisted bounded Audit graph. This endpoint never starts
+  // Deep Dive; running analysis remains an explicit operator action.
+  useEffect(() => {
+    if (currentTab !== 'structure' || !chainId || !currentAnalysisKey) return
+    const controller = new AbortController()
+    const requestKey = currentAnalysisKey
+    api.auditVisualization(chainId, controller.signal).then(payload => {
+      if (controller.signal.aborted) return
+      if (
+        payload.chain_id !== chainId
+        || !chainList
+        || payload.snapshot_id !== chainList.snapshot_id
+        || payload.snapshot_version !== chainList.snapshot_version
+      ) {
+        setError('AUDIT_VISUALIZATION_CONTEXT_MISMATCH')
+        return
+      }
+      setAuditVisualizationState({ requestKey, payload })
+    }).catch((cause: unknown) => {
+      if (!controller.signal.aborted) {
+        setError(cause instanceof Error ? cause.message : 'Audit visualization failed')
+      }
+    })
+    return () => controller.abort()
+  }, [chainId, chainList, currentAnalysisKey, currentTab])
+
+  const auditVisualization = auditVisualizationState?.requestKey === currentAnalysisKey
+    ? auditVisualizationState.payload
+    : null
+
   // Load Topology when needed
   useEffect(() => {
     if (currentTab !== 'topology') return
@@ -189,6 +224,7 @@ export default function App() {
       setPairWhyState(null)
       setAssistantPair(null)
       setJob(null)
+      setAuditVisualizationState(null)
       setApiStatus('online')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Snapshot load failed')
@@ -418,6 +454,7 @@ export default function App() {
           <AuditStructureView
             analysis={analysis}
             job={job}
+            auditVisualization={auditVisualization}
             onRunDeepDive={() => void runDeepDive()}
           />
         )}
