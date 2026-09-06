@@ -65,13 +65,14 @@ Each node contains:
 alarm_id
 weighted_degree
 cut_side = A | B | NONE
-structural_role
+structural_role = CONNECTOR | NON_CONNECTOR | NOT_APPLICABLE | null
 ```
 
 `cut_side` is derived only from the exact best cut. `A` is the best-cut member
 set and `B` is its complement. If no exact best cut exists, every node uses
 `NONE`. `structural_role` is copied from the exact Tier-2 result when present;
-it is not recomputed from the bounded graph.
+it is not recomputed from the bounded graph, and missing role data remains
+`null`.
 
 ### Edges
 

@@ -15,6 +15,17 @@ from .audit_artifact import (
     build_review_audit_artifact,
     chain_membership_fingerprint,
 )
+from .audit_visualization import (
+    AUDIT_VISUALIZATION_MAX_EDGES,
+    AUDIT_VISUALIZATION_MAX_NODES,
+    AUDIT_VISUALIZATION_SELECTION_STRATEGY,
+    AUDIT_VISUALIZATION_VERSION,
+    AuditVisualization,
+    AuditVisualizationEdge,
+    AuditVisualizationNode,
+    build_audit_visualization,
+    unavailable_audit_visualization,
+)
 from .jobs import (
     JobStatus,
     Tier2JobManager,
@@ -57,6 +68,15 @@ __all__ = [
     "audit_artifact_to_dict",
     "build_review_audit_artifact",
     "chain_membership_fingerprint",
+    "AUDIT_VISUALIZATION_MAX_EDGES",
+    "AUDIT_VISUALIZATION_MAX_NODES",
+    "AUDIT_VISUALIZATION_SELECTION_STRATEGY",
+    "AUDIT_VISUALIZATION_VERSION",
+    "AuditVisualization",
+    "AuditVisualizationEdge",
+    "AuditVisualizationNode",
+    "build_audit_visualization",
+    "unavailable_audit_visualization",
     "JobStatus",
     "Tier2JobManager",
     "Tier2JobView",

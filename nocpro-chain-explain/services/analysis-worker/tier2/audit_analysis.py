@@ -63,6 +63,11 @@ from .attribution_evaluation import (
     AttributionDeletionEvaluationResult,
     evaluate_attribution_deletion,
 )
+from .audit_visualization import (
+    AuditVisualization,
+    build_audit_visualization,
+    unavailable_audit_visualization,
+)
 
 
 @dataclass(frozen=True)
@@ -117,6 +122,7 @@ class Tier2AuditAnalysis:
     chain_id: str
     audit_graph_mode: AuditGraphMode
     graph: AuditGraph | None
+    audit_visualization: AuditVisualization
     structural_roles: dict[str, StructuralRoleResult]
     structural_audit: StructuralAuditResult
     over_merge: OverMergeVerdict
@@ -260,6 +266,9 @@ def analyze_structural_audit(
     if not exact_allowed:
         graph = None
         roles = {}
+        audit_visualization = unavailable_audit_visualization(
+            "AUDIT_LIMIT_EXCEEDED", total_node_count=chain.member_count
+        )
         audit_graph_mode = AuditGraphMode.NOT_COMPUTED
         structural_audit = StructuralAuditResult(
             chain_id=chain_id,
@@ -325,12 +334,16 @@ def analyze_structural_audit(
             mining_config=mining_config,
             cross_block_negative_evidence=cross_block_negative_evidence,
         )
+        audit_visualization = build_audit_visualization(
+            graph, structural_audit, roles
+        )
         audit_graph_mode = AuditGraphMode.EXACT_FULL
 
     return Tier2AuditAnalysis(
         chain_id=chain_id,
         audit_graph_mode=audit_graph_mode,
         graph=graph,
+        audit_visualization=audit_visualization,
         structural_roles=roles,
         structural_audit=structural_audit,
         over_merge=over_merge,
