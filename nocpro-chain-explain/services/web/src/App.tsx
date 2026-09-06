@@ -15,7 +15,6 @@ import { EvolutionView } from './views/EvolutionView'
 import { TopologyOverlayView } from './views/TopologyOverlayView'
 import { ValidationView } from './views/ValidationView'
 import { AIAnalystDrawer } from './components/AIAnalystDrawer'
-import { OperatorValidationModal, type MutationSpec } from './components/OperatorValidationModal'
 import { AnalysisSettingsModal } from './AnalysisSettingsModal'
 import {
   analysisContextKey,
@@ -46,7 +45,7 @@ export default function App() {
     payload: PairWhy
   } | null>(null)
   const [topologyProfile, setTopologyProfile] = useState<'ALARM_ONLY' | 'IP_NETWORK' | 'IT_SERVICES'>('IP_NETWORK')
-  const [topologyRootId] = useState<string | undefined>(undefined)
+  const [topologyRootId, setTopologyRootId] = useState<string | undefined>(undefined)
   const topologyRequestKey = `${topologyProfile}\u0000${topologyRootId ?? ''}`
   const [loadedTopology, setLoadedTopology] = useState<{
     requestKey: string
@@ -60,13 +59,6 @@ export default function App() {
   const [currentTab, setCurrentTab] = useState<SubNavTab>('snapshot-overview')
   const [comparePair, setComparePair] = useState<[string, string]>(['C2214039', 'C2214048'])
   const [isDrawerOpen, setDrawerOpen] = useState(false)
-  const [isValidationModalOpen, setValidationModalOpen] = useState(false)
-  const [activeMutationSpec, setActiveMutationSpec] = useState<MutationSpec | null>(null)
-
-  const handleOpenValidationModal = (spec?: MutationSpec) => {
-    setActiveMutationSpec(spec || null)
-    setValidationModalOpen(true)
-  }
 
   const snapshotKey = chainList ? `${chainList.snapshot_id}:${chainList.snapshot_version}` : null
   const currentAnalysisKey = snapshotKey && chainId
@@ -279,7 +271,10 @@ export default function App() {
         datasetName={topologyProfile}
         snapshotId={chainList ? `${chainList.snapshot_id}@${chainList.snapshot_version}` : 'NO_SNAPSHOT'}
         currentView={currentTab}
-        onChangeDatasetProfile={setTopologyProfile}
+        onChangeDatasetProfile={profile => {
+          setTopologyProfile(profile)
+          setTopologyRootId(undefined)
+        }}
         onNavigate={tabName => {
           if (tabName === 'Snapshot Overview' || tabName === 'snapshot-overview' || tabName === 'overview') {
             setChainId('')
@@ -413,23 +408,20 @@ export default function App() {
         )}
 
         {analysis && currentTab === 'evolution' && (
-          <EvolutionView
-            analysis={analysis}
-            onExecutePartition={handleOpenValidationModal}
-          />
+          <EvolutionView analysis={analysis} />
         )}
 
         {analysis && currentTab === 'topology' && (
           <TopologyOverlayView
             analysis={analysis}
             topologyPayload={topologyPayload}
+            onRootChange={setTopologyRootId}
           />
         )}
 
         {analysis && currentTab === 'validation' && (
           <ValidationView
             analysis={analysis}
-            onOpenValidationModal={handleOpenValidationModal}
           />
         )}
       </main>
@@ -441,17 +433,6 @@ export default function App() {
         onOpen={() => setDrawerOpen(true)}
         context={assistantContext}
         onNavigate={handleAssistantNavigation}
-      />
-
-      <OperatorValidationModal
-        isOpen={isValidationModalOpen}
-        onClose={() => setValidationModalOpen(false)}
-        chainId={chainId}
-        mutationSpec={activeMutationSpec}
-        onConfirmSignOff={note => {
-          console.log('Signed off partition for chain', chainId, note)
-          setCurrentTab('evolution')
-        }}
       />
 
       <AnalysisSettingsModal

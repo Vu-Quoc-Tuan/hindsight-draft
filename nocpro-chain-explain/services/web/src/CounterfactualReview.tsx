@@ -323,6 +323,10 @@ export function CounterfactualReview({
           current = await api.reviewJob(submission.job_id, controller.signal)
         }
         if (!controller.signal.aborted) {
+          if (current.chain_id !== chainId || current.identity.chain_id !== chainId) {
+            setError('REVIEW_CONTEXT_MISMATCH')
+            return
+          }
           setJob(current)
           // Also fetch existing feedbacks for this job
           if (current.job_id) {
