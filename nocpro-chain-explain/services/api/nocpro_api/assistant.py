@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -21,6 +22,8 @@ from .grounded_llm import (
 )
 
 logger = logging.getLogger(__name__)
+
+ProviderRunner = Callable[..., Awaitable[Any]]
 
 REGISTRY_VERSION = "nocpro-assistant-registry-v1"
 
@@ -325,8 +328,11 @@ def _get_or_run_audit(service: Any, chain_id: str) -> Any | None:
     return None
 
 
-def _handle_inspect_chart(
-    service: Any, chain_id: str, chart_kind: str, context: dict[str, Any]
+async def _handle_inspect_chart(
+    service: Any,
+    chain_id: str,
+    chart_kind: str,
+    context: dict[str, Any],
 ) -> dict[str, Any]:
     if chart_kind == "conductance_cut":
         audit_res = _get_or_run_audit(service, chain_id)
@@ -410,16 +416,54 @@ def _handle_inspect_chart(
         }
 
     if chart_kind == "evolution_lineage":
-        chart_data = {
-            "chain_id": chain_id,
-            "chart_type": "evolution_lineage",
-            "status": "AVAILABLE",
-        }
+        try:
+            from .serializers import evolution_view
+
+            evolution = evolution_view(await service.evolution(chain_id))
+            chart_data = {
+                "chart_type": "evolution_lineage",
+                **evolution.model_dump(mode="json"),
+            }
+        except Exception:
+            logger.exception("Could not load persisted Evolution artifact for chain=%s", chain_id)
+            return _unavailable(
+                f"Không thể tải Evolution artifact đã lưu của chuỗi {chain_id}.",
+                "EVOLUTION_ARTIFACT_UNAVAILABLE",
+            )
+
+        if evolution.status != "AVAILABLE":
+            reason = evolution.reason or "SEQUENTIAL_SNAPSHOTS_NOT_AVAILABLE"
+            return {
+                "status": "UNAVAILABLE",
+                "message": (
+                    f"Evolution của chuỗi {chain_id} chưa khả dụng ({reason}). "
+                    "Hệ thống không dựng timeline khi chưa có verified sequential snapshots."
+                ),
+                "chart_data": chart_data,
+                "fact_refs": [f"capability:{reason}"],
+                "actions": [
+                    _navigation_action(
+                        service,
+                        label="Open Evolution",
+                        tab="evolution",
+                        chain_id=chain_id,
+                    )
+                ],
+            }
+
         return {
             "status": "AVAILABLE",
-            "message": f"Biểu đồ tiến hóa (Evolution Lineage) hiển thị lịch sử biến động/sáp nhập chuỗi {chain_id} qua các mốc thời gian.",
+            "message": (
+                f"Evolution artifact của chuỗi {chain_id} đã được xác minh và lưu bền vững: "
+                f"{len(evolution.nodes)} node, {len(evolution.edges)} edge; "
+                f"source_kind={evolution.source_kind}, "
+                f"production_validation={evolution.production_validation}."
+            ),
             "chart_data": chart_data,
-            "fact_refs": [f"chain:{chain_id}", "lineage:evolution"],
+            "fact_refs": [
+                f"chain:{chain_id}",
+                f"lineage:{evolution.lineage_component_id}",
+            ],
             "actions": [
                 _navigation_action(
                     service,
@@ -428,6 +472,67 @@ def _handle_inspect_chart(
                     chain_id=chain_id,
                 )
             ],
+        }
+
+    if chart_kind == "counterfactual_review":
+        review_action = _navigation_action(
+            service,
+            label="Open Counterfactual Review",
+            tab="review",
+            chain_id=chain_id,
+        )
+        try:
+            latest = await service.latest_review(chain_id)
+        except Exception:
+            logger.exception("Could not load persisted Review artifact for chain=%s", chain_id)
+            return {
+                **_unavailable(
+                    f"Không thể tải Review artifact đã lưu của chuỗi {chain_id}.",
+                    "REVIEW_ARTIFACT_NOT_AVAILABLE",
+                ),
+                "actions": [review_action],
+            }
+
+        if latest is None or getattr(latest, "result", None) is None:
+            return {
+                **_unavailable(
+                    f"Chuỗi {chain_id} chưa có Counterfactual Review artifact tương thích.",
+                    "REVIEW_ARTIFACT_NOT_AVAILABLE",
+                ),
+                "actions": [review_action],
+            }
+
+        from tier2.counterfactual.public_contract import public_review_result
+
+        stored_result = latest.result
+        review_result = (
+            public_review_result(stored_result)
+            if hasattr(stored_result, "recommendations")
+            else dict(stored_result)
+        )
+        recommendations = list(review_result.get("recommendations") or [])
+        evaluated = list(review_result.get("evaluated_candidates") or [])
+        frontier = dict(review_result.get("frontier") or {})
+        chart_data = {
+            "chain_id": chain_id,
+            "chart_type": "counterfactual_review",
+            **review_result,
+        }
+        return {
+            "status": "AVAILABLE",
+            "message": (
+                f"Counterfactual Review artifact của chuỗi {chain_id} có "
+                f"{len(evaluated)} candidate đã đánh giá, "
+                f"{len(recommendations)} recommendation và "
+                f"{frontier.get('count_before_limit', 0)} candidate trên frontier trước limit. "
+                "Đây là đề xuất để operator xem xét, không phải thay đổi tự động."
+            ),
+            "chart_data": chart_data,
+            "fact_refs": [
+                f"chain:{chain_id}",
+                f"review-contract:{review_result.get('contract_version', 'unknown')}",
+            ],
+            "actions": [review_action],
         }
 
     # Default: attribution_deletion_curve
@@ -554,7 +659,7 @@ def _handle_inspect_chart(
     }
 
 
-def dispatch_assistant_tool(
+async def dispatch_assistant_tool(
     service: Any,
     tool_name: str,
     arguments: dict[str, Any],
@@ -709,7 +814,7 @@ def dispatch_assistant_tool(
         else:
             chart_kind = "attribution_deletion_curve"
 
-        return _handle_inspect_chart(service, chain_id, chart_kind, context)
+        return await _handle_inspect_chart(service, chain_id, chart_kind, context)
 
     return {
         "status": "NO_FINDING",
@@ -719,22 +824,26 @@ def dispatch_assistant_tool(
     }
 
 
-def _fallback_route(service: Any, text: str, context: dict[str, Any]) -> dict[str, Any]:
+async def _fallback_route(
+    service: Any,
+    text: str,
+    context: dict[str, Any],
+) -> dict[str, Any]:
     """Lightweight fallback routing used when LLM provider is offline or not configured."""
     for metric_key in SEMANTIC_REGISTRY:
         if metric_key in text:
-            return dispatch_assistant_tool(service, "explain_metric", {"metric_name": metric_key}, context)
+            return await dispatch_assistant_tool(service, "explain_metric", {"metric_name": metric_key}, context)
 
     if "độ dẫn" in text:
-        return dispatch_assistant_tool(service, "explain_metric", {"metric_name": "conductance"}, context)
+        return await dispatch_assistant_tool(service, "explain_metric", {"metric_name": "conductance"}, context)
     if "thành viên" in text or "membership" in text:
-        return dispatch_assistant_tool(service, "explain_metric", {"metric_name": "membership_support"}, context)
+        return await dispatch_assistant_tool(service, "explain_metric", {"metric_name": "membership_support"}, context)
 
     if "root cause" in text or "nguyên nhân gốc" in text or "rca" in text:
-        return dispatch_assistant_tool(service, "explain_root_cause_boundary", {}, context)
+        return await dispatch_assistant_tool(service, "explain_root_cause_boundary", {}, context)
 
     if "service" in text or "dịch vụ" in text or "resource" in text or "tài nguyên" in text:
-        return dispatch_assistant_tool(service, "report_resource_mapping_unavailable", {}, context)
+        return await dispatch_assistant_tool(service, "report_resource_mapping_unavailable", {}, context)
 
     # Chart inspection fallback
     if any(m in text for m in ("biểu đồ", "chart", "đường vẽ", "đồ thị", "deletion", "auc", "lát cắt", "độ dốc")):
@@ -743,20 +852,23 @@ def _fallback_route(service: Any, text: str, context: dict[str, Any]) -> dict[st
             if any(c in text for c in ("conductance", "độ dẫn", "lát cắt", "cut"))
             else "attribution_deletion_curve"
         )
-        return dispatch_assistant_tool(
-            service, "inspect_chart", {"chart_type": raw_chart}, context
+        return await dispatch_assistant_tool(
+            service,
+            "inspect_chart",
+            {"chart_type": raw_chart},
+            context,
         )
 
     # Tab navigation fallback
     for tab, tab_key in [("why", "why"), ("pair", "why"), ("audit", "structure"), ("structure", "structure"),
                          ("review", "review"), ("evolution", "evolution"), ("topology", "topology")]:
         if tab in text:
-            return dispatch_assistant_tool(service, "navigate_workspace", {"tab": tab_key}, context)
+            return await dispatch_assistant_tool(service, "navigate_workspace", {"tab": tab_key}, context)
 
     # Search chains fallback
     matches = _find_chain_matches(service, text)
     if matches:
-        return dispatch_assistant_tool(service, "search_chains", {"query": text}, context)
+        return await dispatch_assistant_tool(service, "search_chains", {"query": text}, context)
 
     return {
         "status": "NO_FINDING",
@@ -766,7 +878,13 @@ def _fallback_route(service: Any, text: str, context: dict[str, Any]) -> dict[st
     }
 
 
-def answer_query(service: Any, query: str, context: dict[str, Any]) -> dict[str, Any]:
+async def answer_query(
+    service: Any,
+    query: str,
+    context: dict[str, Any],
+    *,
+    provider_runner: ProviderRunner | None = None,
+) -> dict[str, Any]:
     """Produce a bounded, evidence-referenced assistant response using LLM tool calling or fallback."""
     if not _active_context_matches(service, context):
         return {
@@ -796,18 +914,35 @@ def answer_query(service: Any, query: str, context: dict[str, Any]) -> dict[str,
             f"Active snapshot: {context.get('snapshot_id')} version {context.get('snapshot_version')}.\n"
             f"Selected chain: {context.get('chain_id') or 'none'}.\n"
             f"Selected pair: {context.get('pair_alarm_id_a') or 'none'}, {context.get('pair_alarm_id_b') or 'none'}.\n\n"
-            "Select and call the appropriate tool when the user asks to explain a metric, inspect chart/curve numbers, navigate tabs, "
-            "search for chains, or asks about root causes. If no tool applies, respond directly and factually in Vietnamese."
+            "Select and call the appropriate read-only tool when the user asks to explain a metric, inspect chart/curve numbers, "
+            "navigate tabs, search for chains, or asks about root causes. For any factual claim about the active snapshot, chain, "
+            "alarms, roles, Audit, Review, Evolution, topology, chart, or metric, you must call a read-only tool before making factual claims. "
+            "Do not invent or infer chain-specific facts, counts, scores, statuses, recommendations, or causal conclusions without tool data. "
+            "If no tool can verify a requested repository fact, say that it cannot be verified from the available read-only tools. "
+            "You may answer general conceptual or conversational questions directly in Vietnamese when they do not assert repository-specific facts."
         )
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": query},
         ]
-        llm_result = call_grounded_assistant(messages=messages, tools=ASSISTANT_TOOLS)
+        if provider_runner is None:
+            llm_result = call_grounded_assistant(
+                messages=messages,
+                tools=ASSISTANT_TOOLS,
+            )
+        else:
+            llm_result = await provider_runner(
+                call_grounded_assistant,
+                messages=messages,
+                tools=ASSISTANT_TOOLS,
+            )
         if llm_result.used_provider and llm_result.tool_calls:
             call = llm_result.tool_calls[0]
-            dispatched = dispatch_assistant_tool(
-                service, call.name, call.arguments, context
+            dispatched = await dispatch_assistant_tool(
+                service,
+                call.name,
+                call.arguments,
+                context,
             )
             # If the tool returned structured chart data, run a second turn so LLM explains the numbers and curves
             if call.name == "inspect_chart" and dispatched.get("chart_data"):
@@ -833,9 +968,17 @@ def answer_query(service: Any, query: str, context: dict[str, Any]) -> dict[str,
                         "content": json.dumps(chart_data, ensure_ascii=False),
                     },
                 ]
-                explained_result = call_grounded_assistant(
-                    messages=second_turn_messages, tools=None
-                )
+                if provider_runner is None:
+                    explained_result = call_grounded_assistant(
+                        messages=second_turn_messages,
+                        tools=None,
+                    )
+                else:
+                    explained_result = await provider_runner(
+                        call_grounded_assistant,
+                        messages=second_turn_messages,
+                        tools=None,
+                    )
                 if explained_result.used_provider and explained_result.content:
                     return {
                         **dispatched,
@@ -847,8 +990,6 @@ def answer_query(service: Any, query: str, context: dict[str, Any]) -> dict[str,
 
             # For other tools or if 2nd turn fails, preserve dispatched message
             message = dispatched.get("message", "")
-            if llm_result.content:
-                message = f"{llm_result.content}\n\n{message}"
             return {
                 **dispatched,
                 "message": message,
@@ -868,7 +1009,7 @@ def answer_query(service: Any, query: str, context: dict[str, Any]) -> dict[str,
             }
 
     # Fallback when LLM is not configured or fails
-    return _fallback_route(service, text, context)
+    return await _fallback_route(service, text, context)
 
 
 def render_answer(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from typing import Any
 import httpx2
 import pytest
@@ -27,9 +28,9 @@ def test_tool_dispatch_explain_metric() -> None:
         ws = app.state.workspace
         context = {"snapshot_id": "s1", "snapshot_version": "1", "chain_id": "C1"}
 
-        result = dispatch_assistant_tool(
+        result = asyncio.run(dispatch_assistant_tool(
             ws, "explain_metric", {"metric_name": "conductance"}, context
-        )
+        ))
         assert result["status"] == "AVAILABLE"
         assert "Audit conductance" in result["message"]
         assert "semantic-registry:conductance" in result["fact_refs"]
@@ -52,9 +53,9 @@ def test_tool_dispatch_navigate_workspace() -> None:
         context = {"snapshot_id": "s1", "snapshot_version": "1", "chain_id": "C1"}
 
         # Navigate to structure (Audit)
-        result = dispatch_assistant_tool(
+        result = asyncio.run(dispatch_assistant_tool(
             ws, "navigate_workspace", {"tab": "structure", "chain_id": "C1"}, context
-        )
+        ))
         assert result["status"] == "AVAILABLE"
         assert len(result["actions"]) == 1
         action = result["actions"][0]
@@ -66,12 +67,12 @@ def test_tool_dispatch_navigate_workspace() -> None:
         assert action["target"]["snapshot_version"] == "1"
 
         # Navigate to Pair WHY with pair
-        why_result = dispatch_assistant_tool(
+        why_result = asyncio.run(dispatch_assistant_tool(
             ws,
             "navigate_workspace",
             {"tab": "why", "chain_id": "C1", "pair_alarm_id_a": "a1", "pair_alarm_id_b": "a2"},
             context,
-        )
+        ))
         assert why_result["status"] == "AVAILABLE"
         why_action = why_result["actions"][0]
         assert why_action["label"] == "Open Pair WHY"
@@ -94,13 +95,13 @@ def test_tool_dispatch_search_chains() -> None:
         ws = app.state.workspace
         context = {"snapshot_id": "s1", "snapshot_version": "1"}
 
-        result = dispatch_assistant_tool(ws, "search_chains", {"query": "C1"}, context)
+        result = asyncio.run(dispatch_assistant_tool(ws, "search_chains", {"query": "C1"}, context))
         assert result["status"] == "AVAILABLE"
         assert len(result["actions"]) == 1
         assert result["actions"][0]["target"]["chain_id"] == "C1"
 
         # Non-matching search
-        empty_result = dispatch_assistant_tool(ws, "search_chains", {"query": "NON_EXISTENT"}, context)
+        empty_result = asyncio.run(dispatch_assistant_tool(ws, "search_chains", {"query": "NON_EXISTENT"}, context))
         assert empty_result["status"] == "NO_FINDING"
         assert empty_result["actions"] == []
     finally:
@@ -122,8 +123,11 @@ def test_llm_tool_calling_integration(monkeypatch: pytest.MonkeyPatch) -> None:
 
                 # Test 1: LLM selects explain_metric
                 def fake_llm_explain(**kwargs: Any) -> GroundedAssistantCallResult:
+                    system_prompt = kwargs["messages"][0]["content"]
+                    assert "must call a read-only tool before making factual claims" in system_prompt
+                    assert "Do not invent or infer chain-specific facts" in system_prompt
                     return GroundedAssistantCallResult(
-                        content="Giải thích về conductance",
+                        content="Nội dung chưa grounded ở lượt chọn tool phải bị bỏ.",
                         tool_calls=[LLMToolCall(name="explain_metric", arguments={"metric_name": "conductance"})],
                         model="mock-model",
                         provider_status="OK",
@@ -143,6 +147,7 @@ def test_llm_tool_calling_integration(monkeypatch: pytest.MonkeyPatch) -> None:
                 data = resp.json()
                 assert data["status"] == "AVAILABLE"
                 assert "Audit conductance" in data["message"]
+                assert "Nội dung chưa grounded" not in data["message"]
                 assert data["model"] == "mock-model"
                 assert data["provider_status"] == "OK"
 
@@ -216,9 +221,9 @@ def test_tool_dispatch_inspect_chart() -> None:
         context = {"snapshot_id": "s1", "snapshot_version": "1", "chain_id": "C1"}
 
         # 1. Inspect deletion curve
-        res_del = dispatch_assistant_tool(
+        res_del = asyncio.run(dispatch_assistant_tool(
             ws, "inspect_chart", {"chart_type": "attribution_deletion_curve"}, context
-        )
+        ))
         assert res_del["status"] == "AVAILABLE"
         chart_data = res_del["chart_data"]
         assert chart_data["chart_type"] == "attribution_deletion_curve"
@@ -231,9 +236,9 @@ def test_tool_dispatch_inspect_chart() -> None:
         assert "chain:C1" in res_del["fact_refs"]
 
         # 2. Inspect conductance cut
-        res_cut = dispatch_assistant_tool(
+        res_cut = asyncio.run(dispatch_assistant_tool(
             ws, "inspect_chart", {"chart_type": "conductance_cut"}, context
-        )
+        ))
         assert res_cut["status"] == "AVAILABLE"
         cut_data = res_cut["chart_data"]
         assert cut_data["chart_type"] == "conductance_cut"
@@ -241,11 +246,209 @@ def test_tool_dispatch_inspect_chart() -> None:
         assert len(res_cut["actions"]) == 1
 
         # 3. Invalid chain
-        res_invalid = dispatch_assistant_tool(
+        res_invalid = asyncio.run(dispatch_assistant_tool(
             ws, "inspect_chart", {"chart_type": "conductance_cut", "chain_id": "NON_EXISTENT"}, context
-        )
+        ))
         assert res_invalid["status"] == "UNAVAILABLE"
         assert "capability:CHAIN_CONTEXT_UNAVAILABLE" in res_invalid["fact_refs"]
+    finally:
+        app.state.workspace.close()
+
+
+def test_inspect_evolution_reads_verified_artifact_and_rejects_single_snapshot() -> None:
+    app = create_app()
+    try:
+        async def seed() -> None:
+            transport = httpx2.ASGITransport(app=app)
+            async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                res = await client.post("/api/v1/snapshots", json=_payload())
+                assert res.status_code == 201
+
+        asyncio.run(seed())
+        ws = app.state.workspace
+        context = {"snapshot_id": "s1", "snapshot_version": "1", "chain_id": "C1"}
+
+        unavailable = asyncio.run(dispatch_assistant_tool(
+            ws,
+            "inspect_chart",
+            {"chart_type": "evolution_lineage", "chain_id": "C1"},
+            context,
+        ))
+        assert unavailable["status"] == "UNAVAILABLE"
+        assert unavailable["fact_refs"] == [
+            "capability:SEQUENTIAL_SNAPSHOTS_NOT_AVAILABLE"
+        ]
+
+        async def verified_evolution(_chain_id: str) -> Any:
+            return SimpleNamespace(
+                status="AVAILABLE",
+                reason=None,
+                source_kind="SYNTHETIC_TEST",
+                sequence_status="VERIFIED",
+                production_validation="NOT_ESTABLISHED",
+                lineage_component_id="lc-synthetic",
+                branch_id="branch-1",
+                snapshot_id="s1",
+                snapshot_version="1",
+                chain_id="C1",
+                nodes=(
+                    SimpleNamespace(
+                        snapshot_id="s0",
+                        snapshot_version="1",
+                        chain_id="C0",
+                        snapshot_time=__import__("datetime").datetime.fromisoformat(
+                            "2026-01-01T00:00:00+00:00"
+                        ),
+                        lineage_component_id="lc-synthetic",
+                        branch_id="branch-1",
+                        source_kind="SYNTHETIC_TEST",
+                    ),
+                ),
+                edges=(),
+            )
+
+        ws.evolution = verified_evolution
+        available = asyncio.run(dispatch_assistant_tool(
+            ws,
+            "inspect_chart",
+            {"chart_type": "evolution_lineage", "chain_id": "C1"},
+            context,
+        ))
+        assert available["status"] == "AVAILABLE"
+        assert available["chart_data"]["source_kind"] == "SYNTHETIC_TEST"
+        assert available["chart_data"]["sequence_status"] == "VERIFIED"
+        assert available["chart_data"]["production_validation"] == "NOT_ESTABLISHED"
+        assert available["chart_data"]["nodes"][0]["chain_id"] == "C0"
+    finally:
+        app.state.workspace.close()
+
+
+def test_inspect_counterfactual_has_own_read_only_handler() -> None:
+    app = create_app()
+    try:
+        async def seed() -> None:
+            transport = httpx2.ASGITransport(app=app)
+            async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                res = await client.post("/api/v1/snapshots", json=_payload())
+                assert res.status_code == 201
+
+        asyncio.run(seed())
+        ws = app.state.workspace
+        context = {"snapshot_id": "s1", "snapshot_version": "1", "chain_id": "C1"}
+
+        async def no_review(_chain_id: str) -> None:
+            return None
+
+        ws.latest_review = no_review
+        unavailable = asyncio.run(dispatch_assistant_tool(
+            ws,
+            "inspect_chart",
+            {"chart_type": "counterfactual_review", "chain_id": "C1"},
+            context,
+        ))
+        assert unavailable["status"] == "UNAVAILABLE"
+        assert unavailable["fact_refs"] == ["capability:REVIEW_ARTIFACT_NOT_AVAILABLE"]
+        assert unavailable["actions"][0]["target"]["tab"] == "review"
+        assert "primary_auc" not in unavailable.get("chart_data", {})
+
+        review_result = {
+            "contract_version": "counterfactual-review-v1",
+            "status": "AVAILABLE",
+            "evaluated_candidates": [
+                {"candidate_id": "cf-move-1", "operation": "MOVE_MEMBER"}
+            ],
+            "recommendations": [{"candidate_id": "cf-move-1"}],
+            "frontier": {
+                "count_before_limit": 1,
+                "selected_count": 1,
+                "truncated": False,
+            },
+            "operation_status": {},
+        }
+
+        async def persisted_review(_chain_id: str) -> Any:
+            return SimpleNamespace(status="SUCCEEDED", result=review_result)
+
+        ws.latest_review = persisted_review
+        available = asyncio.run(dispatch_assistant_tool(
+            ws,
+            "inspect_chart",
+            {"chart_type": "counterfactual_review", "chain_id": "C1"},
+            context,
+        ))
+        assert available["status"] == "AVAILABLE"
+        assert available["chart_data"]["chart_type"] == "counterfactual_review"
+        assert available["chart_data"]["recommendations"] == [
+            {"candidate_id": "cf-move-1"}
+        ]
+        assert available["chart_data"]["frontier"]["selected_count"] == 1
+        assert available["chart_data"]["evaluated_candidates"][0]["operation"] == "MOVE_MEMBER"
+        assert "primary_auc" not in available["chart_data"]
+    finally:
+        app.state.workspace.close()
+
+
+def test_assistant_endpoint_bridges_persisted_evolution_read_without_placeholder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AI_API_KEY", "test-key")
+    monkeypatch.setenv("AI_BASE_URL", "https://api.test/v1")
+    monkeypatch.setenv("AI_MODEL", "mock-model")
+
+    def select_evolution(*, tools: Any = None, **_kwargs: Any) -> GroundedAssistantCallResult:
+        if tools is None:
+            return GroundedAssistantCallResult(
+                content=None,
+                tool_calls=[],
+                model="mock-model",
+                provider_status="OK",
+                used_provider=True,
+            )
+        return GroundedAssistantCallResult(
+            content="Evolution placeholder must not be used.",
+            tool_calls=[
+                LLMToolCall(
+                    name="inspect_chart",
+                    arguments={"chain_id": "C1", "chart_type": "evolution_lineage"},
+                )
+            ],
+            model="mock-model",
+            provider_status="OK",
+            used_provider=True,
+        )
+
+    monkeypatch.setattr("nocpro_api.assistant.call_grounded_assistant", select_evolution)
+    app = create_app()
+    try:
+        async def run() -> None:
+            transport = httpx2.ASGITransport(app=app)
+            async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                seeded = await client.post("/api/v1/snapshots", json=_payload())
+                assert seeded.status_code == 201
+                response = await asyncio.wait_for(
+                    client.post(
+                        "/api/v1/assistant/query",
+                        json={
+                            "query": "Evolution của C1 thế nào?",
+                            "context": {
+                                "snapshot_id": "s1",
+                                "snapshot_version": "1",
+                                "chain_id": "C1",
+                            },
+                        },
+                    ),
+                    timeout=2,
+                )
+                assert response.status_code == 200
+                payload = response.json()
+                assert payload["status"] == "UNAVAILABLE"
+                assert payload["fact_refs"] == [
+                    "capability:SEQUENTIAL_SNAPSHOTS_NOT_AVAILABLE"
+                ]
+                assert payload["chart_data"]["status"] == "UNAVAILABLE"
+                assert "Evolution placeholder" not in payload["message"]
+
+        asyncio.run(run())
     finally:
         app.state.workspace.close()
 
@@ -335,11 +538,12 @@ def test_fallback_chart_route() -> None:
 
         from nocpro_api.assistant import _fallback_route
 
-        result = _fallback_route(ws, "giải thích biểu đồ deletion curve chuỗi này", context)
+        result = asyncio.run(
+            _fallback_route(ws, "giải thích biểu đồ deletion curve chuỗi này", context)
+        )
         assert result["status"] == "AVAILABLE"
         assert "Số liệu biểu đồ Deletion Curve" in result["message"]
         assert result["chart_data"]["chart_type"] == "attribution_deletion_curve"
         assert len(result["actions"]) == 1
     finally:
         app.state.workspace.close()
-

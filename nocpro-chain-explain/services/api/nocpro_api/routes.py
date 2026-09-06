@@ -361,12 +361,17 @@ async def query_assistant(
         context = request_body.context.model_dump()
         ws = workspace(request)
         query_text = request_body.query
-
-        def _execute_assistant_flow() -> dict[str, Any]:
-            deterministic = answer_query(ws, query_text, context)
-            return render_answer(context=context, deterministic=deterministic)
-
-        result = await _run_grounded_provider(_execute_assistant_flow)
+        deterministic = await answer_query(
+            ws,
+            query_text,
+            context,
+            provider_runner=_run_grounded_provider,
+        )
+        result = await _run_grounded_provider(
+            render_answer,
+            context=context,
+            deterministic=deterministic,
+        )
         return AssistantResponseView(
             contract_version="nocpro-assistant-v1",
             **result,
@@ -409,4 +414,3 @@ async def calibrate_config(request: Request) -> CalibrationReportView:
         return CalibrationReportView(**report)
     except Exception as exc:
         raise translate_error(exc) from exc
-
