@@ -103,9 +103,16 @@ are explicitly delimited as data rather than instructions.
 
 The renderer may:
 
-- translate, summarize, and improve readability;
+- summarize and improve readability while preserving the deterministic draft's
+  primary language;
 - explain the meaning and limitations of referenced metrics;
 - describe persisted Review proposals as proposals.
+
+The renderer must not translate by default. A primarily Vietnamese draft must
+produce a Vietnamese narrative, and a primarily English draft must remain
+English, unless a future explicit user-language contract requests translation.
+This is a presentation invariant only; it does not change facts, evidence, or
+operator actions.
 
 The renderer may not:
 
@@ -168,6 +175,8 @@ Tests must prove:
   OpenAI-compatible and Ollama HTTP responses;
 - exact Ollama `/chat` request shape, including `stream=false`, and parsing of
   only final `message.content`;
+- the system instruction explicitly preserves the deterministic draft's
+  primary language and forbids implicit translation;
 - explicit protocol selection, backward-compatible OpenAI default, and
   fail-closed behavior for an unsupported protocol;
 - exact preservation of deterministic `actions`, `fact_refs`, statuses, Review

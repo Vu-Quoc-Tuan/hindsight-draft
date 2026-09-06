@@ -110,6 +110,12 @@ def test_renderer_uses_native_ollama_chat_protocol(
         "temperature": 0,
         "num_predict": 1_200,
     }
+    system_prompt = captured["body"]["messages"][0]["content"]
+    assert "Preserve the primary language of the deterministic draft." in system_prompt
+    assert (
+        "If the draft is primarily Vietnamese, respond in Vietnamese." in system_prompt
+    )
+    assert "Do not translate unless explicitly requested." in system_prompt
     assert "Deterministic Ollama draft" in json.dumps(captured["body"])
     assert result.message == "Grounded Ollama text"
     assert "thinking" not in result.message.lower()

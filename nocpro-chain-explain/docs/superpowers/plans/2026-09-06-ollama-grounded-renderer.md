@@ -195,3 +195,32 @@ git commit -m "chore: configure ollama grounded provider"
 - [x] **Step 7: Final cleanliness check**
 
 Run `git status --short`, `git diff --check`, and a frontend source scan for `AI_API_KEY` or `VITE_AI_*`. Expected: feature worktree clean, no browser-side secret configuration, and no temporary smoke-test file.
+
+---
+
+### Task 3: Preserve the deterministic draft language
+
+**Files:**
+- Modify: `services/api/nocpro_api/grounded_llm.py`
+- Modify: `tests/test_grounded_llm.py`
+
+- [x] **Step 1: Pin the presentation instruction**
+
+Assert that the provider system message requires the renderer to preserve the
+primary language of the deterministic draft, keep Vietnamese drafts in
+Vietnamese, and avoid implicit translation.
+
+- [x] **Step 2: Confirm the focused test fails, then implement the prompt rule**
+
+Add only a presentation constraint. Do not change facts, actions, evidence,
+fallback behavior, protocol codecs, or any deterministic decision semantics.
+
+- [x] **Step 3: Verify with mocked and live Ollama responses**
+
+Run the focused provider tests, then a live Vietnamese smoke test that checks
+both provider status and the actual language of the rendered message.
+
+- [x] **Step 4: Run the full regression and commit**
+
+Run backend tests, frontend tests/lint/build, Compose validation, and
+`git diff --check`, then commit the focused change.

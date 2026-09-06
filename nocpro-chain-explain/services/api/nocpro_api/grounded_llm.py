@@ -66,8 +66,10 @@ def _system_prompt(purpose: RenderPurpose) -> str:
         "devices, relations, scores, roles, recommendations, causal claims, root "
         "causes, topology dependencies, taxonomy, validation verdicts, URLs, tool "
         "calls, actions, jobs, feedback, mutations, or Apply instructions. Preserve "
-        "UNAVAILABLE, uncertainty, and proposal-only wording. Return only the final "
-        "natural-language message; do not return JSON or metadata."
+        "UNAVAILABLE, uncertainty, and proposal-only wording. Preserve the primary "
+        "language of the deterministic draft. If the draft is primarily Vietnamese, "
+        "respond in Vietnamese. Do not translate unless explicitly requested. Return "
+        "only the final natural-language message; do not return JSON or metadata."
     )
 
 
