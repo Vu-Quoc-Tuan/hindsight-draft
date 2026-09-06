@@ -185,13 +185,13 @@ model=gpt-oss:120b
 
 If access fails, preserve deterministic fallback and report the exact sanitized HTTP category without calling the feature PASS.
 
-- [ ] **Step 6: Commit configuration and status**
+- [x] **Step 6: Commit configuration and status**
 
 ```text
 git add .env.example docker-compose.yml services/web/src/GroundedProviderBadge.tsx services/web/src/AIAdvisorPanel.test.tsx IMPLEMENTATION_STATUS.md
 git commit -m "chore: configure ollama grounded provider"
 ```
 
-- [ ] **Step 7: Final cleanliness check**
+- [x] **Step 7: Final cleanliness check**
 
 Run `git status --short`, `git diff --check`, and a frontend source scan for `AI_API_KEY` or `VITE_AI_*`. Expected: feature worktree clean, no browser-side secret configuration, and no temporary smoke-test file.
