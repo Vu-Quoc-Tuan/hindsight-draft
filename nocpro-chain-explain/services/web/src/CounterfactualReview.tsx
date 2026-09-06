@@ -229,7 +229,7 @@ const REASON_EXPLANATIONS: Record<string, string> = {
   MERGE_POLICY_NOT_CALIBRATED: 'Chưa cấu hình chính sách gộp chuỗi (MERGE) · Sử dụng Cài đặt để hiệu chuẩn',
   STRUCTURAL_AUDIT_UNAVAILABLE: 'Chưa có kết quả phân tích đồ thị cấu trúc (Audit Graph) cho chuỗi này',
   NO_NONTRIVIAL_SPLIT: 'Chuỗi không có điểm cắt tự nhiên đạt ngưỡng phân tách',
-  COUNTERFACTUAL_POLICY_NOT_CALIBRATED: 'Tập tham số hiện tại chưa được đánh dấu hiệu chuẩn sản xuất (PRODUCTION_CALIBRATED)',
+  COUNTERFACTUAL_POLICY_NOT_CALIBRATED: 'Chính sách Counterfactual đang ở chế độ an toàn mặc định (SYNTHETIC_ONLY) do chưa có nhãn hiệu chuẩn từ kỹ sư vận hành (Operator Ground Truth)',
   NO_CLEAR_ALTERNATIVE: 'Không có phương án phân hoạch nào vượt trội rõ rệt trên biên Pareto',
   STRUCTURAL_AUDIT_SKIPPED_SMALL_CHAIN: 'Chuỗi nhỏ (<10 cảnh báo) không áp dụng phân hoạch cấu trúc',
 }
@@ -441,7 +441,7 @@ export function CounterfactualReview({
           }}
         >
           <div>
-            <strong>💡 Chế độ an toàn:</strong> Cấu hình hiện tại chưa được đánh dấu hiệu chuẩn sản xuất. Để mở khóa toàn bộ đề xuất tối ưu, hãy vào <strong>⚙ Settings</strong> và chọn <strong>Calibrate from Database</strong> hoặc chọn profile <strong>v1-calibrated</strong>.
+            <strong>💡 Chế độ an toàn mặc định:</strong> Chính sách Counterfactual hiện đang chạy cấu hình mặc định (SYNTHETIC_ONLY). Do chưa có bộ nhãn phản hồi thực tế từ kỹ sư vận hành (Operator Ground Truth), hệ thống tự động khóa an toàn các đề xuất phân hoạch trên dữ liệu mạng thực tế để tránh can thiệp ngoài kiểm chứng.
           </div>
         </div>
       ) : null}

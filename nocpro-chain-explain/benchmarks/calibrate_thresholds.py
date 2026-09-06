@@ -91,26 +91,34 @@ def _quantile(values: list[float], q: float) -> float:
     return ordered[lower] + (ordered[upper] - ordered[lower]) * fraction
 
 
-async def fetch_packages_from_db(database_url: str) -> list[IngestedPackage]:
-    """Load canonical snapshot packages stored in PostgreSQL."""
+async def fetch_packages_from_db(
+    database_url: str,
+    filter_real_only: bool = True,
+) -> list[IngestedPackage]:
+    """Load canonical snapshot packages stored in PostgreSQL, filtering for verified production sources."""
     engine = create_async_engine(database_url)
     packages: list[IngestedPackage] = []
     try:
         async with engine.connect() as conn:
             # First try snapshot_ingest canonical_payload
             try:
-                result = await conn.execute(
-                    text(
-                        "SELECT canonical_payload FROM snapshot_ingest "
-                        "WHERE canonical_payload IS NOT NULL "
-                        "ORDER BY completed_at DESC NULLS LAST LIMIT 50;"
-                    )
+                query = (
+                    "SELECT canonical_payload FROM snapshot_ingest "
+                    "WHERE canonical_payload IS NOT NULL "
                 )
+                if filter_real_only:
+                    query += "AND (source_kind IN ('REAL_LIVE', 'REAL_EXPORT_REPLAY') OR source_kind IS NULL) "
+                query += "ORDER BY completed_at DESC NULLS LAST LIMIT 50;"
+
+                result = await conn.execute(text(query))
                 rows = result.fetchall()
                 for row in rows:
                     if row[0]:
                         try:
-                            packages.append(load_validated_package(row[0]))
+                            pkg = load_validated_package(row[0])
+                            if filter_real_only and getattr(pkg.snapshot, "source_kind", None) == "SYNTHETIC_TEST":
+                                continue
+                            packages.append(pkg)
                         except Exception as exc:
                             logger.warning("Failed parsing snapshot_ingest package: %s", exc)
             except Exception as exc:
@@ -119,18 +127,23 @@ async def fetch_packages_from_db(database_url: str) -> list[IngestedPackage]:
             # Fallback / supplement with snapshots.raw_payload
             if not packages:
                 try:
-                    result = await conn.execute(
-                        text(
-                            "SELECT raw_payload FROM snapshots "
-                            "WHERE raw_payload IS NOT NULL "
-                            "ORDER BY produced_at DESC LIMIT 50;"
-                        )
+                    fallback_query = (
+                        "SELECT raw_payload FROM snapshots "
+                        "WHERE raw_payload IS NOT NULL "
                     )
+                    if filter_real_only:
+                        fallback_query += "AND (source_kind IN ('REAL_LIVE', 'REAL_EXPORT_REPLAY') OR source_kind IS NULL) "
+                    fallback_query += "ORDER BY produced_at DESC LIMIT 50;"
+
+                    result = await conn.execute(text(fallback_query))
                     rows = result.fetchall()
                     for row in rows:
                         if row[0]:
                             try:
-                                packages.append(load_validated_package(row[0]))
+                                pkg = load_validated_package(row[0])
+                                if filter_real_only and getattr(pkg.snapshot, "source_kind", None) == "SYNTHETIC_TEST":
+                                    continue
+                                packages.append(pkg)
                             except Exception as exc:
                                 logger.warning("Failed parsing snapshot raw_payload: %s", exc)
                 except Exception as exc:
@@ -196,19 +209,38 @@ def calculate_temporal_gaps(packages: list[IngestedPackage]) -> list[float]:
 
 
 def calculate_support_scores(packages: list[IngestedPackage]) -> list[float]:
-    """Compute empirical pair channel support scores across members."""
+    """Compute empirical pair channel support scores across members using temporal sampling."""
     scores: list[float] = []
     for package in packages:
         for chain in package.chains.values():
             members = package.members_of(chain.chain_id)
             if len(members) < 2:
                 continue
-            # Sample pairwise channel values up to 20 pairs per chain
-            sample_pairs = [
-                (members[i], members[j])
-                for i in range(min(len(members), 10))
-                for j in range(i + 1, min(len(members), 10))
-            ]
+            # Sort members by temporal order for representative sampling across chain duration
+            alarm_objs = [(m, package.alarms.get(m)) for m in members]
+            alarm_objs.sort(
+                key=lambda item: parse_alarm_timestamp(
+                    getattr(item[1], "canonical_start_time", None)
+                    or getattr(item[1], "start_time", None)
+                )
+                or 0.0
+            )
+            sorted_members = [m for m, _ in alarm_objs]
+            n = len(sorted_members)
+            if n <= 15:
+                sample_pairs = [
+                    (sorted_members[i], sorted_members[j])
+                    for i in range(n)
+                    for j in range(i + 1, n)
+                ]
+            else:
+                step = max(1, n // 10)
+                selected = sorted_members[::step][:10]
+                sample_pairs = [
+                    (selected[i], selected[j])
+                    for i in range(len(selected))
+                    for j in range(i + 1, len(selected))
+                ]
             for a, b in sample_pairs:
                 try:
                     channels = evaluate_pair_channels(
@@ -231,7 +263,7 @@ def calculate_support_scores(packages: list[IngestedPackage]) -> list[float]:
 
 
 def calculate_conductance_values(packages: list[IngestedPackage]) -> list[float]:
-    """Compute conductance across chains with >= 10 members."""
+    """Compute conductance across chains with >= 10 members using multi-cut approximation."""
     conductances: list[float] = []
     for package in packages:
         for chain in package.chains.values():
@@ -256,22 +288,28 @@ def calculate_conductance_values(packages: list[IngestedPackage]) -> list[float]
                             silent_gap_seconds=120,
                         )
                 audit_graph = build_audit_graph(members, pair_channel_values)
-                # Compute conductance of simple bisections
+                # Compute conductance of multiple candidate sweep cuts
                 n = len(members)
-                mid = n // 2
-                subset = set(members[:mid])
-                comp = set(members[mid:])
-                vol_s = sum(audit_graph.degree(u) for u in subset)
-                vol_c = sum(audit_graph.degree(v) for v in comp)
-                cut_weight = sum(
-                    audit_graph.edge_weight(u, v)
-                    for u in subset
-                    for v in comp
-                )
-                denom = min(vol_s, vol_c)
-                if denom > 0:
-                    phi = cut_weight / denom
-                    conductances.append(phi)
+                best_phi: float | None = None
+                cut_fractions = (0.25, 0.33, 0.50, 0.67, 0.75)
+                for frac in cut_fractions:
+                    k = max(1, min(n - 1, int(n * frac)))
+                    subset = set(members[:k])
+                    comp = set(members[k:])
+                    vol_s = sum(audit_graph.degree(u) for u in subset)
+                    vol_c = sum(audit_graph.degree(v) for v in comp)
+                    denom = min(vol_s, vol_c)
+                    if denom > 0:
+                        cut_weight = sum(
+                            audit_graph.edge_weight(u, v)
+                            for u in subset
+                            for v in comp
+                        )
+                        phi = cut_weight / denom
+                        if best_phi is None or phi < best_phi:
+                            best_phi = phi
+                if best_phi is not None:
+                    conductances.append(best_phi)
             except Exception:
                 continue
     return conductances
@@ -415,20 +453,52 @@ def run_calibration(
             metric_details=p_details_phi,
         )
     )
+    calibrated_params.append(
+        ParameterCalibration(
+            path="audit.rho",
+            previous_value=prev_rho,
+            calibrated_value=prev_rho,
+            source="DOCUMENTED_DEFAULT",
+            sample_count=0,
+            metric_details={"reason": "documented_default_not_data_driven", "fallback": prev_rho},
+        )
+    )
 
     # Update metadata
     base_raw["config_version"] = "v1-calibrated"
+    core_paths = {
+        "temporal.burst.gap_seconds",
+        "role.s_min",
+        "role.s_weak",
+        "audit.global_weak_baseline",
+    }
+    core_params = [p for p in calibrated_params if p.path in core_paths]
+    has_real_data = bool(packages) and all(
+        getattr(pkg.snapshot, "source_kind", None) not in {"SYNTHETIC_TEST"}
+        for pkg in packages
+    )
+    all_core_data_driven = (
+        len(core_params) == 4
+        and all(p.source == "DATA_DRIVEN" for p in core_params)
+        and all(p.sample_count >= 10 for p in core_params)
+    )
+    is_prod_calibrated = has_real_data and all_core_data_driven
     base_raw["status"] = (
         "PRODUCTION_CALIBRATED"
-        if any(p.source == "DATA_DRIVEN" for p in calibrated_params)
+        if is_prod_calibrated
         else "baseline_requires_calibration"
     )
 
-    # Ensure counterfactual configuration is available and calibrated for production
+    # Counterfactual policy:
+    # Counterfactual triggers (membership_support_below, minimum_*_improvement, etc.)
+    # require operator ground-truth correction labels (split/merge/remove ground truth)
+    # which are not yet available.
+    # Therefore, counterfactual policy MUST remain SYNTHETIC_ONLY (heuristic baseline)
+    # and MUST NOT claim PRODUCTION_CALIBRATED without empirical operator correction data.
     if "counterfactual" not in base_raw:
         base_raw["counterfactual"] = {
             "config_version": "v1-calibrated-counterfactual",
-            "calibration_status": "PRODUCTION_CALIBRATED",
+            "calibration_status": "SYNTHETIC_ONLY",
             "limits": {
                 "max_chain_members": 200,
                 "max_remove_candidates": 10,
@@ -454,12 +524,13 @@ def run_calibration(
             },
         }
     elif isinstance(base_raw["counterfactual"], dict):
-        base_raw["counterfactual"]["calibration_status"] = "PRODUCTION_CALIBRATED"
+        base_raw["counterfactual"]["calibration_status"] = "SYNTHETIC_ONLY"
 
     base_raw["notes"] = [
         f"Calibrated at {datetime.now(timezone.utc).isoformat()} from PostgreSQL system of record.",
         f"Evaluated {len(packages)} snapshots, {total_chains} chains, {total_alarms} alarms.",
-        "Calibrated DATA_DRIVEN values preserve their empirical distribution evidence.",
+        "Calibrated DATA_DRIVEN values preserve empirical distribution evidence; DOCUMENTED_DEFAULT indicates fallback.",
+        "audit.rho and counterfactual thresholds remain heuristic DOCUMENTED_DEFAULT / SYNTHETIC_ONLY until operator correction ground-truth is available.",
     ]
 
     # Save output YAML

@@ -155,12 +155,15 @@ similar_chains:
     value: 5
     source: DOCUMENTED_DEFAULT
 notes:
-- Calibrated at 2026-09-06T06:33:31.922824+00:00 from PostgreSQL system of record.
-- Evaluated 1 snapshots, 1 chains, 2 alarms.
-- Calibrated DATA_DRIVEN values preserve their empirical distribution evidence.
+- Calibrated at 2026-09-06T07:03:38.752138+00:00 from PostgreSQL system of record.
+- Evaluated 0 snapshots, 0 chains, 0 alarms.
+- Calibrated DATA_DRIVEN values preserve empirical distribution evidence; DOCUMENTED_DEFAULT
+  indicates fallback.
+- audit.rho and counterfactual thresholds remain heuristic DOCUMENTED_DEFAULT / SYNTHETIC_ONLY
+  until operator correction ground-truth is available.
 counterfactual:
   config_version: v1-calibrated-counterfactual
-  calibration_status: PRODUCTION_CALIBRATED
+  calibration_status: SYNTHETIC_ONLY
   limits:
     max_chain_members: 200
     max_remove_candidates: 10
