@@ -310,7 +310,6 @@ class HistoricalEvidenceModelRecord(Base):
 
 class TemporalDelayModelRecord(Base):
     __tablename__ = "temporal_delay_model"
-    __table_args__ = (UniqueConstraint("snapshot_id", "snapshot_version"),)
 
     model_version: Mapped[str] = mapped_column(String(64), primary_key=True)
     snapshot_id: Mapped[str] = mapped_column(String(255), nullable=False)

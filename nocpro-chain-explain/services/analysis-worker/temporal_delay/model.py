@@ -7,10 +7,14 @@ from datetime import datetime, timezone
 from enum import Enum
 import hashlib
 import json
-from math import erf, floor, log, sqrt
+from functools import lru_cache
+from math import erf, exp, floor, isfinite, log, pi, sqrt
 from typing import ClassVar, Iterable
 
 from history import TaxonomyLevel, TaxonomyTokens
+
+
+CURRENT_DELAY_MODEL_IMPLEMENTATION_VERSION = "TEMPORAL_DELAY_MODEL_V2"
 
 
 def _time(value: str) -> datetime:
@@ -42,7 +46,7 @@ class DelayObservation:
     source_chain_id: str | None = None
 
     def __post_init__(self) -> None:
-        if self.delay_seconds <= 0:
+        if not isfinite(self.delay_seconds) or self.delay_seconds <= 0:
             raise ValueError("directed delay must be strictly positive")
 
 
@@ -66,11 +70,11 @@ class DelayModelConfig:
             raise ValueError("invalid temporal delay episode thresholds")
         if not 0 < self.validation_fraction < 1:
             raise ValueError("validation_fraction must be between zero and one")
-        if not self.local_mass_halfwidth_candidates_seconds or any(v <= 0 for v in self.local_mass_halfwidth_candidates_seconds):
+        if not self.local_mass_halfwidth_candidates_seconds or any(not isfinite(v) or v <= 0 for v in self.local_mass_halfwidth_candidates_seconds):
             raise ValueError("local mass halfwidth candidates are required")
-        if not self.histogram_bin_width_candidates_seconds or any(v <= 0 for v in self.histogram_bin_width_candidates_seconds):
+        if not self.histogram_bin_width_candidates_seconds or any(not isfinite(v) or v <= 0 for v in self.histogram_bin_width_candidates_seconds):
             raise ValueError("histogram bin candidates are required")
-        if not self.kde_bandwidth_candidates_seconds or any(v <= 0 for v in self.kde_bandwidth_candidates_seconds):
+        if not self.kde_bandwidth_candidates_seconds or any(not isfinite(v) or v <= 0 for v in self.kde_bandwidth_candidates_seconds):
             raise ValueError("KDE bandwidth candidates are required")
         if self.fallback_model is not None and not isinstance(
             self.fallback_model, DelayEstimator
@@ -78,7 +82,7 @@ class DelayModelConfig:
             raise ValueError("fallback model is unsupported")
         if (
             self.fallback_local_mass_halfwidth_seconds is not None
-            and self.fallback_local_mass_halfwidth_seconds <= 0
+            and (not isfinite(self.fallback_local_mass_halfwidth_seconds) or self.fallback_local_mass_halfwidth_seconds <= 0)
         ):
             raise ValueError("fallback local mass halfwidth must be positive")
         for name, value in (
@@ -88,7 +92,7 @@ class DelayModelConfig:
             ),
             ("fallback KDE bandwidth", self.fallback_kde_bandwidth_seconds),
         ):
-            if value is not None and value <= 0:
+            if value is not None and (not isfinite(value) or value <= 0):
                 raise ValueError(f"{name} must be positive")
 
     def fallback_parameter(self) -> float | None:
@@ -114,9 +118,9 @@ class SelectedDelayRelation:
     holdout_episode_ids: tuple[str, ...] = ()
 
     # This is deliberately part of the immutable model implementation contract.
-    # Runtime and oracle use the same finite, deterministic support points rather
-    # than relying on an optimiser whose result can vary by numerical library.
-    PEAK_MASS_PROCEDURE: ClassVar[str] = "OBSERVATION_SUPPORT_POINTS_V1"
+    # Histogram maxima are exact. KDE maxima use a fixed deterministic derivative
+    # grid and bisection refinement; runtime and oracle share this procedure.
+    PEAK_MASS_PROCEDURE: ClassVar[str] = "HISTOGRAM_EXACT_KDE_DERIVATIVE_GRID_V2"
 
     def _weights(self) -> tuple[float, ...]:
         counts: dict[str, int] = {}
@@ -124,8 +128,14 @@ class SelectedDelayRelation:
             counts[item.episode_id] = counts.get(item.episode_id, 0) + 1
         return tuple(1 / counts[item.episode_id] for item in self.observations)
 
+    def _total_weight(self) -> float:
+        return sum(self._weights())
+
     def local_mass(self, delay: float) -> float:
         weights = self._weights()
+        total_weight = sum(weights)
+        if total_weight <= 0:
+            return 0.0
         if self.estimator is DelayEstimator.HISTOGRAM:
             width = self.estimator_parameter_seconds
             bins: dict[int, float] = {}
@@ -133,23 +143,91 @@ class SelectedDelayRelation:
                 index = floor(item.delay_seconds / width)
                 bins[index] = bins.get(index, 0.0) + weight
             low, high = delay - self.local_mass_halfwidth_seconds, delay + self.local_mass_halfwidth_seconds
+            # A histogram bin represents uniform mass within that bin.  Counting
+            # the whole bin merely because it overlaps the query window is not a
+            # probability mass for that window.
             return sum(
-                mass for index, mass in bins.items()
-                if (index + 1) * width > low and index * width < high
+                (mass / total_weight)
+                * max(0.0, min(high, (index + 1) * width) - max(low, index * width))
+                / width
+                for index, mass in bins.items()
             )
         bandwidth = self.estimator_parameter_seconds
         root = sqrt(2.0) * bandwidth
         return sum(
             w * 0.5 * (erf((delay + self.local_mass_halfwidth_seconds - item.delay_seconds) / root) - erf((delay - self.local_mass_halfwidth_seconds - item.delay_seconds) / root))
             for item, w in zip(self.observations, weights, strict=True)
-        )
+        ) / total_weight
 
     def typicality(self, delay: float) -> float:
         peak = self.normalizing_peak_mass()
         return self.local_mass(delay) / peak if peak > 0 else 0.0
 
     def normalizing_peak_mass(self) -> float:
-        return max((self.local_mass(item.delay_seconds) for item in self.observations), default=0.0)
+        return self._normalizing_peak_mass()
+
+    @lru_cache(maxsize=4_096)
+    def _normalizing_peak_mass(self) -> float:
+        if not self.observations:
+            return 0.0
+        if self.estimator is DelayEstimator.HISTOGRAM:
+            width = self.estimator_parameter_seconds
+            edges = {
+                boundary + offset
+                for item in self.observations
+                for boundary in (floor(item.delay_seconds / width) * width, (floor(item.delay_seconds / width) + 1) * width)
+                for offset in (-self.local_mass_halfwidth_seconds, self.local_mass_halfwidth_seconds)
+            }
+            return max((self.local_mass(point) for point in edges), default=0.0)
+
+        low = min(item.delay_seconds for item in self.observations)
+        high = max(item.delay_seconds for item in self.observations)
+        if low == high:
+            return self.local_mass(low)
+
+        # The derivative is positive left of every kernel centre and negative
+        # right of every kernel centre, so a global maximum lies in [low, high].
+        # A fixed grid plus bisection makes the numerical procedure deterministic
+        # and version-bound without an optimiser dependency.
+        steps = min(4096, max(256, int((high - low) / self.estimator_parameter_seconds * 64) + 1))
+        points = tuple(low + (high - low) * index / steps for index in range(steps + 1))
+        derivatives = tuple(self._kde_derivative(point) for point in points)
+        candidates = set(points)
+        for left, right, d_left, d_right in zip(points, points[1:], derivatives, derivatives[1:]):
+            if d_left == 0.0:
+                candidates.add(left)
+            if d_left * d_right < 0.0:
+                candidates.add(self._bisect_kde_derivative(left, right, d_left))
+        return max((self.local_mass(point) for point in candidates), default=0.0)
+
+    def _kde_derivative(self, delay: float) -> float:
+        bandwidth = self.estimator_parameter_seconds
+        total_weight = self._total_weight()
+        if total_weight <= 0:
+            return 0.0
+        normalizer = bandwidth * sqrt(2.0 * pi)
+        halfwidth = self.local_mass_halfwidth_seconds
+        return sum(
+            weight
+            * (
+                exp(-0.5 * ((delay + halfwidth - item.delay_seconds) / bandwidth) ** 2)
+                - exp(-0.5 * ((delay - halfwidth - item.delay_seconds) / bandwidth) ** 2)
+            )
+            / normalizer
+            for item, weight in zip(self.observations, self._weights(), strict=True)
+        ) / total_weight
+
+    def _bisect_kde_derivative(self, left: float, right: float, left_value: float) -> float:
+        for _ in range(64):
+            midpoint = (left + right) / 2.0
+            middle_value = self._kde_derivative(midpoint)
+            if middle_value == 0.0:
+                return midpoint
+            if left_value * middle_value <= 0.0:
+                right = midpoint
+            else:
+                left, left_value = midpoint, middle_value
+        return (left + right) / 2.0
 
 
 @dataclass(frozen=True)
@@ -164,7 +242,7 @@ class FrozenDelayModel:
     relations: dict[DelayRelationKey, SelectedDelayRelation]
     unavailable_relations: dict[DelayRelationKey, str]
 
-    implementation_version: str = "TEMPORAL_DELAY_MODEL_V1"
+    implementation_version: str = CURRENT_DELAY_MODEL_IMPLEMENTATION_VERSION
 
 
 def model_to_dict(model: FrozenDelayModel) -> dict:
@@ -291,7 +369,7 @@ def build_delay_model(
         (item.episode_id, item.source_alarm_id, item.target_alarm_id, item.key.level.value, item.key.source_token, item.key.target_token, item.delay_seconds, item.source_snapshot_id, item.source_snapshot_version, item.source_chain_id)
         for item in sorted(dedup.values(), key=lambda item: (item.key, item.episode_id, item.source_alarm_id, item.target_alarm_id))
     ]
-    fingerprint_input = {"cutoff": training_cutoff, "prefix": lineage_prefix_fingerprint, "taxonomy": [taxonomy_source_id, taxonomy_source_version], "config": repr(config), "observations": material}
+    fingerprint_input = {"implementation_version": CURRENT_DELAY_MODEL_IMPLEMENTATION_VERSION, "cutoff": training_cutoff, "prefix": lineage_prefix_fingerprint, "taxonomy": [taxonomy_source_id, taxonomy_source_version], "config": repr(config), "observations": material}
     corpus = hashlib.sha256(json.dumps(fingerprint_input, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     relations, unavailable = {}, {}
     for key, items in grouped.items():
@@ -301,7 +379,7 @@ def build_delay_model(
         relation, reason = _select(key, values, config, corpus)
         if relation is not None: relations[key] = relation
         else: unavailable[key] = reason or "TEMPORAL_DELAY_MODEL_UNAVAILABLE"
-    return FrozenDelayModel(f"delay_{corpus[:24]}", training_cutoff, corpus, lineage_prefix_fingerprint, taxonomy_source_id, taxonomy_source_version, config, relations, unavailable)
+    return FrozenDelayModel(f"delay_{corpus[:24]}", training_cutoff, corpus, lineage_prefix_fingerprint, taxonomy_source_id, taxonomy_source_version, config, relations, unavailable, CURRENT_DELAY_MODEL_IMPLEMENTATION_VERSION)
 
 
 def evaluate_delay_model(

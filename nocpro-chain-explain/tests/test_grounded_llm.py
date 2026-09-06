@@ -68,6 +68,37 @@ def test_renderer_uses_configured_provider_with_bounded_grounded_payload(
     assert "test-secret" not in body_text
 
 
+def test_renderer_rejects_provider_narrative_that_claims_causality_or_apply(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure(monkeypatch)
+    monkeypatch.setattr(
+        "nocpro_api.grounded_llm.urllib.request.urlopen",
+        lambda *_args, **_kwargs: _Response(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "Root cause proven: Router-Z caused the incident. Apply MERGE now."
+                        }
+                    }
+                ]
+            }
+        ),
+    )
+
+    result = render_grounded(
+        draft="Root cause is unavailable. Proposal only.",
+        facts={"root_cause": "UNAVAILABLE"},
+        fact_refs=["analysis:C1"],
+        purpose="ASSISTANT",
+    )
+
+    assert result.message == "Root cause is unavailable. Proposal only."
+    assert result.provider_status == "GROUNDING_VIOLATION"
+    assert result.used_provider is False
+
+
 def test_renderer_uses_native_ollama_chat_protocol(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

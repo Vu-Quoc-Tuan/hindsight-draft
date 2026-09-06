@@ -6,7 +6,8 @@ import pytest
 from evolution import GlobalEpisodeDag, LineageConfig
 from history import HistoricalTaxonomy, TaxonomyLevel, TaxonomyTokens
 from libs.contracts import load_package
-from temporal_delay import DelayEstimator, DelayModelConfig, DelayObservation, DelayRelationKey, build_delay_model, evaluate_delay_model, evaluate_delay_model_oracle, evaluate_ordered_delay_model, model_from_dict, model_to_dict, observations_from_lineage_prefix
+from temporal_delay import CURRENT_DELAY_MODEL_IMPLEMENTATION_VERSION, DelayEstimator, DelayModelConfig, DelayObservation, DelayRelationKey, build_delay_model, evaluate_delay_model, evaluate_delay_model_oracle, evaluate_ordered_delay_model, model_from_dict, model_to_dict, observations_from_lineage_prefix
+from temporal_delay.model import SelectedDelayRelation
 
 
 def config():
@@ -18,7 +19,7 @@ def observation(episode: str, source: str, target: str, delay: float, *, reverse
     return DelayObservation(episode, source, target, DelayRelationKey(TaxonomyLevel.TYPE, left, right), delay)
 
 
-@pytest.mark.parametrize("delay", [0.0, -0.1])
+@pytest.mark.parametrize("delay", [0.0, -0.1, float("nan"), float("inf")])
 def test_directed_observation_requires_strictly_positive_delay(delay: float):
     with pytest.raises(ValueError, match="strictly positive"):
         observation("episode", "a", "b", delay)
@@ -34,6 +35,70 @@ def test_snapshot_dedup_and_episode_balancing_are_relation_local():
     assert relation.episode_sample_count == 2
     assert relation.effective_weight == 2
     assert relation.typicality(2) > relation.typicality(50)
+
+
+def test_local_mass_is_an_episode_normalized_probability_and_peak_is_global():
+    """A KDE peak may be between observations, not at one of them."""
+    key = DelayRelationKey(TaxonomyLevel.TYPE, "A", "B")
+    relation = SelectedDelayRelation(
+        key,
+        (
+            DelayObservation("e1", "a1", "b1", key, 2.0),
+            DelayObservation("e2", "a2", "b2", key, 4.0),
+        ),
+        2,
+        2,
+        2.0,
+        DelayEstimator.GAUSSIAN_KDE,
+        1.0,
+        2.0,
+        "CONFIGURED_FALLBACK",
+        None,
+    )
+
+    assert 0.0 <= relation.local_mass(3.0) <= 1.0
+    assert relation.normalizing_peak_mass() >= relation.local_mass(3.0)
+    assert 0.0 <= relation.typicality(3.0) <= 1.0
+
+
+def test_histogram_local_mass_uses_overlap_fraction_and_episode_normalization():
+    key = DelayRelationKey(TaxonomyLevel.TYPE, "A", "B")
+    relation = SelectedDelayRelation(
+        key,
+        (
+            DelayObservation("e1", "a1", "b1", key, 2.0),
+            DelayObservation("e2", "a2", "b2", key, 4.0),
+        ),
+        2,
+        2,
+        2.0,
+        DelayEstimator.HISTOGRAM,
+        0.1,
+        10.0,
+        "CONFIGURED_FALLBACK",
+        None,
+    )
+
+    assert relation.local_mass(5.0) == pytest.approx(0.02)
+    assert 0.0 <= relation.typicality(5.0) <= 1.0
+
+
+def test_corrected_peak_procedure_versions_its_immutable_model_identity():
+    samples = [observation(f"e{i}", f"a{i}", f"b{i}", 2.0 + i) for i in range(4)]
+    model = build_delay_model(
+        samples,
+        training_cutoff="2026-01-02T00:00:00Z",
+        lineage_prefix_fingerprint="prefix",
+        taxonomy_source_id="syn",
+        taxonomy_source_version="v1",
+        config=config(),
+    )
+    legacy_payload = model_to_dict(model)
+    legacy_payload["implementation_version"] = "TEMPORAL_DELAY_MODEL_V1"
+
+    assert model.implementation_version == CURRENT_DELAY_MODEL_IMPLEMENTATION_VERSION
+    assert model_to_dict(model)["implementation_version"] == CURRENT_DELAY_MODEL_IMPLEMENTATION_VERSION
+    assert model_from_dict(legacy_payload).implementation_version == "TEMPORAL_DELAY_MODEL_V1"
 
 
 def test_direction_is_ordered_and_selected_model_is_deterministic():

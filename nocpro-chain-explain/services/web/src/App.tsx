@@ -425,7 +425,10 @@ function App() {
   const [apiStatus, setApiStatus] = useState('checking')
   const [chainList, setChainList] = useState<ChainList | null>(null)
   const [chainId, setChainId] = useState('')
-  const [analysis, setAnalysis] = useState<ChainAnalysis | null>(null)
+  const [analysisState, setAnalysisState] = useState<{
+    snapshotKey: string
+    payload: ChainAnalysis
+  } | null>(null)
   const [loadingSnapshot, setLoadingSnapshot] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -434,7 +437,10 @@ function App() {
   const [layer, setLayer] = useState<EvidenceLayer>('ALL')
   const [selectedMembers, setSelectedMembers] = useState<string[]>([])
   const [inspectMember, setInspectMember] = useState<Member | null>(null)
-  const [pairWhy, setPairWhy] = useState<PairWhy | null>(null)
+  const [pairWhyState, setPairWhyState] = useState<{
+    snapshotKey: string
+    payload: PairWhy
+  } | null>(null)
   const [job, setJob] = useState<Job | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [topologyProfile, setTopologyProfile] = useState<'ALARM_ONLY' | 'IP_NETWORK' | 'IT_SERVICES'>('IT_SERVICES')
@@ -445,6 +451,9 @@ function App() {
     payload: TopologyTreePayload
   } | null>(null)
   const [topologySourceResolution, setTopologySourceResolution] = useState<TopologyNavigationResolution | null>(null)
+  const snapshotKey = chainList ? `${chainList.snapshot_id}:${chainList.snapshot_version}` : null
+  const analysis = analysisState?.snapshotKey === snapshotKey ? analysisState.payload : null
+  const pairWhy = pairWhyState?.snapshotKey === snapshotKey ? pairWhyState.payload : null
 
   useEffect(() => {
     const controller = new AbortController()
@@ -471,22 +480,26 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!chainId) return
+    if (!chainId || !snapshotKey) return
     const controller = new AbortController()
-    api.analysis(chainId, controller.signal).then(setAnalysis).catch((cause: unknown) => {
+    api.analysis(chainId, controller.signal).then((payload) => {
+      if (!controller.signal.aborted) setAnalysisState({ snapshotKey, payload })
+    }).catch((cause: unknown) => {
       if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Analysis failed')
     })
     return () => controller.abort()
-  }, [chainId])
+  }, [chainId, snapshotKey])
 
   useEffect(() => {
-    if (selectedMembers.length !== 2 || !chainId) return
+    if (selectedMembers.length !== 2 || !chainId || !snapshotKey) return
     const controller = new AbortController()
-    api.pairWhy(chainId, selectedMembers[0], selectedMembers[1], controller.signal).then(setPairWhy).catch((cause: unknown) => {
+    api.pairWhy(chainId, selectedMembers[0], selectedMembers[1], controller.signal).then((payload) => {
+      if (!controller.signal.aborted) setPairWhyState({ snapshotKey, payload })
+    }).catch((cause: unknown) => {
       if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Pair evaluation failed')
     })
     return () => controller.abort()
-  }, [chainId, selectedMembers])
+  }, [chainId, selectedMembers, snapshotKey])
 
   useEffect(() => {
     if (!job || !['QUEUED', 'RUNNING'].includes(job.status)) return
@@ -537,7 +550,8 @@ function App() {
       setChainId(chains.chains[0]?.chain_id ?? '')
       setSelectedMembers([])
       setInspectMember(null)
-      setPairWhy(null)
+      setAnalysisState(null)
+      setPairWhyState(null)
       setJob(null)
       setApiStatus('online')
     } catch (cause) {
@@ -591,7 +605,7 @@ function App() {
         : []
       setSelectedMembers(pair)
       setInspectMember(null)
-      setPairWhy(null)
+      setPairWhyState(null)
       setJob(null)
     }
     if (targetTab && tabs.some((item) => item.id === targetTab)) {
@@ -634,7 +648,7 @@ function App() {
               onChange={(event) => {
                 setSelectedMembers([])
                 setInspectMember(null)
-                setPairWhy(null)
+                setPairWhyState(null)
                 setJob(null)
                 setError(null)
                 setChainId(event.target.value)
@@ -823,8 +837,8 @@ function App() {
                     )}
                   </section>
                 )}
-                {tab === 'review' && <CounterfactualReview key={`${chainId}:${reviewReadOnly ? 'assistant' : 'operator'}`} chainId={chainId} readOnly={reviewReadOnly} />}
-                {tab === 'evolution' && <EvolutionPanel chainId={chainId} />}
+                {tab === 'review' && <CounterfactualReview key={`${snapshotKey}:${chainId}:${reviewReadOnly ? 'assistant' : 'operator'}`} chainId={chainId} readOnly={reviewReadOnly} />}
+                {tab === 'evolution' && <EvolutionPanel key={`${snapshotKey}:${chainId}`} chainId={chainId} />}
                 {tab === 'ai' && (
                   <NocProAssistantPanel
                     key={`${chainList.snapshot_id}:${chainList.snapshot_version}:${chainId}`}

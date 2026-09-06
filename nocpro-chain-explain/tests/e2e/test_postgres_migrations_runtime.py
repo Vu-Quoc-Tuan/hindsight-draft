@@ -193,3 +193,53 @@ def test_0005_rejects_ambiguous_legacy_snapshot_identity() -> None:
             await _drop_database(database)
 
     asyncio.run(exercise())
+
+
+def test_0010_keeps_legacy_delay_models_immutable_and_allows_v2() -> None:
+    async def exercise() -> None:
+        database = f"nocpro_migration_delay_v2_{uuid4().hex[:12]}"
+        await _create_database(database)
+        try:
+            _migrate(database, "0009")
+            connection = await asyncpg.connect(_database_url(database))
+            try:
+                await connection.execute(
+                    """
+                    INSERT INTO temporal_delay_model (
+                      model_version, snapshot_id, snapshot_version,
+                      training_cutoff, model_payload, taxonomy_payload
+                    ) VALUES (
+                      'delay-v1', 'S-delay', 'v1', now(),
+                      '{"implementation_version":"TEMPORAL_DELAY_MODEL_V1"}'::jsonb,
+                      '{}'::jsonb
+                    )
+                    """
+                )
+            finally:
+                await connection.close()
+
+            _migrate(database, "head")
+            connection = await asyncpg.connect(_database_url(database))
+            try:
+                await connection.execute(
+                    """
+                    INSERT INTO temporal_delay_model (
+                      model_version, snapshot_id, snapshot_version,
+                      training_cutoff, model_payload, taxonomy_payload
+                    ) VALUES (
+                      'delay-v2', 'S-delay', 'v1', now(),
+                      '{"implementation_version":"TEMPORAL_DELAY_MODEL_V2"}'::jsonb,
+                      '{}'::jsonb
+                    )
+                    """
+                )
+                assert await connection.fetchval(
+                    "SELECT count(*) FROM temporal_delay_model "
+                    "WHERE snapshot_id = 'S-delay' AND snapshot_version = 'v1'"
+                ) == 2
+            finally:
+                await connection.close()
+        finally:
+            await _drop_database(database)
+
+    asyncio.run(exercise())

@@ -37,7 +37,12 @@ from history import (
     taxonomy_from_dict as historical_taxonomy_from_dict,
     taxonomy_to_dict as historical_taxonomy_to_dict,
 )
-from temporal_delay import FrozenDelayModel, model_from_dict as delay_model_from_dict, model_to_dict as delay_model_to_dict
+from temporal_delay import (
+    CURRENT_DELAY_MODEL_IMPLEMENTATION_VERSION,
+    FrozenDelayModel,
+    model_from_dict as delay_model_from_dict,
+    model_to_dict as delay_model_to_dict,
+)
 from tier2.audit_artifact import (
     ReviewAuditArtifact,
     audit_artifact_from_dict,
@@ -1688,16 +1693,23 @@ class SnapshotRepository:
         self, snapshot_id: str, snapshot_version: str
     ) -> tuple[FrozenDelayModel, HistoricalTaxonomy] | None:
         async with self.sessions() as session:
-            row = await session.scalar(select(TemporalDelayModelRecord).where(
-                TemporalDelayModelRecord.snapshot_id == snapshot_id,
-                TemporalDelayModelRecord.snapshot_version == snapshot_version,
-            ))
-        if row is None:
-            return None
-        model, taxonomy = delay_model_from_dict(row.model_payload), historical_taxonomy_from_dict(row.taxonomy_payload)
-        if (model.taxonomy_source_id, model.taxonomy_source_version) != (taxonomy.source_id, taxonomy.source_version):
-            raise RuntimeError("persisted temporal delay model/taxonomy provenance mismatch")
-        return model, taxonomy
+            rows = (await session.scalars(
+                select(TemporalDelayModelRecord)
+                .where(
+                    TemporalDelayModelRecord.snapshot_id == snapshot_id,
+                    TemporalDelayModelRecord.snapshot_version == snapshot_version,
+                )
+                .order_by(TemporalDelayModelRecord.created_at.desc(), TemporalDelayModelRecord.model_version.desc())
+            )).all()
+        for row in rows:
+            model = delay_model_from_dict(row.model_payload)
+            if model.implementation_version != CURRENT_DELAY_MODEL_IMPLEMENTATION_VERSION:
+                continue
+            taxonomy = historical_taxonomy_from_dict(row.taxonomy_payload)
+            if (model.taxonomy_source_id, model.taxonomy_source_version) != (taxonomy.source_id, taxonomy.source_version):
+                raise RuntimeError("persisted temporal delay model/taxonomy provenance mismatch")
+            return model, taxonomy
+        return None
 
     async def canonical_lineages(
         self, snapshot_id: str, snapshot_version: str

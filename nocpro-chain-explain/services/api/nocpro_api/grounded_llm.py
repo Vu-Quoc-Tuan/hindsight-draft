@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import socket
 import urllib.error
 import urllib.request
@@ -152,6 +153,28 @@ def _response_content(
     return message.get("content") if isinstance(message, dict) else None
 
 
+_FORBIDDEN_NARRATIVE_CLAIMS = re.compile(
+    r"\b(root\s*cause|caused?|causality|apply|execute|mutation|tool\s*call)\b"
+    r"|nguyên\s*nhân\s*gốc|gây\s*ra|áp\s*dụng|thực\s*thi",
+    re.IGNORECASE,
+)
+_IDENTIFIER = re.compile(r"\b[A-Za-z][A-Za-z0-9]*(?:[-_][A-Za-z0-9]+)+\b")
+
+
+def _grounding_is_preserved(content: str, draft: str, facts: dict[str, Any], fact_refs: Sequence[str]) -> bool:
+    """Reject narrative-only claims that cannot be represented by supplied facts.
+
+    This is intentionally conservative.  The LLM remains an optional renderer,
+    not an authority: an unsafe or unverifiable answer falls back to the exact
+    deterministic draft.
+    """
+    if _FORBIDDEN_NARRATIVE_CLAIMS.search(content):
+        return False
+    allowed = " ".join((draft, json.dumps(facts, ensure_ascii=False, default=str), *fact_refs))
+    allowed_identifiers = {item.casefold() for item in _IDENTIFIER.findall(allowed)}
+    return all(item.casefold() in allowed_identifiers for item in _IDENTIFIER.findall(content))
+
+
 def render_grounded(
     *,
     draft: str,
@@ -203,6 +226,9 @@ def render_grounded(
         content = _response_content(decoded, protocol)
         if not isinstance(content, str) or not content.strip():
             return _fallback(draft, "INVALID_RESPONSE")
+        if not _grounding_is_preserved(content, draft, facts, fact_refs):
+            logger.info("Grounded LLM provider failed status=GROUNDING_VIOLATION")
+            return _fallback(draft, "GROUNDING_VIOLATION")
         return GroundedRenderResult(
             message=_bounded(content.strip(), _MAX_OUTPUT_CHARS),
             model=model,
