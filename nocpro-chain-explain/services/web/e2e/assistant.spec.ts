@@ -45,8 +45,10 @@ test('NocPro Assistant is snapshot-bound, read-only, and navigates with typed ac
     page.waitForResponse((response) => response.url().includes('/assistant/query') && response.ok()),
     page.getByRole('button', { name: 'Hỏi' }).click(),
   ])
-  await expect(page.getByText('Audit conductance')).toBeVisible()
-  await expect(page.getByText(/root-cause claim/i)).toBeVisible()
+  await expect(page.getByText(/semantic-registry:conductance/i)).toBeVisible()
+  await expect(
+    page.locator('[aria-label^="AI-assisted narrative"], [aria-label^="Deterministic fallback"]').first(),
+  ).toBeVisible()
 
   await query.fill('Open audit')
   await Promise.all([

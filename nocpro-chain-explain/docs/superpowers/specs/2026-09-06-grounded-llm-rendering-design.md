@@ -56,12 +56,39 @@ The API service reads only server-side configuration:
 AI_API_KEY
 AI_BASE_URL
 AI_MODEL
+AI_PROVIDER_PROTOCOL
 ```
 
 The browser never receives the key. Docker passes these variables only to the
-API container. The configured endpoint uses the existing OpenAI-compatible
-`/chat/completions` contract. Provider timeout and bounded response size are
-fixed implementation safeguards, not analysis thresholds.
+API container. `AI_PROVIDER_PROTOCOL` is explicit and accepts
+`OPENAI_COMPATIBLE` or `OLLAMA`; its backward-compatible default is
+`OPENAI_COMPATIBLE`. The renderer never guesses protocol from a hostname or
+model name.
+
+The protocol approaches considered are:
+
+1. **Explicit protocol adapter (selected).** One environment field selects a
+   small request/response codec while sharing the same grounding, bounds,
+   timeout, failure states, and result type.
+2. **Provider-specific full endpoint URL.** This removes path composition but
+   still leaves response parsing ambiguous, so it does not fully identify the
+   wire contract.
+3. **Automatic probing or hostname detection.** Rejected because an extra
+   network request adds latency and failure modes, while hostname inference is
+   brittle and may silently select the wrong semantics.
+
+`OPENAI_COMPATIBLE` sends the existing request to
+`${AI_BASE_URL}/chat/completions` and reads
+`choices[0].message.content`. `OLLAMA` sends a non-streaming request to
+`${AI_BASE_URL}/chat`, adds `stream=false`, and reads `message.content` from
+the single JSON response. For Ollama Cloud the intended base URL is
+`https://ollama.com/api`. Ollama thinking output and tool calls are ignored;
+only final `message.content` is eligible for rendering.
+
+Provider timeout and bounded request/response sizes are fixed implementation
+safeguards, not analysis thresholds. An unsupported protocol is invalid server
+configuration and fails closed to the deterministic draft with a stable
+non-secret status; it never triggers protocol auto-detection.
 
 Missing configuration is a normal unavailable provider state. Invalid HTTP,
 timeout, malformed JSON, an empty response, or rejected content must not fail
@@ -76,9 +103,16 @@ are explicitly delimited as data rather than instructions.
 
 The renderer may:
 
-- translate, summarize, and improve readability;
+- summarize and improve readability while preserving the deterministic draft's
+  primary language;
 - explain the meaning and limitations of referenced metrics;
 - describe persisted Review proposals as proposals.
+
+The renderer must not translate by default. A primarily Vietnamese draft must
+produce a Vietnamese narrative, and a primarily English draft must remain
+English, unless a future explicit user-language contract requests translation.
+This is a presentation invariant only; it does not change facts, evidence, or
+operator actions.
 
 The renderer may not:
 
@@ -137,8 +171,14 @@ No API GET or POST causes Review execution or NocPro mutation.
 
 Tests must prove:
 
-- successful provider rendering for Advisor and Assistant with a mocked HTTP
-  endpoint;
+- successful provider rendering for Advisor and Assistant with mocked
+  OpenAI-compatible and Ollama HTTP responses;
+- exact Ollama `/chat` request shape, including `stream=false`, and parsing of
+  only final `message.content`;
+- the system instruction explicitly preserves the deterministic draft's
+  primary language and forbids implicit translation;
+- explicit protocol selection, backward-compatible OpenAI default, and
+  fail-closed behavior for an unsupported protocol;
 - exact preservation of deterministic `actions`, `fact_refs`, statuses, Review
   facts, and grounded claims;
 - no provider call for stale/invalid context;

@@ -6,6 +6,7 @@ import asyncio
 from types import SimpleNamespace
 
 import httpx2
+import pytest
 
 from nocpro_api import create_app
 from nocpro_api.ai_advisor import (
@@ -13,6 +14,8 @@ from nocpro_api.ai_advisor import (
     extract_grounded_claims,
     generate_ai_suggestion,
 )
+from nocpro_api.assistant import render_answer
+from nocpro_api.grounded_llm import GroundedRenderResult
 from tests.test_api import _payload
 
 
@@ -88,17 +91,62 @@ def test_ai_advisor_never_converts_absence_of_weak_into_high_fit() -> None:
     assert "causal direction is" not in narrative.lower()
 
 
-def test_ai_advisor_uses_recommendation_refs_to_find_evaluated_detail() -> None:
+def test_ai_advisor_uses_recommendation_refs_to_find_evaluated_detail(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("AI_API_KEY", raising=False)
     result = generate_ai_suggestion("C1", _analysis(), _review())
 
     assert result.status == "AVAILABLE"
     assert result.model == "DETERMINISTIC_EVIDENCE"
-    assert result.provider_status == "NOT_USED"
+    assert result.provider_status == "NOT_CONFIGURED"
     assert "REMOVE_MEMBER (cf-1)" in result.narrative
     assert "does not infer root cause" in result.narrative
 
 
-def test_ai_advisor_distinguishes_unavailable_review_from_no_recommendation() -> None:
+def test_ai_advisor_uses_llm_only_for_grounded_narrative(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_render_grounded(**kwargs):
+        captured.update(kwargs)
+        return GroundedRenderResult(
+            message="Rendered grounded advisor text",
+            model="configured-model",
+            provider_status="OK",
+            used_provider=True,
+        )
+
+    monkeypatch.setattr(
+        "nocpro_api.ai_advisor.render_grounded",
+        fake_render_grounded,
+    )
+    result = generate_ai_suggestion("C1", _analysis(), _review())
+
+    assert result.narrative == "Rendered grounded advisor text"
+    assert result.model == "configured-model"
+    assert result.provider_status == "OK"
+    assert result.grounded_claims == [
+        "Chain C1 contains 3 analyzed members.",
+        "1 member(s) are classified WEAK: A2.",
+        "1 member(s) have INSUFFICIENT_DATA: A3.",
+        "Top descriptors: same entity (coverage 85%).",
+        "Operator-facing counterfactual recommendation: REMOVE_MEMBER (cf-1).",
+    ]
+    assert captured["purpose"] == "ADVISOR"
+    assert captured["fact_refs"] == result.grounded_claims
+    facts = captured["facts"]
+    assert isinstance(facts, dict)
+    assert facts["structured_analysis"]["weak_members"] == ["A2"]
+    assert facts["review_status"] == "NOT_AVAILABLE"
+    assert "does not infer root cause" in str(captured["draft"])
+
+
+def test_ai_advisor_distinguishes_unavailable_review_from_no_recommendation(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("AI_API_KEY", raising=False)
     result = generate_ai_suggestion(
         "C1",
         _analysis(),
@@ -112,7 +160,10 @@ def test_ai_advisor_distinguishes_unavailable_review_from_no_recommendation() ->
     assert "No operator-facing counterfactual recommendation" not in result.narrative
 
 
-def test_ai_suggestion_api_endpoint_is_deterministic_and_provider_free() -> None:
+def test_ai_suggestion_api_endpoint_falls_back_when_provider_is_not_configured(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("AI_API_KEY", raising=False)
     async def exercise() -> None:
         app = create_app()
         transport = httpx2.ASGITransport(app=app)
@@ -129,7 +180,7 @@ def test_ai_suggestion_api_endpoint_is_deterministic_and_provider_free() -> None
                 assert second.status_code == 200
                 assert first.json() == second.json()
                 assert first.json()["model"] == "DETERMINISTIC_EVIDENCE"
-                assert first.json()["provider_status"] == "NOT_USED"
+                assert first.json()["provider_status"] == "NOT_CONFIGURED"
                 assert "ADR-0024" in first.json()["disclaimer"]
         finally:
             app.state.workspace.close()
@@ -181,6 +232,140 @@ def test_assistant_query_is_snapshot_bound_and_only_returns_typed_navigation() -
                 assert stale.status_code == 200
                 assert stale.json()["status"] == "STALE_CONTEXT"
                 assert stale.json()["actions"] == []
+        finally:
+            app.state.workspace.close()
+
+    asyncio.run(exercise())
+
+
+def test_assistant_llm_can_change_only_the_deterministic_message(monkeypatch) -> None:
+    deterministic = {
+        "status": "AVAILABLE",
+        "message": "Open the exact persisted Audit result.",
+        "fact_refs": ["ui-context:C1"],
+        "actions": [
+            {
+                "kind": "NAVIGATE",
+                "label": "Open Structural Audit",
+                "target": {
+                    "snapshot_id": "s1",
+                    "snapshot_version": "1",
+                    "chain_id": "C1",
+                    "tab": "structure",
+                    "pair_alarm_id_a": None,
+                    "pair_alarm_id_b": None,
+                },
+            }
+        ],
+    }
+    captured: dict[str, object] = {}
+
+    def fake_render_grounded(**kwargs):
+        captured.update(kwargs)
+        return GroundedRenderResult(
+            message="Rendered assistant text",
+            model="configured-model",
+            provider_status="OK",
+            used_provider=True,
+        )
+
+    monkeypatch.setattr(
+        "nocpro_api.assistant.render_grounded",
+        fake_render_grounded,
+    )
+    result = render_answer(
+        context={"snapshot_id": "s1", "snapshot_version": "1", "chain_id": "C1"},
+        deterministic=deterministic,
+    )
+
+    assert result["message"] == "Rendered assistant text"
+    assert result["status"] == deterministic["status"]
+    assert result["fact_refs"] == deterministic["fact_refs"]
+    assert result["actions"] == deterministic["actions"]
+    assert result["model"] == "configured-model"
+    assert result["provider_status"] == "OK"
+    assert captured["purpose"] == "ASSISTANT"
+    assert captured["draft"] == deterministic["message"]
+    assert captured["fact_refs"] == deterministic["fact_refs"]
+
+
+def test_assistant_stale_context_never_invokes_llm(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "nocpro_api.assistant.render_grounded",
+        lambda **_kwargs: pytest.fail("stale context must not invoke provider"),
+    )
+    deterministic = {
+        "status": "STALE_CONTEXT",
+        "message": "Refresh the workspace.",
+        "fact_refs": [],
+        "actions": [],
+    }
+
+    result = render_answer(
+        context={"snapshot_id": "s1", "snapshot_version": "99"},
+        deterministic=deterministic,
+    )
+
+    assert result == {
+        **deterministic,
+        "model": "DETERMINISTIC_EVIDENCE",
+        "provider_status": "NOT_APPLIED",
+    }
+
+
+def test_assistant_route_renders_after_typed_action_generation(monkeypatch) -> None:
+    def fake_render_grounded(**_kwargs):
+        return GroundedRenderResult(
+            message="Bản diễn giải đã được render từ action hợp lệ.",
+            model="configured-model",
+            provider_status="OK",
+            used_provider=True,
+        )
+
+    monkeypatch.setattr(
+        "nocpro_api.assistant.render_grounded",
+        fake_render_grounded,
+    )
+
+    async def exercise() -> None:
+        app = create_app()
+        transport = httpx2.ASGITransport(app=app)
+        try:
+            async with httpx2.AsyncClient(
+                transport=transport,
+                base_url="http://testserver",
+            ) as client:
+                await client.post("/api/v1/snapshots", json=_payload())
+                response = await client.post(
+                    "/api/v1/assistant/query",
+                    json={
+                        "query": "open audit",
+                        "context": {
+                            "snapshot_id": "s1",
+                            "snapshot_version": "1",
+                            "page": "tree",
+                            "chain_id": "C1",
+                        },
+                    },
+                )
+                assert response.status_code == 200
+                body = response.json()
+                assert body["message"] == "Bản diễn giải đã được render từ action hợp lệ."
+                assert body["model"] == "configured-model"
+                assert body["provider_status"] == "OK"
+                assert body["fact_refs"] == ["ui-context:C1"]
+                assert body["actions"] == [{
+                    "kind": "NAVIGATE",
+                    "label": "Open Structural Audit",
+                    "target": {
+                        "snapshot_id": "s1",
+                        "snapshot_version": "1",
+                        "chain_id": "C1",
+                        "tab": "structure",
+                        "pair_alarm_id_a": None,
+                        "pair_alarm_id_b": None,
+                    },
+                }]
         finally:
             app.state.workspace.close()
 

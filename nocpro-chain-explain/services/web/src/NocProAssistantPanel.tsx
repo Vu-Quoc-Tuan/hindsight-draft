@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { api } from './api'
+import { GroundedProviderBadge } from './GroundedProviderBadge'
 import type { AssistantAction, AssistantContext, AssistantResponse } from './types'
 
 const quickQuestions = [
@@ -14,18 +15,13 @@ const quickQuestions = [
 export function NocProAssistantPanel({
   context,
   onNavigate,
+  initialResponse = null,
 }: {
   context: AssistantContext
   onNavigate: (action: AssistantAction) => void
+  initialResponse?: AssistantResponse | null
 }) {
   const [query, setQuery] = useState('')
-  const [responseState, setResponseState] = useState<{
-    contextKey: string
-    result: AssistantResponse | null
-    loading: boolean
-    error: string | null
-  }>({ contextKey: '', result: null, loading: false, error: null })
-  const requestRef = useRef<{ id: number; controller: AbortController } | null>(null)
   const contextKey = [
     context.snapshot_id,
     context.snapshot_version,
@@ -33,6 +29,14 @@ export function NocProAssistantPanel({
     context.pair_alarm_id_a ?? '',
     context.pair_alarm_id_b ?? '',
   ].join('\u0000')
+  const [responseState, setResponseState] = useState<{
+    contextKey: string
+    result: AssistantResponse | null
+    loading: boolean
+    error: string | null
+  }>({ contextKey, result: initialResponse, loading: false, error: null })
+  const requestRef = useRef<{ id: number; controller: AbortController } | null>(null)
+
   useEffect(() => {
     requestRef.current?.controller.abort()
   }, [contextKey])
@@ -118,7 +122,7 @@ export function NocProAssistantPanel({
         <article className="ai-suggestion-body assistant-result" aria-live="polite">
           <div className="assistant-result-status">
             <span className={`pill pill--${result.status === 'AVAILABLE' ? 'positive' : 'neutral'}`}>{result.status}</span>
-            <small>{result.contract_version}</small>
+            <GroundedProviderBadge model={result.model} providerStatus={result.provider_status} />
           </div>
           <p className="assistant-message">{result.message}</p>
           {result.actions.length > 0 && (

@@ -40,24 +40,36 @@ It separates **capability** from evidence that the capability was exercised;
 | Counterfactual `REMOVE_MEMBER`, `SPLIT_CHAIN`, `MOVE_MEMBER`, connector annotation | `READY` | `PASS` | `PASS` | `PASS` Kafka/PostgreSQL/restart/Chromium | `NOT_CALIBRATED` | Proposal-only; feedback is persisted evaluation data and cannot mutate NocPro. Production recommendation policy requires operator corrections/calibration. |
 | Counterfactual `MERGE_CHAINS` | `READY` | `PASS` | `PASS` | `PASS` Kafka/PostgreSQL/restart/Chromium | `NOT_CALIBRATED` | Exact cross-chain evidence and persisted Review reload have runtime acceptance. |
 | Counterfactual `ADD_MEMBER` | `BLOCKED` | N/A | N/A | N/A | `BLOCKED` | `UNKNOWN_UPSTREAM_SEMANTICS`: first-class zero-membership alarms have not been verified upstream. A singleton-source transfer is canonical `MOVE_MEMBER`, never ADD. |
-| NocPro Assistant registry/search/navigation | `READY` (ADR-0024 epistemic boundaries) | `PASS` API/UI contract | N/A | `PASS` full-stack Chromium flow; `PASS` current-component stale-context Chromium harness | `READY` for deterministic read-only navigation; `UNAVAILABLE` for ungrounded LLM inference | Every action is bound to an exact snapshot/version and validated again by the client. Pair WHY actions require two current same-chain members; assistant Review navigation can display only a persisted Review and never submits a job. |
+| NocPro Assistant registry/search/navigation + grounded LLM rendering | `READY` (ADR-0024 epistemic boundaries) | `PASS` OpenAI-compatible/Ollama codecs, provider fallback, API/UI contract | `PASS` native Ollama Cloud smoke (`gpt-oss:120b`, HTTP 200) | `PASS` full-stack deterministic fallback; live Ollama smoke tested separately | `READY` for deterministic read-only navigation; optional LLM is narrative-only | Every action is built deterministically, bound to an exact snapshot/version, and validated again by the client. The server-side LLM may render only the message from bounded facts; failure returns the deterministic draft. Real replay + Assistant Chromium passed under fallback, while the explicit native Ollama `/api/chat` codec passed a separate bounded live smoke. Pair WHY actions require two current same-chain members; assistant Review navigation can display only a persisted Review and never submits a job. |
 | IT source-field topology joins | `READY` for structural navigation; excluded from P2 mapping | `PASS` | `PASS` | `PASS` resolver unit/HTTP contract + real IT Chromium navigation | `PARTIAL_SOURCE_FIELD_EXACT` for navigation; `UNAVAILABLE` for P2 promotion | The resolver opens only unambiguous source fields in the bounded relation tree and returns `p2_mapping_eligible=false`. The real files yield 169,836/258,344 uniquely resolved alarm rows (65.740%), 44,992 multi-resource conflicts, 441 rows touching an ambiguous alias, and 43,106 rows with no alias hit. These exact source-record joins are useful, but their direction and business meaning remain unverified. |
 
 ## NocPro Assistant boundary
 
 ADR-0024 enforces strict epistemic boundaries on operator narrative generation.
-The legacy AI Advisor compatibility endpoint is deterministic and evidence-
-bound: it synthesizes only verified member roles (`support`,
-`representativeness`), descriptors, and evaluated Pareto recommendations.
-`provider_status` is explicitly `NOT_USED`.
+The legacy AI Advisor compatibility endpoint first projects deterministic,
+evidence-bound facts: verified member roles (`support`, `representativeness`),
+descriptors, and evaluated Pareto recommendations. An optional server-side
+provider may render only the narrative text through an explicit
+`OPENAI_COMPATIBLE` or `OLLAMA` wire protocol. The native Ollama adapter uses a
+non-streaming `/api/chat` response and ignores thinking/tool fields. Missing or
+failed provider access returns the exact deterministic draft with a stable,
+non-secret `provider_status`.
 
 The NocPro Assistant extends this with a snapshot-bound Semantic Registry and
 an allowlisted deterministic tool router. It can explain registered concepts,
 search active chain IDs/titles, and return typed internal navigation actions.
+The same optional provider may render the already-resolved message, but cannot
+create or modify the response status, fact references, actions, or targets.
 It cannot issue SQL, network, arbitrary URL, Deep Dive, Review, Apply, or
 feedback actions. A stale snapshot identity returns `STALE_CONTEXT`; missing
 resource-to-chain mapping returns
 `RESOURCE_TO_CHAIN_MAPPING_UNAVAILABLE`, never a topology-derived guess.
+
+LLM availability does not fill data or algorithm boundaries. It cannot make
+production H available without authoritative taxonomy and verified historical
+episodes; it cannot provide exact indexed full-chain `T_delay` statistics; and
+it cannot establish topology dependency semantics, operator ground truth, or
+production calibration.
 
 Every navigation target contains a non-empty `snapshot_id` and
 `snapshot_version`; the React client rejects a target for any other active

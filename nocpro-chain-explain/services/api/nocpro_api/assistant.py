@@ -1,14 +1,17 @@
-"""Deterministic, read-only NocPro Assistant.
+"""Deterministic, read-only NocPro Assistant with optional text rendering.
 
 The assistant is a projection and navigation layer over the current workspace.
-It deliberately does not invoke an LLM, mutate analysis state, submit jobs, or
-manufacture operational conclusions.  Every action is a typed in-app target.
+It does not grant an LLM authority to mutate analysis state, submit jobs, or
+manufacture operational conclusions. Every action is a typed in-app target
+created before the optional narrative renderer is called.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+
+from .grounded_llm import render_grounded
 
 
 REGISTRY_VERSION = "nocpro-assistant-registry-v1"
@@ -155,6 +158,55 @@ def _unavailable(message: str, reason: str) -> dict[str, Any]:
         "message": message,
         "fact_refs": [f"capability:{reason}"],
         "actions": [],
+    }
+
+
+def render_answer(
+    *,
+    context: dict[str, Any],
+    deterministic: dict[str, Any],
+) -> dict[str, Any]:
+    """Render only an Assistant message; preserve all deterministic controls."""
+    if deterministic.get("status") == "STALE_CONTEXT":
+        return {
+            **deterministic,
+            "model": "DETERMINISTIC_EVIDENCE",
+            "provider_status": "NOT_APPLIED",
+        }
+
+    actions = deterministic.get("actions", [])
+    action_facts = [
+        {
+            "kind": action.get("kind"),
+            "label": action.get("label"),
+            "target": action.get("target"),
+        }
+        for action in actions
+        if isinstance(action, dict)
+    ]
+    fact_refs = [str(ref) for ref in deterministic.get("fact_refs", [])]
+    rendered = render_grounded(
+        draft=str(deterministic.get("message", "")),
+        facts={
+            "status": deterministic.get("status"),
+            "fact_refs": fact_refs,
+            "actions": action_facts,
+            "active_context": {
+                "snapshot_id": context.get("snapshot_id"),
+                "snapshot_version": context.get("snapshot_version"),
+                "chain_id": context.get("chain_id"),
+                "pair_alarm_id_a": context.get("pair_alarm_id_a"),
+                "pair_alarm_id_b": context.get("pair_alarm_id_b"),
+            },
+        },
+        fact_refs=fact_refs,
+        purpose="ASSISTANT",
+    )
+    return {
+        **deterministic,
+        "message": rendered.message,
+        "model": rendered.model,
+        "provider_status": rendered.provider_status,
     }
 
 
