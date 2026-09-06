@@ -130,6 +130,7 @@ def test_update_config_validation_failures(app) -> None:
     asyncio.run(exercise())
 
 
+@pytest.mark.postgres
 def test_calibrate_config_endpoint(app, monkeypatch, tmp_path) -> None:
     temp_yaml = tmp_path / "calibrated.yaml"
     monkeypatch.setenv("NOCPRO_CALIBRATED_OUTPUT_PATH", str(temp_yaml))
