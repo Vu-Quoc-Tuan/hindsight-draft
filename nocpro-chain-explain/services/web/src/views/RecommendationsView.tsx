@@ -10,35 +10,7 @@ export function RecommendationsView({
 }: RecommendationsViewProps) {
   return (
     <div className="flex flex-col w-full gap-space-md pb-12 select-none animate-fadeIn">
-      {/* Screen 14 Header */}
-      <div className="w-full bg-surface-container-lowest px-space-lg py-space-sm rounded-lg shadow-sm flex flex-col gap-space-xs">
-        <div className="flex flex-wrap items-center justify-between gap-space-sm">
-          <div className="flex items-center gap-space-xs font-code-sm text-code-sm">
-            <span className="text-on-surface-variant">SNAPSHOT</span>
-            <span className="text-secondary font-semibold">S102</span>
-            <span className="material-symbols-outlined text-[14px] text-on-surface-variant">chevron_right</span>
-            <span className="text-on-surface-variant">CHAIN</span>
-            <span className="text-on-surface font-semibold bg-surface-container px-space-xs py-space-2xs rounded">
-              {analysis.chain_id}
-            </span>
-            <span className="material-symbols-outlined text-[14px] text-on-surface-variant">chevron_right</span>
-            <span className="text-secondary font-semibold">
-              14 - Recommendations (Counterfactual Evaluation)
-            </span>
-          </div>
-          <div className="flex items-center gap-space-xs">
-            <span className="font-label-caps text-label-caps uppercase bg-surface-container-high text-secondary px-space-sm py-space-2xs rounded flex items-center gap-space-2xs">
-              <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span>
-              SOLVER: Multi-Objective Pareto
-            </span>
-            <span className="font-label-caps text-label-caps uppercase bg-primary-container/20 text-primary px-space-sm py-space-2xs rounded font-bold">
-              5 CANDIDATE OPS EVALUATED
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* KPI / Counterfactual High-Luminance Strip from Screen 14 */}
+      {/* KPI / Counterfactual High-Luminance Strip */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-space-md">
         <div className="bg-surface-container p-space-md rounded flex flex-col justify-between shadow-sm">
           <div className="flex items-center justify-between">

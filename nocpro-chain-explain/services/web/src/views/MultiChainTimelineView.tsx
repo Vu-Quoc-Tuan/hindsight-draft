@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import type { ChainSummary } from '../types'
 
 interface MultiChainTimelineViewProps {
-  chains: ChainSummary[]
+  chains?: ChainSummary[]
   onSelectChain: (chainId: string) => void
   onCompareChains: (chainA: string, chainB: string) => void
   selectedChainId?: string | null
@@ -22,7 +22,7 @@ interface TimelineTrack {
 }
 
 export function MultiChainTimelineView({
-  chains,
+  chains = [],
   onSelectChain,
   onCompareChains,
 }: MultiChainTimelineViewProps) {
@@ -31,6 +31,7 @@ export function MultiChainTimelineView({
   const [needsAttentionOnly, setNeedsAttentionOnly] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedChainIds, setSelectedChainIds] = useState<string[]>([])
+  const [isPairIsolated, setIsPairIsolated] = useState(false)
 
   // Build timeline tracks from live chains if available, or fallback to realistic mockup tracks
   const tracks: TimelineTrack[] = useMemo(() => {
@@ -132,6 +133,7 @@ export function MultiChainTimelineView({
 
   const filteredTracks = useMemo(() => {
     return tracks.filter(t => {
+      if (isPairIsolated && !['C2214039', 'C2214048'].includes(t.id)) return false
       if (needsAttentionOnly && !t.weakCut) return false
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
@@ -139,7 +141,7 @@ export function MultiChainTimelineView({
       }
       return true
     })
-  }, [tracks, needsAttentionOnly, searchQuery])
+  }, [tracks, isPairIsolated, needsAttentionOnly, searchQuery])
 
   const toggleSelect = (id: string) => {
     setSelectedChainIds(prev =>
@@ -147,36 +149,17 @@ export function MultiChainTimelineView({
     )
   }
 
-  const isolatePair = () => {
-    setSelectedChainIds(['C2214039', 'C2214048'])
+  const toggleIsolatePair = () => {
+    if (isPairIsolated) {
+      setIsPairIsolated(false)
+    } else {
+      setIsPairIsolated(true)
+      setSelectedChainIds(['C2214039', 'C2214048'])
+    }
   }
 
   return (
     <div className="flex flex-col w-full gap-space-md pb-12 select-none animate-fadeIn">
-      {/* Top Action & Filter Ribbon */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm pb-space-xs border-b border-surface-container-high">
-        <div className="flex flex-col gap-space-2xs">
-          <div className="flex items-center gap-space-sm">
-            <span className="material-symbols-outlined text-secondary text-[22px]">timeline</span>
-            <h1 className="font-headline-md text-headline-md font-bold text-on-surface tracking-tight">
-              03 - Multi-Chain Concurrency Timeline
-            </h1>
-            <span className="px-space-xs py-space-2xs rounded bg-surface-container-highest text-secondary font-code-sm text-code-sm font-semibold">
-              Temporal Overlap
-            </span>
-          </div>
-          <p className="font-body-sm text-body-sm text-on-surface-variant">
-            Gantt-style synchronization of incident cascades across shared transmission topologies
-          </p>
-        </div>
-        <div className="flex items-center gap-space-sm font-code-sm text-code-sm">
-          <span className="text-on-surface-variant">Active Analysis:</span>
-          <span className="text-primary font-bold bg-primary-container/20 px-space-xs py-space-2xs rounded">
-            {chains.length > 0 ? `${chains.length} chains evaluated` : '8,714 alarms · 2,824 chains'}
-          </span>
-        </div>
-      </div>
-
       {/* Filter and Zoom Controls */}
       <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-space-md p-space-md bg-surface-container rounded-lg shadow-md">
         {/* Left: Window & Granularity */}
@@ -192,13 +175,17 @@ export function MultiChainTimelineView({
           </div>
           <div className="h-space-lg w-px bg-surface-container-highest hidden sm:block"></div>
           {/* Interval Selector */}
-          <div className="flex items-center gap-space-xs bg-surface-container-low px-space-xs py-space-2xs rounded">
+          <div
+            className="flex items-center gap-space-xs bg-surface-container-low px-space-xs py-space-2xs rounded"
+            title="Độ phân giải thời gian (Time Bucket): 1 phút (tổng quan), 30 giây (chi tiết), 5 giây (phân giải vi mô chuỗi nổ)"
+          >
             <span className="font-label-caps text-label-caps uppercase text-on-surface-variant px-space-xs">Interval</span>
             {(['1m', '30s', '5s'] as const).map(inv => (
               <button
                 key={inv}
                 onClick={() => setInterval(inv)}
-                className={`px-space-sm py-space-2xs rounded font-code-sm text-code-sm transition-all ${
+                title={`Độ phân giải ${inv}`}
+                className={`px-space-sm py-space-2xs rounded font-code-sm text-code-sm transition-all cursor-pointer ${
                   interval === inv
                     ? 'bg-secondary-container text-on-secondary-container font-semibold'
                     : 'text-on-surface-variant hover:text-on-surface'
@@ -209,11 +196,14 @@ export function MultiChainTimelineView({
             ))}
           </div>
           {/* Zoom Precision Stepper */}
-          <div className="flex items-center bg-surface-container-lowest rounded p-space-2xs gap-space-xs">
+          <div
+            className="flex items-center bg-surface-container-lowest rounded p-space-2xs gap-space-xs"
+            title="Thu phóng trục ngang Gantt (%): Kéo dãn thanh thời gian để dễ nhìn và thao tác khi có nhiều cảnh báo tập trung dày đặc"
+          >
             <button
               onClick={() => setZoomLevel(prev => Math.max(70, prev - 15))}
-              className="w-6 h-6 flex items-center justify-center rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
-              title="Zoom Out"
+              className="w-6 h-6 flex items-center justify-center rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors cursor-pointer"
+              title="Thu nhỏ trục thời gian (Zoom Out)"
             >
               <span className="material-symbols-outlined text-[16px]">remove</span>
             </button>
@@ -222,8 +212,8 @@ export function MultiChainTimelineView({
             </span>
             <button
               onClick={() => setZoomLevel(prev => Math.min(180, prev + 15))}
-              className="w-6 h-6 flex items-center justify-center rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
-              title="Zoom In"
+              className="w-6 h-6 flex items-center justify-center rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors cursor-pointer"
+              title="Phóng to trục thời gian (Zoom In)"
             >
               <span className="material-symbols-outlined text-[16px]">add</span>
             </button>
@@ -286,11 +276,18 @@ export function MultiChainTimelineView({
           </div>
           <div className="flex items-center gap-space-sm shrink-0 self-end md:self-center">
             <button
-              onClick={isolatePair}
-              className="px-space-md py-space-2xs bg-surface-container-high hover:bg-surface-bright text-secondary font-code-sm text-code-sm font-semibold rounded flex items-center gap-space-xs transition-colors shadow-sm"
+              onClick={toggleIsolatePair}
+              className={`px-space-md py-space-2xs font-code-sm text-code-sm font-semibold rounded flex items-center gap-space-xs transition-colors shadow-sm cursor-pointer ${
+                isPairIsolated
+                  ? 'bg-secondary text-surface-container-lowest hover:bg-secondary/90'
+                  : 'bg-surface-container-high hover:bg-surface-bright text-secondary'
+              }`}
+              title={isPairIsolated ? 'Hủy cô lập: Hiển thị lại toàn bộ các chuỗi' : 'Cô lập cặp chuỗi C2214039 và C2214048'}
             >
-              <span className="material-symbols-outlined text-[16px]">sync_alt</span>
-              Isolate Pair
+              <span className="material-symbols-outlined text-[16px]">
+                {isPairIsolated ? 'filter_alt_off' : 'sync_alt'}
+              </span>
+              {isPairIsolated ? 'Un-isolate Pair' : 'Isolate Pair'}
             </button>
             {selectedChainIds.length === 2 && (
               <button
@@ -306,135 +303,134 @@ export function MultiChainTimelineView({
       </div>
 
       {/* Main Multi-Chain Gantt Chart Matrix Surface */}
-      <div className="flex flex-col bg-surface-container-lowest rounded-lg shadow-xl overflow-hidden">
-        {/* Timeline Matrix Header */}
-        <div className="flex items-stretch bg-surface-container-high h-space-panel-header-h select-none border-b border-surface-container-highest">
-          <div className="w-80 sm:w-96 shrink-0 px-space-md flex items-center justify-between bg-surface-container">
-            <div className="flex items-center gap-space-sm">
-              <span className="material-symbols-outlined text-secondary text-[16px]">lan</span>
-              <span className="font-label-caps text-label-caps uppercase text-on-surface font-bold tracking-wider">
-                Concurrent Chains ({filteredTracks.length})
-              </span>
-            </div>
-            <span className="font-code-sm text-code-sm text-on-surface-variant">ALMS / PEAK</span>
-          </div>
-          {/* Time Axis Header Columns (14:20 -> 14:45 UTC) */}
-          <div className="flex-1 relative flex items-center font-code-sm text-code-sm text-on-surface-variant overflow-hidden">
-            <div className="w-1/5 h-full flex items-center px-space-sm border-r border-surface-container-highest/30">
-              <span>14:20</span>
-            </div>
-            <div className="w-1/5 h-full flex items-center px-space-sm border-r border-surface-container-highest/30">
-              <span>14:25</span>
-            </div>
-            <div className="w-1/5 h-full flex items-center px-space-sm border-r border-surface-container-highest/30 bg-primary/10">
-              <span className="font-bold text-primary flex items-center gap-space-2xs">
-                14:30
-                <span className="font-label-caps text-[9px] uppercase px-1 py-0.5 rounded bg-primary text-on-primary font-black tracking-widest leading-none">
-                  BURST PEAK
+      <div className="flex flex-col bg-surface-container-lowest rounded-lg shadow-xl overflow-x-auto border border-surface-container-high">
+        <div style={{ minWidth: `${Math.max(100, zoomLevel)}%` }} className="flex flex-col">
+          {/* Timeline Matrix Header */}
+          <div className="flex items-stretch bg-surface-container-high h-space-panel-header-h select-none border-b border-surface-container-highest">
+            <div className="w-80 sm:w-96 shrink-0 px-space-md flex items-center justify-between bg-surface-container sticky left-0 z-30 border-r border-surface-container-highest">
+              <div className="flex items-center gap-space-sm">
+                <span className="material-symbols-outlined text-secondary text-[16px]">lan</span>
+                <span className="font-label-caps text-label-caps uppercase text-on-surface font-bold tracking-wider">
+                  Concurrent Chains ({filteredTracks.length})
                 </span>
-              </span>
+              </div>
+              <span className="font-code-sm text-code-sm text-on-surface-variant">ALMS / PEAK</span>
             </div>
-            <div className="w-1/5 h-full flex items-center px-space-sm border-r border-surface-container-highest/30">
-              <span>14:35</span>
+            {/* Time Axis Header Columns (14:20 -> 14:45 UTC) */}
+            <div className="flex-1 relative flex items-center font-code-sm text-code-sm text-on-surface-variant">
+              <div className="w-1/5 h-full flex items-center px-space-sm border-r border-surface-container-highest/30">
+                <span>14:20</span>
+              </div>
+              <div className="w-1/5 h-full flex items-center px-space-sm border-r border-surface-container-highest/30">
+                <span>14:25</span>
+              </div>
+              <div className="w-1/5 h-full flex items-center px-space-sm border-r border-surface-container-highest/30 bg-primary/10">
+                <span className="font-bold text-primary flex items-center gap-space-2xs">
+                  14:30
+                  <span className="font-label-caps text-[9px] uppercase px-1 py-0.5 rounded bg-primary text-on-primary font-black tracking-widest leading-none">
+                    BURST PEAK
+                  </span>
+                </span>
+              </div>
+              <div className="w-1/5 h-full flex items-center px-space-sm border-r border-surface-container-highest/30">
+                <span>14:35</span>
+              </div>
+              <div className="w-1/5 h-full flex items-center px-space-sm">
+                <span>14:40</span>
+              </div>
             </div>
-            <div className="w-1/5 h-full flex items-center px-space-sm">
-              <span>14:40</span>
+            <div className="w-14 shrink-0 flex items-center justify-end pr-space-md text-on-surface-variant font-code-sm text-code-sm">
+              14:45
             </div>
           </div>
-          <div className="w-14 shrink-0 flex items-center justify-end pr-space-md text-on-surface-variant font-code-sm text-code-sm">
-            14:45
-          </div>
-        </div>
 
-        {/* Interactive Canvas with Concurrent Chain Rows */}
-        <div
-          className="relative flex flex-col w-full transition-transform duration-150 divide-y divide-surface-container-highest/40"
-          style={{ transform: `scaleX(${zoomLevel / 100})`, transformOrigin: 'left center' }}
-        >
-          {/* Background Temporal Grid Lines */}
-          <div className="absolute inset-0 left-80 sm:left-96 right-14 pointer-events-none flex">
-            <div className="w-1/5 h-full border-r border-surface-container-highest/20"></div>
-            <div className="w-1/5 h-full border-r border-surface-container-highest/20"></div>
-            <div className="w-1/5 h-full border-r border-surface-container-highest/20 bg-primary/5 relative">
-              <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-primary/40"></div>
-              <div className="absolute right-0 top-0 bottom-0 w-px bg-primary/20"></div>
-            </div>
-            <div className="w-1/5 h-full border-r border-surface-container-highest/20"></div>
-            <div className="w-1/5 h-full"></div>
-          </div>
-
-          {filteredTracks.map(track => {
-            const isSelected = selectedChainIds.includes(track.id)
-            return (
-              <div
-                key={track.id}
-                className={`group relative flex items-center h-14 hover:bg-surface-container transition-colors select-none ${
-                  isSelected ? 'bg-secondary-container/10' : ''
-                }`}
-              >
-                {/* Chain Meta Lead */}
-                <div className="w-80 sm:w-96 shrink-0 h-full px-space-md flex items-center justify-between bg-surface-container-low/80 z-10 group-hover:bg-surface-container">
-                  <div className="flex items-center gap-space-sm">
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleSelect(track.id)}
-                      className="w-3.5 h-3.5 rounded bg-surface-container-highest border-none text-secondary focus:ring-0 cursor-pointer accent-secondary"
-                    />
-                    <div
-                      className="flex flex-col cursor-pointer"
-                      onClick={() => onSelectChain(track.id)}
-                    >
-                      <div className="flex items-center gap-space-xs">
-                        <span className="font-code-md text-code-md font-bold text-on-surface hover:text-secondary transition-colors">
-                          {track.label}
-                        </span>
-                        <span className="font-label-caps text-label-caps px-space-2xs py-0.5 rounded bg-surface-container-highest text-secondary font-bold">
-                          {track.role}
-                        </span>
-                        {track.weakCut && (
-                          <span className="material-symbols-outlined text-primary text-[14px]" title="Weak Cut Flag Detected">
-                            warning
+          {/* Interactive Canvas with Concurrent Chain Rows */}
+          <div className="relative flex flex-col w-full divide-y divide-surface-container-highest/40">
+            {filteredTracks.map(track => {
+              const isSelected = selectedChainIds.includes(track.id)
+              return (
+                <div
+                  key={track.id}
+                  className={`group relative flex items-center h-14 hover:bg-surface-container transition-colors select-none ${
+                    isSelected ? 'bg-secondary-container/10' : ''
+                  }`}
+                >
+                  {/* Chain Meta Lead (Sticky left) */}
+                  <div className="w-80 sm:w-96 shrink-0 h-full px-space-md flex items-center justify-between bg-surface-container-low group-hover:bg-surface-container z-20 sticky left-0 border-r border-surface-container-highest">
+                    <div className="flex items-center gap-space-sm">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelect(track.id)}
+                        className="w-3.5 h-3.5 rounded bg-surface-container-highest border-none text-secondary focus:ring-0 cursor-pointer accent-secondary"
+                      />
+                      <div
+                        className="flex flex-col cursor-pointer"
+                        onClick={() => onSelectChain(track.id)}
+                      >
+                        <div className="flex items-center gap-space-xs">
+                          <span className="font-code-md text-code-md font-bold text-on-surface hover:text-secondary transition-colors">
+                            {track.label}
                           </span>
-                        )}
+                          <span className="font-label-caps text-label-caps px-space-2xs py-0.5 rounded bg-surface-container-highest text-secondary font-bold">
+                            {track.role}
+                          </span>
+                          {track.weakCut && (
+                            <span className="material-symbols-outlined text-primary text-[14px]" title="Weak Cut Flag Detected">
+                              warning
+                            </span>
+                          )}
+                        </div>
+                        <span className="font-code-sm text-code-sm text-on-surface-variant truncate max-w-[200px]">
+                          {track.alarmCount} alms • {track.dominantDevice}
+                        </span>
                       </div>
-                      <span className="font-code-sm text-code-sm text-on-surface-variant truncate max-w-[200px]">
-                        {track.alarmCount} alms • {track.dominantDevice}
+                    </div>
+                    <div className="flex flex-col items-end">
+                      <span className="font-code-sm text-code-sm text-primary font-semibold">
+                        {track.peakRate}
+                      </span>
+                      {track.weakCut && (
+                        <span className="font-label-caps text-[9px] uppercase text-error tracking-wider font-bold">
+                          WEAK CUT
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Timeline Track */}
+                  <div className="flex-1 h-full relative flex items-center pr-14 pl-2">
+                    {/* Background Temporal Grid Lines inside the track */}
+                    <div className="absolute inset-0 right-14 pointer-events-none flex">
+                      <div className="w-1/5 h-full border-r border-surface-container-highest/20"></div>
+                      <div className="w-1/5 h-full border-r border-surface-container-highest/20"></div>
+                      <div className="w-1/5 h-full border-r border-surface-container-highest/20 bg-primary/5 relative">
+                        <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-primary/40"></div>
+                        <div className="absolute right-0 top-0 bottom-0 w-px bg-primary/20"></div>
+                      </div>
+                      <div className="w-1/5 h-full border-r border-surface-container-highest/20"></div>
+                      <div className="w-1/5 h-full"></div>
+                    </div>
+
+                    <div
+                      onClick={() => onSelectChain(track.id)}
+                      style={{
+                        left: `${track.startOffsetPct}%`,
+                        width: `${track.durationPct}%`,
+                        backgroundColor: track.color === '#ff5451' ? 'rgba(255, 84, 81, 0.25)' : 'rgba(123, 208, 255, 0.2)',
+                        borderColor: track.color,
+                      }}
+                      className="relative h-8 rounded border flex items-center px-space-sm shadow-md cursor-pointer hover:brightness-125 transition-all group-hover:shadow-lg z-10"
+                    >
+                      <span className="font-code-sm text-code-sm font-bold text-on-surface whitespace-nowrap">
+                        {track.label} ({track.alarmCount})
                       </span>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end">
-                    <span className="font-code-sm text-code-sm text-primary font-semibold">
-                      {track.peakRate}
-                    </span>
-                    {track.weakCut && (
-                      <span className="font-label-caps text-[9px] uppercase text-error tracking-wider font-bold">
-                        WEAK CUT
-                      </span>
-                    )}
-                  </div>
                 </div>
-
-                {/* Timeline Track */}
-                <div className="flex-1 h-full relative flex items-center pr-14 pl-2">
-                  <div
-                    onClick={() => onSelectChain(track.id)}
-                    style={{
-                      left: `${track.startOffsetPct}%`,
-                      width: `${track.durationPct}%`,
-                      backgroundColor: track.color === '#ff5451' ? 'rgba(255, 84, 81, 0.25)' : 'rgba(123, 208, 255, 0.2)',
-                      borderColor: track.color,
-                    }}
-                    className="relative h-8 rounded border flex items-center px-space-sm shadow-md cursor-pointer hover:brightness-125 transition-all group-hover:shadow-lg"
-                  >
-                    <span className="font-code-sm text-code-sm font-bold text-on-surface truncate">
-                      {track.label} ({track.alarmCount})
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </div>
       </div>
     </div>

@@ -1,7 +1,7 @@
 import type { ChainList } from '../types'
 
 interface SnapshotOverviewViewProps {
-  chainList: ChainList | null
+  chainList?: ChainList | null
   onSelectChain: (chainId: string) => void
   onNavigate: (view: string) => void
 }
@@ -93,7 +93,11 @@ export function SnapshotOverviewView({
         </div>
 
         {/* Card 2: CORRELATED CHAINS */}
-        <div className="bg-surface-container p-space-md rounded shadow-sm flex flex-col justify-between border border-surface-container-high">
+        <div
+          className="bg-surface-container p-space-md rounded shadow-sm flex flex-col justify-between border border-surface-container-high hover:border-secondary/60 hover:bg-surface-container-high transition-all cursor-pointer"
+          onClick={() => onNavigate('chains-explorer')}
+          title="Nhấn để mở Chains Explorer"
+        >
           <div className="flex items-center justify-between">
             <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">CORRELATED CHAINS</span>
             <span className="material-symbols-outlined text-secondary text-[18px]">device_hub</span>
@@ -110,7 +114,11 @@ export function SnapshotOverviewView({
         </div>
 
         {/* Card 3: SINGLETON RATIO */}
-        <div className="bg-surface-container p-space-md rounded shadow-sm flex flex-col justify-between border border-surface-container-high">
+        <div
+          className="bg-surface-container p-space-md rounded shadow-sm flex flex-col justify-between border border-surface-container-high hover:border-tertiary/60 hover:bg-surface-container-high transition-all cursor-pointer"
+          onClick={() => onNavigate('chains-explorer')}
+          title="Nhấn để mở Chains Explorer (danh sách Singletons)"
+        >
           <div className="flex items-center justify-between">
             <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">SINGLETON RATIO</span>
             <span className="material-symbols-outlined text-tertiary text-[18px]">grain</span>
@@ -131,7 +139,11 @@ export function SnapshotOverviewView({
         </div>
 
         {/* Card 4: LARGEST CHAIN */}
-        <div className="bg-surface-container p-space-md rounded shadow-sm flex flex-col justify-between border border-surface-container-high">
+        <div
+          className="bg-surface-container p-space-md rounded shadow-sm flex flex-col justify-between border border-surface-container-high hover:border-primary/60 hover:bg-surface-container-high transition-all cursor-pointer"
+          onClick={() => onSelectChain('C2214001')}
+          title="Nhấn để mở chi tiết chuỗi C2214001"
+        >
           <div className="flex items-center justify-between">
             <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">LARGEST CHAIN</span>
             <span className="material-symbols-outlined text-primary text-[18px]">warning</span>
@@ -178,9 +190,6 @@ export function SnapshotOverviewView({
                 Chain Size Distribution
               </span>
             </div>
-            <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">
-              N = {totalChains.toLocaleString()} CHAINS
-            </span>
           </div>
           <div className="p-space-md flex flex-col justify-between flex-grow">
             <div className="space-y-space-sm">
@@ -226,9 +235,15 @@ export function SnapshotOverviewView({
             </div>
 
             <div className="mt-space-sm pt-space-xs bg-surface-container-low p-space-xs rounded flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
-              <span>Heavy Tail Skew: <strong className="text-primary font-bold">High</strong></span>
-              <span>Entropy: <strong className="text-on-surface font-bold">1.84 nats</strong></span>
-              <span>Clustering Coeff: <strong className="text-secondary font-bold">0.69</strong></span>
+              <span title="Độ lệch đuôi nặng (Heavy Tail): Đa số chuỗi nhỏ (1-5 cảnh báo), số ít chuỗi gom cụm quy mô lớn (>20-50 cảnh báo) do bão sự cố">
+                Heavy Tail Skew: <strong className="text-primary font-bold">High</strong>
+              </span>
+              <span title="Shannon Entropy (nats): Mức độ đa dạng và phân tán kích thước của các chuỗi sự cố trong snapshot">
+                Entropy: <strong className="text-on-surface font-bold">1.84 nats</strong>
+              </span>
+              <span title="Hệ số gom cụm (Clustering Coefficient): Mật độ liên kết chéo giữa các cảnh báo trong chuỗi (0 đến 1). 0.69 là mức cao chứng tỏ chuỗi có cấu trúc liên kết chặt chẽ.">
+                Clustering Coeff: <strong className="text-secondary font-bold">0.69</strong>
+              </span>
             </div>
           </div>
         </div>
@@ -334,9 +349,6 @@ export function SnapshotOverviewView({
             <span className="font-headline-md text-headline-md text-on-surface font-bold">
               Top 5 Chains Needing Attention
             </span>
-            <span className="font-code-sm text-code-sm text-on-surface-variant hidden sm:inline">
-              Triage candidates prioritized by structural risk
-            </span>
           </div>
           <button
             className="px-space-sm py-1 bg-surface-container-lowest hover:bg-surface-container text-secondary font-code-sm text-code-sm rounded transition-colors flex items-center gap-1 font-semibold border border-surface-container-highest cursor-pointer"
@@ -361,13 +373,15 @@ export function SnapshotOverviewView({
               {topAttentionChains.map((c) => (
                 <tr
                   key={c.id}
-                  className="hover:bg-surface-container-high transition-colors bg-surface-container"
+                  onClick={() => onSelectChain(c.id)}
+                  className="hover:bg-surface-container-high transition-colors bg-surface-container cursor-pointer group"
+                  title={`Nhấn để mở chi tiết chuỗi ${c.id}`}
                 >
                   <td className="py-space-xs px-space-md font-bold text-primary flex items-center gap-space-xs">
                     <span className={`material-symbols-outlined ${c.iconClass} text-[16px]`}>
                       {c.icon}
                     </span>
-                    <span>{c.id}</span>
+                    <span className="group-hover:underline">{c.id}</span>
                   </td>
                   <td className="py-space-xs px-space-md text-right font-bold text-on-surface text-code-md">
                     {c.size} alarms
@@ -383,8 +397,11 @@ export function SnapshotOverviewView({
                   </td>
                   <td className="py-space-xs px-space-md text-center">
                     <button
-                      className="px-space-sm py-0.5 bg-surface-container-low hover:bg-surface-container-highest text-secondary rounded font-code-sm text-code-sm font-semibold transition-colors border border-surface-container-highest flex items-center gap-1 mx-auto cursor-pointer"
-                      onClick={() => onSelectChain(c.id)}
+                      className="px-space-sm py-0.5 bg-surface-container-low group-hover:bg-secondary group-hover:text-surface-container-lowest hover:bg-secondary text-secondary rounded font-code-sm text-code-sm font-semibold transition-colors border border-surface-container-highest flex items-center gap-1 mx-auto cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onSelectChain(c.id)
+                      }}
                     >
                       Open Chain →
                     </button>
@@ -393,10 +410,6 @@ export function SnapshotOverviewView({
               ))}
             </tbody>
           </table>
-        </div>
-
-        <div className="px-space-md py-space-xs bg-surface-container-lowest flex items-center justify-between font-code-sm text-code-sm text-on-surface-variant rounded-b">
-          <span>Displaying 5 critical triage targets prioritized by structural risk</span>
         </div>
       </div>
     </div>

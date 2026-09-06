@@ -30,21 +30,12 @@ export function CompareChainsView({
     <div className="flex flex-col w-full gap-space-md pb-12 select-none animate-fadeIn">
       {/* Active Context Bar / Filter Strip */}
       <div className="flex items-center justify-between bg-surface-container px-space-md py-space-sm rounded-lg shadow-sm">
-        <div className="flex items-center gap-space-md">
-          <div className="flex items-center gap-space-xs px-space-sm py-space-2xs bg-secondary-container/20 rounded">
-            <span className="material-symbols-outlined text-secondary text-[16px]">compare_arrows</span>
-            <span className="font-label-caps text-label-caps uppercase text-secondary font-bold">
-              04 - CHAIN COMPARISON RUNTIME
-            </span>
-          </div>
-          <div className="flex items-center gap-space-xs font-code-md text-code-md text-on-surface">
+          <div className="flex items-center gap-space-xs font-code-md text-code-md text-on-surface bg-surface-container-low px-space-sm py-space-2xs rounded border border-surface-container-highest">
+            <span className="material-symbols-outlined text-secondary text-[18px]">compare_arrows</span>
             <span className="font-semibold text-primary">{chainAId}</span>
-            <span className="text-on-surface-variant font-label-caps uppercase">VS</span>
+            <span className="text-on-surface-variant font-label-caps uppercase text-xs">VS</span>
             <span className="font-semibold text-secondary">{chainBId}</span>
           </div>
-          <span className="font-body-sm text-body-sm text-on-surface-variant hidden md:inline">
-            | Ref Snapshot: S102 • Differential Topology Sync
-          </span>
         </div>
         <div className="flex items-center gap-space-sm">
           <button

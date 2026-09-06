@@ -337,6 +337,80 @@ export function AnalysisSettingsModal({
             </div>
           </div>
 
+          {/* System Capabilities & Engine Runtime */}
+          <div style={{ marginBottom: '1.5rem' }}>
+            <h3 style={{ fontSize: '0.85rem', color: '#cbd5e1', marginBottom: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              System Capabilities &amp; Engine Runtime
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem' }}>
+              {[
+                {
+                  label: 'Pattern Memory',
+                  status: 'ready',
+                  value: 'Available',
+                  tip: 'Mô hình tương đồng lịch sử và bộ nhớ chuỗi đã kích hoạt.',
+                },
+                {
+                  label: 'Temporal Proximity',
+                  status: 'ready',
+                  value: 'Window 15m',
+                  tip: 'Phân tích độ gần thời gian cửa sổ trượt (sliding window ΔT 900s). Khống chế tuyến tính O(N).',
+                },
+                {
+                  label: 'Topology Mapping',
+                  status: 'partial',
+                  value: 'Partial',
+                  tip: 'Ánh xạ topo mạng IP và tầng dịch vụ CNTT (NetBox CMDB).',
+                },
+                {
+                  label: 'Service Dependency',
+                  status: 'ready',
+                  value: 'Service Graph',
+                  tip: 'Xác thực đồ thị phụ thuộc nghiệp vụ. Phân biệt IP adjacency (vô hướng) với service dependency (có hướng).',
+                },
+              ].map((cap) => (
+                <div
+                  key={cap.label}
+                  style={{
+                    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+                    border: '1px solid #1e293b',
+                    borderRadius: '8px',
+                    padding: '0.6rem 0.8rem',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#f1f5f9' }}>{cap.label}</span>
+                    <span
+                      style={{
+                        fontSize: '0.68rem',
+                        padding: '0.15rem 0.4rem',
+                        borderRadius: '4px',
+                        backgroundColor:
+                          cap.status === 'ready'
+                            ? 'rgba(34, 197, 94, 0.2)'
+                            : cap.status === 'partial'
+                            ? 'rgba(234, 179, 8, 0.2)'
+                            : 'rgba(148, 163, 184, 0.2)',
+                        color:
+                          cap.status === 'ready'
+                            ? '#4ade80'
+                            : cap.status === 'partial'
+                            ? '#facc15'
+                            : '#94a3b8',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {cap.value}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '0.72rem', color: '#94a3b8', margin: 0, lineHeight: 1.4 }}>
+                    {cap.tip}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* Parameter Inputs List */}
           <h3 style={{ fontSize: '0.9rem', color: '#cbd5e1', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
             Raw Engine Parameters

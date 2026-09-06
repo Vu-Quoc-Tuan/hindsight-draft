@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import type { ChainAnalysis } from '../types'
 import { EvolutionPanel } from '../EvolutionPanel'
+import type { MutationSpec } from '../components/OperatorValidationModal'
 
 interface EvolutionViewProps {
   analysis: ChainAnalysis
-  onExecutePartition?: () => void
+  onExecutePartition?: (spec: MutationSpec) => void
 }
 
 export function EvolutionView({
@@ -15,37 +16,30 @@ export function EvolutionView({
 
   return (
     <div className="flex flex-col w-full gap-space-md pb-12 select-none animate-fadeIn">
-      {/* Header Bar */}
-      <div className="w-full bg-surface-container-lowest px-space-lg py-space-sm rounded-lg shadow-sm flex flex-wrap items-center justify-between gap-space-md">
-        <div className="flex items-center gap-space-xs font-code-sm text-code-sm">
-          <span className="text-on-surface-variant">Snapshot S102</span>
-          <span className="text-surface-variant font-bold">/</span>
-          <span className="text-secondary font-semibold">Chain {analysis.chain_id}</span>
-          <span className="text-surface-variant font-bold">/</span>
-          <span className="text-on-surface font-bold">15-16 - Evolution & Lineage Across Epochs</span>
-        </div>
-        <div className="flex items-center bg-surface-container-low p-space-2xs rounded">
+      {/* Sub-navigation Tabs Bar */}
+      <div className="w-full bg-surface-container-lowest px-space-md py-space-xs rounded-lg shadow-sm flex items-center justify-between gap-space-md">
+        <div className="flex items-center bg-surface-container-low p-1 rounded-lg gap-1">
           <button
             onClick={() => setViewMode('TIMELINE')}
-            className={`px-space-md py-space-xs rounded font-headline-md text-body-sm font-semibold flex items-center gap-space-xs transition-all ${
+            className={`px-3 py-1.5 rounded-md font-code-sm text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
               viewMode === 'TIMELINE'
-                ? 'bg-secondary-container text-on-secondary-container shadow-sm'
-                : 'text-on-surface-variant hover:text-on-surface'
+                ? 'bg-secondary-container text-on-secondary-container shadow-xs'
+                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
             }`}
           >
             <span className="material-symbols-outlined text-[15px]">timeline</span>
-            15 - Incident Timeline
+            <span>Incident Timeline</span>
           </button>
           <button
             onClick={() => setViewMode('LINEAGE_DAG')}
-            className={`px-space-md py-space-xs rounded font-headline-md text-body-sm font-semibold flex items-center gap-space-xs transition-all ${
+            className={`px-3 py-1.5 rounded-md font-code-sm text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
               viewMode === 'LINEAGE_DAG'
-                ? 'bg-secondary-container text-on-secondary-container shadow-sm'
-                : 'text-on-surface-variant hover:text-on-surface'
+                ? 'bg-secondary-container text-on-secondary-container shadow-xs'
+                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
             }`}
           >
             <span className="material-symbols-outlined text-[15px]">account_tree</span>
-            16 - Lineage DAG & Transition WHY
+            <span>Lineage DAG &amp; Transition WHY</span>
           </button>
         </div>
       </div>
@@ -363,11 +357,22 @@ export function EvolutionView({
 
               <div className="pt-space-md flex items-center justify-end">
                 <button
-                  onClick={onExecutePartition}
-                  className="w-full py-space-xs bg-primary text-on-primary font-body-md text-body-md font-bold rounded shadow-md hover:brightness-110 flex items-center justify-center gap-space-xs transition-all"
+                  onClick={() =>
+                    onExecutePartition?.({
+                      opId: 'MUT-S103-FISSION',
+                      opType: 'TEMPORAL_EPOCH_FISSION',
+                      title: 'Phê duyệt Phân rã Chuỗi Sự cố (S103 Fission Policy)',
+                      targetSummary: `Tách chuỗi ${analysis.chain_id} thành C2214039-A và C2214039-B`,
+                      detail:
+                        'Chính sách tự động S103 kích hoạt do chuỗi duy trì >50 cảnh báo trong 2 chu kỳ liên tiếp (S101-S102). Phân rã chuỗi theo vòng đời sự cố.',
+                      badgeLabel: 'EPOCH_S103',
+                      defaultNote: `Xác nhận phân rã chuỗi ${analysis.chain_id} theo chính sách vòng đời sự cố S103.`,
+                    })
+                  }
+                  className="w-full py-space-xs bg-primary text-on-primary font-body-md text-body-md font-bold rounded shadow-md hover:brightness-110 flex items-center justify-center gap-space-xs transition-all cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[18px]">call_split</span>
-                  Execute S103 Partition
+                  <span>Execute S103 Partition</span>
                 </button>
               </div>
             </div>

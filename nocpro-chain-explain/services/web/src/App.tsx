@@ -3,7 +3,6 @@ import { useState, useEffect, useMemo } from 'react'
 import { api, ApiError } from './api'
 import type { TopologyTreePayload } from './TopologyTree'
 import { NocHeader } from './components/NocHeader'
-import { ContextRibbon } from './components/ContextRibbon'
 import { SubNavBar, type SubNavTab } from './components/SubNavBar'
 import { SnapshotOverviewView } from './views/SnapshotOverviewView'
 import { ChainsExplorerView } from './views/ChainsExplorerView'
@@ -14,8 +13,9 @@ import { AuditStructureView } from './views/AuditStructureView'
 import { RecommendationsView } from './views/RecommendationsView'
 import { EvolutionView } from './views/EvolutionView'
 import { TopologyOverlayView } from './views/TopologyOverlayView'
+import { ValidationView } from './views/ValidationView'
 import { AIAnalystDrawer } from './components/AIAnalystDrawer'
-import { OperatorValidationModal } from './components/OperatorValidationModal'
+import { OperatorValidationModal, type MutationSpec } from './components/OperatorValidationModal'
 import { AnalysisSettingsModal } from './AnalysisSettingsModal'
 
 import type {
@@ -38,12 +38,13 @@ export default function App() {
     payload: ChainAnalysis
   } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [job, setJob] = useState<Job | null>(null)
   const [, setPairWhyState] = useState<{
     snapshotKey: string
     payload: PairWhy
   } | null>(null)
-  const [job, setJob] = useState<Job | null>(null)
-  const [topologyProfile] = useState<'ALARM_ONLY' | 'IP_NETWORK' | 'IT_SERVICES'>('IT_SERVICES')
+  const [topologyProfile, setTopologyProfile] = useState<'ALARM_ONLY' | 'IP_NETWORK' | 'IT_SERVICES'>('IP_NETWORK')
+  const [activeSnapshotId, setActiveSnapshotId] = useState<string>('real_alarm_20260801')
   const [topologyRootId] = useState<string | undefined>(undefined)
   const topologyRequestKey = `${topologyProfile}\u0000${topologyRootId ?? ''}`
   const [loadedTopology, setLoadedTopology] = useState<{
@@ -59,6 +60,12 @@ export default function App() {
   const [comparePair, setComparePair] = useState<[string, string]>(['C2214039', 'C2214048'])
   const [isDrawerOpen, setDrawerOpen] = useState(false)
   const [isValidationModalOpen, setValidationModalOpen] = useState(false)
+  const [activeMutationSpec, setActiveMutationSpec] = useState<MutationSpec | null>(null)
+
+  const handleOpenValidationModal = (spec?: MutationSpec) => {
+    setActiveMutationSpec(spec || null)
+    setValidationModalOpen(true)
+  }
 
   const snapshotKey = chainList ? `${chainList.snapshot_id}:${chainList.snapshot_version}` : null
   const analysis = analysisState?.snapshotKey === snapshotKey ? analysisState.payload : null
@@ -267,23 +274,30 @@ export default function App() {
     <div className="min-h-screen bg-background text-on-surface font-body-md antialiased select-none flex flex-col">
       {/* 1. Global NOC Header */}
       <NocHeader
-        datasetName="IT_SERVICES"
-        snapshotId={chainList?.snapshot_id ?? 'real_alarm_20260801'}
+        datasetName={topologyProfile}
+        snapshotId={activeSnapshotId}
         currentView={currentTab}
+        onChangeDatasetProfile={setTopologyProfile}
+        onChangeSnapshot={setActiveSnapshotId}
         onNavigate={tabName => {
-          if (tabName === 'Snapshot Overview') setCurrentTab('snapshot-overview')
-          else if (tabName === 'Chains Explorer') setCurrentTab('chains-explorer')
-          else if (tabName === 'Timeline') setCurrentTab('multi-chain-timeline')
-          else if (tabName === 'Compare') setCurrentTab('compare-chains')
+          if (tabName === 'Snapshot Overview' || tabName === 'snapshot-overview' || tabName === 'overview') {
+            setChainId('')
+            setCurrentTab('snapshot-overview')
+          } else if (tabName === 'Chains Explorer' || tabName === 'chains-explorer' || tabName === 'chains' || tabName === 'CHAINS') {
+            setChainId('')
+            setCurrentTab('chains-explorer')
+          } else if (tabName === 'Timeline' || tabName === 'multi-chain-timeline' || tabName === 'timeline' || tabName === 'TIMELINE') {
+            setCurrentTab('multi-chain-timeline')
+          } else if (tabName === 'Compare' || tabName === 'compare-chains' || tabName === 'compare') {
+            setCurrentTab('compare-chains')
+          } else {
+            setCurrentTab(tabName as SubNavTab)
+          }
         }}
         onOpenSettings={() => setSettingsOpen(true)}
-        onOpenAIAnalyst={() => setDrawerOpen(true)}
       />
 
-      {/* 2. System Capabilities Strip - only show on snapshot level when no chain is selected */}
-      {!chainId && <ContextRibbon />}
-
-      {/* 3. Sub Navigation Bar */}
+      {/* 2. Sub Navigation Bar (Chain-level IA: 05 Overview, 06-09 WHY, 10 Members, 11-13 Audit, 14 Recommendations, 15-16 Evolution, 17 Topology, 18 Validation) */}
       <SubNavBar
         currentTab={currentTab}
         onSelectTab={setCurrentTab}
@@ -310,8 +324,10 @@ export default function App() {
             chainList={chainList}
             onSelectChain={handleSelectChain}
             onNavigate={view => {
-              if (view === 'CHAINS') setCurrentTab('chains-explorer')
-              else if (view === 'TIMELINE') setCurrentTab('multi-chain-timeline')
+              if (view === 'CHAINS' || view === 'chains-explorer') setCurrentTab('chains-explorer')
+              else if (view === 'TIMELINE' || view === 'multi-chain-timeline') setCurrentTab('multi-chain-timeline')
+              else if (view === 'COMPARE' || view === 'compare-chains') setCurrentTab('compare-chains')
+              else setCurrentTab(view as SubNavTab)
             }}
           />
         )}
@@ -368,7 +384,7 @@ export default function App() {
         {currentTab === 'structure' && (
           <AuditStructureView
             analysis={effectiveAnalysis}
-            onOpenValidationModal={() => setValidationModalOpen(true)}
+            onOpenValidationModal={handleOpenValidationModal}
           />
         )}
 
@@ -379,7 +395,7 @@ export default function App() {
         {currentTab === 'evolution' && (
           <EvolutionView
             analysis={effectiveAnalysis}
-            onExecutePartition={() => setValidationModalOpen(true)}
+            onExecutePartition={handleOpenValidationModal}
           />
         )}
 
@@ -389,12 +405,20 @@ export default function App() {
             topologyPayload={topologyPayload}
           />
         )}
+
+        {currentTab === 'validation' && (
+          <ValidationView
+            analysis={effectiveAnalysis}
+            onOpenValidationModal={handleOpenValidationModal}
+          />
+        )}
       </main>
 
       {/* 6. Modals & Drawers */}
       <AIAnalystDrawer
         isOpen={isDrawerOpen}
         onClose={() => setDrawerOpen(false)}
+        onOpen={() => setDrawerOpen(true)}
         context={assistantContext}
         onNavigate={handleAssistantNavigation}
       />
@@ -403,6 +427,7 @@ export default function App() {
         isOpen={isValidationModalOpen}
         onClose={() => setValidationModalOpen(false)}
         chainId={chainId || 'C2214039'}
+        mutationSpec={activeMutationSpec}
         onConfirmSignOff={note => {
           console.log('Signed off partition for chain', chainId, note)
           setCurrentTab('evolution')

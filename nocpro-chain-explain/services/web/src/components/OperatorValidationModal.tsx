@@ -1,24 +1,44 @@
 import { useState } from 'react'
 
+export interface MutationSpec {
+  opId: string
+  opType?: 'CHEEGER_SPECTRAL_CUT' | 'TEMPORAL_EPOCH_FISSION' | 'COUNTERFACTUAL_PROPOSAL' | string
+  title?: string
+  targetSummary: string
+  detail?: string
+  badgeLabel?: string
+  conductance?: number
+  modularityGain?: string
+  disconnectedEdges?: string[]
+  defaultNote?: string
+}
+
 interface OperatorValidationModalProps {
   isOpen: boolean
   onClose: () => void
   chainId: string
+  mutationSpec?: MutationSpec | null
   onConfirmSignOff: (note: string) => void
 }
 
-export function OperatorValidationModal({
-  isOpen,
+export function OperatorValidationModal(props: OperatorValidationModalProps) {
+  if (!props.isOpen) return null
+  // Key by opId so fresh state initializes upon each distinct modal open
+  const modalKey = `${props.mutationSpec?.opId || 'default'}-${props.isOpen}`
+  return <OperatorValidationDialog key={modalKey} {...props} />
+}
+
+function OperatorValidationDialog({
   onClose,
   chainId,
+  mutationSpec,
   onConfirmSignOff,
 }: OperatorValidationModalProps) {
-  const [operatorNote, setOperatorNote] = useState(
+  const fallbackNote =
     'Xác nhận tách nhánh đo nhiệt độ và flap phụ trợ sang trạm DEHT01 để tập trung xử lý đứt cáp quang chính tại DEHL01. Giữ nguyên gốc sự cố tại DEHL01-CR01.'
-  )
-  const [signed, setSigned] = useState(false)
 
-  if (!isOpen) return null
+  const [operatorNote, setOperatorNote] = useState(mutationSpec?.defaultNote || fallbackNote)
+  const [signed, setSigned] = useState(false)
 
   const handleSignOff = () => {
     setSigned(true)
@@ -27,6 +47,13 @@ export function OperatorValidationModal({
       onClose()
     }, 800)
   }
+
+  const activeOpId = mutationSpec?.opId || 'MUT-20260801-0941'
+  const activeBadge = mutationSpec?.badgeLabel || 'SPLIT_SUBCHAIN_01'
+  const activeTitle = mutationSpec?.title || 'Phê duyệt Can thiệp Cấu trúc Chuỗi Sự cố'
+  const activeSummary = mutationSpec?.targetSummary || `Tạo chuỗi con ${chainId}_B (5 Alarms)`
+  const activeDetail =
+    mutationSpec?.detail || `Tách khỏi chuỗi gốc ${chainId} (Còn lại 48 Alarms tại DEHL01)`
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-space-md animate-fadeIn select-none">
@@ -47,7 +74,7 @@ export function OperatorValidationModal({
                 </span>
               </div>
               <span className="font-headline-lg text-headline-lg font-bold text-on-surface leading-tight">
-                Phê duyệt Can thiệp Cấu trúc Chuỗi Sự cố
+                {activeTitle}
               </span>
               <span className="font-body-sm text-body-sm text-on-surface-variant">
                 Sign-off Counterfactual Action • Chain Partition Protocol
@@ -67,21 +94,37 @@ export function OperatorValidationModal({
               PROPOSED TOPOLOGY MUTATION
             </span>
             <span className="font-code-sm text-code-sm text-secondary font-mono">
-              OP_ID: MUT-20260801-0941
+              OP_ID: {activeOpId}
             </span>
           </div>
-          <div className="flex items-center gap-space-md p-space-xs bg-surface-container rounded">
-            <div className="px-space-sm py-space-xs bg-tertiary-container/30 rounded text-tertiary font-code-md text-code-md font-bold">
-              SPLIT_SUBCHAIN_01
+          <div className="flex items-start gap-space-md p-space-xs bg-surface-container rounded">
+            <div className="px-space-sm py-space-xs bg-tertiary-container/30 rounded text-tertiary font-code-md text-code-md font-bold shrink-0">
+              {activeBadge}
             </div>
-            <span className="material-symbols-outlined text-on-surface-variant text-[18px]">arrow_forward</span>
+            <span className="material-symbols-outlined text-on-surface-variant text-[18px] mt-1">arrow_forward</span>
             <div className="flex flex-col">
               <span className="font-body-md text-body-md text-on-surface font-semibold">
-                Tạo chuỗi con {chainId}_B (5 Alarms)
+                {activeSummary}
               </span>
               <span className="font-code-sm text-code-sm text-on-surface-variant">
-                Tách khỏi chuỗi gốc {chainId} (Còn lại 48 Alarms tại DEHL01)
+                {activeDetail}
               </span>
+              {mutationSpec?.conductance !== undefined && (
+                <div className="flex items-center gap-space-sm mt-1 font-code-sm text-xs text-on-surface-variant">
+                  <span>Conductance Φ: <strong className="text-primary">{mutationSpec.conductance.toFixed(3)}</strong></span>
+                  {mutationSpec.modularityGain && (
+                    <span>• Gain: <strong className="text-secondary">{mutationSpec.modularityGain}</strong></span>
+                  )}
+                </div>
+              )}
+              {mutationSpec?.disconnectedEdges && mutationSpec.disconnectedEdges.length > 0 && (
+                <div className="mt-1 pt-1 border-t border-surface-container-highest/60 flex flex-col gap-0.5">
+                  <span className="text-[10px] uppercase font-bold text-on-surface-variant">Disconnected Bridges:</span>
+                  {mutationSpec.disconnectedEdges.map((edge, idx) => (
+                    <span key={idx} className="font-mono text-[11px] text-error font-medium">{edge}</span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -1,4 +1,96 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" fill="#0c1d24"/>
-  <path d="M6 34h12l6-19 11 38 8-27 6 8h9" fill="none" stroke="#dcff52" stroke-width="5" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <!-- Background Gradient for Squircle -->
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0b1329"/>
+      <stop offset="100%" stop-color="#040814"/>
+    </linearGradient>
+
+    <!-- Lens Rim Gradient -->
+    <linearGradient id="lensRim" x1="14" y1="14" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#f43f5e"/>
+      <stop offset="50%" stop-color="#fb7185"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+
+    <!-- Handle Gradient -->
+    <linearGradient id="handleGrad" x1="36" y1="36" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#f43f5e"/>
+      <stop offset="40%" stop-color="#e11d48"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+
+    <!-- Glass Tint Gradient -->
+    <radialGradient id="glassGlow" cx="26" cy="26" r="14" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.35"/>
+      <stop offset="70%" stop-color="#0284c7" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#0f172a" stop-opacity="0.6"/>
+    </radialGradient>
+
+    <!-- Glowing Node Gradient -->
+    <radialGradient id="nodeGlow" cx="26.5" cy="26.5" r="4" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="40%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Lens Clip -->
+    <clipPath id="lensClip">
+      <circle cx="26.5" cy="26.5" r="13.5"/>
+    </clipPath>
+  </defs>
+
+  <!-- Base Squircle with Subtle Neon Border -->
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#bgGrad)" stroke="#1e293b" stroke-width="1.5"/>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="none" stroke="url(#lensRim)" stroke-width="1" stroke-opacity="0.25"/>
+
+  <!-- RAW CHAIN OUTSIDE (rotated 135 deg / -45 deg) -->
+  <g transform="rotate(-45 26.5 26.5)">
+    <!-- Outer Link 1 (Left in local space) -->
+    <rect x="2" y="22" width="18" height="9" rx="4.5" fill="none" stroke="#475569" stroke-width="2.5" stroke-dasharray="100" opacity="0.75"/>
+    
+    <!-- Outer Link 3 (Right in local space) -->
+    <rect x="33" y="22" width="18" height="9" rx="4.5" fill="none" stroke="#475569" stroke-width="2.5" stroke-dasharray="100" opacity="0.75"/>
+  </g>
+
+  <!-- MAGNIFYING GLASS HANDLE -->
+  <path d="M 36.5 36.5 L 53.5 53.5" stroke="url(#handleGrad)" stroke-width="5.5" stroke-linecap="round"/>
+  <path d="M 37.5 37.5 L 43 43" stroke="#fda4af" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+
+  <!-- MAGNIFIED INSIDE LENS (Clipped) -->
+  <g clip-path="url(#lensClip)">
+    <!-- Lens Glass Background Fill -->
+    <circle cx="26.5" cy="26.5" r="13.5" fill="url(#glassGlow)"/>
+
+    <!-- Lens Grid lines for Telemetry / Analysis feel -->
+    <line x1="13" y1="26.5" x2="40" y2="26.5" stroke="#38bdf8" stroke-width="0.75" stroke-dasharray="2 2" stroke-opacity="0.4"/>
+    <line x1="26.5" y1="13" x2="26.5" y2="40" stroke="#38bdf8" stroke-width="0.75" stroke-dasharray="2 2" stroke-opacity="0.4"/>
+
+    <!-- Magnified Interlocking Chain Links -->
+    <g transform="rotate(-45 26.5 26.5)">
+      <!-- Central Interlocking Link (Zoomed, High-Luminance Coral & Cyan) -->
+      <rect x="16" y="20.5" width="21" height="12" rx="6" fill="#0369a1" fill-opacity="0.25" stroke="#38bdf8" stroke-width="2.8"/>
+      
+      <!-- Inner Loop Glow -->
+      <rect x="19" y="23" width="15" height="7" rx="3.5" fill="none" stroke="#f43f5e" stroke-width="1.8" opacity="0.9"/>
+      
+      <!-- Overlapping Link Tips -->
+      <path d="M 12 25 L 18 25" stroke="#38bdf8" stroke-width="2.8" stroke-linecap="round"/>
+      <path d="M 35 25 L 41 25" stroke="#38bdf8" stroke-width="2.8" stroke-linecap="round"/>
+    </g>
+
+    <!-- Focal Insight Spark (The Root Cause Unveiled) -->
+    <circle cx="26.5" cy="26.5" r="4.5" fill="url(#nodeGlow)"/>
+    <circle cx="26.5" cy="26.5" r="1.8" fill="#ffffff"/>
+
+    <!-- Glass Reflection Curved Streak -->
+    <path d="M 16 22 A 12 12 0 0 1 34 16 A 11 11 0 0 0 19 25 Z" fill="#ffffff" fill-opacity="0.22"/>
+  </g>
+
+  <!-- MAGNIFYING GLASS RIM (Glowing Border) -->
+  <circle cx="26.5" cy="26.5" r="13.5" fill="none" stroke="url(#lensRim)" stroke-width="3"/>
+  <circle cx="26.5" cy="26.5" r="15" fill="none" stroke="#f43f5e" stroke-width="0.75" stroke-opacity="0.4"/>
+
+  <!-- Handle Connector Bead -->
+  <circle cx="36.5" cy="36.5" r="2.8" fill="#f43f5e"/>
 </svg>
