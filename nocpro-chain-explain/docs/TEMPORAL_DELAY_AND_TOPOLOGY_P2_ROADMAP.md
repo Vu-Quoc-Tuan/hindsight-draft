@@ -70,64 +70,55 @@ Khi dự án được cấp đầy đủ dữ liệu lịch sử và muốn quay
 
 ---
 
-### 2.4. Giải pháp Thực tế Đã Triển khai (Sliding Window & $O(N^2)$ Chuỗi Nhỏ)
+### 2.4. Giải pháp Độ gần Thời gian Cục bộ (Symmetric Temporal Proximity Fallback)
 
-Để hệ thống hoạt động thực tế ngay lập tức mà không phụ thuộc vào mô hình ML, ta triển khai cơ chế:
+Để cung cấp thông tin tương quan thời gian khi chưa có mô hình học máy phân phối trễ:
 
-1. **Với Chuỗi Nhỏ ($N \le 200$)**:
-   - Cho phép so sánh trực tiếp các cặp cảnh báo trong chuỗi:
+1. **Bản chất Thuật toán**:
+   - Đây là giải pháp **đo độ gần thời gian đối xứng (Symmetric Temporal Proximity)**:
      $$|t_j - t_i| \le W \quad (W = 900\text{s} = 15\text{ phút})$$
-   - Số phép tính tối đa chỉ là $200^2 = 40.000$ phép tính số học, máy tính xử lý trong chưa đầy **0.5 mili-giây**.
-2. **Với Chuỗi Lớn ($N > 200$)**:
-   - Sắp xếp cảnh báo theo thời gian bắt đầu $O(N \log N)$.
-   - Dùng giải thuật **Cửa sổ trượt hai con trỏ / `bisect`**:
-     - Với mỗi cảnh báo $i$ tại mốc $t_i$, chỉ quét các cảnh báo trong khoảng $[t_i - W, t_i + W]$.
-     - Dừng quét ngay khi vượt quá $W$.
-   - Độ phức tạp thực tế là $O(N \cdot k)$ với $k \ll N$, xử lý chuỗi 1.000 cảnh báo trong **dưới 5 mili-giây**.
-3. **Độ tương quan và Điểm hỗ trợ (Fit)**:
-   - Điểm hỗ trợ của cảnh báo $i$ bằng tỷ lệ số cảnh báo xuất hiện trong cùng cửa sổ thời gian 15 phút chia cho tổng số cảnh báo hợp lệ trong chuỗi:
-     $$\text{fit}_i = \frac{\text{supporting}_i}{\text{domain\_size}_i}$$
-   - Cung cấp đầy đủ `peer_bitmap` và `supporting` count, giúp kênh $T_{delay}$ **khả dụng (`AVAILABLE`) 100% trên toàn chuỗi** mà không làm chậm hệ thống.
+   - **Phân biệt ngữ nghĩa**: Khác với kênh $T_{delay}$ có hướng ($A \to B$) dựa trên phân phối xác suất đã học từ lịch sử, Cửa sổ trượt là heuristic đo cụm thời gian đối xứng (nếu $A$ gần $B$ thì $B$ cũng gần $A$). Hai cảnh báo nổ cùng lúc ($t_A = t_B$) được xem là cùng cụm thời gian nhưng không xác định được chiều phụ thuộc.
+2. **Khống chế Độ phức tạp ($O(N)$ Bounded)**:
+   - Với chuỗi nhỏ ($N \le 200$): Tính toán pairwise trực tiếp, giới hạn trần `max_window_peers = 100`.
+   - Với chuỗi lớn ($N > 200$): Sắp xếp cảnh báo $O(N \log N)$, dùng `bisect` tìm khoảng $[t_i - W, t_i + W]$ và chặn trần tối đa 100 peers lân cận. Điều này triệt tiêu hoàn toàn nguy cơ suy biến $O(N^2)$ ngay cả khi gặp bão cảnh báo (alarm storm) tập trung trong cùng một cửa sổ ngắn.
+3. **Trạng thái Tích hợp Runtime**:
+   - Runtime mặc định (Tier-1B / Audit) tiếp tục duy trì trạng thái fail-closed `UNAVAILABLE` cho $T_{delay}$ chuẩn để bảo vệ tính toàn vẹn của kênh học máy có hướng, chỉ kích hoạt khi được cấu hình rõ ràng tham số cửa sổ trượt hoặc khi có mô hình phân phối trễ chính thức.
 
 ---
 
-## 3. Xử lý Topology Đa Chiều / 2 Chiều (Bidirectional Topology)
+## 3. Xử lý Topology Mạng Viễn thông và Nguyên tắc Bất biến Nhân quả (ADR Invariants)
 
-### 3.1. Nghịch lý của Giả định Đồ thị Có Hướng (DAG)
-- Thuật toán Dominator Tree và Random Walk with Restart (RWR) ban đầu (`services/analysis-worker/tier2/topology_hypotheses/dominator.py`) đặt điều kiện:
+### 3.1. Nghịch lý của Giả định Đồ thị Có Hướng Tĩnh (DAG)
+- Thuật toán Dominator Tree và Random Walk with Restart (RWR) ban đầu (`services/analysis-worker/tier2/topology_hypotheses/dominator.py`) yêu cầu:
   ```python
   ELIGIBLE_RELATION_TYPES = frozenset({"LOGICAL_DEPENDENCY", "SERVICE_DEPENDS_ON"})
   # Bắt buộc: edge.get("directed") is True và không có chu trình (cycle)
   ```
 - **Thực tế hạ tầng viễn thông**:
-  - File `topoIP.csv` phản ánh các liên kết mạng IP vật lý giữa các Router (`SITE_ROUTER`), Switch (`AGG_DISTRICT`).
-  - Đường truyền mạng IP là song công (full-duplex) 2 chiều: Router A nối với Router B thì cả 2 chiều $A \to B$ và $B \to A$ đều truyền dẫn gói tin. Không có router nào là "cha" của router nào về mặt cấu trúc tĩnh.
+  - File `topoIP.csv` phản ánh liên kết mạng IP vật lý giữa các Router (`SITE_ROUTER`) và Switch (`AGG_DISTRICT`).
+  - Đường truyền mạng IP là song công (full-duplex): Router A nối với Router B là liên kết 2 chiều. Bản thân topo IP vật lý là đồ thị vô hướng, không thể tự gán nhãn "cha/con" tĩnh.
 
-### 3.2. Hướng Tiếp cận Đa Chiều / 2 Chiều (Bidirectional Reachability)
+### 3.2. Nguyên tắc Bất biến về Nhân quả và Hướng Lan truyền (ADR Compliance)
 
-Trong thực tế vận hành và lộ trình hoàn thiện:
+Để đảm bảo tính chính xác và tuân thủ các quyết định kiến trúc đã đóng băng (ADR):
 
-1. **Mô hình hóa Liên kết Mạng thành 2 Chiều**:
-   - Mỗi cạnh vô hướng $(A, B)$ trong `topoIP.csv` được hiểu là quan hệ lan truyền 2 chiều:
-     $$\text{successors}(A) \ni B \quad \text{và} \quad \text{successors}(B) \ni A$$
-   - Khi Router A gặp sự cố hoặc nghẽn, ảnh hưởng có thể lan truyền ngược về Router B (uplink) hoặc tỏa xuống các trạm con (downlink).
-2. **Định Hướng Bằng Mũi Tên Thời Gian (Temporal Causality)**:
-   - Thay vì ép buộc đồ thị mạng tĩnh phải có hướng trước, **hướng lan truyền sự cố được suy diễn từ thứ tự thời gian nổ cảnh báo**:
-     - Nếu thiết bị $A$ nổ cảnh báo lúc $t_A = 08:00:00$.
-     - Thiết bị $B$ nổ cảnh báo lúc $t_B = 08:01:30$ ($t_B > t_A$).
-     - Vì giữa $A$ và $B$ có liên kết topo, sự cố lan truyền theo chiều $A \to B$. Thiết bị $A$ đóng vai trò là nguyên nhân khởi nguồn (Root Cause Candidate).
-3. **Mở Rộng Sang Tầng Dịch vụ CNTT (`topoIT`)**:
-   - Sử dụng bảng `service_module_server.csv` và `module_database.csv`:
-     - Tầng ứng dụng/module có hướng phụ thuộc tự nhiên: $\text{Module} \to \text{Database}$ (Module phụ thuộc Database).
-     - Kết nối cảnh báo máy chủ/DB trong `alarmIT.csv` với các cảnh báo mạng trong `alarmIP.csv` để xây dựng chuỗi nguyên nhân toàn diện từ Mạng $\to$ Máy chủ $\to$ Dịch vụ người dùng.
+1. **Thứ tự thời gian KHÔNG đồng nghĩa với quan hệ nhân quả (`Temporal Order ≠ Causality`)**:
+   > [!WARNING]
+   > Thiết bị $A$ nổ cảnh báo trước $B$ ($t_A < t_B$) và có liên kết topo với $B$ **TUYỆT ĐỐI KHÔNG ĐỦ** để kết luận $A$ gây ra $B$ hay $A$ là Root Cause.
+   > Trong mạng thực tế: Một trạm con mất nguồn hoặc mất cáp quang nhánh có thể phát hiện sự cố và gửi cảnh báo về máy chủ trước khi Router trung tâm ghi nhận timeout phiên BGP. Nếu vội vã suy diễn $t_A < t_B$ thành nguyên nhân gốc sẽ dẫn đến kết luận sai lệch nghiêm trọng trong vận hành NOC.
+2. **Liên kết IP vô hướng KHÔNG PHẢI là quan hệ phụ thuộc (`IP Adjacency ≠ Operational Dependency`)**:
+   - Hai thiết bị kề nhau về mặt IP vật lý chỉ mang tính chất **gợi ý tương quan không gian (Spatial Correlation Hint)**, không chứng minh được sự cố lan truyền theo hướng nào nếu không có luồng định tuyến (routing path) hoặc cấu hình dịch vụ cụ thể.
+3. **Lộ trình Kích hoạt P2 Propagation Chuẩn mực**:
+   - **Tầng Dịch vụ CNTT (`topoIT`)**: Sử dụng bảng `service_module_server.csv` và `module_database.csv` nơi có quan hệ phụ thuộc có hướng tự nhiên ($\text{Module} \to \text{Database}$).
+   - **Ánh xạ Dịch vụ Viễn thông**: Bổ sung bảng ánh xạ luồng dịch vụ (Service Tree / E2E Circuit) có hướng rõ ràng giữa trạm phát sóng $\to$ mạng truyền dẫn $\to$ mạng lõi (Core Network). Khi có đồ thị phụ thuộc nghiệp vụ có hướng này, các thuật toán Dominator Tree và P2 Blast Radius mới có cơ sở toán học vững chắc để xác định Root Cause.
 
 ---
 
 ## 4. Bảng Đối Chiếu Nhanh (Cheat Sheet)
 
-| Thành phần | Thiết kế Ban đầu (Academic) | Cải tiến Thực tế (Operational) | Trạng thái Hiện tại |
+| Thành phần | Thiết kế Ban đầu (Academic) | Heuristic / Trạng thái Hiện tại | Yêu cầu để Kích hoạt Chuẩn mực |
 | :--- | :--- | :--- | :--- |
-| **Mô hình $T_{delay}$** | Gaussian KDE phi tuyến, cần train trước, đòi hỏi taxonomy chuẩn. | Bỏ mô hình ML nặng; dùng Cửa sổ trượt (15 phút) $O(N)$ & $O(N^2)$ chuỗi nhỏ. | **Đã kích hoạt & PASS 100% tests** |
-| **Phân tích Chuỗi $T_{delay}$** | Gán chết `UNAVAILABLE` vì cấm $O(N^2)$. | Khả dụng (`AVAILABLE`), tính toán nhanh trong < 5ms cho chuỗi 1.000 cảnh báo. | **Đã triển khai trong `indexed_statistics.py`** |
-| **Topology IP** | Chỉ nhận `directed: True`, bỏ qua toàn bộ `topoIP.csv`. | Coi quan hệ mạng là liên kết 2 chiều; kết hợp mốc thời gian $t_A < t_B$ để suy diễn chiều lan truyền. | **Đã lập lộ trình & ghi nhận trong Docs** |
-| **Dữ liệu IT (`topoIT`)** | Bị bỏ qua, chưa có adapter nối `alarmIT`. | Lộ trình nối `alarmIT` với bảng `service_module_server` & `database`. | **Sẵn sàng dữ liệu gốc trong repo** |
+| **Kênh $T_{delay}$ có hướng** | Mô hình xác suất KDE/Histogram có hướng ($A \to B$). | `UNAVAILABLE` trong Tier-1B runtime mặc định. | Cần tập dữ liệu lịch sử chuẩn hóa (`HistoricalTaxonomy`) để huấn luyện mô hình phân phối trễ đóng băng. |
+| **Temporal Proximity** | Không có (chỉ có $T_{burst}$ hoặc $T_{delay}$). | Cửa sổ trượt đối xứng ($|t_j - t_i| \le W$), chặn trần 100 peers. | Cung cấp độ gần thời gian đối xứng cục bộ; phân biệt rõ với mô hình trễ có hướng. |
+| **Topology IP** | Chỉ nhận `directed: True`, bỏ qua toàn bộ `topoIP.csv`. | Giữ vô hướng; coi là tương quan không gian (spatial hint). | Không suy diễn $t_A < t_B$ thành Root Cause; cần đồ thị phụ thuộc dịch vụ (Service Graph) có hướng. |
+| **Dữ liệu IT (`topoIT`)** | Bị bỏ qua, chưa có adapter nối `alarmIT`. | Đã có dữ liệu gốc trong repo (`service_module_server.csv`). | Viết adapter chuẩn hóa quan hệ $\text{Module} \to \text{DB}$ để làm đồ thị phụ thuộc DAG chuẩn. |

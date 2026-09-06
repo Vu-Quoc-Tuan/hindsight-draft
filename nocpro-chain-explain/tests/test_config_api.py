@@ -130,7 +130,10 @@ def test_update_config_validation_failures(app) -> None:
     asyncio.run(exercise())
 
 
-def test_calibrate_config_endpoint(app) -> None:
+def test_calibrate_config_endpoint(app, monkeypatch, tmp_path) -> None:
+    temp_yaml = tmp_path / "calibrated.yaml"
+    monkeypatch.setenv("NOCPRO_CALIBRATED_OUTPUT_PATH", str(temp_yaml))
+
     async def exercise() -> None:
         transport = httpx2.ASGITransport(app=app)
         async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -147,5 +150,6 @@ def test_calibrate_config_endpoint(app) -> None:
             assert config_resp.status_code == 200
             config_data = config_resp.json()
             assert "v1-calibrated" in config_data["config_version"]
+            assert temp_yaml.exists()
 
     asyncio.run(exercise())

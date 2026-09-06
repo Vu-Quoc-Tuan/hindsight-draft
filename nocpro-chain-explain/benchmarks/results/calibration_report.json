@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-06T07:03:38.755760+00:00",
+  "timestamp": "2026-09-06T07:12:44.660076+00:00",
   "database_url_masked": "postgresql+asyncpg://nocpro:****@localhost:5432/nocpro",
   "snapshots_loaded": 0,
   "chains_evaluated": 0,
@@ -67,6 +67,6 @@
       }
     }
   ],
-  "output_config_path": "/home/vqt/UET/Project/hindsight/nocpro-chain-explain/config/thresholds/calibrated.yaml",
+  "output_config_path": "/tmp/pytest-of-vqt/pytest-83/test_calibrate_config_endpoint0/calibrated.yaml",
   "status": "baseline_requires_calibration"
 }

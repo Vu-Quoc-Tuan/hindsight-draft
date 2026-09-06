@@ -100,7 +100,11 @@ export function AnalysisSettingsModal({
       const freshConfig = await api.getConfig()
       setConfig(freshConfig)
       setValues({ ...freshConfig.editable_parameters })
-      setSuccess(`Calibrated successfully from PostgreSQL! Version: ${freshConfig.config_version}`)
+      if (report.status === 'PRODUCTION_CALIBRATED') {
+        setSuccess(`Đã hiệu chuẩn sản xuất thành công từ PostgreSQL! Version: ${freshConfig.config_version}`)
+      } else {
+        setSuccess(`Đã hoàn tất đánh giá (${report.snapshots_loaded ?? 0} snapshot, ${report.alarms_evaluated ?? 0} cảnh báo). Dữ liệu chưa đủ mẫu để hiệu chuẩn sản xuất, hệ thống tiếp tục duy trì bộ tham số an toàn (baseline requires calibration).`)
+      }
       onConfigChanged(freshConfig)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to calibrate from PostgreSQL')

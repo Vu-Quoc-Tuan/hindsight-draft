@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import json
+import hashlib
 import asyncio
 import uuid
 from concurrent.futures import Future
@@ -197,8 +199,13 @@ class Workspace:
 
         with self._lock:
             self._custom_config_counter += 1
+            param_str = json.dumps(
+                sorted((str(k), float(v) if isinstance(v, (int, float)) else str(v)) for k, v in normalized_overrides.items()),
+                sort_keys=True,
+            )
+            param_hash = hashlib.sha256(param_str.encode("utf-8")).hexdigest()[:8]
             base_ver = self.config.config_version.split("-custom-")[0]
-            new_version = f"{base_ver}-custom-{self._custom_config_counter}"
+            new_version = f"{base_ver}-custom-{self._custom_config_counter}-{param_hash}"
 
             new_parameters = dict(self.config.parameters)
             for path, val in normalized_overrides.items():
@@ -220,10 +227,8 @@ class Workspace:
 
     def reset_parameters(self) -> dict[str, Any]:
         with self._lock:
-            calibrated_path = ROOT / "config" / "thresholds" / "calibrated.yaml"
-            target_path = calibrated_path if calibrated_path.exists() else self._base_config_path
-            self.config = load_analysis_config(target_path)
-            self._custom_config_counter = 0
+            # Reset strictly to the initial startup base configuration (e.g. v1.yaml)
+            self.config = load_analysis_config(self._base_config_path)
             self.cache.entries.clear()
             self.jobs.cache.entries.clear()
         return self.get_active_parameters()
@@ -232,10 +237,12 @@ class Workspace:
         self,
         database_url: str | None = None,
         include_fixtures: bool = False,
+        output_yaml: Path | None = None,
     ) -> dict[str, Any]:
         from benchmarks.calibrate_thresholds import calibrate_from_postgres
 
-        calibrated_output = ROOT / "config" / "thresholds" / "calibrated.yaml"
+        env_output = os.environ.get("NOCPRO_CALIBRATED_OUTPUT_PATH")
+        calibrated_output = output_yaml or (Path(env_output) if env_output else ROOT / "config" / "thresholds" / "calibrated.yaml")
         report = await calibrate_from_postgres(
             database_url=database_url,
             output_yaml=calibrated_output,
@@ -243,7 +250,6 @@ class Workspace:
         )
         with self._lock:
             self.config = load_analysis_config(calibrated_output)
-            self._custom_config_counter = 0
             self.cache.entries.clear()
             self.jobs.cache.entries.clear()
 

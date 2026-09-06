@@ -149,12 +149,14 @@ def _add_temporal_delay_statistics(
                 fit=None,
                 domain_size=0,
                 supporting=0,
+                unavailable_reason="INSUFFICIENT_TIMESTAMPS",
             )
             statistics.support_peer_bitmaps[(alarm_id, delay_channel)] = 0
         return
 
     # Small chains (N <= 200): direct pairwise comparison O(N^2)
-    # Large chains (N > 200): sorted sliding window with bisect O(N log N)
+    # Large chains (N > 200): sorted sliding window with bisect O(N log N) bounded
+    max_window_peers = 100
     if valid_count <= 200:
         for i, (alarm_id_i, ts_i) in enumerate(alarm_ts):
             peer_bitmap = 0
@@ -165,6 +167,8 @@ def _add_temporal_delay_statistics(
                 if abs(ts_j - ts_i) <= delay_window_seconds:
                     supporting += 1
                     peer_bitmap |= (1 << positions[alarm_id_j])
+                    if supporting >= max_window_peers:
+                        break
 
             statistics.fits[(alarm_id_i, delay_channel)] = _entry(
                 channel_id=delay_channel,
@@ -184,7 +188,8 @@ def _add_temporal_delay_statistics(
 
             peer_bitmap = 0
             supporting = 0
-            for k in range(left_idx, right_idx):
+            scan_end = min(right_idx, left_idx + max_window_peers)
+            for k in range(left_idx, scan_end):
                 other_id, _ = sorted_items[k]
                 if other_id != alarm_id_i:
                     supporting += 1
