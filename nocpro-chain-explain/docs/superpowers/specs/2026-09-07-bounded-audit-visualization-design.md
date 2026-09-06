@@ -107,13 +107,16 @@ total_edge_count
 shown_edge_count
 hidden_edge_count
 truncated
-audit_artifact_id
-audit_artifact_fingerprint
 ```
 
 Counts describe the exact graph versus the bounded projection. The public copy
 must label the result as visualization-only and must not call it a complete
 graph when `truncated=true`.
+
+The public API envelope adds `audit_artifact_id` and
+`audit_artifact_fingerprint` only after validating the persisted artifact.
+They are not fields inside the fingerprinted visualization payload, avoiding a
+self-referential artifact fingerprint.
 
 ## Deterministic selection
 
