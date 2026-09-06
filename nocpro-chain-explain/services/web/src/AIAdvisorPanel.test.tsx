@@ -57,4 +57,21 @@ describe('AIAdvisorPanel', () => {
     expect(html).not.toContain('AI_API_KEY')
     expect(html).not.toContain('test-secret')
   })
+
+  it('renders invalid provider configuration as a safe deterministic fallback', () => {
+    const html = renderToStaticMarkup(
+      <AIAdvisorPanel
+        chainId="CHAIN-VN-001"
+        initialSuggestion={{
+          ...mockSuggestion,
+          provider_status: 'INVALID_CONFIGURATION',
+        }}
+      />,
+    )
+
+    expect(html).toContain('Deterministic fallback')
+    expect(html).toContain('Invalid provider configuration')
+    expect(html).not.toContain('AI_PROVIDER_PROTOCOL')
+    expect(html).not.toContain('AI_API_KEY')
+  })
 })

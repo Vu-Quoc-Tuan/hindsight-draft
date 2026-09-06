@@ -30,7 +30,7 @@
 - Consumes: `AI_PROVIDER_PROTOCOL`, `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`.
 - Produces: the existing `GroundedRenderResult` from `render_grounded(...)` for either supported wire protocol.
 
-- [ ] **Step 1: Add failing protocol tests**
+- [x] **Step 1: Add failing protocol tests**
 
 Add a mocked Ollama success case that configures:
 
@@ -56,7 +56,7 @@ Return:
 
 Assert `provider_status == "OK"`, `used_provider is True`, and the final content is used. Add malformed cases for `done=false`, missing `message`, empty content, and a test proving an unsupported protocol does not call the network and returns `INVALID_CONFIGURATION`.
 
-- [ ] **Step 2: Run the focused tests and confirm failure**
+- [x] **Step 2: Run the focused tests and confirm failure**
 
 Run:
 
@@ -66,7 +66,7 @@ Run:
 
 Expected: the new Ollama success test fails because the current renderer calls `/chat/completions` and parses `choices`.
 
-- [ ] **Step 3: Implement explicit codecs**
+- [x] **Step 3: Implement explicit codecs**
 
 In `grounded_llm.py`, normalize the configured protocol once:
 
@@ -99,7 +99,7 @@ else:
 
 Parse Ollama only when `done is True` and `message.content` is a non-empty string. Ignore `thinking` and `tool_calls`. Preserve the existing response-size bounds and fallback statuses.
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 Run:
 
@@ -109,7 +109,7 @@ Run:
 
 Expected: all provider, Advisor, and Assistant cases pass.
 
-- [ ] **Step 5: Commit the codec**
+- [x] **Step 5: Commit the codec**
 
 ```text
 git add services/api/nocpro_api/grounded_llm.py tests/test_grounded_llm.py
@@ -132,11 +132,11 @@ git commit -m "feat: support ollama grounded rendering"
 - Consumes: the Task 1 protocol status and existing `provider_status` public field.
 - Produces: server-only deploy configuration, a safe invalid-configuration label, and verified Ollama runtime behavior.
 
-- [ ] **Step 1: Add the failing presentation/config assertions**
+- [x] **Step 1: Add the failing presentation/config assertions**
 
 Extend the panel test with `provider_status="INVALID_CONFIGURATION"` and assert the UI renders `Deterministic fallback · Invalid provider configuration` without exposing environment names or credentials. Assert Compose passes `AI_PROVIDER_PROTOCOL` only to the API service.
 
-- [ ] **Step 2: Add server-only protocol configuration**
+- [x] **Step 2: Add server-only protocol configuration**
 
 Document:
 
@@ -152,11 +152,11 @@ AI_PROVIDER_PROTOCOL: "${AI_PROVIDER_PROTOCOL:-OPENAI_COMPATIBLE}"
 
 Add `INVALID_CONFIGURATION` to the badge's safe label map. For the local Ollama Cloud smoke test, set only the non-secret `.env` protocol field to `OLLAMA`; do not modify or print the key.
 
-- [ ] **Step 3: Update status documentation**
+- [x] **Step 3: Update status documentation**
 
 Record that mocked Ollama protocol correctness is tested and distinguish that from a live-provider smoke result. Do not claim production validation from this rendering test.
 
-- [ ] **Step 4: Run full deterministic verification**
+- [x] **Step 4: Run full deterministic verification**
 
 Run:
 
@@ -171,7 +171,7 @@ git diff --check
 
 Expected: backend/frontend tests and build pass. Existing unrelated lint warnings may remain warnings but no new warning may be introduced.
 
-- [ ] **Step 5: Run one live Ollama smoke test**
+- [x] **Step 5: Run one live Ollama smoke test**
 
 Load only the three AI values plus protocol from the local `.env`, invoke `render_grounded(...)` with synthetic bounded facts, and print only configured model, `provider_status`, `used_provider`, and safe rendered text. Never print the key or raw error body.
 

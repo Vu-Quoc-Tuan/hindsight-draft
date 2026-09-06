@@ -1,5 +1,6 @@
 const FALLBACK_LABELS: Record<string, string> = {
   NOT_CONFIGURED: 'Not configured',
+  INVALID_CONFIGURATION: 'Invalid provider configuration',
   HTTP_ERROR: 'Provider HTTP error',
   TIMEOUT: 'Provider timeout',
   INVALID_RESPONSE: 'Invalid provider response',
