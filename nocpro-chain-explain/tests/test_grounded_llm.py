@@ -68,6 +68,111 @@ def test_renderer_uses_configured_provider_with_bounded_grounded_payload(
     assert "test-secret" not in body_text
 
 
+def test_renderer_uses_native_ollama_chat_protocol(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure(monkeypatch)
+    monkeypatch.setenv("AI_PROVIDER_PROTOCOL", "OLLAMA")
+    monkeypatch.setenv("AI_BASE_URL", "https://ollama.com/api")
+    monkeypatch.setenv("AI_MODEL", "gpt-oss:120b")
+    captured: dict[str, Any] = {}
+
+    def fake_urlopen(request: Any, timeout: float) -> _Response:
+        captured["url"] = request.full_url
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        captured["timeout"] = timeout
+        return _Response(
+            {
+                "model": "gpt-oss:120b",
+                "message": {
+                    "role": "assistant",
+                    "content": "Grounded Ollama text",
+                    "thinking": "This field must never become the narrative.",
+                    "tool_calls": [{"function": {"name": "forbidden"}}],
+                },
+                "done": True,
+            }
+        )
+
+    monkeypatch.setattr("nocpro_api.grounded_llm.urllib.request.urlopen", fake_urlopen)
+    result = render_grounded(
+        draft="Deterministic Ollama draft",
+        facts={"status": "AVAILABLE", "member_count": 2},
+        fact_refs=["analysis:C1"],
+        purpose="ADVISOR",
+    )
+
+    assert captured["url"] == "https://ollama.com/api/chat"
+    assert captured["timeout"] == 8.0
+    assert captured["body"]["model"] == "gpt-oss:120b"
+    assert captured["body"]["stream"] is False
+    assert captured["body"]["options"] == {
+        "temperature": 0,
+        "num_predict": 1_200,
+    }
+    assert "Deterministic Ollama draft" in json.dumps(captured["body"])
+    assert result.message == "Grounded Ollama text"
+    assert "thinking" not in result.message.lower()
+    assert "forbidden" not in result.message.lower()
+    assert result.model == "gpt-oss:120b"
+    assert result.provider_status == "OK"
+    assert result.used_provider is True
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"message": {"content": "partial"}, "done": False},
+        {"done": True},
+        {"message": {}, "done": True},
+        {"message": {"content": "   "}, "done": True},
+    ],
+)
+def test_renderer_rejects_incomplete_ollama_responses(
+    monkeypatch: pytest.MonkeyPatch,
+    payload: dict[str, Any],
+) -> None:
+    _configure(monkeypatch)
+    monkeypatch.setenv("AI_PROVIDER_PROTOCOL", "OLLAMA")
+    monkeypatch.setattr(
+        "nocpro_api.grounded_llm.urllib.request.urlopen",
+        lambda *_args, **_kwargs: _Response(payload),
+    )
+
+    result = render_grounded(
+        draft="Exact deterministic fallback",
+        facts={"status": "AVAILABLE"},
+        fact_refs=[],
+        purpose="ASSISTANT",
+    )
+
+    assert result.message == "Exact deterministic fallback"
+    assert result.provider_status == "INVALID_RESPONSE"
+    assert result.used_provider is False
+
+
+def test_renderer_rejects_unknown_protocol_without_network_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure(monkeypatch)
+    monkeypatch.setenv("AI_PROVIDER_PROTOCOL", "AUTO_DETECT")
+    monkeypatch.setattr(
+        "nocpro_api.grounded_llm.urllib.request.urlopen",
+        lambda *_args, **_kwargs: pytest.fail("invalid protocol must not call provider"),
+    )
+
+    result = render_grounded(
+        draft="Protocol-safe deterministic fallback",
+        facts={"status": "AVAILABLE"},
+        fact_refs=[],
+        purpose="ASSISTANT",
+    )
+
+    assert result.message == "Protocol-safe deterministic fallback"
+    assert result.provider_status == "INVALID_CONFIGURATION"
+    assert result.used_provider is False
+
+
 def test_renderer_without_key_returns_exact_deterministic_draft(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
