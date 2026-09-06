@@ -17,11 +17,15 @@ import { ValidationView } from './views/ValidationView'
 import { AIAnalystDrawer } from './components/AIAnalystDrawer'
 import { OperatorValidationModal, type MutationSpec } from './components/OperatorValidationModal'
 import { AnalysisSettingsModal } from './AnalysisSettingsModal'
+import {
+  analysisContextKey,
+  analysisMatchesContext,
+  type AnalysisState,
+} from './appContext'
 
 import type {
   AssistantAction,
   AssistantContext,
-  ChainAnalysis,
   ChainList,
   Job,
   PairWhy,
@@ -33,10 +37,8 @@ export default function App() {
   const [chainId, setChainId] = useState<string>('')
   const [, setLoadingSnapshot] = useState(false)
   const [apiStatus, setApiStatus] = useState<'online' | 'offline' | 'checking'>('checking')
-  const [analysisState, setAnalysisState] = useState<{
-    snapshotKey: string
-    payload: ChainAnalysis
-  } | null>(null)
+  const [analysisState, setAnalysisState] = useState<AnalysisState | null>(null)
+  const [analysisError, setAnalysisError] = useState<{ requestKey: string; message: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [job, setJob] = useState<Job | null>(null)
   const [, setPairWhyState] = useState<{
@@ -44,7 +46,6 @@ export default function App() {
     payload: PairWhy
   } | null>(null)
   const [topologyProfile, setTopologyProfile] = useState<'ALARM_ONLY' | 'IP_NETWORK' | 'IT_SERVICES'>('IP_NETWORK')
-  const [activeSnapshotId, setActiveSnapshotId] = useState<string>('real_alarm_20260801')
   const [topologyRootId] = useState<string | undefined>(undefined)
   const topologyRequestKey = `${topologyProfile}\u0000${topologyRootId ?? ''}`
   const [loadedTopology, setLoadedTopology] = useState<{
@@ -68,7 +69,12 @@ export default function App() {
   }
 
   const snapshotKey = chainList ? `${chainList.snapshot_id}:${chainList.snapshot_version}` : null
-  const analysis = analysisState?.snapshotKey === snapshotKey ? analysisState.payload : null
+  const currentAnalysisKey = snapshotKey && chainId
+    ? analysisContextKey(snapshotKey, chainId, configEpoch)
+    : null
+  const analysis = analysisMatchesContext(analysisState, currentAnalysisKey, chainId)
+    ? analysisState!.payload
+    : null
 
   // Initial Connect & API Health Check
   useEffect(() => {
@@ -92,7 +98,6 @@ export default function App() {
       } catch (cause) {
         if (!controller.signal.aborted) {
           setApiStatus('offline')
-          // Do not show full-screen 502 error on initial load; app falls back to demo data
           const msg = cause instanceof Error ? cause.message : 'API offline'
           if (!msg.includes('502') && !msg.includes('Failed to fetch')) {
             setError(msg)
@@ -106,20 +111,24 @@ export default function App() {
 
   // Load Analysis when chainId or snapshot changes
   useEffect(() => {
-    if (!chainId || !snapshotKey) return
+    if (!chainId || !snapshotKey || !currentAnalysisKey) return
     const controller = new AbortController()
+    const requestKey = currentAnalysisKey
     api.analysis(chainId, controller.signal).then(payload => {
-      if (!controller.signal.aborted) setAnalysisState({ snapshotKey, payload })
+      if (controller.signal.aborted) return
+      if (payload.chain_id !== chainId) {
+        setAnalysisError({ requestKey, message: 'ANALYSIS_CONTEXT_MISMATCH' })
+        return
+      }
+      setAnalysisState({ requestKey, payload })
     }).catch((cause: unknown) => {
       if (!controller.signal.aborted) {
         const msg = cause instanceof Error ? cause.message : 'Analysis failed'
-        if (!msg.includes('502') && !msg.includes('Failed to fetch')) {
-          setError(msg)
-        }
+        setAnalysisError({ requestKey, message: msg })
       }
     })
     return () => controller.abort()
-  }, [chainId, snapshotKey, configEpoch])
+  }, [chainId, snapshotKey, currentAnalysisKey])
 
   // Job Polling
   useEffect(() => {
@@ -175,6 +184,7 @@ export default function App() {
         setChainId(chains.chains[0].chain_id)
       }
       setAnalysisState(null)
+      setAnalysisError(null)
       setPairWhyState(null)
       setJob(null)
       setApiStatus('online')
@@ -224,61 +234,36 @@ export default function App() {
 
   // Assistant Context
   const assistantContext: AssistantContext = useMemo(() => ({
-    snapshot_id: chainList?.snapshot_id ?? 'S102',
-    snapshot_version: chainList?.snapshot_version ?? 'v1',
+    snapshot_id: chainList?.snapshot_id ?? 'NO_SNAPSHOT',
+    snapshot_version: chainList?.snapshot_version ?? 'NO_VERSION',
     page: currentTab,
     chain_id: chainId || undefined,
     filters: {},
   }), [chainList, chainId, currentTab])
 
-  // Fallback demo analysis if backend is not yet populated
-  const effectiveAnalysis: ChainAnalysis = analysis ?? {
-    chain_id: chainId || 'C2214039',
-    title: 'Interface down / Transmission Peering Tear (DEHL01-CR01)',
-    member_count: 58,
-    singleton: false,
-    statistics_mode: 'EXACT_INDEXED',
-    audit_graph_mode: 'CHEEGER_NORMALIZED_LAPLACIAN',
-    pair_materialization: 'ON_DEMAND',
-    config_version: 'v1.0',
-    graybox: {
-      mode: 'ACTIVE_GUARDED',
-      merge_strategy: null,
-      rules: 4,
-      characteristics: 12,
-      pair_facts: 58,
-      unavailable_capabilities: [],
-    },
-    descriptors: [],
-    role_counts: { CORE: 42, PERIPHERAL: 12, WEAK: 2, NO_DATA: 2 },
-    phase_durations: { burst: 22 },
-    members: Array.from({ length: 58 }, (_, i) => ({
-      alarm_id: `ALM-4793${3128 + i}`,
-      alarm_name: i === 0 ? 'GigabitEthernet6/0/2 Down (Physical Link Failure)' : i === 1 ? 'Bundle-Ether101 BGP Flap' : i === 2 ? 'HundredGigE0/0/0/2 Optical Loss' : i === 3 ? 'ISIS Adjacency Down Peer-88' : `Telemetry Alarm #${i + 1}`,
-      device_code: i < 42 ? 'DEHL01-CR01' : i < 54 ? 'DEHL01-SR02' : 'DEHT01-AR02',
-      node_reference: i < 42 ? 'SITE_DEHL01' : 'SITE_DEHT01',
-      canonical_start_time: `10:14:${String(2 + Math.floor(i / 3)).padStart(2, '0')}.108`,
-      role: i === 0 ? 'CORE_ROOT' : i < 42 ? 'CORE' : i < 54 ? 'PERIPHERAL' : i === 54 || i === 55 ? 'WEAK' : 'CONNECTORS',
-      membership_support: i === 54 || i === 55 ? 0.28 : 0.88,
-      availability_coverage: 1.0,
-      computable_groups: 4,
-      representativeness: 0.92,
-      group_fits: [],
-      margins: [],
-      redundancy_role: i === 0 ? 'SPOF' : 'REDUNDANT',
-      failure_domains: ['L1_OPTICAL', 'L3_BGP'],
-    })),
-  }
+  const selectedAnalysisError = currentAnalysisKey && analysisError?.requestKey === currentAnalysisKey
+    ? analysisError.message
+    : null
+  const analysisIsLoading = Boolean(currentAnalysisKey && !analysis && !selectedAnalysisError)
+  const chainViewNeedsAnalysis = [
+    'chain-overview',
+    'why',
+    'members',
+    'structure',
+    'review',
+    'evolution',
+    'topology',
+    'validation',
+  ].includes(currentTab)
 
   return (
     <div className="min-h-screen bg-background text-on-surface font-body-md antialiased select-none flex flex-col">
       {/* 1. Global NOC Header */}
       <NocHeader
         datasetName={topologyProfile}
-        snapshotId={activeSnapshotId}
+        snapshotId={chainList ? `${chainList.snapshot_id}@${chainList.snapshot_version}` : 'NO_SNAPSHOT'}
         currentView={currentTab}
         onChangeDatasetProfile={setTopologyProfile}
-        onChangeSnapshot={setActiveSnapshotId}
         onNavigate={tabName => {
           if (tabName === 'Snapshot Overview' || tabName === 'snapshot-overview' || tabName === 'overview') {
             setChainId('')
@@ -318,6 +303,23 @@ export default function App() {
 
       {/* 5. Main Workspace Views Router */}
       <main className="flex-1 w-full px-space-lg py-space-md">
+        {chainViewNeedsAnalysis && !analysis && (
+          <section
+            className="mx-auto max-w-3xl rounded-lg border border-surface-container-highest bg-surface-container p-space-xl text-center shadow-sm"
+            role={selectedAnalysisError ? 'alert' : 'status'}
+            aria-live="polite"
+          >
+            <span className="material-symbols-outlined text-3xl text-on-surface-variant">
+              {analysisIsLoading ? 'progress_activity' : 'database_off'}
+            </span>
+            <h2 className="mt-space-sm font-headline-md text-headline-md font-bold text-on-surface">
+              {analysisIsLoading ? `Loading analysis for ${chainId}…` : 'Chain analysis unavailable'}
+            </h2>
+            <p className="mt-space-xs font-code-sm text-code-sm text-on-surface-variant">
+              {selectedAnalysisError ?? 'No compatible analysis artifact is available for the selected snapshot and chain.'}
+            </p>
+          </section>
+        )}
         {/* SNAPSHOT LEVEL VIEWS */}
         {currentTab === 'snapshot-overview' && (
           <SnapshotOverviewView
@@ -362,9 +364,9 @@ export default function App() {
         )}
 
         {/* CHAIN LEVEL VIEWS */}
-        {(currentTab === 'chain-overview' || currentTab === 'why' || currentTab === 'members') && (
+        {analysis && (currentTab === 'chain-overview' || currentTab === 'why' || currentTab === 'members') && (
           <ChainDetailView
-            analysis={effectiveAnalysis}
+            analysis={analysis}
             activeSubTab={
               currentTab === 'chain-overview'
                 ? 'OVERVIEW'
@@ -381,34 +383,34 @@ export default function App() {
           />
         )}
 
-        {currentTab === 'structure' && (
+        {analysis && currentTab === 'structure' && (
           <AuditStructureView
-            analysis={effectiveAnalysis}
+            analysis={analysis}
             onOpenValidationModal={handleOpenValidationModal}
           />
         )}
 
-        {currentTab === 'review' && (
-          <RecommendationsView analysis={effectiveAnalysis} />
+        {analysis && currentTab === 'review' && (
+          <RecommendationsView analysis={analysis} />
         )}
 
-        {currentTab === 'evolution' && (
+        {analysis && currentTab === 'evolution' && (
           <EvolutionView
-            analysis={effectiveAnalysis}
+            analysis={analysis}
             onExecutePartition={handleOpenValidationModal}
           />
         )}
 
-        {currentTab === 'topology' && (
+        {analysis && currentTab === 'topology' && (
           <TopologyOverlayView
-            analysis={effectiveAnalysis}
+            analysis={analysis}
             topologyPayload={topologyPayload}
           />
         )}
 
-        {currentTab === 'validation' && (
+        {analysis && currentTab === 'validation' && (
           <ValidationView
-            analysis={effectiveAnalysis}
+            analysis={analysis}
             onOpenValidationModal={handleOpenValidationModal}
           />
         )}
@@ -426,7 +428,7 @@ export default function App() {
       <OperatorValidationModal
         isOpen={isValidationModalOpen}
         onClose={() => setValidationModalOpen(false)}
-        chainId={chainId || 'C2214039'}
+        chainId={chainId}
         mutationSpec={activeMutationSpec}
         onConfirmSignOff={note => {
           console.log('Signed off partition for chain', chainId, note)
@@ -463,13 +465,17 @@ export default function App() {
         <div className="flex items-center gap-space-lg">
           {apiStatus === 'offline' && (
             <span className="px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant text-[10px]">
-              Demo Mode (API Offline)
+              API OFFLINE
             </span>
           )}
-          <span className="flex items-center gap-1.5 text-on-surface">
-            <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
-            STREAM SYNCED
-          </span>
+          {apiStatus === 'checking' && <span>CHECKING API</span>}
+          {apiStatus === 'online' && chainList && (
+            <span className="flex items-center gap-1.5 text-on-surface">
+              <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+              SNAPSHOT READY
+            </span>
+          )}
+          {apiStatus === 'online' && !chainList && <span>NO SNAPSHOT LOADED</span>}
         </div>
       </footer>
     </div>
