@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+          "background": "#0c1322",
+          "primary-container": "#ff5451",
+          "surface-container": "#191f2f",
+          "secondary-fixed": "#c4e7ff",
+          "on-primary-fixed-variant": "#930013",
+          "surface": "#0c1322",
+          "surface-bright": "#323949",
+          "outline-variant": "#5b403e",
+          "secondary-container": "#00a6e0",
+          "on-tertiary-fixed-variant": "#653e00",
+          "surface-dim": "#0c1322",
+          "surface-variant": "#2e3545",
+          "inverse-surface": "#dce2f7",
+          "on-secondary-fixed": "#001e2c",
+          "surface-container-high": "#232a3a",
+          "on-background": "#dce2f7",
+          "secondary-fixed-dim": "#7bd0ff",
+          "error-container": "#93000a",
+          "on-surface-variant": "#e4beba",
+          "on-error": "#690005",
+          "on-surface": "#dce2f7",
+          "on-secondary-fixed-variant": "#004c69",
+          "on-error-container": "#ffdad6",
+          "inverse-primary": "#b91a24",
+          "outline": "#ab8986",
+          "surface-container-highest": "#2e3545",
+          "on-tertiary": "#472a00",
+          "on-tertiary-container": "#3e2400",
+          "on-primary": "#68000a",
+          "tertiary-fixed": "#ffddb8",
+          "surface-container-low": "#141b2b",
+          "tertiary": "#ffb95f",
+          "surface-container-lowest": "#070e1d",
+          "inverse-on-surface": "#293040",
+          "tertiary-container": "#ca8100",
+          "secondary": "#7bd0ff",
+          "primary-fixed": "#ffdad7",
+          "primary-fixed-dim": "#ffb3ad",
+          "tertiary-fixed-dim": "#ffb95f",
+          "on-tertiary-fixed": "#2a1700",
+          "on-secondary-container": "#00374d",
+          "on-secondary": "#00354a",
+          "error": "#ffb4ab",
+          "surface-tint": "#ffb3ad",
+          "on-primary-fixed": "#410004",
+          "primary": "#ffb3ad",
+          "on-primary-container": "#5c0008"
+        },
+        "borderRadius": {
+          "DEFAULT": "0.125rem",
+          "lg": "0.25rem",
+          "xl": "0.5rem",
+          "full": "0.75rem"
+        },
+        "spacing": {
+          "space-xs": "4px",
+          "space-md": "12px",
+          "row-standard-h": "36px",
+          "space-sm": "8px",
+          "space-2xs": "2px",
+          "panel-header-h": "36px",
+          "space-xl": "24px",
+          "space-2xl": "32px",
+          "space-lg": "16px",
+          "margin-screen": "16px",
+          "row-compact-h": "28px",
+          "gutter": "12px"
+        },
+        "fontFamily": {
+          "label-caps": [
+            "JetBrains Mono"
+          ],
+          "headline-lg": [
+            "Inter"
+          ],
+          "headline-md": [
+            "Inter"
+          ],
+          "body-md": [
+            "Inter"
+          ],
+          "headline-xl": [
+            "Inter"
+          ],
+          "code-lg": [
+            "JetBrains Mono"
+          ],
+          "code-md": [
+            "JetBrains Mono"
+          ],
+          "body-lg": [
+            "Inter"
+          ],
+          "code-sm": [
+            "JetBrains Mono"
+          ],
+          "body-sm": [
+            "Inter"
+          ]
+        },
+        "fontSize": {
+          "label-caps": [
+            "10px",
+            {
+              "lineHeight": "12px",
+              "letterSpacing": "0.08em",
+              "fontWeight": "700"
+            }
+          ],
+          "headline-lg": [
+            "24px",
+            {
+              "lineHeight": "32px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "600"
+            }
+          ],
+          "headline-md": [
+            "18px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "600"
+            }
+          ],
+          "body-md": [
+            "14px",
+            {
+              "lineHeight": "20px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ],
+          "headline-xl": [
+            "32px",
+            {
+              "lineHeight": "40px",
+              "letterSpacing": "-0.02em",
+              "fontWeight": "700"
+            }
+          ],
+          "code-lg": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "500"
+            }
+          ],
+          "code-md": [
+            "13px",
+            {
+              "lineHeight": "18px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "500"
+            }
+          ],
+          "body-lg": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ],
+          "code-sm": [
+            "11px",
+            {
+              "lineHeight": "14px",
+              "letterSpacing": "0.02em",
+              "fontWeight": "500"
+            }
+          ],
+          "body-sm": [
+            "12px",
+            {
+              "lineHeight": "16px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ]
+        }
+      },
+    },
+  }</script></head><body class="bg-background font-body-md text-body-md text-on-surface select-none antialiased min-h-screen"><header class="fixed top-0 w-full z-50 bg-surface-container-lowest/95 backdrop-blur-md shadow-[0_1px_8px_rgba(0,0,0,0.45)]"><div class="h-20 w-full px-space-lg flex flex-col justify-between pt-space-xs"><div class="flex items-center justify-between gap-space-lg h-space-panel-header-h"><div class="flex items-center gap-space-md"><img alt="Viettel NocPro Hindsight Logo" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1VLqt94IO72isT_Nhyfi3O0p329p6SPzfuOcFUhdjnn8X1-paKZEn3Kdz9cb87XnOV3_OjW9vFvGlm5nI0uryu9mBhLWEE_pMJPdW1t_aKh2AoCI1OF5xUWOKCff5NhVrtDKVdE4pqPxhqRRNezzPeDUhHpae3vlgJ8jBb4ZIZ66NnULybPG-B8sglXpVM1t-schU1EMCxfKCjw3Q9hz3Da91Ik7X0JYQv8Plu-0d9wOXmyK_aboUITYQ"/><div class="flex flex-col"><span class="font-headline-md text-headline-md font-bold tracking-tight text-on-surface leading-none">NocPro Hindsight</span><span class="font-label-caps text-label-caps uppercase text-secondary font-semibold tracking-wider">Chain Explain &amp; RCA Engine</span></div><div class="h-space-lg w-px bg-surface-container-highest ml-space-xs"></div><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container rounded cursor-pointer hover:bg-surface-container-high transition-colors"><span class="material-symbols-outlined text-secondary text-[16px]">history</span><div class="flex flex-col"><div class="flex items-center gap-space-xs"><span class="font-code-sm text-code-sm text-on-surface font-semibold">real_alarm_20260801</span><span class="material-symbols-outlined text-on-surface-variant text-[14px]">expand_more</span></div><span class="font-code-sm text-code-sm text-on-surface-variant">212,636 alarms • 1,845 chains • 10:00:00 UTC</span></div></div></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container-low rounded"><div class="w-2 h-2 rounded-full bg-secondary animate-pulse"></div><span class="font-code-sm text-code-sm text-on-surface font-semibold tracking-wide">ONLINE (READY)</span><span class="font-code-sm text-code-sm text-on-surface-variant">/ hindsight-v1</span></div><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container-low rounded"><span class="material-symbols-outlined text-secondary text-[14px]">wifi_tethering</span><span class="font-code-sm text-code-sm text-on-surface">:8085</span><span class="font-label-caps text-label-caps uppercase text-secondary font-bold">LIVE</span></div><div class="flex items-center gap-space-sm px-space-sm py-space-2xs bg-surface-container-low rounded"><div class="flex flex-col"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">LATENCY</span><span class="font-code-sm text-code-sm text-on-surface font-semibold">1.2ms</span></div><div class="h-4 w-px bg-surface-container-highest"></div><div class="flex flex-col"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">EPS</span><span class="font-code-sm text-code-sm text-on-surface font-semibold">14.2k/s</span></div></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div><nav class="w-full flex items-center gap-space-xs overflow-x-auto h-space-panel-header-h" data-active-classes="bg-surface-container-high text-secondary border-b-2 border-secondary font-semibold"><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="chain-hierarchy-and-tree" href="#">Chain Hierarchy &amp; Tree</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="member-diagnostics-table" href="#">Member Diagnostics Table</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="pair-why-and-evidence-matrix" href="#">Pair WHY &amp; Evidence Matrix</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="structural-audit-conductance" href="#">Structural Audit (Conductance)</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="counterfactual-review-5-ops" href="#">Counterfactual Review (5 Ops)</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="evolution-and-lineage" href="#">Evolution &amp; Lineage</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="topology-explorer-ip-it" href="#">Topology Explorer (IP/IT)</a></nav></div></header><main class="w-full pt-20 bg-background min-h-[calc(100vh-28px)]"><div class="flex flex-col w-full text-on-surface">
+<div class="w-full bg-surface-container-lowest px-space-lg py-space-sm flex flex-wrap items-center justify-between gap-space-md shadow-sm">
+<div class="flex items-center gap-space-sm flex-wrap">
+<div class="flex items-center gap-space-xs text-on-surface-variant font-code-sm text-code-sm">
+<span class="hover:text-secondary cursor-pointer transition-colors">Snapshot S102</span>
+<span class="text-surface-bright">/</span>
+<span class="hover:text-secondary cursor-pointer transition-colors">Chain C2214039</span>
+<span class="text-surface-bright">/</span>
+<span class="text-on-surface font-semibold">WHY</span>
+<span class="text-surface-bright">/</span>
+</div>
+<div class="relative inline-flex items-center bg-surface-container-high rounded px-space-sm py-space-2xs cursor-pointer hover:bg-surface-bright transition-colors group">
+<span class="font-label-caps text-label-caps uppercase text-secondary font-bold mr-space-xs">SCOPE:</span>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold flex items-center gap-space-2xs">
+          Group / Subcluster
+          <span class="material-symbols-outlined text-secondary text-[16px] group-hover:translate-y-0.5 transition-transform">arrow_drop_down</span>
+</span>
+</div>
+<div class="flex items-center gap-space-xs bg-surface-container px-space-sm py-space-2xs rounded">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Global Φ</span>
+<span class="font-code-sm text-code-sm text-secondary font-bold">0.824</span>
+<span class="font-label-caps text-label-caps uppercase text-secondary-container bg-surface-container-lowest px-space-xs rounded">High Conf</span>
+</div>
+</div>
+<div class="flex items-center gap-space-xs overflow-x-auto">
+<button class="px-space-sm py-space-2xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface bg-surface-container-low rounded hover:bg-surface-container transition-colors">Snapshot</button>
+<button class="px-space-sm py-space-2xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface bg-surface-container-low rounded hover:bg-surface-container transition-colors">Overview</button>
+<button class="px-space-sm py-space-2xs font-body-sm text-body-sm text-on-secondary-container bg-secondary-container rounded font-semibold shadow-sm flex items-center gap-space-2xs">
+<span class="w-1.5 h-1.5 rounded-full bg-surface-container-lowest animate-pulse"></span>
+        WHY (Active)
+      </button>
+<button class="px-space-sm py-space-2xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface bg-surface-container-low rounded hover:bg-surface-container transition-colors">Members</button>
+<button class="px-space-sm py-space-2xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface bg-surface-container-low rounded hover:bg-surface-container transition-colors">Audit</button>
+<button class="px-space-sm py-space-2xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface bg-surface-container-low rounded hover:bg-surface-container transition-colors">Recommendations</button>
+<button class="px-space-sm py-space-2xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface bg-surface-container-low rounded hover:bg-surface-container transition-colors">Evolution</button>
+<button class="px-space-sm py-space-2xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface bg-surface-container-low rounded hover:bg-surface-container transition-colors">Topology</button>
+</div>
+</div>
+<div class="w-full grid grid-cols-1 xl:grid-cols-12 gap-gutter p-space-md bg-background">
+<div class="xl:col-span-3 flex flex-col gap-space-md">
+<div class="bg-surface-container-low rounded p-space-md shadow-md flex flex-col gap-space-sm">
+<div class="flex items-center justify-between pb-space-xs">
+<div class="flex flex-col">
+<span class="font-headline-md text-headline-md font-bold tracking-tight text-on-surface">Subclusters</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">3 partitioned groups in C2214039</span>
+</div>
+<span class="font-label-caps text-label-caps uppercase bg-surface-container-high text-secondary px-space-xs py-space-2xs rounded tracking-wider">Spectral</span>
+</div>
+<div class="relative w-full">
+<input class="w-full bg-surface-container-lowest text-on-surface font-code-sm text-code-sm px-space-sm py-space-2xs pl-8 rounded focus:outline-none focus:bg-surface-container transition-colors" placeholder="Filter subclusters or node..." type="text"/>
+<span class="material-symbols-outlined absolute left-2 top-1.5 text-on-surface-variant text-[16px]">search</span>
+</div>
+<div class="flex flex-col gap-space-xs mt-space-xs">
+<div class="bg-surface-container-highest rounded p-space-sm cursor-pointer shadow-sm relative overflow-hidden transition-all hover:bg-surface-bright">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-primary-container"></div>
+<div class="flex items-center justify-between">
+<span class="font-code-md text-code-md text-on-surface font-bold">Subcluster A</span>
+<span class="font-label-caps text-label-caps uppercase bg-primary-container/20 text-primary-container px-space-xs py-space-2xs rounded">Selected</span>
+</div>
+<div class="font-body-sm text-body-sm text-on-surface font-medium mt-space-2xs truncate">Core PE Fabric Collapse</div>
+<div class="flex items-center justify-between mt-space-xs pt-space-xs text-on-surface-variant font-code-sm text-code-sm">
+<span class="flex items-center gap-space-2xs"><span class="text-primary-container font-semibold">5</span> alarms</span>
+<span class="flex items-center gap-space-2xs">Cohesion <span class="text-secondary font-bold">0.94</span> (Strong)</span>
+</div>
+<div class="text-[11px] font-code-sm text-on-surface-variant/80 mt-space-2xs truncate">DEHL01-CR01 backplane bus</div>
+</div>
+<div class="bg-surface-container rounded p-space-sm cursor-pointer shadow-sm hover:bg-surface-container-high transition-colors">
+<div class="flex items-center justify-between">
+<span class="font-code-md text-code-md text-on-surface font-bold">Subcluster B</span>
+<span class="font-label-caps text-label-caps uppercase bg-tertiary-container/30 text-tertiary px-space-xs py-space-2xs rounded">Active</span>
+</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant mt-space-2xs truncate">Optical Ingress Degradation</div>
+<div class="flex items-center justify-between mt-space-xs pt-space-xs text-on-surface-variant font-code-sm text-code-sm">
+<span class="flex items-center gap-space-2xs"><span>18</span> alarms</span>
+<span class="flex items-center gap-space-2xs">Cohesion <span class="text-tertiary font-bold">0.78</span> (Mod)</span>
+</div>
+<div class="text-[11px] font-code-sm text-on-surface-variant/80 mt-space-2xs truncate">DEHL01 optical transceiver ring</div>
+</div>
+<div class="bg-surface-container rounded p-space-sm cursor-pointer shadow-sm hover:bg-surface-container-high transition-colors">
+<div class="flex items-center justify-between">
+<span class="font-code-md text-code-md text-on-surface font-bold">Subcluster C</span>
+<span class="font-label-caps text-label-caps uppercase bg-surface-container-high text-on-surface-variant px-space-xs py-space-2xs rounded">Weak Cut</span>
+</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant mt-space-2xs truncate">Peripheral Aggregation Telemetry</div>
+<div class="flex items-center justify-between mt-space-xs pt-space-xs text-on-surface-variant font-code-sm text-code-sm">
+<span class="flex items-center gap-space-2xs"><span>35</span> alarms</span>
+<span class="flex items-center gap-space-2xs">Cohesion <span class="text-outline font-bold">0.52</span> (Weak)</span>
+</div>
+<div class="text-[11px] font-code-sm text-on-surface-variant/80 mt-space-2xs truncate">Remote edge multiplexers (Node 8-14)</div>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-space-sm rounded mt-space-xs flex flex-col gap-space-xs">
+<div class="flex items-center justify-between text-on-surface-variant font-label-caps text-label-caps uppercase">
+<span>Spectral Eigenspace Partition</span>
+<span class="text-secondary">λ2 = 0.041</span>
+</div>
+<div class="w-full bg-surface-container-high h-2 rounded overflow-hidden flex">
+<div class="bg-primary-container h-full w-[8.6%]" title="Subcluster A: 5"></div>
+<div class="bg-tertiary-container h-full w-[31%]" title="Subcluster B: 18"></div>
+<div class="bg-surface-bright h-full w-[60.4%]" title="Subcluster C: 35"></div>
+</div>
+<div class="flex justify-between font-code-sm text-code-sm text-on-surface-variant">
+<span class="flex items-center gap-space-2xs"><span class="w-2 h-2 rounded-full bg-primary-container"></span>A (8.6%)</span>
+<span class="flex items-center gap-space-2xs"><span class="w-2 h-2 rounded-full bg-tertiary-container"></span>B (31.0%)</span>
+<span class="flex items-center gap-space-2xs"><span class="w-2 h-2 rounded-full bg-surface-bright"></span>C (60.4%)</span>
+</div>
+</div>
+</div>
+<div class="bg-surface-container-low rounded p-space-md shadow-md flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<span class="font-code-md text-code-md text-on-surface font-semibold">Incident Graph Minimap</span>
+<span class="material-symbols-outlined text-on-surface-variant text-[16px]">hub</span>
+</div>
+<div class="relative w-full h-44 bg-surface-container-lowest rounded overflow-hidden flex items-center justify-center">
+<svg class="w-full h-full p-2" fill="none" viewbox="0 0 240 140" xmlns="http://www.w3.org/2000/svg">
+<line stroke="#5b403e" stroke-dasharray="3 3" stroke-width="1.5" x1="45" x2="80" y1="40" y2="70"></line>
+<line stroke="#ff5451" stroke-width="2" x1="80" x2="60" y1="70" y2="105"></line>
+<line stroke="#ff5451" stroke-width="2" x1="80" x2="110" y1="70" y2="55"></line>
+<line stroke="#ff5451" stroke-width="2" x1="110" x2="60" y1="55" y2="105"></line>
+<line stroke="#7bd0ff" stroke-width="1.5" x1="80" x2="155" y1="70" y2="60"></line>
+<line stroke="#ca8100" stroke-width="1.5" x1="155" x2="185" y1="60" y2="40"></line>
+<line stroke="#ca8100" stroke-width="1.5" x1="155" x2="175" y1="60" y2="95"></line>
+<line stroke="#5b403e" stroke-width="1" x1="175" x2="215" y1="95" y2="110"></line>
+<circle cx="45" cy="40" fill="#ca8100" r="5"></circle>
+<circle cx="80" cy="70" fill="#ff5451" r="9" stroke="#0c1322" stroke-width="2"></circle>
+<circle cx="60" cy="105" fill="#ff5451" r="7"></circle>
+<circle cx="110" cy="55" fill="#ff5451" r="6"></circle>
+<circle cx="155" cy="60" fill="#ca8100" r="7"></circle>
+<circle cx="185" cy="40" fill="#ca8100" r="5"></circle>
+<circle cx="175" cy="95" fill="#ca8100" r="5"></circle>
+<circle cx="215" cy="110" fill="#323949" r="4"></circle>
+<rect fill="#ff5451" fill-opacity="0.08" height="85" rx="6" stroke="#ff5451" stroke-dasharray="2 2" stroke-width="1" width="70" x="50" y="32"></rect>
+<text fill="#ffb3ad" font-family="JetBrains Mono" font-size="8" font-weight="700" x="56" y="44">SUBCLUSTER A</text>
+</svg>
+<div class="absolute bottom-1 right-2 font-label-caps text-label-caps uppercase text-on-surface-variant">
+            3 CLUSTERS • 58 TOTAL ALARMS
+          </div>
+</div>
+</div>
+</div>
+<div class="xl:col-span-6 flex flex-col gap-space-md">
+<div class="bg-surface-container-low rounded p-space-lg shadow-md flex flex-col gap-space-md">
+<div class="flex flex-col gap-space-2xs">
+<div class="flex items-center justify-between flex-wrap gap-space-xs">
+<div class="flex items-center gap-space-sm">
+<span class="font-headline-lg text-headline-lg font-bold text-on-surface">Group WHY Analysis: Subcluster A</span>
+<span class="font-code-sm text-code-sm bg-primary-container text-on-primary font-bold px-space-xs py-space-2xs rounded">5 Alarms</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="font-label-caps text-label-caps uppercase bg-surface-container-high text-secondary px-space-xs py-space-2xs rounded">
+                Intra-group Density: 0.92
+              </span>
+<span class="font-label-caps text-label-caps uppercase bg-error-container text-on-error-container px-space-xs py-space-2xs rounded">
+                Linecard LC-100GE
+              </span>
+</div>
+</div>
+<span class="font-body-md text-body-md text-on-surface-variant">
+            Root cause localization on DEHL01-CR01 linecard bus fabric. Catastrophic backplane microburst induced downstream protocol tear across 4 dependent layers.
+          </span>
+</div>
+<div class="bg-surface-container rounded p-space-md flex flex-col gap-space-xs shadow-sm">
+<div class="flex items-center justify-between">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Subcluster Member Topology &amp; Sequence</span>
+<span class="font-code-sm text-code-sm text-secondary">5 / 5 Root Causality Locked</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-5 gap-space-xs pt-space-xs">
+<div class="bg-surface-container-high rounded p-space-xs flex flex-col gap-space-2xs relative">
+<span class="font-label-caps text-label-caps uppercase bg-primary-container text-on-primary px-space-2xs rounded self-start font-bold">1 • ROOT</span>
+<span class="font-code-sm text-code-sm font-bold text-on-surface truncate">ALM-47933128</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant text-[11px] truncate">PE Ingress Intf Drop</span>
+<span class="font-code-sm text-code-sm text-primary font-semibold">+0.000s</span>
+</div>
+<div class="bg-surface-container-high rounded p-space-xs flex flex-col gap-space-2xs">
+<span class="font-label-caps text-label-caps uppercase bg-surface-container-lowest text-secondary px-space-2xs rounded self-start">2 • PHY</span>
+<span class="font-code-sm text-code-sm font-bold text-on-surface truncate">ALM-47933130</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant text-[11px] truncate">Carrier Optic Loss</span>
+<span class="font-code-sm text-code-sm text-secondary font-semibold">+0.240s</span>
+</div>
+<div class="bg-surface-container-high rounded p-space-xs flex flex-col gap-space-2xs">
+<span class="font-label-caps text-label-caps uppercase bg-surface-container-lowest text-secondary px-space-2xs rounded self-start">3 • SYNC</span>
+<span class="font-code-sm text-code-sm font-bold text-on-surface truncate">ALM-68219011</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant text-[11px] truncate">SDH Sync Slip</span>
+<span class="font-code-sm text-code-sm text-secondary font-semibold">+0.612s</span>
+</div>
+<div class="bg-surface-container-high rounded p-space-xs flex flex-col gap-space-2xs">
+<span class="font-label-caps text-label-caps uppercase bg-surface-container-lowest text-tertiary px-space-2xs rounded self-start">4 • ROUTE</span>
+<span class="font-code-sm text-code-sm font-bold text-on-surface truncate">ALM-715054</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant text-[11px] truncate">BGP Peer Teardown</span>
+<span class="font-code-sm text-code-sm text-tertiary font-semibold">+0.985s</span>
+</div>
+<div class="bg-surface-container-high rounded p-space-xs flex flex-col gap-space-2xs">
+<span class="font-label-caps text-label-caps uppercase bg-surface-container-lowest text-tertiary px-space-2xs rounded self-start">5 • IGP</span>
+<span class="font-code-sm text-code-sm font-bold text-on-surface truncate">ALM-47933131</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant text-[11px] truncate">OSPF LSA Expire</span>
+<span class="font-code-sm text-code-sm text-tertiary font-semibold">+1.380s</span>
+</div>
+</div>
+</div>
+<div class="flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<span class="font-headline-md text-headline-md font-bold text-on-surface">4 Core Group Cohesion Dimensions</span>
+<span class="font-label-caps text-label-caps uppercase text-secondary">WHY Metric Suite v1.4</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-space-sm">
+<div class="bg-surface-container rounded p-space-md flex flex-col justify-between shadow-sm">
+<div class="flex flex-col gap-space-2xs">
+<div class="flex items-center justify-between">
+<span class="font-code-md text-code-md font-bold text-on-surface">1. Temporal Compaction</span>
+<span class="font-code-lg text-code-lg font-bold text-primary">9.4<span class="text-body-sm text-on-surface-variant">/10</span></span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Burst Index • Poisson p &lt; 0.0001</span>
+<p class="font-body-sm text-body-sm text-on-surface mt-space-xs">
+                  All 5 alarms registered within a tight <span class="font-code-sm text-code-sm text-secondary font-semibold">1.4s window</span>. Microsecond timestamp clustering proves immediate physical propagation rather than gradual rolling exhaustion.
+                </p>
+</div>
+<div class="mt-space-md pt-space-xs flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
+<span>Spread: 1,380 ms</span>
+<span class="text-secondary font-semibold">Kurtosis: 14.82</span>
+</div>
+</div>
+<div class="bg-surface-container rounded p-space-md flex flex-col justify-between shadow-sm">
+<div class="flex flex-col gap-space-2xs">
+<div class="flex items-center justify-between">
+<span class="font-code-md text-code-md font-bold text-on-surface">2. Shared Blast Radius</span>
+<span class="font-code-lg text-code-lg font-bold text-secondary">10<span class="text-body-sm text-on-surface-variant">/10</span></span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Failure Domain Alignment</span>
+<p class="font-body-sm text-body-sm text-on-surface mt-space-xs">
+                  100% hardware containment overlap. All 5 entities terminate on <span class="font-code-sm text-code-sm text-on-surface font-semibold">Slot 3 Linecard fabric bus</span> &amp; chassis interconnect of Cisco 8808 (DEHL01-CR01).
+                </p>
+</div>
+<div class="mt-space-md pt-space-xs flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
+<span>Chassis: Cisco 8808</span>
+<span class="text-secondary font-semibold">Slot: LC-03-100G</span>
+</div>
+</div>
+<div class="bg-surface-container rounded p-space-md flex flex-col justify-between shadow-sm">
+<div class="flex flex-col gap-space-2xs">
+<div class="flex items-center justify-between">
+<span class="font-code-md text-code-md font-bold text-on-surface">3. Graph Conductance</span>
+<span class="font-code-lg text-code-lg font-bold text-tertiary">0.038</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Cut Ratio vs Outer Chain</span>
+<p class="font-body-sm text-body-sm text-on-surface mt-space-xs">
+                  Extreme internal density with negligible boundary leakage. Articulation cut boundary cleanly isolates Subcluster A from Subcluster C, avoiding cascading misclassification.
+                </p>
+</div>
+<div class="mt-space-md pt-space-xs flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
+<span>Internal Edges: 9</span>
+<span class="text-tertiary font-semibold">External Leak: 1</span>
+</div>
+</div>
+<div class="bg-surface-container rounded p-space-md flex flex-col justify-between shadow-sm">
+<div class="flex flex-col gap-space-2xs">
+<div class="flex items-center justify-between">
+<span class="font-code-md text-code-md font-bold text-on-surface">4. Causal DAG Propagation</span>
+<span class="font-code-lg text-code-lg font-bold text-primary">0.98</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Deterministic Sequence Confidence</span>
+<p class="font-body-sm text-body-sm text-on-surface mt-space-xs">
+                  Strict directional causality verified: <span class="font-code-sm text-code-sm text-on-surface">Physical Interface Down</span> → Carrier Loss → Protocol Keepalive Drop → Neighbor Tear.
+                </p>
+</div>
+<div class="mt-space-md pt-space-xs flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
+<span>DAG Depth: 4 hops</span>
+<span class="text-primary font-semibold">Zero Loop Cycles</span>
+</div>
+</div>
+</div>
+</div>
+<div class="bg-surface-container-high rounded p-space-md flex items-center justify-between gap-space-md">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-secondary text-[24px]">verified</span>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-bold text-on-surface">Automated Cohesion Verdict</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">This group represents an autonomous, self-contained physical failure root. Safe for automated dispatch.</span>
+</div>
+</div>
+<div class="font-headline-md text-headline-md font-bold text-secondary">A+</div>
+</div>
+</div>
+</div>
+<div class="xl:col-span-3 flex flex-col gap-space-md">
+<div class="bg-surface-container-low rounded p-space-md shadow-md flex flex-col gap-space-md">
+<div class="flex items-center justify-between">
+<span class="font-headline-md text-headline-md font-bold text-on-surface">Operator Triage</span>
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">build</span>
+</div>
+<div class="flex flex-col gap-space-xs">
+<button class="w-full bg-primary-container text-on-primary font-body-sm text-body-sm font-semibold py-space-xs px-space-md rounded flex items-center justify-center gap-space-xs hover:brightness-110 active:scale-[0.98] transition-all shadow-sm">
+<span class="material-symbols-outlined text-[18px]">priority_high</span>
+            Isolate Subcluster as Primary RCA
+          </button>
+<button class="w-full bg-surface-container-high text-on-surface font-body-sm text-body-sm font-semibold py-space-xs px-space-md rounded flex items-center justify-center gap-space-xs hover:bg-surface-bright active:scale-[0.98] transition-all shadow-sm">
+<span class="material-symbols-outlined text-[18px]">alt_route</span>
+            Re-cluster Candidate Members
+          </button>
+</div>
+<div class="bg-surface-container rounded p-space-sm flex flex-col gap-space-xs">
+<div class="flex items-center gap-space-xs text-tertiary">
+<span class="material-symbols-outlined text-[16px]">shield</span>
+<span class="font-label-caps text-label-caps uppercase font-bold">Fail-Closed Safety Policy</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant leading-tight">
+            Isolating operational blast radius will lock Subcluster A without mutating or repointing the master snapshot lineage replay.
+          </p>
+</div>
+<div class="flex flex-col gap-space-xs pt-space-xs">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Cross-Subcluster Link Audit</span>
+<div class="flex flex-col gap-space-xs">
+<div class="flex items-center justify-between p-space-xs bg-surface-container rounded font-code-sm text-code-sm">
+<span class="text-on-surface">Intra-Cluster Ties (Sub A)</span>
+<span class="text-primary font-bold">94% (High)</span>
+</div>
+<div class="flex items-center justify-between p-space-xs bg-surface-container rounded font-code-sm text-code-sm">
+<span class="text-on-surface">Bridge Ties → Subcluster B</span>
+<span class="text-secondary font-bold">12 links</span>
+</div>
+<div class="flex items-center justify-between p-space-xs bg-surface-container rounded font-code-sm text-code-sm">
+<span class="text-on-surface">Weak Ties → Subcluster C</span>
+<span class="text-tertiary font-bold">2 candidate cuts</span>
+</div>
+</div>
+</div>
+<div class="bg-surface-container-lowest rounded p-space-sm flex flex-col gap-space-xs">
+<div class="flex items-center justify-between font-label-caps text-label-caps uppercase text-on-surface-variant">
+<span>Root Blast Containment</span>
+<span class="text-secondary font-bold">98.2%</span>
+</div>
+<div class="w-full bg-surface-container h-1.5 rounded overflow-hidden">
+<div class="bg-secondary h-full w-[98.2%]"></div>
+</div>
+<span class="text-[11px] font-code-sm text-on-surface-variant">
+            Target Linecard 3 isolation will resolve 49 of 58 linked chain alerts.
+          </span>
+</div>
+</div>
+<div class="bg-surface-container-low rounded p-space-md shadow-md flex flex-col gap-space-sm">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Active Telemetry Feed</span>
+<div class="flex flex-col gap-space-xs font-code-sm text-code-sm">
+<div class="flex items-center justify-between text-on-surface-variant">
+<span>Optical Tx Bias:</span>
+<span class="text-primary font-semibold">0.02 mA (FLAP)</span>
+</div>
+<div class="flex items-center justify-between text-on-surface-variant">
+<span>FEC Uncorrectable:</span>
+<span class="text-primary font-semibold">14,209 /s</span>
+</div>
+<div class="flex items-center justify-between text-on-surface-variant">
+<span>PFE ASIC Temperature:</span>
+<span class="text-tertiary font-semibold">74.2 °C</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div></main><footer class="fixed bottom-0 w-full h-space-row-compact-h z-40 bg-surface-container-lowest/95 backdrop-blur-md shadow-[0_-1px_6px_rgba(0,0,0,0.5)] flex items-center justify-between px-space-lg font-code-sm text-code-sm text-on-surface-variant"><div class="flex items-center gap-space-lg"><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">PROVENANCE:</span><span class="text-on-surface font-semibold">REAL_EXPORT_REPLAY</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">CONFIG:</span><span class="text-on-surface">v1.0</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">ENGINE:</span><span class="text-secondary">hindsight-v1</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">ACTIVE SNAPSHOT:</span><span class="text-on-surface">real_alarm_20260801</span></span></div><div class="flex items-center gap-space-lg"><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">MOCK GATEWAY:</span><span class="text-secondary">:8085</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">API:</span><span class="text-secondary">:8000</span></span><span class="flex items-center gap-space-xs"><span class="w-1.5 h-1.5 rounded-full bg-secondary"></span><span class="font-label-caps text-label-caps uppercase text-on-surface">STREAM SYNCED</span></span></div></footer></body></html>

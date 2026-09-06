@@ -1,0 +1,382 @@
+<!DOCTYPE html><html class="dark" lang="en"><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0" name="viewport"><link href="https://fonts.googleapis.com" rel="preconnect"><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+          "background": "#0c1322",
+          "primary-container": "#ff5451",
+          "surface-container": "#191f2f",
+          "secondary-fixed": "#c4e7ff",
+          "on-primary-fixed-variant": "#930013",
+          "surface": "#0c1322",
+          "surface-bright": "#323949",
+          "outline-variant": "#5b403e",
+          "secondary-container": "#00a6e0",
+          "on-tertiary-fixed-variant": "#653e00",
+          "surface-dim": "#0c1322",
+          "surface-variant": "#2e3545",
+          "inverse-surface": "#dce2f7",
+          "on-secondary-fixed": "#001e2c",
+          "surface-container-high": "#232a3a",
+          "on-background": "#dce2f7",
+          "secondary-fixed-dim": "#7bd0ff",
+          "error-container": "#93000a",
+          "on-surface-variant": "#e4beba",
+          "on-error": "#690005",
+          "on-surface": "#dce2f7",
+          "on-secondary-fixed-variant": "#004c69",
+          "on-error-container": "#ffdad6",
+          "inverse-primary": "#b91a24",
+          "outline": "#ab8986",
+          "surface-container-highest": "#2e3545",
+          "on-tertiary": "#472a00",
+          "on-tertiary-container": "#3e2400",
+          "on-primary": "#68000a",
+          "tertiary-fixed": "#ffddb8",
+          "surface-container-low": "#141b2b",
+          "tertiary": "#ffb95f",
+          "surface-container-lowest": "#070e1d",
+          "inverse-on-surface": "#293040",
+          "tertiary-container": "#ca8100",
+          "secondary": "#7bd0ff",
+          "primary-fixed": "#ffdad7",
+          "primary-fixed-dim": "#ffb3ad",
+          "tertiary-fixed-dim": "#ffb95f",
+          "on-tertiary-fixed": "#2a1700",
+          "on-secondary-container": "#00374d",
+          "on-secondary": "#00354a",
+          "error": "#ffb4ab",
+          "surface-tint": "#ffb3ad",
+          "on-primary-fixed": "#410004",
+          "primary": "#ffb3ad",
+          "on-primary-container": "#5c0008"
+        },
+        "borderRadius": {
+          "DEFAULT": "0.125rem",
+          "lg": "0.25rem",
+          "xl": "0.5rem",
+          "full": "0.75rem"
+        },
+        "spacing": {
+          "space-xs": "4px",
+          "space-md": "12px",
+          "row-standard-h": "36px",
+          "space-sm": "8px",
+          "space-2xs": "2px",
+          "panel-header-h": "36px",
+          "space-xl": "24px",
+          "space-2xl": "32px",
+          "space-lg": "16px",
+          "margin-screen": "16px",
+          "row-compact-h": "28px",
+          "gutter": "12px"
+        },
+        "fontFamily": {
+          "label-caps": [
+            "JetBrains Mono"
+          ],
+          "headline-lg": [
+            "Inter"
+          ],
+          "headline-md": [
+            "Inter"
+          ],
+          "body-md": [
+            "Inter"
+          ],
+          "headline-xl": [
+            "Inter"
+          ],
+          "code-lg": [
+            "JetBrains Mono"
+          ],
+          "code-md": [
+            "JetBrains Mono"
+          ],
+          "body-lg": [
+            "Inter"
+          ],
+          "code-sm": [
+            "JetBrains Mono"
+          ],
+          "body-sm": [
+            "Inter"
+          ]
+        },
+        "fontSize": {
+          "label-caps": [
+            "10px",
+            {
+              "lineHeight": "12px",
+              "letterSpacing": "0.08em",
+              "fontWeight": "700"
+            }
+          ],
+          "headline-lg": [
+            "24px",
+            {
+              "lineHeight": "32px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "600"
+            }
+          ],
+          "headline-md": [
+            "18px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "600"
+            }
+          ],
+          "body-md": [
+            "14px",
+            {
+              "lineHeight": "20px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ],
+          "headline-xl": [
+            "32px",
+            {
+              "lineHeight": "40px",
+              "letterSpacing": "-0.02em",
+              "fontWeight": "700"
+            }
+          ],
+          "code-lg": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "500"
+            }
+          ],
+          "code-md": [
+            "13px",
+            {
+              "lineHeight": "18px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "500"
+            }
+          ],
+          "body-lg": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ],
+          "code-sm": [
+            "11px",
+            {
+              "lineHeight": "14px",
+              "letterSpacing": "0.02em",
+              "fontWeight": "500"
+            }
+          ],
+          "body-sm": [
+            "12px",
+            {
+              "lineHeight": "16px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ]
+        }
+      },
+    },
+  }</script></head><body class="bg-background font-body-md text-body-md text-on-surface select-none antialiased min-h-screen"><header class="fixed top-0 w-full z-50 bg-surface-container-lowest/95 backdrop-blur-md shadow-[0_1px_8px_rgba(0,0,0,0.45)]"><div class="h-20 w-full px-space-lg flex flex-col justify-between pt-space-xs"><div class="flex items-center gap-space-md"><img alt="Viettel NocPro Hindsight Logo" class="h-6 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1VLqt94IO72isT_Nhyfi3O0p329p6SPzfuOcFUhdjnn8X1-paKZEn3Kdz9cb87XnOV3_OjW9vFvGlm5nI0uryu9mBhLWEE_pMJPdW1t_aKh2AoCI1OF5xUWOKCff5NhVrtDKVdE4pqPxhqRRNezzPeDUhHpae3vlgJ8jBb4ZIZ66NnULybPG-B8sglXpVM1t-schU1EMCxfKCjw3Q9hz3Da91Ik7X0JYQv8Plu-0d9wOXmyK_aboUITYQ"><div class="flex items-center gap-space-xs"><span class="font-headline-md text-headline-md font-bold text-on-surface leading-none">Viettel NocPro Hindsight</span><span class="h-4 w-px bg-surface-container-highest ml-space-xs"></span><span class="font-code-sm text-code-sm text-on-surface-variant font-medium">IT_SERVICES / S102 v1 • 8,714 alarms · 2,824 chains</span><span class="px-space-xs py-0.5 ml-space-xs bg-surface-container rounded border border-surface-container-highest font-code-sm text-code-sm text-secondary font-medium">[2 Ready · 1 Partial · 2 Limited]</span></div></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs"><a class="px-space-sm py-1 font-code-sm text-code-sm text-secondary bg-surface-container-high rounded font-semibold" href="#">Overview</a><a class="px-space-sm py-1 font-code-sm text-code-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded transition-colors" data-path="chains-explorer" href="#">Chains Explorer</a><a class="px-space-sm py-1 font-code-sm text-code-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded transition-colors" data-path="topology-explorer-ip-it" href="#">Topology</a></div><div class="w-7 h-7 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[16px]">person</span></div></div></div></header><main class="w-full pt-20 bg-background min-h-[calc(100vh-28px)]"><div class="flex flex-col w-full pb-space-2xl">
+<!-- Contextual Snapshot Ribbon & Capabilities Matrix -->
+<div class="w-full bg-surface-container-lowest px-space-lg py-space-sm shadow-md">
+<div class="flex flex-wrap items-center justify-between gap-space-md">
+<!-- Left: Dataset & Specifiers -->
+<div class="flex flex-wrap items-center gap-space-md">
+<div class="flex items-center gap-space-xs bg-surface-container px-space-sm py-space-2xs rounded">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">DATASET</span>
+<span class="font-code-sm text-code-sm text-secondary font-bold">IT_SERVICES</span>
+</div>
+<div class="flex items-center gap-space-xs bg-surface-container px-space-sm py-space-2xs rounded">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">SNAPSHOT</span>
+<span class="font-code-sm text-code-sm text-primary font-bold">S102 / v1</span>
+</div>
+<div class="flex items-center gap-space-xs text-on-surface-variant font-code-sm text-code-sm">
+<span class="material-symbols-outlined text-secondary text-[15px]">analytics</span>
+<span class="">8,714 alarms</span>
+<span class="">•</span>
+<span class="">2,824 chains</span>
+<span class="">•</span>
+<span class="text-tertiary">2,072 singletons</span>
+</div>
+</div>
+<!-- Right: Global Diagnostics Tools & Operator Toggles -->
+<div class="flex items-center gap-space-sm">
+<button class="relative flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container hover:bg-surface-container-high rounded text-on-surface transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-tertiary text-[16px]">notifications_active</span>
+<span class="font-code-sm text-code-sm font-semibold">Attention Center</span>
+<span class="ml-space-2xs px-1.5 py-0.2 bg-tertiary-container text-on-tertiary font-code-sm text-code-sm font-bold rounded-full">3</span>
+</button>
+<button class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-primary-container/20 hover:bg-primary-container/30 text-primary-fixed rounded transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-[16px] text-primary">auto_awesome</span>
+<span class="font-code-sm text-code-sm font-semibold tracking-wide">AI Analyst</span>
+</button>
+<!-- View Mode Switcher -->
+<div class="flex items-center p-0.5 bg-surface-container rounded" id="viewToggleWrapper">
+<button class="px-space-sm py-space-2xs font-label-caps text-label-caps uppercase rounded bg-secondary-container text-on-secondary-container transition-all" id="btnOperator" onclick="setViewMode('operator')">Operator</button>
+<button class="px-space-sm py-space-2xs font-label-caps text-label-caps uppercase rounded text-on-surface-variant hover:text-on-surface transition-all" id="btnResearch" onclick="setViewMode('research')">Research</button>
+</div>
+</div>
+</div>
+<!-- System Capability Strip -->
+<div class="mt-space-sm pt-space-xs flex flex-wrap items-center gap-space-md font-code-sm text-code-sm text-on-surface-variant">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-wider">Capabilities:</span>
+<div class="flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+<span class="">Pattern Memory:</span>
+<span class="text-on-surface font-semibold">Available</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+<span class="">Temporal Delay:</span>
+<span class="text-on-surface font-semibold">Available</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span>
+<span class="">Topology Mapping:</span>
+<span class="text-tertiary font-semibold">Partial (611 Chains)</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-outline"></span>
+<span class="">Dependency Direction:</span>
+<span class="text-on-surface-variant font-semibold">Not Verified</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span>
+<span class="">Ground Truth:</span>
+<span class="text-error font-semibold">Not Available</span>
+</div>
+</div>
+</div>
+<!-- Snapshot Sub-Nav Horizontal Bar -->
+<div class="w-full bg-surface-container-low px-space-lg flex items-center gap-space-xs shadow-sm">
+<a class="px-space-md py-space-sm font-body-sm text-body-sm text-secondary bg-surface-container-high font-semibold flex items-center gap-space-xs" href="#">
+<span class="material-symbols-outlined text-[16px]">dashboard</span>
+<span class="">Snapshot Overview</span>
+</a>
+<a class="px-space-md py-space-sm font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors flex items-center gap-space-xs" href="#">
+<span class="material-symbols-outlined text-[16px]">hub</span>
+<span class="">Chains Explorer</span>
+</a>
+<a class="px-space-md py-space-sm font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors flex items-center gap-space-xs" href="#">
+<span class="material-symbols-outlined text-[16px]">timeline</span>
+<span class="">Multi-Chain Timeline</span>
+</a>
+<a class="px-space-md py-space-sm font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors flex items-center gap-space-xs" href="#">
+<span class="material-symbols-outlined text-[16px]">compare_arrows</span>
+<span class="">Compare Chains</span>
+</a>
+</div>
+<!-- Content Body -->
+<div class="px-space-lg mt-space-lg flex flex-col gap-space-lg">
+<!-- Top Macro KPI Metric Cards -->
+<div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-space-md">
+<!-- Card 1 -->
+<div class="bg-surface-container p-space-md rounded shadow-sm flex flex-col justify-between">
+<div class="flex items-center justify-between">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">TOTAL RAW ALARMS</span>
+<span class="material-symbols-outlined text-secondary text-[18px]">notifications</span>
+</div>
+<div class="mt-space-sm">
+<div class="font-headline-xl text-headline-xl text-on-surface font-bold">8,714</div>
+<div class="font-code-sm text-code-sm text-secondary mt-space-2xs flex items-center gap-1">
+<span class="">In-scope window:</span>
+<span class="text-on-surface font-semibold">10:00 - 12:00 UTC</span>
+</div>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface-container p-space-md rounded shadow-sm flex flex-col justify-between">
+<div class="flex items-center justify-between">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">CORRELATED CHAINS</span>
+<span class="material-symbols-outlined text-secondary text-[18px]">device_hub</span>
+</div>
+<div class="mt-space-sm">
+<div class="font-headline-xl text-headline-xl text-on-surface font-bold">2,824</div>
+<div class="font-code-sm text-code-sm text-secondary-fixed mt-space-2xs flex items-center gap-1">
+<span class="">Aggregated Clusters:</span>
+<span class="text-on-surface font-semibold">752 multi-alarm</span>
+</div>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="bg-surface-container p-space-md rounded shadow-sm flex flex-col justify-between">
+<div class="flex items-center justify-between">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">SINGLETON RATIO</span>
+<span class="material-symbols-outlined text-tertiary text-[18px]">grain</span>
+</div>
+<div class="mt-space-sm">
+<div class="flex items-baseline gap-space-xs">
+<span class="font-headline-xl text-headline-xl text-tertiary font-bold">2,072</span>
+<span class="font-headline-md text-headline-md text-on-surface-variant font-semibold">/ 73.4%</span>
+</div>
+<div class="font-code-sm text-code-sm text-on-surface-variant mt-space-2xs">
+            Isolated unlinked signals
+          </div>
+</div>
+</div>
+<!-- Card 4 -->
+<div class="bg-surface-container p-space-md rounded shadow-sm flex flex-col justify-between">
+<div class="flex items-center justify-between">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">LARGEST CHAIN</span>
+<span class="material-symbols-outlined text-primary text-[18px]">warning</span>
+</div>
+<div class="mt-space-sm">
+<div class="flex items-baseline gap-space-xs">
+<span class="font-headline-xl text-headline-xl text-primary font-bold">1,072</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">alarms</span>
+</div>
+<div class="font-code-sm text-code-sm text-primary-fixed mt-space-2xs">
+            Ref: <span class="text-on-surface font-semibold font-code-sm">C2214001</span> (Over-merged)
+          </div>
+</div>
+</div>
+<!-- Card 5 -->
+<div class="bg-surface-container p-space-md rounded shadow-sm flex flex-col justify-between">
+<div class="flex items-center justify-between">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">MEDIAN CHAIN SIZE</span>
+<span class="material-symbols-outlined text-secondary text-[18px]">straighten</span>
+</div>
+<div class="mt-space-sm">
+<div class="flex items-baseline gap-space-xs">
+<span class="font-headline-xl text-headline-xl text-on-surface font-bold">1</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">alarm (Avg: 3.08)</span>
+</div>
+<div class="font-code-sm text-code-sm text-secondary mt-space-2xs">
+            P95 size: <span class="text-on-surface font-semibold font-code-sm">26 alarms</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Middle Tier: Attention Summary Panel & Distribution Charts -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-space-md"><div class="bg-surface-container rounded shadow-sm flex flex-col border border-surface-container-high"><div class="h-space-panel-header-h px-space-md bg-surface-container-high flex items-center justify-between rounded-t"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-secondary text-[18px]">bar_chart</span><span class="font-headline-md text-headline-md text-on-surface font-bold">Chain Size Distribution</span></div><span class="font-label-caps text-label-caps text-on-surface-variant uppercase">N = 2,824 CHAINS</span></div><div class="p-space-md flex flex-col justify-between flex-grow"><div class="space-y-space-sm"><div class="flex flex-col gap-1"><div class="flex justify-between font-code-sm text-code-sm"><span class="text-on-surface font-medium">Singletons (1 alarm)</span><span class="text-on-surface-variant font-bold">2,072 chains (73.4%)</span></div><div class="w-full h-3 bg-surface-container-lowest rounded-sm overflow-hidden flex"><div class="h-full bg-secondary" style="width: 73.4%"></div></div></div><div class="flex flex-col gap-1"><div class="flex justify-between font-code-sm text-code-sm"><span class="text-on-surface font-medium">2 - 5 alarms</span><span class="text-on-surface-variant font-bold">514 chains (18.2%)</span></div><div class="w-full h-3 bg-surface-container-lowest rounded-sm overflow-hidden flex"><div class="h-full bg-secondary-fixed-dim" style="width: 18.2%"></div></div></div><div class="flex flex-col gap-1"><div class="flex justify-between font-code-sm text-code-sm"><span class="text-on-surface font-medium">6 - 20 alarms</span><span class="text-on-surface-variant font-bold">172 chains (6.1%)</span></div><div class="w-full h-3 bg-surface-container-lowest rounded-sm overflow-hidden flex"><div class="h-full bg-tertiary" style="width: 6.1%"></div></div></div><div class="flex flex-col gap-1"><div class="flex justify-between font-code-sm text-code-sm"><span class="text-on-surface font-medium">&gt; 20 alarms (Mega-chains)</span><span class="text-on-surface-variant font-bold">66 chains (2.3%)</span></div><div class="w-full h-3 bg-surface-container-lowest rounded-sm overflow-hidden flex"><div class="h-full bg-primary" style="width: 2.3%"></div></div></div></div><div class="mt-space-sm pt-space-xs bg-surface-container-low p-space-xs rounded flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm"><span class="">Heavy Tail Skew: <strong class="text-primary font-bold">High</strong></span><span class="">Entropy: <strong class="text-on-surface">1.84 nats</strong></span><span class="">Clustering Coeff: <strong class="text-secondary">0.69</strong></span></div></div></div><div class="bg-surface-container rounded shadow-sm flex flex-col border border-surface-container-high"><div class="h-space-panel-header-h px-space-md bg-surface-container-high flex items-center justify-between rounded-t"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-tertiary text-[18px]">crisis_alert</span><span class="font-headline-md text-headline-md text-on-surface font-bold">Needs Attention Summary</span></div><span class="font-label-caps text-label-caps text-tertiary uppercase bg-tertiary-container/30 px-space-xs py-0.5 rounded font-bold">3 PRIORITY CATEGORIES</span></div><div class="p-space-md flex flex-col gap-space-sm justify-around flex-grow"><div class="p-space-sm bg-surface-container-low rounded flex items-center justify-between hover:bg-surface-container-highest transition-colors cursor-pointer"><div class="flex items-center gap-space-sm"><div class="w-8 h-8 rounded bg-tertiary-container/30 flex items-center justify-center text-tertiary"><span class="material-symbols-outlined text-[20px]">troubleshoot</span></div><div class="flex flex-col"><span class="font-body-md text-body-md text-on-surface font-semibold">37 Structural Findings</span><span class="font-body-sm text-body-sm text-on-surface-variant">Conductance bottleneck or boundary leak</span></div></div><div class="flex items-center gap-space-xs"><span class="font-code-lg text-code-lg text-tertiary font-bold">37</span><span class="font-label-caps text-label-caps uppercase text-tertiary bg-tertiary-container/40 px-1 py-0.5 rounded">Action</span></div></div><div class="p-space-sm bg-surface-container-low rounded flex items-center justify-between hover:bg-surface-container-highest transition-colors cursor-pointer"><div class="flex items-center gap-space-sm"><div class="w-8 h-8 rounded bg-surface-variant flex items-center justify-center text-on-surface-variant"><span class="material-symbols-outlined text-[20px]">link_off</span></div><div class="flex flex-col"><span class="font-body-md text-body-md text-on-surface font-semibold">84 Weak Members</span><span class="font-body-sm text-body-sm text-on-surface-variant">Low correlation score (&lt; 0.45 threshold)</span></div></div><div class="flex items-center gap-space-xs"><span class="font-code-lg text-code-lg text-on-surface font-bold">84</span><span class="font-label-caps text-label-caps uppercase text-on-surface-variant bg-surface-container-high px-1 py-0.5 rounded">Inspect</span></div></div><div class="p-space-sm bg-surface-container-low rounded flex items-center justify-between hover:bg-surface-container-highest transition-colors cursor-pointer"><div class="flex items-center gap-space-sm"><div class="w-8 h-8 rounded bg-secondary-container/30 flex items-center justify-center text-secondary"><span class="material-symbols-outlined text-[20px]">alt_route</span></div><div class="flex flex-col"><span class="font-body-md text-body-md text-on-surface font-semibold">21 Alternative Partitions</span><span class="font-body-sm text-body-sm text-on-surface-variant">Alternative counterfactual suggestions ready</span></div></div><div class="flex items-center gap-space-xs"><span class="font-code-lg text-code-lg text-secondary font-bold">21</span><span class="font-label-caps text-label-caps uppercase text-secondary bg-secondary-container/20 px-1 py-0.5 rounded">Ready</span></div></div></div></div></div>
+<!-- Largest & Highest-Attention Chains (Triage Table) -->
+<div class="bg-surface-container rounded shadow-sm flex flex-col border border-surface-container-high"><div class="h-space-panel-header-h px-space-md bg-surface-container-high flex items-center justify-between rounded-t"><div class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-primary text-[18px]">priority_high</span><span class="font-headline-md text-headline-md text-on-surface font-bold">Top 5 Chains Needing Attention</span><span class="font-code-sm text-code-sm text-on-surface-variant">Triage candidates prioritized by structural risk</span></div><a class="px-space-sm py-1 bg-surface-container-lowest hover:bg-surface-container text-secondary font-code-sm text-code-sm rounded transition-colors flex items-center gap-1 font-semibold border border-surface-container-highest" data-path="chains-explorer" href="#"><span class="">View all 2,824 chains in Chains Explorer →</span></a></div><div class="w-full overflow-x-auto"><table class="w-full text-left border-collapse"><thead><tr class="bg-surface-container-lowest font-label-caps text-label-caps uppercase text-on-surface-variant"><th class="py-space-xs px-space-md">Chain ID</th><th class="py-space-xs px-space-md text-right">Size</th><th class="py-space-xs px-space-md">Key Descriptor</th><th class="py-space-xs px-space-md">Why attention?</th><th class="py-space-xs px-space-md text-center">Action</th></tr></thead><tbody class="font-code-sm text-code-sm divide-y-0"><tr class="hover:bg-surface-container-high transition-colors bg-surface-container border-b border-surface-container-high/50"><td class="py-space-xs px-space-md font-bold text-primary flex items-center gap-space-xs"><span class="material-symbols-outlined text-primary text-[16px]">error</span><span class="">C2214039</span></td><td class="py-space-xs px-space-md text-right font-bold text-primary text-code-md">58 alarms</td><td class="py-space-xs px-space-md text-on-surface font-medium">IT_K8S_INGRESS • 504 Gateway Surge</td><td class="py-space-xs px-space-md text-tertiary font-medium"><span class="px-space-xs py-0.5 bg-error-container text-on-error-container font-bold rounded font-label-caps text-label-caps uppercase mr-1">Over-merged</span>Conductance bottleneck &amp; 4 weak members</td><td class="py-space-xs px-space-md text-center"><button class="px-space-sm py-0.5 bg-surface-container-low hover:bg-surface-container-highest text-secondary rounded font-code-sm text-code-sm font-semibold transition-colors border border-surface-container-highest flex items-center gap-1 mx-auto">Open Chain →</button></td></tr><tr class="hover:bg-surface-container-high transition-colors bg-surface-container-low border-b border-surface-container-high/50"><td class="py-space-xs px-space-md font-bold text-tertiary flex items-center gap-space-xs"><span class="material-symbols-outlined text-tertiary text-[16px]">warning</span><span class="">C2214051</span></td><td class="py-space-xs px-space-md text-right font-bold text-on-surface text-code-md">37 alarms</td><td class="py-space-xs px-space-md text-on-surface font-medium">CORE_AGG_SW01 • BGP Peer Flap Cascade</td><td class="py-space-xs px-space-md text-tertiary font-medium"><span class="px-space-xs py-0.5 bg-tertiary-container/50 text-on-tertiary font-bold rounded font-label-caps text-label-caps uppercase mr-1">Boundary Leak</span>5 weak members across IP Core &amp; GPON</td><td class="py-space-xs px-space-md text-center"><button class="px-space-sm py-0.5 bg-surface-container-low hover:bg-surface-container-highest text-secondary rounded font-code-sm text-code-sm font-semibold transition-colors border border-surface-container-highest flex items-center gap-1 mx-auto">Open Chain →</button></td></tr><tr class="hover:bg-surface-container-high transition-colors bg-surface-container border-b border-surface-container-high/50"><td class="py-space-xs px-space-md font-bold text-tertiary flex items-center gap-space-xs"><span class="material-symbols-outlined text-tertiary text-[16px]">warning</span><span class="">C2214048</span></td><td class="py-space-xs px-space-md text-right font-bold text-on-surface text-code-md">25 alarms</td><td class="py-space-xs px-space-md text-on-surface font-medium">GPON_OLT_039 • Power Distribution Failure</td><td class="py-space-xs px-space-md text-on-surface-variant font-medium"><span class="px-space-xs py-0.5 bg-tertiary-container/30 text-tertiary font-bold rounded font-label-caps text-label-caps uppercase mr-1">Weak Bridge</span>GPON OLT surge isolation split candidate</td><td class="py-space-xs px-space-md text-center"><button class="px-space-sm py-0.5 bg-surface-container-low hover:bg-surface-container-highest text-secondary rounded font-code-sm text-code-sm font-semibold transition-colors border border-surface-container-highest flex items-center gap-1 mx-auto">Open Chain →</button></td></tr><tr class="hover:bg-surface-container-high transition-colors bg-surface-container-low border-b border-surface-container-high/50"><td class="py-space-xs px-space-md font-bold text-secondary flex items-center gap-space-xs"><span class="material-symbols-outlined text-secondary text-[16px]">info</span><span class="">C2214088</span></td><td class="py-space-xs px-space-md text-right font-bold text-on-surface text-code-md">19 alarms</td><td class="py-space-xs px-space-md text-on-surface font-medium">TRANS_MPLS_PE09 • Optical Degradation</td><td class="py-space-xs px-space-md text-on-surface-variant font-medium"><span class="px-space-xs py-0.5 bg-secondary-container/30 text-secondary font-bold rounded font-label-caps text-label-caps uppercase mr-1">Noise</span>2 trailing leaf alarms with low correlation</td><td class="py-space-xs px-space-md text-center"><button class="px-space-sm py-0.5 bg-surface-container-low hover:bg-surface-container-highest text-secondary rounded font-code-sm text-code-sm font-semibold transition-colors border border-surface-container-highest flex items-center gap-1 mx-auto">Open Chain →</button></td></tr><tr class="hover:bg-surface-container-high transition-colors bg-surface-container"><td class="py-space-xs px-space-md font-bold text-secondary flex items-center gap-space-xs"><span class="material-symbols-outlined text-secondary text-[16px]">check_circle</span><span class="">C2214102</span></td><td class="py-space-xs px-space-md text-right font-bold text-on-surface text-code-md">14 alarms</td><td class="py-space-xs px-space-md text-on-surface font-medium">IT_ORACLE_RAC02 • Interconnect Latency</td><td class="py-space-xs px-space-md text-on-surface-variant font-medium"><span class="px-space-xs py-0.5 bg-surface-container-high text-on-surface-variant font-bold rounded font-label-caps text-label-caps uppercase mr-1">Lineage Drift</span>Alternative re-link counterfactual ready</td><td class="py-space-xs px-space-md text-center"><button class="px-space-sm py-0.5 bg-surface-container-low hover:bg-surface-container-highest text-secondary rounded font-code-sm text-code-sm font-semibold transition-colors border border-surface-container-highest flex items-center gap-1 mx-auto">Open Chain →</button></td></tr></tbody></table></div><div class="px-space-md py-space-xs bg-surface-container-lowest flex items-center justify-between font-code-sm text-code-sm text-on-surface-variant rounded-b"><span class="">Displaying 5 critical triage targets</span><a class="text-secondary hover:underline font-semibold flex items-center gap-1" data-path="chains-explorer" href="#"><span class="">[View all 2,824 chains in Chains Explorer →]</span></a></div></div>
+</div>
+</div>
+<script>
+  function setViewMode(mode) {
+    const btnOp = document.getElementById('btnOperator');
+    const btnRes = document.getElementById('btnResearch');
+    if (mode === 'operator') {
+      btnOp.className = 'px-space-sm py-space-2xs font-label-caps text-label-caps uppercase rounded bg-secondary-container text-on-secondary-container transition-all';
+      btnRes.className = 'px-space-sm py-space-2xs font-label-caps text-label-caps uppercase rounded text-on-surface-variant hover:text-on-surface transition-all';
+    } else {
+      btnRes.className = 'px-space-sm py-space-2xs font-label-caps text-label-caps uppercase rounded bg-secondary-container text-on-secondary-container transition-all';
+      btnOp.className = 'px-space-sm py-space-2xs font-label-caps text-label-caps uppercase rounded text-on-surface-variant hover:text-on-surface transition-all';
+    }
+  }
+</script></main><footer class="fixed bottom-0 w-full h-space-row-compact-h z-40 bg-surface-container-lowest/95 backdrop-blur-md shadow-[0_-1px_6px_rgba(0,0,0,0.5)] flex items-center justify-between px-space-lg font-code-sm text-code-sm text-on-surface-variant"><div class="flex items-center gap-space-lg"><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">PROVENANCE:</span><span class="text-on-surface font-semibold">REAL_EXPORT_REPLAY</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">CONFIG:</span><span class="text-on-surface">v1.0</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">ENGINE:</span><span class="text-secondary">hindsight-v1</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">ACTIVE SNAPSHOT:</span><span class="text-on-surface">real_alarm_20260801</span></span></div><div class="flex items-center gap-space-lg"><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">MOCK GATEWAY:</span><span class="text-secondary">:8085</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">API:</span><span class="text-secondary">:8000</span></span><span class="flex items-center gap-space-xs"><span class="w-1.5 h-1.5 rounded-full bg-secondary"></span><span class="font-label-caps text-label-caps uppercase text-on-surface">STREAM SYNCED</span></span></div></footer>
+
+</body></html>

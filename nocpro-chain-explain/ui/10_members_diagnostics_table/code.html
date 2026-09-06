@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+          "background": "#0c1322",
+          "primary-container": "#ff5451",
+          "surface-container": "#191f2f",
+          "secondary-fixed": "#c4e7ff",
+          "on-primary-fixed-variant": "#930013",
+          "surface": "#0c1322",
+          "surface-bright": "#323949",
+          "outline-variant": "#5b403e",
+          "secondary-container": "#00a6e0",
+          "on-tertiary-fixed-variant": "#653e00",
+          "surface-dim": "#0c1322",
+          "surface-variant": "#2e3545",
+          "inverse-surface": "#dce2f7",
+          "on-secondary-fixed": "#001e2c",
+          "surface-container-high": "#232a3a",
+          "on-background": "#dce2f7",
+          "secondary-fixed-dim": "#7bd0ff",
+          "error-container": "#93000a",
+          "on-surface-variant": "#e4beba",
+          "on-error": "#690005",
+          "on-surface": "#dce2f7",
+          "on-secondary-fixed-variant": "#004c69",
+          "on-error-container": "#ffdad6",
+          "inverse-primary": "#b91a24",
+          "outline": "#ab8986",
+          "surface-container-highest": "#2e3545",
+          "on-tertiary": "#472a00",
+          "on-tertiary-container": "#3e2400",
+          "on-primary": "#68000a",
+          "tertiary-fixed": "#ffddb8",
+          "surface-container-low": "#141b2b",
+          "tertiary": "#ffb95f",
+          "surface-container-lowest": "#070e1d",
+          "inverse-on-surface": "#293040",
+          "tertiary-container": "#ca8100",
+          "secondary": "#7bd0ff",
+          "primary-fixed": "#ffdad7",
+          "primary-fixed-dim": "#ffb3ad",
+          "tertiary-fixed-dim": "#ffb95f",
+          "on-tertiary-fixed": "#2a1700",
+          "on-secondary-container": "#00374d",
+          "on-secondary": "#00354a",
+          "error": "#ffb4ab",
+          "surface-tint": "#ffb3ad",
+          "on-primary-fixed": "#410004",
+          "primary": "#ffb3ad",
+          "on-primary-container": "#5c0008"
+        },
+        "borderRadius": {
+          "DEFAULT": "0.125rem",
+          "lg": "0.25rem",
+          "xl": "0.5rem",
+          "full": "0.75rem"
+        },
+        "spacing": {
+          "space-xs": "4px",
+          "space-md": "12px",
+          "row-standard-h": "36px",
+          "space-sm": "8px",
+          "space-2xs": "2px",
+          "panel-header-h": "36px",
+          "space-xl": "24px",
+          "space-2xl": "32px",
+          "space-lg": "16px",
+          "margin-screen": "16px",
+          "row-compact-h": "28px",
+          "gutter": "12px"
+        },
+        "fontFamily": {
+          "label-caps": [
+            "JetBrains Mono"
+          ],
+          "headline-lg": [
+            "Inter"
+          ],
+          "headline-md": [
+            "Inter"
+          ],
+          "body-md": [
+            "Inter"
+          ],
+          "headline-xl": [
+            "Inter"
+          ],
+          "code-lg": [
+            "JetBrains Mono"
+          ],
+          "code-md": [
+            "JetBrains Mono"
+          ],
+          "body-lg": [
+            "Inter"
+          ],
+          "code-sm": [
+            "JetBrains Mono"
+          ],
+          "body-sm": [
+            "Inter"
+          ]
+        },
+        "fontSize": {
+          "label-caps": [
+            "10px",
+            {
+              "lineHeight": "12px",
+              "letterSpacing": "0.08em",
+              "fontWeight": "700"
+            }
+          ],
+          "headline-lg": [
+            "24px",
+            {
+              "lineHeight": "32px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "600"
+            }
+          ],
+          "headline-md": [
+            "18px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "600"
+            }
+          ],
+          "body-md": [
+            "14px",
+            {
+              "lineHeight": "20px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ],
+          "headline-xl": [
+            "32px",
+            {
+              "lineHeight": "40px",
+              "letterSpacing": "-0.02em",
+              "fontWeight": "700"
+            }
+          ],
+          "code-lg": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "500"
+            }
+          ],
+          "code-md": [
+            "13px",
+            {
+              "lineHeight": "18px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "500"
+            }
+          ],
+          "body-lg": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ],
+          "code-sm": [
+            "11px",
+            {
+              "lineHeight": "14px",
+              "letterSpacing": "0.02em",
+              "fontWeight": "500"
+            }
+          ],
+          "body-sm": [
+            "12px",
+            {
+              "lineHeight": "16px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ]
+        }
+      },
+    },
+  }</script></head><body class="bg-background font-body-md text-body-md text-on-surface select-none antialiased min-h-screen"><header class="fixed top-0 w-full z-50 bg-surface-container-lowest/95 backdrop-blur-md shadow-[0_1px_8px_rgba(0,0,0,0.45)]"><div class="h-20 w-full px-space-lg flex flex-col justify-between pt-space-xs"><div class="flex items-center justify-between gap-space-lg h-space-panel-header-h"><div class="flex items-center gap-space-md"><img alt="Viettel NocPro Hindsight Logo" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1VLqt94IO72isT_Nhyfi3O0p329p6SPzfuOcFUhdjnn8X1-paKZEn3Kdz9cb87XnOV3_OjW9vFvGlm5nI0uryu9mBhLWEE_pMJPdW1t_aKh2AoCI1OF5xUWOKCff5NhVrtDKVdE4pqPxhqRRNezzPeDUhHpae3vlgJ8jBb4ZIZ66NnULybPG-B8sglXpVM1t-schU1EMCxfKCjw3Q9hz3Da91Ik7X0JYQv8Plu-0d9wOXmyK_aboUITYQ"/><div class="flex flex-col"><span class="font-headline-md text-headline-md font-bold tracking-tight text-on-surface leading-none">NocPro Hindsight</span><span class="font-label-caps text-label-caps uppercase text-secondary font-semibold tracking-wider">Chain Explain &amp; RCA Engine</span></div><div class="h-space-lg w-px bg-surface-container-highest ml-space-xs"></div><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container rounded cursor-pointer hover:bg-surface-container-high transition-colors"><span class="material-symbols-outlined text-secondary text-[16px]">history</span><div class="flex flex-col"><div class="flex items-center gap-space-xs"><span class="font-code-sm text-code-sm text-on-surface font-semibold">real_alarm_20260801</span><span class="material-symbols-outlined text-on-surface-variant text-[14px]">expand_more</span></div><span class="font-code-sm text-code-sm text-on-surface-variant">212,636 alarms • 1,845 chains • 10:00:00 UTC</span></div></div></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container-low rounded"><div class="w-2 h-2 rounded-full bg-secondary animate-pulse"></div><span class="font-code-sm text-code-sm text-on-surface font-semibold tracking-wide">ONLINE (READY)</span><span class="font-code-sm text-code-sm text-on-surface-variant">/ hindsight-v1</span></div><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container-low rounded"><span class="material-symbols-outlined text-secondary text-[14px]">wifi_tethering</span><span class="font-code-sm text-code-sm text-on-surface">:8085</span><span class="font-label-caps text-label-caps uppercase text-secondary font-bold">LIVE</span></div><div class="flex items-center gap-space-sm px-space-sm py-space-2xs bg-surface-container-low rounded"><div class="flex flex-col"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">LATENCY</span><span class="font-code-sm text-code-sm text-on-surface font-semibold">1.2ms</span></div><div class="h-4 w-px bg-surface-container-highest"></div><div class="flex flex-col"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">EPS</span><span class="font-code-sm text-code-sm text-on-surface font-semibold">14.2k/s</span></div></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div><nav class="w-full flex items-center gap-space-xs overflow-x-auto h-space-panel-header-h" data-active-classes="bg-surface-container-high text-secondary border-b-2 border-secondary font-semibold"><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="chain-hierarchy-and-tree" href="#">Chain Hierarchy &amp; Tree</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="member-diagnostics-table" href="#">Member Diagnostics Table</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="pair-why-and-evidence-matrix" href="#">Pair WHY &amp; Evidence Matrix</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="structural-audit-conductance" href="#">Structural Audit (Conductance)</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="counterfactual-review-5-ops" href="#">Counterfactual Review (5 Ops)</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="evolution-and-lineage" href="#">Evolution &amp; Lineage</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="topology-explorer-ip-it" href="#">Topology Explorer (IP/IT)</a></nav></div></header><main class="w-full pt-20 bg-background min-h-[calc(100vh-28px)]"><div class="flex flex-col w-full text-on-surface">
+<div class="w-full bg-surface-container-lowest px-space-lg py-space-sm flex flex-wrap items-center justify-between gap-space-md shadow-sm">
+<div class="flex items-center gap-space-md min-w-0">
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm">
+<span class="text-on-surface-variant hover:text-secondary cursor-pointer transition-colors">Snapshot S102</span>
+<span class="text-on-surface-variant">/</span>
+<span class="text-secondary font-semibold cursor-pointer">Chain C2214039</span>
+<span class="text-on-surface-variant">/</span>
+<span class="text-on-surface font-bold">Members Diagnostics</span>
+<span class="ml-space-xs px-space-xs py-space-2xs rounded bg-surface-container text-secondary-fixed font-label-caps text-label-caps uppercase">58 Total Alarms</span>
+</div>
+<div class="hidden xl:flex items-center gap-space-xs pl-space-md">
+<button class="px-space-sm py-space-2xs rounded bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-body-sm text-body-sm transition-colors">Snapshot</button>
+<button class="px-space-sm py-space-2xs rounded bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-body-sm text-body-sm transition-colors">Overview</button>
+<button class="px-space-sm py-space-2xs rounded bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-body-sm text-body-sm transition-colors">WHY</button>
+<button class="px-space-sm py-space-2xs rounded bg-surface-container-high text-secondary font-semibold font-body-sm text-body-sm">Members (Active)</button>
+<button class="px-space-sm py-space-2xs rounded bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-body-sm text-body-sm transition-colors">Audit</button>
+<button class="px-space-sm py-space-2xs rounded bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-body-sm text-body-sm transition-colors">Recommendations</button>
+<button class="px-space-sm py-space-2xs rounded bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-body-sm text-body-sm transition-colors">Evolution</button>
+<button class="px-space-sm py-space-2xs rounded bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-body-sm text-body-sm transition-colors">Topology</button>
+</div>
+</div>
+<div class="flex items-center gap-space-sm shrink-0">
+<button class="flex items-center gap-space-xs px-space-md py-space-xs rounded bg-surface-container-high text-on-surface hover:bg-surface-bright font-code-sm text-code-sm font-semibold transition-all">
+<span class="material-symbols-outlined text-[16px] text-secondary">file_download</span>
+        Export CSV
+      </button>
+<button class="flex items-center gap-space-xs px-space-md py-space-xs rounded bg-secondary-container text-on-secondary-container hover:opacity-90 font-code-sm text-code-sm font-semibold transition-all shadow-sm">
+<span class="material-symbols-outlined text-[16px]">bookmark</span>
+        Batch Flag / Tag
+      </button>
+</div>
+</div>
+<div class="w-full px-space-lg py-space-md bg-surface-container-low grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-space-md">
+<div class="p-space-sm rounded bg-surface-container flex flex-col justify-between shadow-sm">
+<div class="flex items-center justify-between">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">TOTAL MEMBERS</span>
+<span class="material-symbols-outlined text-secondary text-[16px]">hub</span>
+</div>
+<div class="flex items-baseline gap-space-xs mt-space-xs">
+<span class="font-headline-md text-headline-md font-bold text-on-surface">58</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">alarms</span>
+</div>
+<div class="w-full h-1 bg-surface-container-highest rounded-full mt-space-xs overflow-hidden">
+<div class="h-full bg-secondary w-full"></div>
+</div>
+</div>
+<div class="p-space-sm rounded bg-surface-container flex flex-col justify-between shadow-sm">
+<div class="flex items-center justify-between">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">CORE CLUSTER</span>
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+</div>
+<div class="flex items-baseline gap-space-xs mt-space-xs">
+<span class="font-headline-md text-headline-md font-bold text-secondary">42</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">72.4%</span>
+</div>
+<div class="w-full h-1 bg-surface-container-highest rounded-full mt-space-xs overflow-hidden">
+<div class="h-full bg-secondary w-[72%]"></div>
+</div>
+</div>
+<div class="p-space-sm rounded bg-surface-container flex flex-col justify-between shadow-sm">
+<div class="flex items-center justify-between">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">PERIPHERAL</span>
+<span class="w-2 h-2 rounded-full bg-secondary-fixed"></span>
+</div>
+<div class="flex items-baseline gap-space-xs mt-space-xs">
+<span class="font-headline-md text-headline-md font-bold text-on-surface">12</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">20.7%</span>
+</div>
+<div class="w-full h-1 bg-surface-container-highest rounded-full mt-space-xs overflow-hidden">
+<div class="h-full bg-secondary-fixed w-[21%]"></div>
+</div>
+</div>
+<div class="p-space-sm rounded bg-surface-container flex flex-col justify-between shadow-sm">
+<div class="flex items-center justify-between">
+<span class="font-label-caps text-label-caps uppercase text-error">WEAK / LOW FIT</span>
+<span class="material-symbols-outlined text-error text-[16px] animate-pulse">warning</span>
+</div>
+<div class="flex items-baseline gap-space-xs mt-space-xs">
+<span class="font-headline-md text-headline-md font-bold text-error">2</span>
+<span class="font-code-sm text-code-sm text-on-error-container bg-error-container/50 px-space-2xs rounded">FLAGGED</span>
+</div>
+<div class="w-full h-1 bg-surface-container-highest rounded-full mt-space-xs overflow-hidden">
+<div class="h-full bg-error w-[4%]"></div>
+</div>
+</div>
+<div class="p-space-sm rounded bg-surface-container flex flex-col justify-between shadow-sm">
+<div class="flex items-center justify-between">
+<span class="font-label-caps text-label-caps uppercase text-tertiary">CONNECTORS</span>
+<span class="material-symbols-outlined text-tertiary text-[16px]">sync_alt</span>
+</div>
+<div class="flex items-baseline gap-space-xs mt-space-xs">
+<span class="font-headline-md text-headline-md font-bold text-tertiary">3</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">inter-AS</span>
+</div>
+<div class="w-full h-1 bg-surface-container-highest rounded-full mt-space-xs overflow-hidden">
+<div class="h-full bg-tertiary w-[5%]"></div>
+</div>
+</div>
+<div class="p-space-sm rounded bg-surface-container flex flex-col justify-between shadow-sm">
+<div class="flex items-center justify-between">
+<span class="font-label-caps text-label-caps uppercase text-primary">UNIQUE REDUNDANCY</span>
+<span class="material-symbols-outlined text-primary text-[16px]">priority_high</span>
+</div>
+<div class="flex items-baseline gap-space-xs mt-space-xs">
+<span class="font-headline-md text-headline-md font-bold text-primary">1</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">SPOF risk</span>
+</div>
+<div class="w-full h-1 bg-surface-container-highest rounded-full mt-space-xs overflow-hidden">
+<div class="h-full bg-primary w-[2%]"></div>
+</div>
+</div>
+</div>
+<div class="w-full px-space-lg py-space-sm bg-surface-container-lowest flex flex-wrap items-center justify-between gap-space-md">
+<div class="flex items-center gap-space-xs flex-wrap">
+<button class="px-space-md py-space-xs rounded bg-surface-bright text-on-surface font-code-sm text-code-sm font-semibold flex items-center gap-space-xs">
+<span>All</span>
+<span class="px-space-2xs py-0 rounded bg-surface-container-highest text-secondary text-[10px]">58</span>
+</button>
+<button class="px-space-md py-space-xs rounded bg-surface-container text-on-surface-variant hover:text-on-surface font-code-sm text-code-sm flex items-center gap-space-xs">
+<span>Core</span>
+<span class="px-space-2xs py-0 rounded bg-surface-container-highest text-on-surface text-[10px]">42</span>
+</button>
+<button class="px-space-md py-space-xs rounded bg-error-container/40 text-error hover:bg-error-container/60 font-code-sm text-code-sm font-semibold flex items-center gap-space-xs">
+<span class="w-1.5 h-1.5 rounded-full bg-error animate-ping"></span>
+<span>Weak / Low Cohesion</span>
+<span class="px-space-2xs py-0 rounded bg-error-container text-error text-[10px]">2</span>
+</button>
+<button class="px-space-md py-space-xs rounded bg-surface-container text-on-surface-variant hover:text-on-surface font-code-sm text-code-sm flex items-center gap-space-xs">
+<span>Connectors</span>
+<span class="px-space-2xs py-0 rounded bg-surface-container-highest text-on-surface text-[10px]">3</span>
+</button>
+</div>
+<div class="flex items-center gap-space-md">
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-space-sm text-on-surface-variant text-[16px]">search</span>
+<input class="pl-8 pr- space-xl py-space-xs w-72 rounded bg-surface-container-high text-on-surface placeholder:text-on-surface-variant font-code-sm text-code-sm outline-none focus:bg-surface-bright transition-all" placeholder="Search alarm, device, interface... (Ctrl+K)" type="text"/>
+<span class="absolute right-space-sm px-space-2xs py-space-2xs rounded bg-surface-container font-label-caps text-[9px] text-on-surface-variant uppercase">CTRL+K</span>
+</div>
+<div class="h-6 w-px bg-surface-container-highest"></div>
+<button class="p-space-xs rounded bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors" title="Toggle Compact View">
+<span class="material-symbols-outlined text-[18px]">density_small</span>
+</button>
+<button class="p-space-xs rounded bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors" title="Configure Columns">
+<span class="material-symbols-outlined text-[18px]">view_column</span>
+</button>
+</div>
+</div>
+<div class="w-full overflow-x-auto bg-surface-container-lowest">
+<table class="w-full text-left font-body-sm text-body-sm text-on-surface">
+<thead class="bg-surface-container font-label-caps text-label-caps uppercase text-on-surface-variant select-none">
+<tr>
+<th class="px-space-md py-space-sm w-8 text-center">
+<input class="rounded bg-surface-container-lowest accent-secondary cursor-pointer" type="checkbox"/>
+</th>
+<th class="px-space-md py-space-sm">Alarm Identity &amp; Type</th>
+<th class="px-space-md py-space-sm">Timestamp &amp; Delta</th>
+<th class="px-space-md py-space-sm">Entity / Interface</th>
+<th class="px-space-md py-space-sm">Membership Role</th>
+<th class="px-space-md py-space-sm">Structural Role</th>
+<th class="px-space-md py-space-sm">Redundancy Status</th>
+<th class="px-space-md py-space-sm text-right">Cohesion Fit</th>
+<th class="px-space-md py-space-sm">Rival Margin (Shift)</th>
+<th class="px-space-md py-space-sm text-center">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-transparent font-code-sm text-code-sm">
+<tr class="hover:bg-surface-container transition-colors bg-surface-container-lowest/80">
+<td class="px-space-md py-space-xs text-center">
+<input class="rounded bg-surface-container-lowest accent-secondary cursor-pointer" type="checkbox"/>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-bold text-secondary">ALM-47933128</span>
+<span class="px-space-2xs py-0 rounded bg-primary-container/20 text-primary font-label-caps text-[9px] uppercase">CRITICAL</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface truncate">GigabitEthernet6/0/2 Down (Physical Link Failure)</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<span class="text-on-surface">10:00:00.000</span>
+<span class="text-secondary font-semibold font-label-caps text-[10px]">T0 +0.00s (ROOT)</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<span class="text-on-surface font-semibold">DEHL01-CR01</span>
+<span class="text-on-surface-variant font-label-caps text-[10px]">AS65001 • IP-CORE</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="inline-flex items-center gap-space-2xs px-space-xs py-space-2xs rounded bg-secondary-container/20 text-secondary border-0 font-label-caps text-[10px] font-bold tracking-wider uppercase">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span> CORE
+            </span>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="inline-flex items-center px-space-xs py-space-2xs rounded bg-surface-variant text-on-surface-variant font-label-caps text-[10px] uppercase">
+              BRIDGE
+            </span>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="inline-flex items-center px-space-xs py-space-2xs rounded bg-error-container/30 text-error font-label-caps text-[10px] font-bold uppercase">
+              UNIQUE (SPOF)
+            </span>
+</td>
+<td class="px-space-md py-space-xs text-right">
+<div class="flex flex-col items-end">
+<span class="font-bold text-on-surface">0.96</span>
+<div class="w-16 h-1 bg-surface-container-highest rounded-full mt-1 overflow-hidden">
+<div class="h-full bg-secondary w-[96%]"></div>
+</div>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="text-secondary font-semibold">+0.44</span>
+<span class="text-on-surface-variant text-[11px] ml-space-2xs">to C2214048</span>
+</td>
+<td class="px-space-md py-space-xs text-center">
+<div class="flex items-center justify-center gap-space-xs">
+<button class="p-space-2xs rounded hover:bg-surface-container-high text-on-surface-variant hover:text-secondary transition-colors" title="Inspect WHY Matrix">
+<span class="material-symbols-outlined text-[16px]">visibility</span>
+</button>
+<button class="p-space-2xs rounded hover:bg-surface-container-high text-on-surface-variant hover:text-primary transition-colors" title="Flag Node">
+<span class="material-symbols-outlined text-[16px]">flag</span>
+</button>
+</div>
+</td>
+</tr>
+<tr class="hover:bg-surface-container transition-colors bg-surface-container-low/40">
+<td class="px-space-md py-space-xs text-center">
+<input class="rounded bg-surface-container-lowest accent-secondary cursor-pointer" type="checkbox"/>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-bold text-secondary">ALM-715054</span>
+<span class="px-space-2xs py-0 rounded bg-tertiary-container/30 text-tertiary font-label-caps text-[9px] uppercase">MAJOR</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface truncate">BGP Peering Session Flap (Peer: 10.244.18.9)</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<span class="text-on-surface">10:00:00.142</span>
+<span class="text-on-surface-variant font-label-caps text-[10px]">T0 +0.14s</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<span class="text-on-surface font-semibold">DEHT01-AR02</span>
+<span class="text-on-surface-variant font-label-caps text-[10px]">AS65001 • AGG-RTR</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="inline-flex items-center gap-space-2xs px-space-xs py-space-2xs rounded bg-secondary-container/20 text-secondary font-label-caps text-[10px] font-bold tracking-wider uppercase">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span> CORE
+            </span>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="inline-flex items-center px-space-xs py-space-2xs rounded bg-tertiary-container/20 text-tertiary font-label-caps text-[10px] uppercase">
+              CONNECTOR
+            </span>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="inline-flex items-center px-space-xs py-space-2xs rounded bg-surface-variant text-on-surface-variant font-label-caps text-[10px] uppercase">
+              BACKUP_PAIR (PASSIVE)
+            </span>
+</td>
+<td class="px-space-md py-space-xs text-right">
+<div class="flex flex-col items-end">
+<span class="font-bold text-on-surface">0.91</span>
+<div class="w-16 h-1 bg-surface-container-highest rounded-full mt-1 overflow-hidden">
+<div class="h-full bg-secondary w-[91%]"></div>
+</div>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="text-secondary font-semibold">+0.32</span>
+<span class="text-on-surface-variant text-[11px] ml-space-2xs">to C2214048</span>
+</td>
+<td class="px-space-md py-space-xs text-center">
+<div class="flex items-center justify-center gap-space-xs">
+<button class="p-space-2xs rounded hover:bg-surface-container-high text-on-surface-variant hover:text-secondary transition-colors" title="Inspect WHY Matrix">
+<span class="material-symbols-outlined text-[16px]">visibility</span>
+</button>
+<button class="p-space-2xs rounded hover:bg-surface-container-high text-on-surface-variant hover:text-primary transition-colors" title="Flag Node">
+<span class="material-symbols-outlined text-[16px]">flag</span>
+</button>
+</div>
+</td>
+</tr>
+<tr class="hover:bg-surface-container transition-colors bg-surface-container-lowest/80">
+<td class="px-space-md py-space-xs text-center">
+<input class="rounded bg-surface-container-lowest accent-secondary cursor-pointer" type="checkbox"/>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-bold text-secondary">ALM-551029</span>
+<span class="px-space-2xs py-0 rounded bg-tertiary-container/30 text-tertiary font-label-caps text-[9px] uppercase">MAJOR</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface truncate">OSPF Neighbor State: DOWN (Area 0.0.0.0)</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<span class="text-on-surface">10:00:00.890</span>
+<span class="text-on-surface-variant font-label-caps text-[10px]">T0 +0.89s</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<span class="text-on-surface font-semibold">DEHL01-CR02</span>
+<span class="text-on-surface-variant font-label-caps text-[10px]">AS65001 • IP-CORE</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="inline-flex items-center gap-space-2xs px-space-xs py-space-2xs rounded bg-secondary-container/20 text-secondary font-label-caps text-[10px] font-bold tracking-wider uppercase">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span> CORE
+            </span>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="inline-flex items-center px-space-xs py-space-2xs rounded bg-surface-variant text-on-surface-variant font-label-caps text-[10px] uppercase">
+              LEAF
+            </span>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="inline-flex items-center px-space-xs py-space-2xs rounded bg-surface-variant text-on-surface-variant font-label-caps text-[10px] uppercase">
+              SHARED_FIBER
+            </span>
+</td>
+<td class="px-space-md py-space-xs text-right">
+<div class="flex flex-col items-end">
+<span class="font-bold text-on-surface">0.88</span>
+<div class="w-16 h-1 bg-surface-container-highest rounded-full mt-1 overflow-hidden">
+<div class="h-full bg-secondary w-[88%]"></div>
+</div>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="text-secondary font-semibold">+0.21</span>
+<span class="text-on-surface-variant text-[11px] ml-space-2xs">to C2214048</span>
+</td>
+<td class="px-space-md py-space-xs text-center">
+<div class="flex items-center justify-center gap-space-xs">
+<button class="p-space-2xs rounded hover:bg-surface-container-high text-on-surface-variant hover:text-secondary transition-colors" title="Inspect WHY Matrix">
+<span class="material-symbols-outlined text-[16px]">visibility</span>
+</button>
+<button class="p-space-2xs rounded hover:bg-surface-container-high text-on-surface-variant hover:text-primary transition-colors" title="Flag Node">
+<span class="material-symbols-outlined text-[16px]">flag</span>
+</button>
+</div>
+</td>
+</tr>
+<tr class="hover:bg-surface-container transition-colors bg-surface-container-low/40">
+<td class="px-space-md py-space-xs text-center">
+<input class="rounded bg-surface-container-lowest accent-secondary cursor-pointer" type="checkbox"/>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-bold text-on-surface">ALM-308192</span>
+<span class="px-space-2xs py-0 rounded bg-surface-container-highest text-on-surface-variant font-label-caps text-[9px] uppercase">WARNING</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface truncate">Optical RX Power Low Threshold (-24.2 dBm)</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<span class="text-on-surface">10:00:01.310</span>
+<span class="text-on-surface-variant font-label-caps text-[10px]">T0 +1.31s</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<span class="text-on-surface font-semibold">DEHT01-DW01</span>
+<span class="text-on-surface-variant font-label-caps text-[10px]">OPTICAL • CH-34</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="inline-flex items-center px-space-xs py-space-2xs rounded bg-secondary-fixed/15 text-secondary-fixed-dim font-label-caps text-[10px] font-bold uppercase">
+              PERIPHERAL
+            </span>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="inline-flex items-center px-space-xs py-space-2xs rounded bg-surface-variant text-on-surface-variant font-label-caps text-[10px] uppercase">
+              LEAF
+            </span>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="inline-flex items-center px-space-xs py-space-2xs rounded bg-surface-variant text-on-surface-variant font-label-caps text-[10px] uppercase">
+              SHARED_FIBER
+            </span>
+</td>
+<td class="px-space-md py-space-xs text-right">
+<div class="flex flex-col items-end">
+<span class="font-bold text-on-surface">0.74</span>
+<div class="w-16 h-1 bg-surface-container-highest rounded-full mt-1 overflow-hidden">
+<div class="h-full bg-secondary w-[74%]"></div>
+</div>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="text-on-surface font-semibold">+0.12</span>
+<span class="text-on-surface-variant text-[11px] ml-space-2xs">to C2214051</span>
+</td>
+<td class="px-space-md py-space-xs text-center">
+<div class="flex items-center justify-center gap-space-xs">
+<button class="p-space-2xs rounded hover:bg-surface-container-high text-on-surface-variant hover:text-secondary transition-colors" title="Inspect WHY Matrix">
+<span class="material-symbols-outlined text-[16px]">visibility</span>
+</button>
+<button class="p-space-2xs rounded hover:bg-surface-container-high text-on-surface-variant hover:text-primary transition-colors" title="Flag Node">
+<span class="material-symbols-outlined text-[16px]">flag</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- WEAK MEMBER 1 - HIGHLIGHTED -->
+<tr class="bg-error-container/20 hover:bg-error-container/30 transition-colors">
+<td class="px-space-md py-space-xs text-center">
+<input checked="" class="rounded bg-surface-container-lowest accent-error cursor-pointer" type="checkbox"/>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-bold text-error flex items-center gap-space-2xs">
+<span class="material-symbols-outlined text-[14px]">warning</span>
+                  ALM-99210014
+                </span>
+<span class="px-space-2xs py-0 rounded bg-error-container text-error font-label-caps text-[9px] uppercase">LOW COHESION</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface truncate">Chassis Ingress Sensor 4: High CPU Temp (74°C)</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<span class="text-on-surface">10:00:04.102</span>
+<span class="text-error font-semibold font-label-caps text-[10px]">T0 +4.10s (DELAYED)</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<span class="text-on-surface font-semibold">DEHT02-SW09</span>
+<span class="text-on-surface-variant font-label-caps text-[10px]">AGG-LEAF • AS65002</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="inline-flex items-center gap-space-2xs px-space-xs py-space-2xs rounded bg-error-container text-error font-label-caps text-[10px] font-bold tracking-wider uppercase">
+<span class="w-1.5 h-1.5 rounded-full bg-error animate-ping"></span> WEAK (ISOLATED)
+            </span>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="inline-flex items-center px-space-xs py-space-2xs rounded bg-surface-variant text-on-surface-variant font-label-caps text-[10px] uppercase">
+              LEAF
+            </span>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="inline-flex items-center px-space-xs py-space-2xs rounded bg-surface-variant text-on-surface-variant font-label-caps text-[10px] uppercase">
+              INDEPENDENT
+            </span>
+</td>
+<td class="px-space-md py-space-xs text-right">
+<div class="flex flex-col items-end">
+<span class="font-bold text-error">0.32 [LOW]</span>
+<div class="w-16 h-1 bg-surface-container-highest rounded-full mt-1 overflow-hidden">
+<div class="h-full bg-error w-[32%]"></div>
+</div>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<span class="text-error font-bold">-0.08 (DEVIANT)</span>
+<span class="text-error text-[10px] font-semibold">MIGRATE → C2214048</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs text-center">
+<div class="flex items-center justify-center gap-space-xs">
+<button class="px-space-xs py-space-2xs rounded bg-surface-container-high hover:bg-surface-bright text-on-surface text-[11px] font-semibold flex items-center gap-space-2xs">
+<span>Shift</span>
+<span class="material-symbols-outlined text-[14px]">call_split</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- WEAK MEMBER 2 - HIGHLIGHTED -->
+<tr class="bg-error-container/20 hover:bg-error-container/30 transition-colors">
+<td class="px-space-md py-space-xs text-center">
+<input checked="" class="rounded bg-surface-container-lowest accent-error cursor-pointer" type="checkbox"/>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-bold text-error flex items-center gap-space-2xs">
+<span class="material-symbols-outlined text-[14px]">warning</span>
+                  ALM-47933130
+                </span>
+<span class="px-space-2xs py-0 rounded bg-error-container text-error font-label-caps text-[9px] uppercase">TOPOLOGY MISMATCH</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface truncate">TenGigE0/1/0 Port Carrier Loss (Subtended Link)</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<span class="text-on-surface">10:00:04.882</span>
+<span class="text-error font-semibold font-label-caps text-[10px]">T0 +4.88s (DELAYED)</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<span class="text-on-surface font-semibold">DEHT02-SW11</span>
+<span class="text-on-surface-variant font-label-caps text-[10px]">METRO-EDGE • SITE-B</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="inline-flex items-center gap-space-2xs px-space-xs py-space-2xs rounded bg-error-container text-error font-label-caps text-[10px] font-bold tracking-wider uppercase">
+<span class="w-1.5 h-1.5 rounded-full bg-error animate-ping"></span> WEAK (OUTLIER)
+            </span>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="inline-flex items-center px-space-xs py-space-2xs rounded bg-surface-variant text-on-surface-variant font-label-caps text-[10px] uppercase">
+              LEAF
+            </span>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="inline-flex items-center px-space-xs py-space-2xs rounded bg-surface-variant text-on-surface-variant font-label-caps text-[10px] uppercase">
+              SHARED_FIBER
+            </span>
+</td>
+<td class="px-space-md py-space-xs text-right">
+<div class="flex flex-col items-end">
+<span class="font-bold text-error">0.29 [LOW]</span>
+<div class="w-16 h-1 bg-surface-container-highest rounded-full mt-1 overflow-hidden">
+<div class="h-full bg-error w-[29%]"></div>
+</div>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<span class="text-error font-bold">-0.14 (DEVIANT)</span>
+<span class="text-error text-[10px] font-semibold">MIGRATE → C2214048</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs text-center">
+<div class="flex items-center justify-center gap-space-xs">
+<button class="px-space-xs py-space-2xs rounded bg-surface-container-high hover:bg-surface-bright text-on-surface text-[11px] font-semibold flex items-center gap-space-2xs">
+<span>Shift</span>
+<span class="material-symbols-outlined text-[14px]">call_split</span>
+</button>
+</div>
+</td>
+</tr>
+<tr class="hover:bg-surface-container transition-colors bg-surface-container-lowest/80">
+<td class="px-space-md py-space-xs text-center">
+<input class="rounded bg-surface-container-lowest accent-secondary cursor-pointer" type="checkbox"/>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-bold text-secondary">ALM-110934</span>
+<span class="px-space-2xs py-0 rounded bg-tertiary-container/30 text-tertiary font-label-caps text-[9px] uppercase">MAJOR</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface truncate">MPLS LDP Session Drop (LSR ID: 10.0.0.12)</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<span class="text-on-surface">10:00:01.890</span>
+<span class="text-on-surface-variant font-label-caps text-[10px]">T0 +1.89s</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<div class="flex flex-col">
+<span class="text-on-surface font-semibold">DEHL01-CR01</span>
+<span class="text-on-surface-variant font-label-caps text-[10px]">AS65001 • IP-CORE</span>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="inline-flex items-center gap-space-2xs px-space-xs py-space-2xs rounded bg-secondary-container/20 text-secondary font-label-caps text-[10px] font-bold tracking-wider uppercase">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span> CORE
+            </span>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="inline-flex items-center px-space-xs py-space-2xs rounded bg-tertiary-container/20 text-tertiary font-label-caps text-[10px] uppercase">
+              CONNECTOR
+            </span>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="inline-flex items-center px-space-xs py-space-2xs rounded bg-surface-variant text-on-surface-variant font-label-caps text-[10px] uppercase">
+              BACKUP_PAIR
+            </span>
+</td>
+<td class="px-space-md py-space-xs text-right">
+<div class="flex flex-col items-end">
+<span class="font-bold text-on-surface">0.89</span>
+<div class="w-16 h-1 bg-surface-container-highest rounded-full mt-1 overflow-hidden">
+<div class="h-full bg-secondary w-[89%]"></div>
+</div>
+</div>
+</td>
+<td class="px-space-md py-space-xs">
+<span class="text-secondary font-semibold">+0.28</span>
+<span class="text-on-surface-variant text-[11px] ml-space-2xs">to C2214048</span>
+</td>
+<td class="px-space-md py-space-xs text-center">
+<div class="flex items-center justify-center gap-space-xs">
+<button class="p-space-2xs rounded hover:bg-surface-container-high text-on-surface-variant hover:text-secondary transition-colors" title="Inspect WHY Matrix">
+<span class="material-symbols-outlined text-[16px]">visibility</span>
+</button>
+<button class="p-space-2xs rounded hover:bg-surface-container-high text-on-surface-variant hover:text-primary transition-colors" title="Flag Node">
+<span class="material-symbols-outlined text-[16px]">flag</span>
+</button>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="w-full bg-surface-container-high px-space-lg py-space-md shadow-[0_-2px_10px_rgba(0,0,0,0.5)] flex flex-col md:flex-row items-center justify-between gap-space-md">
+<div class="flex items-center gap-space-md">
+<div class="w-9 h-9 rounded bg-error-container/40 flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-error text-[20px]">troubleshoot</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-md text-headline-md font-bold text-on-surface">Pruning &amp; Conductance Audit</span>
+<span class="px-space-xs py-space-2xs rounded bg-error-container text-error font-label-caps text-label-caps uppercase">2 CANDIDATES DETECTED</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-space-2xs">
+          2 weak members identified with Conductance &lt; 0.20 and high affinity to neighbor <span class="text-secondary font-semibold">Chain C2214048</span>. Moving them improves chain modularity score by <span class="text-primary font-bold">+8.4%</span>.
+        </p>
+</div>
+</div>
+<div class="flex items-center gap-space-md shrink-0">
+<div class="hidden lg:flex flex-col text-right font-code-sm text-code-sm">
+<span class="text-on-surface font-semibold">Delta Modularity: +0.084</span>
+<span class="text-on-surface-variant">False Correlation Reduction: 99.4%</span>
+</div>
+<button class="flex items-center gap-space-xs px-space-lg py-space-sm rounded bg-primary text-on-primary hover:opacity-90 font-code-sm text-code-sm font-bold transition-all shadow-md">
+<span class="material-symbols-outlined text-[18px]">rule_settings</span>
+        Evaluate Counterfactual Move
+      </button>
+</div>
+</div>
+<div class="w-full bg-surface-container-lowest px-space-lg py-space-xs flex flex-wrap items-center justify-between gap-space-md font-code-sm text-code-sm text-on-surface-variant">
+<div class="flex items-center gap-space-lg">
+<div class="flex items-center gap-space-xs">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">PROVENANCE:</span>
+<span class="text-on-surface font-semibold">REAL_EXPORT_REPLAY</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">CHAIN ID:</span>
+<span class="text-secondary font-semibold">C2214039</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">ENGINE:</span>
+<span class="text-on-surface">hindsight-v1 (BUILD 902)</span>
+</div>
+</div>
+<div class="flex items-center gap-space-lg">
+<div class="flex items-center gap-space-xs">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">ACTIVE SNAPSHOT:</span>
+<span class="text-on-surface font-mono">real_alarm_20260801</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span class="font-label-caps text-label-caps uppercase text-secondary font-bold">STREAM SYNCED</span>
+</div>
+</div>
+</div>
+</div></main><footer class="fixed bottom-0 w-full h-space-row-compact-h z-40 bg-surface-container-lowest/95 backdrop-blur-md shadow-[0_-1px_6px_rgba(0,0,0,0.5)] flex items-center justify-between px-space-lg font-code-sm text-code-sm text-on-surface-variant"><div class="flex items-center gap-space-lg"><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">PROVENANCE:</span><span class="text-on-surface font-semibold">REAL_EXPORT_REPLAY</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">CONFIG:</span><span class="text-on-surface">v1.0</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">ENGINE:</span><span class="text-secondary">hindsight-v1</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">ACTIVE SNAPSHOT:</span><span class="text-on-surface">real_alarm_20260801</span></span></div><div class="flex items-center gap-space-lg"><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">MOCK GATEWAY:</span><span class="text-secondary">:8085</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">API:</span><span class="text-secondary">:8000</span></span><span class="flex items-center gap-space-xs"><span class="w-1.5 h-1.5 rounded-full bg-secondary"></span><span class="font-label-caps text-label-caps uppercase text-on-surface">STREAM SYNCED</span></span></div></footer></body></html>

@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+          "background": "#0c1322",
+          "primary-container": "#ff5451",
+          "surface-container": "#191f2f",
+          "secondary-fixed": "#c4e7ff",
+          "on-primary-fixed-variant": "#930013",
+          "surface": "#0c1322",
+          "surface-bright": "#323949",
+          "outline-variant": "#5b403e",
+          "secondary-container": "#00a6e0",
+          "on-tertiary-fixed-variant": "#653e00",
+          "surface-dim": "#0c1322",
+          "surface-variant": "#2e3545",
+          "inverse-surface": "#dce2f7",
+          "on-secondary-fixed": "#001e2c",
+          "surface-container-high": "#232a3a",
+          "on-background": "#dce2f7",
+          "secondary-fixed-dim": "#7bd0ff",
+          "error-container": "#93000a",
+          "on-surface-variant": "#e4beba",
+          "on-error": "#690005",
+          "on-surface": "#dce2f7",
+          "on-secondary-fixed-variant": "#004c69",
+          "on-error-container": "#ffdad6",
+          "inverse-primary": "#b91a24",
+          "outline": "#ab8986",
+          "surface-container-highest": "#2e3545",
+          "on-tertiary": "#472a00",
+          "on-tertiary-container": "#3e2400",
+          "on-primary": "#68000a",
+          "tertiary-fixed": "#ffddb8",
+          "surface-container-low": "#141b2b",
+          "tertiary": "#ffb95f",
+          "surface-container-lowest": "#070e1d",
+          "inverse-on-surface": "#293040",
+          "tertiary-container": "#ca8100",
+          "secondary": "#7bd0ff",
+          "primary-fixed": "#ffdad7",
+          "primary-fixed-dim": "#ffb3ad",
+          "tertiary-fixed-dim": "#ffb95f",
+          "on-tertiary-fixed": "#2a1700",
+          "on-secondary-container": "#00374d",
+          "on-secondary": "#00354a",
+          "error": "#ffb4ab",
+          "surface-tint": "#ffb3ad",
+          "on-primary-fixed": "#410004",
+          "primary": "#ffb3ad",
+          "on-primary-container": "#5c0008"
+        },
+        "borderRadius": {
+          "DEFAULT": "0.125rem",
+          "lg": "0.25rem",
+          "xl": "0.5rem",
+          "full": "0.75rem"
+        },
+        "spacing": {
+          "space-xs": "4px",
+          "space-md": "12px",
+          "row-standard-h": "36px",
+          "space-sm": "8px",
+          "space-2xs": "2px",
+          "panel-header-h": "36px",
+          "space-xl": "24px",
+          "space-2xl": "32px",
+          "space-lg": "16px",
+          "margin-screen": "16px",
+          "row-compact-h": "28px",
+          "gutter": "12px"
+        },
+        "fontFamily": {
+          "label-caps": [
+            "JetBrains Mono"
+          ],
+          "headline-lg": [
+            "Inter"
+          ],
+          "headline-md": [
+            "Inter"
+          ],
+          "body-md": [
+            "Inter"
+          ],
+          "headline-xl": [
+            "Inter"
+          ],
+          "code-lg": [
+            "JetBrains Mono"
+          ],
+          "code-md": [
+            "JetBrains Mono"
+          ],
+          "body-lg": [
+            "Inter"
+          ],
+          "code-sm": [
+            "JetBrains Mono"
+          ],
+          "body-sm": [
+            "Inter"
+          ]
+        },
+        "fontSize": {
+          "label-caps": [
+            "10px",
+            {
+              "lineHeight": "12px",
+              "letterSpacing": "0.08em",
+              "fontWeight": "700"
+            }
+          ],
+          "headline-lg": [
+            "24px",
+            {
+              "lineHeight": "32px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "600"
+            }
+          ],
+          "headline-md": [
+            "18px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "600"
+            }
+          ],
+          "body-md": [
+            "14px",
+            {
+              "lineHeight": "20px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ],
+          "headline-xl": [
+            "32px",
+            {
+              "lineHeight": "40px",
+              "letterSpacing": "-0.02em",
+              "fontWeight": "700"
+            }
+          ],
+          "code-lg": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "500"
+            }
+          ],
+          "code-md": [
+            "13px",
+            {
+              "lineHeight": "18px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "500"
+            }
+          ],
+          "body-lg": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ],
+          "code-sm": [
+            "11px",
+            {
+              "lineHeight": "14px",
+              "letterSpacing": "0.02em",
+              "fontWeight": "500"
+            }
+          ],
+          "body-sm": [
+            "12px",
+            {
+              "lineHeight": "16px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ]
+        }
+      },
+    },
+  }</script></head><body class="bg-background font-body-md text-body-md text-on-surface select-none antialiased min-h-screen"><header class="fixed top-0 w-full z-50 bg-surface-container-lowest/95 backdrop-blur-md shadow-[0_1px_8px_rgba(0,0,0,0.45)]"><div class="h-20 w-full px-space-lg flex flex-col justify-between pt-space-xs"><div class="flex items-center justify-between gap-space-lg h-space-panel-header-h"><div class="flex items-center gap-space-md"><img alt="Viettel NocPro Hindsight Logo" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1VLqt94IO72isT_Nhyfi3O0p329p6SPzfuOcFUhdjnn8X1-paKZEn3Kdz9cb87XnOV3_OjW9vFvGlm5nI0uryu9mBhLWEE_pMJPdW1t_aKh2AoCI1OF5xUWOKCff5NhVrtDKVdE4pqPxhqRRNezzPeDUhHpae3vlgJ8jBb4ZIZ66NnULybPG-B8sglXpVM1t-schU1EMCxfKCjw3Q9hz3Da91Ik7X0JYQv8Plu-0d9wOXmyK_aboUITYQ"/><div class="flex flex-col"><span class="font-headline-md text-headline-md font-bold tracking-tight text-on-surface leading-none">NocPro Hindsight</span><span class="font-label-caps text-label-caps uppercase text-secondary font-semibold tracking-wider">Chain Explain &amp; RCA Engine</span></div><div class="h-space-lg w-px bg-surface-container-highest ml-space-xs"></div><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container rounded cursor-pointer hover:bg-surface-container-high transition-colors"><span class="material-symbols-outlined text-secondary text-[16px]">history</span><div class="flex flex-col"><div class="flex items-center gap-space-xs"><span class="font-code-sm text-code-sm text-on-surface font-semibold">real_alarm_20260801</span><span class="material-symbols-outlined text-on-surface-variant text-[14px]">expand_more</span></div><span class="font-code-sm text-code-sm text-on-surface-variant">212,636 alarms • 1,845 chains • 10:00:00 UTC</span></div></div></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container-low rounded"><div class="w-2 h-2 rounded-full bg-secondary animate-pulse"></div><span class="font-code-sm text-code-sm text-on-surface font-semibold tracking-wide">ONLINE (READY)</span><span class="font-code-sm text-code-sm text-on-surface-variant">/ hindsight-v1</span></div><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container-low rounded"><span class="material-symbols-outlined text-secondary text-[14px]">wifi_tethering</span><span class="font-code-sm text-code-sm text-on-surface">:8085</span><span class="font-label-caps text-label-caps uppercase text-secondary font-bold">LIVE</span></div><div class="flex items-center gap-space-sm px-space-sm py-space-2xs bg-surface-container-low rounded"><div class="flex flex-col"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">LATENCY</span><span class="font-code-sm text-code-sm text-on-surface font-semibold">1.2ms</span></div><div class="h-4 w-px bg-surface-container-highest"></div><div class="flex flex-col"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">EPS</span><span class="font-code-sm text-code-sm text-on-surface font-semibold">14.2k/s</span></div></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div><nav class="w-full flex items-center gap-space-xs overflow-x-auto h-space-panel-header-h" data-active-classes="bg-surface-container-high text-secondary border-b-2 border-secondary font-semibold"><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="chain-hierarchy-and-tree" href="#">Chain Hierarchy &amp; Tree</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="member-diagnostics-table" href="#">Member Diagnostics Table</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="pair-why-and-evidence-matrix" href="#">Pair WHY &amp; Evidence Matrix</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="structural-audit-conductance" href="#">Structural Audit (Conductance)</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="counterfactual-review-5-ops" href="#">Counterfactual Review (5 Ops)</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="evolution-and-lineage" href="#">Evolution &amp; Lineage</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="topology-explorer-ip-it" href="#">Topology Explorer (IP/IT)</a></nav></div></header><main class="w-full pt-20 bg-background min-h-[calc(100vh-28px)]"><div class="flex flex-col w-full pb-10 select-none">
+<!-- Section: Subheader & Context Controls -->
+<div class="w-full bg-surface-container-lowest px-space-lg py-space-sm shadow-sm">
+<div class="flex flex-wrap items-center justify-between gap-space-md">
+<!-- Breadcrumbs & Meta -->
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm">
+<span class="text-on-surface-variant hover:text-on-surface cursor-pointer">Snapshot S102</span>
+<span class="text-surface-variant font-bold">/</span>
+<span class="px-space-xs py-space-2xs bg-surface-container rounded text-secondary font-semibold">Chain C2214039</span>
+<span class="text-surface-variant font-bold">/</span>
+<span class="text-on-surface-variant">Audit</span>
+<span class="text-surface-variant font-bold">/</span>
+<div class="flex items-center gap-space-xs text-on-surface bg-surface-container-high px-space-sm py-space-2xs rounded">
+<span class="material-symbols-outlined text-secondary text-[14px]">hub</span>
+<span class="font-bold text-on-surface">View: G*_audit Full Graph Inspection</span>
+</div>
+</div>
+<!-- Mode Selector (Tab Switcher) -->
+<div class="flex items-center bg-surface-container-low p-space-2xs rounded">
+<button class="px-space-md py-space-xs rounded bg-secondary-container text-on-secondary-container font-headline-md text-body-sm font-semibold flex items-center gap-space-xs shadow-sm">
+<span class="material-symbols-outlined text-[15px]">schema</span>
+          G*_audit Graph (Active)
+        </button>
+<button class="px-space-md py-space-xs rounded text-on-surface-variant hover:text-on-surface font-body-sm transition-colors flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[15px]">content_cut</span>
+          Candidate Cuts (3)
+        </button>
+<button class="px-space-md py-space-xs rounded text-on-surface-variant hover:text-on-surface font-body-sm transition-colors flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[15px]">account_tree</span>
+          Attribution
+        </button>
+</div>
+</div>
+<!-- Secondary Tab Navigation Pills -->
+<div class="flex items-center justify-between gap-space-md pt-space-sm mt-space-xs">
+<div class="flex items-center gap-space-xs overflow-x-auto">
+<a class="px-space-sm py-space-2xs font-code-sm text-code-sm text-on-surface-variant hover:text-on-surface rounded bg-surface-container hover:bg-surface-container-high transition-colors" href="#">Snapshot</a>
+<a class="px-space-sm py-space-2xs font-code-sm text-code-sm text-on-surface-variant hover:text-on-surface rounded bg-surface-container hover:bg-surface-container-high transition-colors" href="#">Overview</a>
+<a class="px-space-sm py-space-2xs font-code-sm text-code-sm text-on-surface-variant hover:text-on-surface rounded bg-surface-container hover:bg-surface-container-high transition-colors" href="#">WHY Matrix</a>
+<a class="px-space-sm py-space-2xs font-code-sm text-code-sm text-on-surface-variant hover:text-on-surface rounded bg-surface-container hover:bg-surface-container-high transition-colors" href="#">Members (18)</a>
+<a class="px-space-sm py-space-2xs font-code-sm text-code-sm bg-secondary-container text-on-secondary-container font-semibold rounded shadow-sm flex items-center gap-space-2xs" href="#">
+<span class="w-1.5 h-1.5 rounded-full bg-surface-lowest animate-ping"></span>
+          Structural Audit (Active)
+        </a>
+<a class="px-space-sm py-space-2xs font-code-sm text-code-sm text-on-surface-variant hover:text-on-surface rounded bg-surface-container hover:bg-surface-container-high transition-colors" href="#">Recommendations</a>
+<a class="px-space-sm py-space-2xs font-code-sm text-code-sm text-on-surface-variant hover:text-on-surface rounded bg-surface-container hover:bg-surface-container-high transition-colors" href="#">Evolution</a>
+<a class="px-space-sm py-space-2xs font-code-sm text-code-sm text-on-surface-variant hover:text-on-surface rounded bg-surface-container hover:bg-surface-container-high transition-colors" href="#">Topology</a>
+</div>
+<!-- Status telemetry badge -->
+<div class="hidden lg:flex items-center gap-space-md">
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm text-on-surface-variant">
+<span>SPECTRAL_SOLVER:</span>
+<span class="text-secondary font-semibold">Cheeger-Normalized Laplacian</span>
+</div>
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm text-error bg-error-container/40 px-space-sm py-space-2xs rounded">
+<span class="material-symbols-outlined text-[14px]">warning</span>
+<span>BOTTLENECK DETECTED (Φ = 0.038)</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Section: Graph Control Toolbar & Legend Bar -->
+<div class="w-full bg-surface-container-low px-space-lg py-space-xs flex flex-wrap items-center justify-between gap-space-sm">
+<!-- Viewport Tools -->
+<div class="flex items-center gap-space-xs">
+<div class="flex items-center bg-surface-container rounded p-space-2xs">
+<button class="w-7 h-7 flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high rounded transition-colors" id="btn-zoom-in" title="Zoom In">
+<span class="material-symbols-outlined text-[16px]">add</span>
+</button>
+<span class="font-code-sm text-code-sm text-on-surface px-space-xs font-semibold" id="zoom-level">100%</span>
+<button class="w-7 h-7 flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high rounded transition-colors" id="btn-zoom-out" title="Zoom Out">
+<span class="material-symbols-outlined text-[16px]">remove</span>
+</button>
+<button class="w-7 h-7 flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high rounded transition-colors ml-space-2xs" id="btn-zoom-reset" title="Reset Viewport">
+<span class="material-symbols-outlined text-[16px]">restart_alt</span>
+</button>
+<button class="w-7 h-7 flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high rounded transition-colors" id="btn-fit" title="Fit to Screen">
+<span class="material-symbols-outlined text-[16px]">fit_screen</span>
+</button>
+</div>
+<div class="h-4 w-px bg-surface-variant mx-space-2xs"></div>
+<!-- Toggles -->
+<label class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container rounded cursor-pointer hover:bg-surface-container-high transition-colors">
+<input checked="" class="accent-secondary-container w-3.5 h-3.5" id="toggle-labels" type="checkbox"/>
+<span class="font-code-sm text-code-sm text-on-surface">Node Labels</span>
+</label>
+<label class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container rounded cursor-pointer hover:bg-surface-container-high transition-colors">
+<input checked="" class="accent-secondary-container w-3.5 h-3.5" id="toggle-weak" type="checkbox"/>
+<span class="font-code-sm text-code-sm text-on-surface">Weak Edges (&lt;0.2)</span>
+</label>
+<label class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container rounded cursor-pointer hover:bg-surface-container-high transition-colors">
+<input checked="" class="accent-secondary-container w-3.5 h-3.5" id="toggle-cuts" type="checkbox"/>
+<span class="font-code-sm text-code-sm text-primary">Conductance Heatmap</span>
+</label>
+</div>
+<!-- Graph Schema Legend -->
+<div class="flex items-center flex-wrap gap-space-md py-space-2xs">
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm">
+<span class="w-2.5 h-2.5 rounded-full bg-secondary-container shadow-[0_0_6px_rgba(0,166,224,0.8)]"></span>
+<span class="text-on-surface">Core Cluster</span>
+</div>
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm">
+<span class="w-2.5 h-2.5 rotate-45 bg-primary shadow-[0_0_6px_rgba(255,179,173,0.6)]"></span>
+<span class="text-on-surface">Bridge Router</span>
+</div>
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm">
+<span class="w-2.5 h-2.5 rounded-full bg-tertiary shadow-[0_0_6px_rgba(255,185,95,0.7)] animate-pulse"></span>
+<span class="text-tertiary font-bold">Isolated Leak (Weak)</span>
+</div>
+<div class="h-3 w-px bg-surface-variant"></div>
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm">
+<span class="w-4 h-0.5 bg-secondary-container"></span>
+<span class="text-on-surface-variant">Physical L2/L3</span>
+</div>
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm">
+<span class="w-4 h-0.5 border-b border-dotted border-on-surface-variant"></span>
+<span class="text-on-surface-variant">Temporal Sync</span>
+</div>
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm">
+<span class="w-4 h-0.5 bg-gradient-to-r from-secondary to-primary"></span>
+<span class="text-on-surface-variant">Multi-Chassis</span>
+</div>
+</div>
+</div>
+<!-- Main Canvas + Inspection Layout -->
+<div class="w-full grid grid-cols-1 xl:grid-cols-12 gap-gutter px-space-lg pt-space-md">
+<!-- Primary Topological Graph Viewport (9 cols on 24-col scaled representation) -->
+<div class="xl:col-span-8 2xl:col-span-9 flex flex-col bg-surface-container-lowest rounded overflow-hidden shadow-xl relative min-h-[580px] lg:min-h-[640px]">
+<!-- Viewport Header Badge -->
+<div class="absolute top-3 left-4 z-20 flex items-center gap-space-sm bg-surface-container-lowest/80 backdrop-blur-md px-space-sm py-space-xs rounded shadow-md">
+<span class="material-symbols-outlined text-secondary text-[16px]">device_hub</span>
+<div class="flex flex-col">
+<span class="font-headline-md text-body-sm text-on-surface font-bold">G*_audit Structural Representation</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">Target Root: DEHL01-CR01 | Cross-Cut Candidate: CUT#03</span>
+</div>
+</div>
+<!-- Quick Metrics Overlay Pinned Top-Right -->
+<div class="absolute top-3 right-4 z-20 flex items-center gap-space-xs bg-surface-container-lowest/90 backdrop-blur-md px-space-sm py-space-2xs rounded shadow-md font-code-sm text-code-sm">
+<span class="text-on-surface-variant">Fiedler Cut Vector:</span>
+<span class="text-error font-bold">λ2 = 0.0423</span>
+<span class="text-on-surface-variant ml-space-xs">Conductance:</span>
+<span class="text-tertiary font-bold">Φ = 0.038</span>
+</div>
+<!-- SVG Graph Canvas -->
+<div class="relative w-full h-full min-h-[560px] bg-[radial-gradient(#1e273a_1px,transparent_1px)] [background-size:24px_24px] flex items-center justify-center cursor-grab active:cursor-grabbing overflow-hidden" id="graph-container">
+<svg class="w-full h-full transition-transform duration-300" id="audit-svg-canvas" viewbox="0 0 1000 620">
+<defs>
+<!-- Marker Definitions for Directed Audit Links -->
+<marker id="arrow-core" markerheight="6" markerwidth="6" orient="auto-start-reverse" refx="22" refy="5" viewbox="0 0 10 10">
+<path d="M 0 1 L 10 5 L 0 9 z" fill="#00a6e0"></path>
+</marker>
+<marker id="arrow-bridge" markerheight="6" markerwidth="6" orient="auto-start-reverse" refx="24" refy="5" viewbox="0 0 10 10">
+<path d="M 0 1 L 10 5 L 0 9 z" fill="#ffb3ad"></path>
+</marker>
+<marker id="arrow-weak" markerheight="6" markerwidth="6" orient="auto-start-reverse" refx="22" refy="5" viewbox="0 0 10 10">
+<path d="M 0 1 L 10 5 L 0 9 z" fill="#ffb95f"></path>
+</marker>
+<!-- Conductance Bottleneck Cut Boundary Filter -->
+<filter height="140%" id="glow-danger" width="140%" x="-20%" y="-20%">
+<fegaussianblur result="blur" stddeviation="6"></fegaussianblur>
+<fecomposite in="SourceGraphic" in2="blur" operator="over"></fecomposite>
+</filter>
+<lineargradient id="bridge-grad" x1="0%" x2="100%" y1="0%" y2="100%">
+<stop offset="0%" stop-color="#00a6e0"></stop>
+<stop offset="100%" stop-color="#ffb3ad"></stop>
+</lineargradient>
+<lineargradient id="cut-field-grad" x1="0%" x2="100%" y1="0%" y2="100%">
+<stop offset="0%" stop-color="rgba(147, 0, 10, 0.25)"></stop>
+<stop offset="100%" stop-color="rgba(202, 129, 0, 0.05)"></stop>
+</lineargradient>
+</defs>
+<!-- Candidate Cut Zone Underlay (Cheeger Partition Boundary) -->
+<g id="cut-boundary-zone">
+<path d="M 680 40 C 720 180, 710 420, 690 580" fill="none" opacity="0.8" stroke="#ff5451" stroke-dasharray="6,4" stroke-width="2.5"></path>
+<rect fill="url(#cut-field-grad)" height="540" rx="16" width="290" x="690" y="40"></rect>
+<text class="font-code-sm text-[11px] font-bold tracking-wider uppercase" fill="#ffb4ab" x="705" y="70">Cheeger Cut Boundary (Min Cut Φ = 0.038)</text>
+</g>
+<!-- Cluster Bounding Backgrounds -->
+<g id="cluster-groups" opacity="0.45">
+<!-- Cluster 01: Core Backbone Ring -->
+<polygon fill="#141b2b" points="120,90 440,70 480,360 220,440 90,260"></polygon>
+<text class="font-code-sm text-[12px] font-bold" fill="#7bd0ff" x="140" y="115">Backbone Core Domain (AS-45819)</text>
+<!-- Cluster 02: Distribution Aggregation -->
+<polygon fill="#191f2f" points="450,220 660,160 670,440 460,490"></polygon>
+<text class="font-code-sm text-[12px] font-bold" fill="#ffdad7" x="490" y="200">Inter-chassis Transit</text>
+<!-- Cluster 03: Leaking Leaf / Suspicious Cluster -->
+<text class="font-code-sm text-[12px] font-bold" fill="#ffb95f" x="720" y="240">Anomalous Leaf / Spillover Zone</text>
+</g>
+<!-- Graph Audit Edges -->
+<g id="graph-edges">
+<!-- Inter-Core Dense Edges (High w > 0.85) -->
+<line marker-end="url(#arrow-core)" stroke="#00a6e0" stroke-width="3.5" x1="160" x2="300" y1="180" y2="120"></line>
+<line marker-end="url(#arrow-core)" stroke="#00a6e0" stroke-width="4" x1="300" x2="410" y1="120" y2="190"></line>
+<line marker-end="url(#arrow-core)" stroke="#00a6e0" stroke-width="3" x1="410" x2="350" y1="190" y2="330"></line>
+<line marker-end="url(#arrow-core)" stroke="#00a6e0" stroke-width="3.2" x1="350" x2="200" y1="330" y2="350"></line>
+<line stroke="#00a6e0" stroke-width="2.8" x1="200" x2="160" y1="350" y2="180"></line>
+<line stroke="#00a6e0" stroke-dasharray="2,2" stroke-width="1.8" x1="160" x2="350" y1="180" y2="330"></line>
+<line stroke="#00a6e0" stroke-dasharray="2,2" stroke-width="1.5" x1="300" x2="200" y1="120" y2="350"></line>
+<!-- Edge Weights Text Overlay (Core) -->
+<text class="font-code-sm text-[10px]" fill="#7bd0ff" x="210" y="140">w: 0.98</text>
+<text class="font-code-sm text-[10px]" fill="#7bd0ff" x="365" y="150">w: 0.94</text>
+<text class="font-code-sm text-[10px]" fill="#7bd0ff" x="390" y="260">w: 0.89</text>
+<text class="font-code-sm text-[10px]" fill="#7bd0ff" x="260" y="355">w: 0.92</text>
+<!-- Intra-Transit / Cross-Chassis Trunk (High Conductance Bridge) -->
+<line stroke="url(#bridge-grad)" stroke-width="4.5" x1="410" x2="560" y1="190" y2="240"></line>
+<line stroke="url(#bridge-grad)" stroke-width="3.5" x1="350" x2="550" y1="330" y2="380"></line>
+<line marker-end="url(#arrow-bridge)" stroke="#ffb3ad" stroke-width="2.5" x1="560" x2="550" y1="240" y2="380"></line>
+<text class="font-code-sm text-[10px] font-bold" fill="#ffdad7" x="455" y="205">Gi6/0/2 [Trunk w:0.87]</text>
+<!-- Aggregation to Edge Links -->
+<line stroke="#ffb3ad" stroke-width="2.5" x1="560" x2="650" y1="240" y2="300"></line>
+<line stroke="#ffb3ad" stroke-width="2.5" x1="550" x2="650" y1="380" y2="300"></line>
+<line stroke="#ffb3ad" stroke-dasharray="3,2" stroke-width="2" x1="550" x2="590" y1="380" y2="480"></line>
+<!-- SUSPICIOUS WEAK BOTTLENECK LINK (Conductance Cut Target) -->
+<!-- Link between node DEHT01-AR02 and Isolated ALM-99210014 -->
+<g class="animate-pulse">
+<line marker-end="url(#arrow-weak)" stroke="#ffb95f" stroke-dasharray="5,3" stroke-width="2.5" x1="650" x2="790" y1="300" y2="320"></line>
+</g>
+<line stroke="#ffb95f" stroke-dasharray="5,4" stroke-width="1.5" x1="650" x2="780" y1="300" y2="170"></line>
+<line stroke="#ffb95f" stroke-width="1.5" x1="780" x2="880" y1="170" y2="220"></line>
+<line stroke="#ffb95f" stroke-width="1.8" x1="790" x2="880" y1="320" y2="220"></line>
+<line stroke="#ffb95f" stroke-dasharray="4,4" stroke-width="1.2" x1="790" x2="860" y1="320" y2="440"></line>
+<!-- Weak Link Warning Callout Tag on Canvas -->
+<g transform="translate(680, 275)">
+<rect fill="#ca8100" height="20" rx="3" width="90"></rect>
+<text class="font-code-sm text-[10px] font-bold" fill="#3e2400" x="5" y="14">w=0.082 (LEAK)</text>
+</g>
+</g>
+<!-- Graph Nodes -->
+<g id="graph-nodes">
+<!-- Core Node 1: DEHL01-CR01 (Root) -->
+<g class="cursor-pointer group" transform="translate(160, 180)">
+<circle fill="#141b2b" r="18" stroke="#00a6e0" stroke-width="3"></circle>
+<circle fill="#00a6e0" r="8"></circle>
+<text class="font-code-sm text-[11px] font-bold" fill="#dce2f7" text-anchor="middle" x="0" y="32">DEHL01-CR01</text>
+<text class="font-code-sm text-[9px]" fill="#7bd0ff" text-anchor="middle" x="0" y="44">CORE (ROOT)</text>
+</g>
+<!-- Core Node 2: DEHL01-CR02 -->
+<g class="cursor-pointer group" transform="translate(300, 120)">
+<circle fill="#141b2b" r="16" stroke="#00a6e0" stroke-width="2.5"></circle>
+<circle fill="#00a6e0" r="6"></circle>
+<text class="font-code-sm text-[11px] font-semibold" fill="#dce2f7" text-anchor="middle" x="0" y="28">DEHL01-CR02</text>
+<text class="font-code-sm text-[9px]" fill="#7bd0ff" text-anchor="middle" x="0" y="39">BGP PEER 02</text>
+</g>
+<!-- Core Node 3: DEHL02-CR01 -->
+<g class="cursor-pointer group" transform="translate(410, 190)">
+<circle fill="#141b2b" r="16" stroke="#00a6e0" stroke-width="2.5"></circle>
+<circle fill="#00a6e0" r="6"></circle>
+<text class="font-code-sm text-[11px] font-semibold" fill="#dce2f7" text-anchor="middle" x="0" y="28">DEHL02-CR01</text>
+<text class="font-code-sm text-[9px]" fill="#7bd0ff" text-anchor="middle" x="0" y="39">INGRESS GW</text>
+</g>
+<!-- Core Node 4: DEHL02-CR02 -->
+<g class="cursor-pointer group" transform="translate(350, 330)">
+<circle fill="#141b2b" r="15" stroke="#00a6e0" stroke-width="2"></circle>
+<circle fill="#00a6e0" r="5"></circle>
+<text class="font-code-sm text-[11px]" fill="#dce2f7" text-anchor="middle" x="0" y="28">DEHL02-CR02</text>
+</g>
+<!-- Core Node 5: DEHL01-OPT-01 -->
+<g class="cursor-pointer group" transform="translate(200, 350)">
+<circle fill="#141b2b" r="14" stroke="#00a6e0" stroke-width="2"></circle>
+<circle fill="#00a6e0" r="4"></circle>
+<text class="font-code-sm text-[11px]" fill="#dce2f7" text-anchor="middle" x="0" y="26">DEHL01-DWDM</text>
+</g>
+<!-- Bridge Connector Node 1: DEHT01-AR01 -->
+<g class="cursor-pointer group" transform="translate(560, 240)">
+<rect fill="#232a3a" height="26" rx="4" stroke="#ffb3ad" stroke-width="2.5" transform="rotate(45)" width="26" x="-13" y="-13"></rect>
+<circle fill="#ff5451" r="4"></circle>
+<text class="font-code-sm text-[11px] font-bold" fill="#dce2f7" text-anchor="middle" x="0" y="28">DEHT01-AR01</text>
+<text class="font-code-sm text-[9px]" fill="#ffb3ad" text-anchor="middle" x="0" y="40">AGGREGATION 1</text>
+</g>
+<!-- Bridge Connector Node 2: DEHT01-AR02 -->
+<g class="cursor-pointer group" transform="translate(550, 380)">
+<rect fill="#232a3a" height="24" rx="4" stroke="#ffb3ad" stroke-width="2" transform="rotate(45)" width="24" x="-12" y="-12"></rect>
+<circle fill="#ffb3ad" r="4"></circle>
+<text class="font-code-sm text-[11px]" fill="#dce2f7" text-anchor="middle" x="0" y="28">DEHT01-AR02</text>
+<text class="font-code-sm text-[9px]" fill="#ffb3ad" text-anchor="middle" x="0" y="40">AGGREGATION 2</text>
+</g>
+<!-- Bridge Node 3: DEHT01-PE03 -->
+<g class="cursor-pointer group" transform="translate(650, 300)">
+<rect fill="#232a3a" height="28" rx="4" stroke="#ff5451" stroke-width="3" transform="rotate(45)" width="28" x="-14" y="-14"></rect>
+<circle class="animate-ping" fill="#ff5451" r="5"></circle>
+<text class="font-code-sm text-[11px] font-bold" fill="#ffb4ab" text-anchor="middle" x="0" y="28">DEHT01-PE03</text>
+<text class="font-code-sm text-[9px]" fill="#ffb4ab" text-anchor="middle" x="0" y="40">CUT ANCHOR</text>
+</g>
+<!-- Transit Node: DEHT02-SW01 -->
+<g class="cursor-pointer group" transform="translate(590, 480)">
+<circle fill="#141b2b" r="12" stroke="#ab8986" stroke-width="1.5"></circle>
+<text class="font-code-sm text-[10px]" fill="#dce2f7" text-anchor="middle" x="0" y="24">DEHT02-SW01</text>
+</g>
+<!-- Isolated Sub-cluster Node 1: Suspicious Leaf ALM-99210014 -->
+<g class="cursor-pointer group" transform="translate(790, 320)">
+<circle fill="#191f2f" r="20" stroke="#ffb95f" stroke-dasharray="4,3" stroke-width="2.5"></circle>
+<circle fill="#ca8100" r="7"></circle>
+<text class="font-code-sm text-[11px] font-bold" fill="#ffb95f" text-anchor="middle" x="0" y="32">ALM-99210014</text>
+<text class="font-code-sm text-[9px]" fill="#ffddb8" text-anchor="middle" x="0" y="44">LOW CONDUCTANCE</text>
+</g>
+<!-- Sub-cluster Node 2: ALM-99210019 -->
+<g class="cursor-pointer group" transform="translate(780, 170)">
+<circle fill="#191f2f" r="14" stroke="#ffb95f" stroke-dasharray="3,2" stroke-width="1.5"></circle>
+<circle fill="#ffb95f" r="4"></circle>
+<text class="font-code-sm text-[10px]" fill="#dce2f7" text-anchor="middle" x="0" y="24">ALM-99210019</text>
+</g>
+<!-- Sub-cluster Node 3: ALM-99210088 -->
+<g class="cursor-pointer group" transform="translate(880, 220)">
+<circle fill="#191f2f" r="15" stroke="#ffb95f" stroke-dasharray="3,2" stroke-width="2"></circle>
+<circle fill="#ffb95f" r="5"></circle>
+<text class="font-code-sm text-[10px]" fill="#dce2f7" text-anchor="middle" x="0" y="26">ALM-99210088</text>
+<text class="font-code-sm text-[9px]" fill="#ffb95f" text-anchor="middle" x="0" y="38">LEAF ALERT</text>
+</g>
+<!-- Sub-cluster Node 4: ALM-99210102 -->
+<g class="cursor-pointer group" transform="translate(860, 440)">
+<circle fill="#191f2f" r="12" stroke="#ab8986" stroke-width="1.5"></circle>
+<circle fill="#ab8986" r="3"></circle>
+<text class="font-code-sm text-[10px]" fill="#dce2f7" text-anchor="middle" x="0" y="24">ALM-99210102</text>
+</g>
+</g>
+</svg>
+<!-- Node Hover Floating Inspector (Interactive Tooltip Simulation) -->
+<div class="absolute bottom-4 right-4 bg-surface-container-high/95 backdrop-blur-md p-space-sm rounded shadow-2xl max-w-xs pointer-events-none">
+<div class="flex items-center justify-between gap-space-sm pb-space-xs">
+<span class="font-label-caps text-label-caps uppercase text-tertiary">FOCUSED ANOMALY</span>
+<span class="font-code-sm text-code-sm px-space-xs py-space-2xs bg-tertiary-container/30 text-tertiary rounded">WEAK SPUR</span>
+</div>
+<div class="font-code-md text-code-md font-bold text-on-surface">ALM-99210014 :: Interface Drop</div>
+<div class="text-body-sm text-on-surface-variant pt-space-2xs">Conductance leakage across bipartite split. Spectral cut score &gt; 94.2% confidence for branch detachment.</div>
+<div class="grid grid-cols-2 gap-space-xs pt-space-xs mt-space-xs text-on-surface font-code-sm text-code-sm">
+<div>Degree: <span class="font-bold text-secondary">3</span></div>
+<div>Degradation: <span class="font-bold text-error">91.4%</span></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Right/Side Structural Analytics & Graph Metric Panels (3-4 cols) -->
+<div class="xl:col-span-4 2xl:col-span-3 flex flex-col gap-space-md">
+<!-- Panel 1: Graph Global Structural Statistics -->
+<div class="bg-surface-container rounded p-space-md shadow-md flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-secondary text-[18px]">analytics</span>
+<span class="font-headline-md text-headline-md text-on-surface">Graph Topology |V|, |E|</span>
+</div>
+<span class="px-space-xs py-space-2xs bg-surface-container-highest font-code-sm text-code-sm text-on-surface rounded">G*_audit v1</span>
+</div>
+<!-- Metric Grid -->
+<div class="grid grid-cols-2 gap-space-xs pt-space-xs">
+<div class="bg-surface-container-lowest p-space-sm rounded flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">TOTAL VERTICES |V|</span>
+<span class="font-code-lg text-code-lg font-bold text-on-surface">58</span>
+<span class="font-code-sm text-code-sm text-secondary mt-space-2xs">12 Active Clusters</span>
+</div>
+<div class="bg-surface-container-lowest p-space-sm rounded flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">TOTAL EDGES |E|</span>
+<span class="font-code-lg text-code-lg font-bold text-on-surface">142</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant mt-space-2xs">w_avg = 0.684</span>
+</div>
+<div class="bg-surface-container-lowest p-space-sm rounded flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">AVG DEGREE &lt;k&gt;</span>
+<span class="font-code-lg text-code-lg font-bold text-on-surface">4.89</span>
+<span class="font-code-sm text-code-sm text-secondary mt-space-2xs">k_max = 14 (CR01)</span>
+</div>
+<div class="bg-surface-container-lowest p-space-sm rounded flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">GRAPH DENSITY</span>
+<span class="font-code-lg text-code-lg font-bold text-on-surface">0.364</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant mt-space-2xs">Sparse Mesh Type</span>
+</div>
+</div>
+<!-- Algebraic Connectivity / Bottleneck Warning Card -->
+<div class="bg-surface-container-lowest p-space-sm rounded flex flex-col gap-space-xs mt-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-label-caps text-label-caps uppercase text-error font-bold">ALGEBRAIC CONNECTIVITY</span>
+<span class="px-space-xs py-space-2xs bg-error-container text-on-error-container font-code-sm text-code-sm rounded font-bold">ALERT</span>
+</div>
+<div class="flex items-baseline gap-space-sm">
+<span class="font-code-lg text-code-lg font-bold text-error">λ2 = 0.042</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">(Fiedler Eigenvalue)</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+            λ2 &lt; 0.05 indicates severe graph conductance bottleneck. The partition across <span class="text-on-surface font-semibold font-code-sm">DEHT01-PE03 → ALM-99210014</span> represents an anomalous chain merge.
+          </p>
+</div>
+</div>
+<!-- Panel 2: Edge Derivation Breakdown Matrix -->
+<div class="bg-surface-container rounded p-space-md shadow-md flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<span class="font-headline-md text-headline-md text-on-surface">Edge Derivation Breakdown</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">142 Links</span>
+</div>
+<div class="space-y-space-sm pt-space-xs">
+<!-- Physical Reference -->
+<div class="space-y-space-2xs">
+<div class="flex justify-between font-code-sm text-code-sm">
+<span class="text-on-surface">Physical / L2-L3 Topology</span>
+<span class="text-secondary font-bold">48 edges (33.8%)</span>
+</div>
+<div class="w-full h-1.5 bg-surface-container-lowest rounded-full overflow-hidden">
+<div class="h-full bg-secondary-container rounded-full" style="width: 33.8%"></div>
+</div>
+</div>
+<!-- Temporal Burst -->
+<div class="space-y-space-2xs">
+<div class="flex justify-between font-code-sm text-code-sm">
+<span class="text-on-surface">Temporal Burst Co-occurrence</span>
+<span class="text-primary font-bold">64 edges (45.1%)</span>
+</div>
+<div class="w-full h-1.5 bg-surface-container-lowest rounded-full overflow-hidden">
+<div class="h-full bg-primary-container rounded-full" style="width: 45.1%"></div>
+</div>
+</div>
+<!-- Semantic Match -->
+<div class="space-y-space-2xs">
+<div class="flex justify-between font-code-sm text-code-sm">
+<span class="text-on-surface">Semantic Text Embeddings</span>
+<span class="text-tertiary font-bold">18 edges (12.7%)</span>
+</div>
+<div class="w-full h-1.5 bg-surface-container-lowest rounded-full overflow-hidden">
+<div class="h-full bg-tertiary-container rounded-full" style="width: 12.7%"></div>
+</div>
+</div>
+<!-- Historical Knowledge Graph -->
+<div class="space-y-space-2xs">
+<div class="flex justify-between font-code-sm text-code-sm">
+<span class="text-on-surface">Historical RCA Priors</span>
+<span class="text-on-surface-variant font-bold">12 edges (8.4%)</span>
+</div>
+<div class="w-full h-1.5 bg-surface-container-lowest rounded-full overflow-hidden">
+<div class="h-full bg-surface-variant rounded-full" style="width: 8.4%"></div>
+</div>
+</div>
+</div>
+<div class="mt-space-xs p-space-sm bg-surface-container-lowest rounded flex items-center justify-between text-body-sm">
+<span class="text-on-surface-variant">Spectral Cut Sparsity:</span>
+<span class="font-code-sm text-code-sm text-secondary font-bold">89.4% Sparse</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Panel: Operator Action Bar & Cut Automation -->
+<div class="w-full px-space-lg pt-space-md">
+<div class="bg-surface-container rounded p-space-md flex flex-wrap items-center justify-between gap-space-md shadow-lg">
+<div class="flex items-center gap-space-md">
+<div class="w-10 h-10 rounded bg-primary/20 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[24px]">troubleshoot</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-space-sm">
+<span class="font-headline-md text-headline-md text-on-surface">Recommended Action: Bipartite Spectral Severance</span>
+<span class="px-space-xs py-space-2xs bg-primary-container text-on-primary-container font-code-sm text-code-sm rounded font-bold">P1 REMEDIATION</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Execute normalized cut across weakest conductance edge (w=0.082) to split unrelated leaf noise from Chain C2214039.</span>
+</div>
+</div>
+<!-- Action Buttons -->
+<div class="flex items-center flex-wrap gap-space-sm">
+<button class="h-8 px-space-md bg-primary hover:bg-primary-fixed text-on-primary font-headline-md text-body-sm font-semibold rounded flex items-center gap-space-xs transition-all active:scale-95 shadow-sm" id="btn-run-cut">
+<span class="material-symbols-outlined text-[16px]">content_cut</span>
+          Run Spectral Conductance Cut Scan
+        </button>
+<button class="h-8 px-space-md bg-surface-container-high hover:bg-surface-bright text-on-surface font-body-sm font-semibold rounded flex items-center gap-space-xs transition-colors shadow-sm">
+<span class="material-symbols-outlined text-secondary text-[16px]">filter_alt</span>
+          Filter Edges by Channel
+        </button>
+<button class="h-8 px-space-md bg-surface-container-high hover:bg-surface-bright text-on-surface font-body-sm font-semibold rounded flex items-center gap-space-xs transition-colors shadow-sm" id="btn-export-json">
+<span class="material-symbols-outlined text-secondary text-[16px]">download</span>
+          Export G*_audit JSON
+        </button>
+</div>
+</div>
+</div>
+<!-- Notification Toast Container (Dynamic Micro-interaction) -->
+<div class="fixed bottom-12 right-6 hidden z-50 bg-surface-container-high text-on-surface px-space-md py-space-sm rounded shadow-2xl flex items-center gap-space-sm border border-secondary/30" id="toast">
+<span class="material-symbols-outlined text-secondary text-[18px]">info</span>
+<span class="font-code-sm text-code-sm" id="toast-message"></span>
+</div>
+<!-- Client-Side Graph Controls & Interactivity -->
+<script>
+    (function initAuditGraphViewer() {
+      let currentZoom = 100;
+      const svg = document.getElementById('audit-svg-canvas');
+      const zoomText = document.getElementById('zoom-level');
+      const toast = document.getElementById('toast');
+      const toastMsg = document.getElementById('toast-message');
+
+      function showToast(msg) {
+        if (!toast || !toastMsg) return;
+        toastMsg.textContent = msg;
+        toast.classList.remove('hidden');
+        setTimeout(() => toast.classList.add('hidden'), 3200);
+      }
+
+      function updateZoom() {
+        if (svg && zoomText) {
+          svg.style.transform = `scale(${currentZoom / 100})`;
+          zoomText.textContent = `${currentZoom}%`;
+        }
+      }
+
+      // Zoom Button Controls
+      document.getElementById('btn-zoom-in')?.addEventListener('click', () => {
+        if (currentZoom < 220) {
+          currentZoom += 15;
+          updateZoom();
+        }
+      });
+
+      document.getElementById('btn-zoom-out')?.addEventListener('click', () => {
+        if (currentZoom > 60) {
+          currentZoom -= 15;
+          updateZoom();
+        }
+      });
+
+      document.getElementById('btn-zoom-reset')?.addEventListener('click', () => {
+        currentZoom = 100;
+        updateZoom();
+        showToast('Graph viewport reset to 100%');
+      });
+
+      document.getElementById('btn-fit')?.addEventListener('click', () => {
+        currentZoom = 115;
+        updateZoom();
+        showToast('Fitted G*_audit graph to bounding box');
+      });
+
+      // Filter Toggles
+      document.getElementById('toggle-labels')?.addEventListener('change', (e) => {
+        const labels = svg.querySelectorAll('#graph-nodes text');
+        labels.forEach(lbl => lbl.style.display = e.target.checked ? 'block' : 'none');
+      });
+
+      document.getElementById('toggle-cuts')?.addEventListener('change', (e) => {
+        const cutZone = svg.querySelector('#cut-boundary-zone');
+        if (cutZone) {
+          cutZone.style.display = e.target.checked ? 'block' : 'none';
+        }
+      });
+
+      // Action Handlers
+      document.getElementById('btn-run-cut')?.addEventListener('click', () => {
+        showToast('Running Lanczos Spectral Laplacian Solver... Optimal cut computed at λ2=0.042');
+      });
+
+      document.getElementById('btn-export-json')?.addEventListener('click', () => {
+        const payload = {
+          graph: "G*_audit",
+          chain_id: "C2214039",
+          vertices_count: 58,
+          edges_count: 142,
+          fiedler_value: 0.0423,
+          min_conductance: 0.038,
+          exported_at: new Date().toISOString()
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `G_star_audit_C2214039.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('Exported G*_audit JSON telemetry bundle');
+      });
+    })();
+  </script>
+</div></main><footer class="fixed bottom-0 w-full h-space-row-compact-h z-40 bg-surface-container-lowest/95 backdrop-blur-md shadow-[0_-1px_6px_rgba(0,0,0,0.5)] flex items-center justify-between px-space-lg font-code-sm text-code-sm text-on-surface-variant"><div class="flex items-center gap-space-lg"><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">PROVENANCE:</span><span class="text-on-surface font-semibold">REAL_EXPORT_REPLAY</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">CONFIG:</span><span class="text-on-surface">v1.0</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">ENGINE:</span><span class="text-secondary">hindsight-v1</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">ACTIVE SNAPSHOT:</span><span class="text-on-surface">real_alarm_20260801</span></span></div><div class="flex items-center gap-space-lg"><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">MOCK GATEWAY:</span><span class="text-secondary">:8085</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">API:</span><span class="text-secondary">:8000</span></span><span class="flex items-center gap-space-xs"><span class="w-1.5 h-1.5 rounded-full bg-secondary"></span><span class="font-label-caps text-label-caps uppercase text-on-surface">STREAM SYNCED</span></span></div></footer></body></html>

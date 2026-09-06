@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+          "background": "#0c1322",
+          "primary-container": "#ff5451",
+          "surface-container": "#191f2f",
+          "secondary-fixed": "#c4e7ff",
+          "on-primary-fixed-variant": "#930013",
+          "surface": "#0c1322",
+          "surface-bright": "#323949",
+          "outline-variant": "#5b403e",
+          "secondary-container": "#00a6e0",
+          "on-tertiary-fixed-variant": "#653e00",
+          "surface-dim": "#0c1322",
+          "surface-variant": "#2e3545",
+          "inverse-surface": "#dce2f7",
+          "on-secondary-fixed": "#001e2c",
+          "surface-container-high": "#232a3a",
+          "on-background": "#dce2f7",
+          "secondary-fixed-dim": "#7bd0ff",
+          "error-container": "#93000a",
+          "on-surface-variant": "#e4beba",
+          "on-error": "#690005",
+          "on-surface": "#dce2f7",
+          "on-secondary-fixed-variant": "#004c69",
+          "on-error-container": "#ffdad6",
+          "inverse-primary": "#b91a24",
+          "outline": "#ab8986",
+          "surface-container-highest": "#2e3545",
+          "on-tertiary": "#472a00",
+          "on-tertiary-container": "#3e2400",
+          "on-primary": "#68000a",
+          "tertiary-fixed": "#ffddb8",
+          "surface-container-low": "#141b2b",
+          "tertiary": "#ffb95f",
+          "surface-container-lowest": "#070e1d",
+          "inverse-on-surface": "#293040",
+          "tertiary-container": "#ca8100",
+          "secondary": "#7bd0ff",
+          "primary-fixed": "#ffdad7",
+          "primary-fixed-dim": "#ffb3ad",
+          "tertiary-fixed-dim": "#ffb95f",
+          "on-tertiary-fixed": "#2a1700",
+          "on-secondary-container": "#00374d",
+          "on-secondary": "#00354a",
+          "error": "#ffb4ab",
+          "surface-tint": "#ffb3ad",
+          "on-primary-fixed": "#410004",
+          "primary": "#ffb3ad",
+          "on-primary-container": "#5c0008"
+        },
+        "borderRadius": {
+          "DEFAULT": "0.125rem",
+          "lg": "0.25rem",
+          "xl": "0.5rem",
+          "full": "0.75rem"
+        },
+        "spacing": {
+          "space-xs": "4px",
+          "space-md": "12px",
+          "row-standard-h": "36px",
+          "space-sm": "8px",
+          "space-2xs": "2px",
+          "panel-header-h": "36px",
+          "space-xl": "24px",
+          "space-2xl": "32px",
+          "space-lg": "16px",
+          "margin-screen": "16px",
+          "row-compact-h": "28px",
+          "gutter": "12px"
+        },
+        "fontFamily": {
+          "label-caps": [
+            "JetBrains Mono"
+          ],
+          "headline-lg": [
+            "Inter"
+          ],
+          "headline-md": [
+            "Inter"
+          ],
+          "body-md": [
+            "Inter"
+          ],
+          "headline-xl": [
+            "Inter"
+          ],
+          "code-lg": [
+            "JetBrains Mono"
+          ],
+          "code-md": [
+            "JetBrains Mono"
+          ],
+          "body-lg": [
+            "Inter"
+          ],
+          "code-sm": [
+            "JetBrains Mono"
+          ],
+          "body-sm": [
+            "Inter"
+          ]
+        },
+        "fontSize": {
+          "label-caps": [
+            "10px",
+            {
+              "lineHeight": "12px",
+              "letterSpacing": "0.08em",
+              "fontWeight": "700"
+            }
+          ],
+          "headline-lg": [
+            "24px",
+            {
+              "lineHeight": "32px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "600"
+            }
+          ],
+          "headline-md": [
+            "18px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "600"
+            }
+          ],
+          "body-md": [
+            "14px",
+            {
+              "lineHeight": "20px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ],
+          "headline-xl": [
+            "32px",
+            {
+              "lineHeight": "40px",
+              "letterSpacing": "-0.02em",
+              "fontWeight": "700"
+            }
+          ],
+          "code-lg": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "500"
+            }
+          ],
+          "code-md": [
+            "13px",
+            {
+              "lineHeight": "18px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "500"
+            }
+          ],
+          "body-lg": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ],
+          "code-sm": [
+            "11px",
+            {
+              "lineHeight": "14px",
+              "letterSpacing": "0.02em",
+              "fontWeight": "500"
+            }
+          ],
+          "body-sm": [
+            "12px",
+            {
+              "lineHeight": "16px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ]
+        }
+      },
+    },
+  }</script></head><body class="bg-background font-body-md text-body-md text-on-surface select-none antialiased min-h-screen"><header class="fixed top-0 w-full z-50 bg-surface-container-lowest/95 backdrop-blur-md shadow-[0_1px_8px_rgba(0,0,0,0.45)]"><div class="h-20 w-full px-space-lg flex flex-col justify-between pt-space-xs"><div class="flex items-center justify-between gap-space-lg h-space-panel-header-h"><div class="flex items-center gap-space-md"><img alt="Viettel NocPro Hindsight Logo" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1VLqt94IO72isT_Nhyfi3O0p329p6SPzfuOcFUhdjnn8X1-paKZEn3Kdz9cb87XnOV3_OjW9vFvGlm5nI0uryu9mBhLWEE_pMJPdW1t_aKh2AoCI1OF5xUWOKCff5NhVrtDKVdE4pqPxhqRRNezzPeDUhHpae3vlgJ8jBb4ZIZ66NnULybPG-B8sglXpVM1t-schU1EMCxfKCjw3Q9hz3Da91Ik7X0JYQv8Plu-0d9wOXmyK_aboUITYQ"/><div class="flex flex-col"><span class="font-headline-md text-headline-md font-bold tracking-tight text-on-surface leading-none">NocPro Hindsight</span><span class="font-label-caps text-label-caps uppercase text-secondary font-semibold tracking-wider">Chain Explain &amp; RCA Engine</span></div><div class="h-space-lg w-px bg-surface-container-highest ml-space-xs"></div><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container rounded cursor-pointer hover:bg-surface-container-high transition-colors"><span class="material-symbols-outlined text-secondary text-[16px]">history</span><div class="flex flex-col"><div class="flex items-center gap-space-xs"><span class="font-code-sm text-code-sm text-on-surface font-semibold">real_alarm_20260801</span><span class="material-symbols-outlined text-on-surface-variant text-[14px]">expand_more</span></div><span class="font-code-sm text-code-sm text-on-surface-variant">212,636 alarms • 1,845 chains • 10:00:00 UTC</span></div></div></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container-low rounded"><div class="w-2 h-2 rounded-full bg-secondary animate-pulse"></div><span class="font-code-sm text-code-sm text-on-surface font-semibold tracking-wide">ONLINE (READY)</span><span class="font-code-sm text-code-sm text-on-surface-variant">/ hindsight-v1</span></div><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container-low rounded"><span class="material-symbols-outlined text-secondary text-[14px]">wifi_tethering</span><span class="font-code-sm text-code-sm text-on-surface">:8085</span><span class="font-label-caps text-label-caps uppercase text-secondary font-bold">LIVE</span></div><div class="flex items-center gap-space-sm px-space-sm py-space-2xs bg-surface-container-low rounded"><div class="flex flex-col"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">LATENCY</span><span class="font-code-sm text-code-sm text-on-surface font-semibold">1.2ms</span></div><div class="h-4 w-px bg-surface-container-highest"></div><div class="flex flex-col"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">EPS</span><span class="font-code-sm text-code-sm text-on-surface font-semibold">14.2k/s</span></div></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div><nav class="w-full flex items-center gap-space-xs overflow-x-auto h-space-panel-header-h" data-active-classes="bg-surface-container-high text-secondary border-b-2 border-secondary font-semibold"><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="chain-hierarchy-and-tree" href="#">Chain Hierarchy &amp; Tree</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="member-diagnostics-table" href="#">Member Diagnostics Table</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="pair-why-and-evidence-matrix" href="#">Pair WHY &amp; Evidence Matrix</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="structural-audit-conductance" href="#">Structural Audit (Conductance)</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="counterfactual-review-5-ops" href="#">Counterfactual Review (5 Ops)</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="evolution-and-lineage" href="#">Evolution &amp; Lineage</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="topology-explorer-ip-it" href="#">Topology Explorer (IP/IT)</a></nav></div></header><main class="w-full pt-20 bg-background min-h-[calc(100vh-28px)]"><div class="flex flex-col w-full">
+<!-- Interactive State Engine Script -->
+<script>
+    function switchCut(cutId, phi, edges, vol, subCount, subBarCount, modDelta, status, badgeClass) {
+      document.querySelectorAll('[data-cut-row]').forEach(el => {
+        el.classList.remove('bg-surface-container-high', 'border-l-4', 'border-primary');
+        el.classList.add('bg-surface-container-low');
+      });
+      const selected = document.getElementById('cut-row-' + cutId);
+      if(selected) {
+        selected.classList.remove('bg-surface-container-low');
+        selected.classList.add('bg-surface-container-high', 'border-l-4', 'border-primary');
+      }
+
+      document.getElementById('metric-phi').innerText = 'φ = ' + phi;
+      document.getElementById('metric-edges').innerText = edges + ' BOUNDARY EDGES';
+      document.getElementById('metric-vol').innerText = vol + ' TIES';
+      document.getElementById('metric-ratio').innerText = subCount + ' vs ' + subBarCount + ' ALARMS';
+      document.getElementById('cut-title-badge').innerText = 'CUT #' + cutId + ' (φ = ' + phi + ')';
+      document.getElementById('cut-status-badge').innerText = status;
+      document.getElementById('cut-status-badge').className = 'px-space-sm py-space-2xs rounded font-label-caps text-label-caps uppercase font-bold ' + badgeClass;
+    }
+
+    function triggerActionToast(action) {
+      const toast = document.getElementById('action-toast');
+      const text = document.getElementById('toast-text');
+      text.innerText = 'ACTION EXECUTED: ' + action + ' [SYNAPSE-V1 COMMIT OK]';
+      toast.classList.remove('opacity-0', 'pointer-events-none', '-translate-y-2');
+      toast.classList.add('opacity-100', 'translate-y-0');
+      setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', 'pointer-events-none', '-translate-y-2');
+      }, 4200);
+    }
+  </script>
+<!-- Notification Toast -->
+<div class="fixed top-24 right-6 z-50 transition-all duration-300 transform -translate-y-2 opacity-0 pointer-events-none flex items-center gap-space-sm px-space-md py-space-sm bg-surface-bright text-on-surface shadow-2xl rounded" id="action-toast">
+<span class="material-symbols-outlined text-secondary text-[18px]">verified</span>
+<span class="font-code-sm text-code-sm font-semibold tracking-wide" id="toast-text"></span>
+</div>
+<!-- Sub-header Breadcrumb & Operational Pipeline Strip -->
+<section class="w-full bg-surface-container-lowest px-space-lg py-space-sm flex flex-col gap-space-sm shadow-md">
+<div class="flex flex-wrap items-center justify-between gap-space-md">
+<!-- Breadcrumbs with Monospace Identifiers -->
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm">
+<span class="text-on-surface-variant flex items-center gap-1 hover:text-on-surface cursor-pointer">
+<span class="material-symbols-outlined text-[14px]">dataset</span>S102
+        </span>
+<span class="text-outline-variant">/</span>
+<span class="text-on-surface-variant hover:text-on-surface cursor-pointer">Chain C2214039</span>
+<span class="text-outline-variant">/</span>
+<span class="text-secondary font-semibold">Structural Conductance Audit</span>
+<span class="text-outline-variant">/</span>
+<span class="px-space-xs py-space-2xs bg-primary-container/20 text-primary font-bold rounded" id="cut-title-badge">CUT #1 (φ = 0.120)</span>
+</div>
+<!-- Mode Selector Tabs -->
+<div class="flex items-center bg-surface-container-low p-space-2xs rounded">
+<button class="flex items-center gap-space-xs px-space-sm py-space-2xs text-on-surface-variant hover:text-on-surface font-label-caps text-label-caps uppercase transition-colors">
+<span class="material-symbols-outlined text-[14px]">hub</span>
+          G*_AUDIT GRAPH
+        </button>
+<button class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container-highest text-secondary font-label-caps text-label-caps uppercase font-bold rounded shadow-sm">
+<span class="material-symbols-outlined text-[14px]">call_split</span>
+          CANDIDATE CUTS [3 ACTIVE]
+        </button>
+<button class="flex items-center gap-space-xs px-space-sm py-space-2xs text-on-surface-variant hover:text-on-surface font-label-caps text-label-caps uppercase transition-colors">
+<span class="material-symbols-outlined text-[14px]">fingerprint</span>
+          ATTRIBUTION (SHAP)
+        </button>
+</div>
+</div>
+<!-- Secondary View Pills -->
+<div class="flex items-center justify-between gap-space-md pt-space-xs overflow-x-auto">
+<div class="flex items-center gap-space-xs">
+<a class="px-space-sm py-space-2xs rounded font-code-sm text-code-sm text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" href="#">Snapshot Overview</a>
+<a class="px-space-sm py-space-2xs rounded font-code-sm text-code-sm text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" href="#">WHY Matrix</a>
+<a class="px-space-sm py-space-2xs rounded font-code-sm text-code-sm text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" href="#">Members (58)</a>
+<a class="px-space-sm py-space-2xs rounded font-code-sm text-code-sm bg-surface-container-high text-secondary font-semibold shadow-inner" href="#">Conductance Audit</a>
+<a class="px-space-sm py-space-2xs rounded font-code-sm text-code-sm text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" href="#">Recommendations [1]</a>
+<a class="px-space-sm py-space-2xs rounded font-code-sm text-code-sm text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" href="#">Lineage</a>
+<a class="px-space-sm py-space-2xs rounded font-code-sm text-code-sm text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" href="#">Topology Explorer</a>
+</div>
+<div class="flex items-center gap-space-sm text-on-surface-variant font-code-sm text-code-sm">
+<span class="flex items-center gap-1 text-primary"><span class="w-1.5 h-1.5 rounded-full bg-primary animate-ping"></span>CHEK_FAIL_COND</span>
+<span>|</span>
+<span>SPECTRAL_GAP: <strong class="text-on-surface">λ2 = 0.042</strong></span>
+</div>
+</div>
+</section>
+<!-- Main Grid Workspace -->
+<div class="p-space-lg flex flex-col gap-space-lg w-full">
+<!-- KPI Metric Bar: Cut Significance & Boundary Metrics -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-space-md">
+<!-- Metric 1: Conductance Score -->
+<div class="bg-surface-container-low p-space-md rounded flex flex-col justify-between relative overflow-hidden shadow-md">
+<div class="absolute right-0 top-0 w-24 h-24 bg-primary/10 rounded-full blur-2xl pointer-events-none"></div>
+<div class="flex items-center justify-between text-on-surface-variant font-label-caps text-label-caps uppercase">
+<span>Conductance Score [Φ]</span>
+<span class="px-space-xs py-space-2xs bg-primary-container/20 text-primary font-bold rounded">HIGH SEVERITY</span>
+</div>
+<div class="my-space-xs flex items-baseline gap-space-sm">
+<span class="font-headline-xl text-headline-xl text-primary font-bold" id="metric-phi">φ = 0.120</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">/ crit &lt; 0.150</span>
+</div>
+<div class="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
+<div class="bg-primary h-full rounded-full transition-all duration-500" style="width: 80%;"></div>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant mt-space-xs">Structural bottleneck detected across subnet threshold.</span>
+</div>
+<!-- Metric 2: Cut Weight & Vol(S) -->
+<div class="bg-surface-container-low p-space-md rounded flex flex-col justify-between shadow-md">
+<div class="flex items-center justify-between text-on-surface-variant font-label-caps text-label-caps uppercase">
+<span>Cut-Weight E(S, S̄)</span>
+<span class="text-secondary font-code-sm text-code-sm">VOL RATIO: 12.1%</span>
+</div>
+<div class="my-space-xs flex items-baseline gap-space-sm">
+<span class="font-headline-xl text-headline-xl text-on-surface font-bold" id="metric-edges">4 BOUNDARY EDGES</span>
+</div>
+<div class="flex items-center justify-between font-code-sm text-code-sm text-on-surface-variant pt-space-xs">
+<span>Vol(S) Core: <span class="text-on-surface font-semibold">240 ties</span></span>
+<span>Vol(S̄) Remote: <span class="text-secondary font-semibold" id="metric-vol">33 ties</span></span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant mt-space-xs">Sparse cohesion crossing access-to-core boundary.</span>
+</div>
+<!-- Metric 3: Partition Size Balance -->
+<div class="bg-surface-container-low p-space-md rounded flex flex-col justify-between shadow-md">
+<div class="flex items-center justify-between text-on-surface-variant font-label-caps text-label-caps uppercase">
+<span>Partition Balance</span>
+<span class="font-code-sm text-code-sm text-on-surface">TOTAL: 58</span>
+</div>
+<div class="my-space-xs flex items-baseline gap-space-sm">
+<span class="font-headline-xl text-headline-xl text-on-surface font-bold" id="metric-ratio">53 vs 5 ALARMS</span>
+</div>
+<!-- Proportion Spark-bar -->
+<div class="w-full flex h-1.5 rounded-full overflow-hidden bg-surface-container-highest">
+<div class="bg-secondary h-full" style="width: 91.3%;"></div>
+<div class="bg-primary-container h-full" style="width: 8.7%;"></div>
+</div>
+<div class="flex justify-between font-code-sm text-code-sm text-on-surface-variant mt-space-xs">
+<span class="text-secondary">Core S (91.3%)</span>
+<span class="text-primary">Remote S̄ (8.7%)</span>
+</div>
+</div>
+<!-- Metric 4: Delta Modularity & Confidence -->
+<div class="bg-surface-container-low p-space-md rounded flex flex-col justify-between shadow-md">
+<div class="flex items-center justify-between text-on-surface-variant font-label-caps text-label-caps uppercase">
+<span>Split Gain [Δ Modularity]</span>
+<span class="px-space-sm py-space-2xs rounded font-label-caps text-label-caps uppercase font-bold bg-primary-container/20 text-primary" id="cut-status-badge">RECOMMENDED SPLIT</span>
+</div>
+<div class="my-space-xs flex items-baseline gap-space-sm">
+<span class="font-headline-xl text-headline-xl text-secondary font-bold">+0.142 ΔQ</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">Conf: 94.8%</span>
+</div>
+<div class="flex items-center gap-space-xs text-on-surface-variant font-code-sm text-code-sm">
+<span class="material-symbols-outlined text-[16px] text-secondary">verified_user</span>
+<span>Engine: <span class="text-on-surface">Cheeger Inequality SAT</span></span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant mt-space-xs">Splitting purges false co-firing cross-pollination.</span>
+</div>
+</div>
+<!-- Dual Partition Inspection: Interactive Split Canvas -->
+<div class="bg-surface-container-low p-space-md rounded flex flex-col gap-space-md shadow-lg">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-secondary text-[20px]">difference</span>
+<span class="font-headline-md text-headline-md font-bold text-on-surface">Partition Boundary Inspection (S vs S̄)</span>
+</div>
+<div class="flex items-center gap-space-sm">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">CUT PLANE PROJECTION:</span>
+<span class="font-code-sm text-code-sm px-space-sm py-space-2xs bg-surface-container-high rounded text-secondary font-bold">DEHL01_CORE ⇔ DEHT01_REMOTE</span>
+</div>
+</div>
+<!-- Side-by-side 3-Column Comparative Visualizer -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-space-md items-stretch">
+<!-- Left Block: Partition S (DEHL01 Core) -->
+<div class="lg:col-span-5 bg-surface-container p-space-md rounded flex flex-col justify-between shadow-sm">
+<div class="flex flex-col gap-space-sm">
+<div class="flex items-center justify-between pb-space-xs">
+<div class="flex items-center gap-space-xs">
+<span class="px-space-xs py-space-2xs rounded font-label-caps text-label-caps uppercase font-bold bg-secondary/10 text-secondary">CORE DOMAIN</span>
+<span class="font-code-md text-code-md font-bold text-on-surface">Partition S (DEHL01)</span>
+</div>
+<span class="font-code-sm text-code-sm text-secondary font-semibold">53 Alarms</span>
+</div>
+<!-- Visual Node Topology Schematic Core -->
+<div class="p-space-sm bg-surface-container-lowest rounded flex flex-col gap-space-xs">
+<div class="flex items-center justify-between text-on-surface-variant font-label-caps text-label-caps uppercase">
+<span>Internal Conductance: <strong>φ_int = 0.038</strong></span>
+<span class="text-secondary font-semibold">EXTREMELY SOUND DENSITY</span>
+</div>
+<!-- Mini Topology Nodes representation -->
+<div class="h-20 w-full flex items-center justify-center relative overflow-hidden bg-surface-container-low/60 rounded">
+<!-- Inline SVG Vector representing Core Mesh -->
+<svg class="w-full h-full text-secondary opacity-75" fill="none" viewbox="0 0 300 80">
+<path d="M40 40 L100 20 L160 50 L100 65 Z" stroke="currentColor" stroke-dasharray="3 3" stroke-width="1.5"></path>
+<path d="M100 20 L220 25 L160 50 L260 40" stroke="currentColor" stroke-width="1.5"></path>
+<circle cx="40" cy="40" fill="#7bd0ff" r="5"></circle>
+<circle cx="100" cy="20" fill="#7bd0ff" r="7"></circle>
+<circle cx="160" cy="50" fill="#7bd0ff" r="6"></circle>
+<circle cx="220" cy="25" fill="#7bd0ff" r="7"></circle>
+<circle cx="260" cy="40" fill="#7bd0ff" r="5"></circle>
+</svg>
+<span class="absolute bottom-1 right-2 font-code-sm text-code-sm text-on-surface-variant">240 intra-domain ties</span>
+</div>
+</div>
+<!-- Detailed Attributes -->
+<div class="space-y-space-xs font-body-sm text-body-sm">
+<div class="flex justify-between py-space-2xs">
+<span class="text-on-surface-variant font-code-sm text-code-sm">Dominant Elements:</span>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold">DEHL01-CR01, DEHL01-SR02, SW-AGGR-09</span>
+</div>
+<div class="flex justify-between py-space-2xs">
+<span class="text-on-surface-variant font-code-sm text-code-sm">Root Cause Classification:</span>
+<span class="font-code-sm text-code-sm text-primary font-bold">FIBER_CUT_PRIMARY_BACKBONE (Ring A)</span>
+</div>
+<div class="flex justify-between py-space-2xs">
+<span class="text-on-surface-variant font-code-sm text-code-sm">Temporal Spread:</span>
+<span class="font-code-sm text-code-sm text-on-surface">10:00:02.108 - 10:00:14.944 (12.8s)</span>
+</div>
+<div class="flex justify-between py-space-2xs">
+<span class="text-on-surface-variant font-code-sm text-code-sm">Conductance Verdict:</span>
+<span class="font-code-sm text-code-sm text-secondary">Cohesive Core Fault Bubble. Retain as Master Chain.</span>
+</div>
+</div>
+</div>
+<div class="mt-space-md pt-space-xs flex items-center justify-between">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">TARGET ASSIGNMENT:</span>
+<span class="font-code-sm text-code-sm text-secondary font-bold">RETAIN → C2214039 (Master)</span>
+</div>
+</div>
+<!-- Middle Separator: The Cut Boundary (4 Weak Ties) -->
+<div class="lg:col-span-2 flex flex-col justify-center items-center py-space-sm px-space-xs bg-surface-container-high/40 rounded shadow-inner text-center relative">
+<!-- Flow Indicators -->
+<div class="flex flex-col items-center gap-space-xs mb-space-sm">
+<span class="material-symbols-outlined text-primary text-[28px] animate-pulse">content_cut</span>
+<span class="font-label-caps text-label-caps uppercase text-primary font-bold">CUT INTERFACE</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant font-semibold">4 Weak Trans-Ties</span>
+</div>
+<!-- Cut Edges Detailed Breakdown -->
+<div class="w-full flex flex-col gap-space-2xs my-space-xs">
+<div class="p-space-2xs bg-surface-container-lowest rounded text-left font-code-sm text-code-sm">
+<div class="text-primary font-semibold flex items-center justify-between">
+<span>E1: Gi6/0/2</span>
+<span class="text-on-surface-variant text-[10px]">P=0.18</span>
+</div>
+<p class="text-[10px] text-on-surface-variant truncate">DEHL01-SR02 → DEHT01-AR02</p>
+</div>
+<div class="p-space-2xs bg-surface-container-lowest rounded text-left font-code-sm text-code-sm">
+<div class="text-primary font-semibold flex items-center justify-between">
+<span>E2: BGP_PEER</span>
+<span class="text-on-surface-variant text-[10px]">P=0.12</span>
+</div>
+<p class="text-[10px] text-on-surface-variant truncate">Session Flap 172.16.89.2</p>
+</div>
+<div class="p-space-2xs bg-surface-container-lowest rounded text-left font-code-sm text-code-sm">
+<div class="text-on-surface-variant font-semibold flex items-center justify-between">
+<span>E3: SNMP_TO</span>
+<span class="text-on-surface-variant text-[10px]">P=0.08</span>
+</div>
+<p class="text-[10px] text-on-surface-variant truncate">Poll timeout propagation</p>
+</div>
+<div class="p-space-2xs bg-surface-container-lowest rounded text-left font-code-sm text-code-sm">
+<div class="text-on-surface-variant font-semibold flex items-center justify-between">
+<span>E4: LLDP_DROP</span>
+<span class="text-on-surface-variant text-[10px]">P=0.04</span>
+</div>
+<p class="text-[10px] text-on-surface-variant truncate">Adj decay lease 45s</p>
+</div>
+</div>
+<div class="mt-space-xs flex items-center gap-1 text-[11px] font-code-sm text-primary">
+<span class="material-symbols-outlined text-[14px]">bolt</span>
+<span>Spurious Cross-Firing</span>
+</div>
+</div>
+<!-- Right Block: Partition S_bar (Isolated DEHT01 Remote Site) -->
+<div class="lg:col-span-5 bg-surface-container p-space-md rounded flex flex-col justify-between shadow-sm">
+<div class="flex flex-col gap-space-sm">
+<div class="flex items-center justify-between pb-space-xs">
+<div class="flex items-center gap-space-xs">
+<span class="px-space-xs py-space-2xs rounded font-label-caps text-label-caps uppercase font-bold bg-primary/20 text-primary">PERIPHERAL CANDIDATE</span>
+<span class="font-code-md text-code-md font-bold text-on-surface">Partition S̄ (DEHT01)</span>
+</div>
+<span class="font-code-sm text-code-sm text-primary font-semibold">5 Alarms</span>
+</div>
+<!-- Visual Node Topology Schematic Remote -->
+<div class="p-space-sm bg-surface-container-lowest rounded flex flex-col gap-space-xs">
+<div class="flex items-center justify-between text-on-surface-variant font-label-caps text-label-caps uppercase">
+<span>Internal Conductance: <strong>φ_int = 0.480</strong></span>
+<span class="text-primary font-semibold">LOOSE / ARTIFACT</span>
+</div>
+<!-- Mini Topology Nodes representation Remote -->
+<div class="h-20 w-full flex items-center justify-center relative overflow-hidden bg-surface-container-low/60 rounded">
+<svg class="w-full h-full text-primary opacity-75" fill="none" viewbox="0 0 300 80">
+<path d="M60 40 L150 20 L240 50" stroke="currentColor" stroke-dasharray="4 2" stroke-width="1.5"></path>
+<circle cx="60" cy="40" fill="#ffb4ab" r="5"></circle>
+<circle cx="150" cy="20" fill="#ffb4ab" r="6"></circle>
+<circle cx="240" cy="50" fill="#ffb4ab" r="5"></circle>
+</svg>
+<span class="absolute bottom-1 right-2 font-code-sm text-code-sm text-on-surface-variant">Only 6 internal ties</span>
+</div>
+</div>
+<!-- Detailed Attributes -->
+<div class="space-y-space-xs font-body-sm text-body-sm">
+<div class="flex justify-between py-space-2xs">
+<span class="text-on-surface-variant font-code-sm text-code-sm">Dominant Elements:</span>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold">DEHT01-AR02 (Access Router), CPE-081</span>
+</div>
+<div class="flex justify-between py-space-2xs">
+<span class="text-on-surface-variant font-code-sm text-code-sm">Observed Symptoms:</span>
+<span class="font-code-sm text-code-sm text-on-surface">Remote Optical Rx Low (-28.4 dBm)</span>
+</div>
+<div class="flex justify-between py-space-2xs">
+<span class="text-on-surface-variant font-code-sm text-code-sm">Etiological Independence:</span>
+<span class="font-code-sm text-code-sm text-secondary font-semibold">Local Access Tail Loss (Indep. Event)</span>
+</div>
+<div class="flex justify-between py-space-2xs">
+<span class="text-on-surface-variant font-code-sm text-code-sm">Re-clustering Recommendation:</span>
+<span class="font-code-sm text-code-sm text-primary font-semibold">Decouple to C2214039_B or Merge C2214048</span>
+</div>
+</div>
+</div>
+<div class="mt-space-md pt-space-xs flex items-center justify-between">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">PROPOSED DESTINATION:</span>
+<span class="font-code-sm text-code-sm text-primary font-bold">SPLIT → Sub-chain C2214039_B</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Candidate Cuts Ranking Table & Cheeger Spectrum Audit -->
+<div class="bg-surface-container-low p-space-md rounded flex flex-col gap-space-sm shadow-md">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-secondary text-[20px]">table_rows</span>
+<span class="font-headline-md text-headline-md font-bold text-on-surface">Candidate Cuts Evaluated in Sub-graph G*(C2214039)</span>
+</div>
+<div class="flex items-center gap-space-md font-code-sm text-code-sm">
+<span class="text-on-surface-variant">MIN_CUT_SOLVER: <strong class="text-on-surface">Stoer-Wagner Spectral</strong></span>
+<span class="text-on-surface-variant">TOLERANCE: <strong class="text-secondary">±0.005</strong></span>
+</div>
+</div>
+<!-- Matrix Table -->
+<div class="w-full overflow-x-auto">
+<table class="w-full border-collapse font-body-sm text-body-sm text-left">
+<thead>
+<tr class="bg-surface-container-lowest text-on-surface-variant font-label-caps text-label-caps uppercase">
+<th class="py-space-sm px-space-md">Candidate Cut ID</th>
+<th class="py-space-sm px-space-md">Conductance [Φ]</th>
+<th class="py-space-sm px-space-md">Cut-Edges E(S, S̄)</th>
+<th class="py-space-sm px-space-md">Target Boundary Node</th>
+<th class="py-space-sm px-space-md">Partition Size (S / S̄)</th>
+<th class="py-space-sm px-space-md">Modularity Gain ΔQ</th>
+<th class="py-space-sm px-space-md text-right">Action / Recommendation</th>
+</tr>
+</thead>
+<tbody class="font-code-sm text-code-sm divide-y divide-surface-container">
+<!-- Cut #1: Active Selection -->
+<tr class="cursor-pointer bg-surface-container-high border-l-4 border-primary transition-colors" data-cut-row="" id="cut-row-1" onclick="switchCut('1', '0.120', '4', '33', '53', '5', '+0.142', 'RECOMMENDED SPLIT', 'bg-primary-container/20 text-primary')">
+<td class="py-space-sm px-space-md font-bold text-on-surface flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[16px]">radio_button_checked</span>
+                Cut #1 (Current Focus)
+              </td>
+<td class="py-space-sm px-space-md text-primary font-bold">φ = 0.120</td>
+<td class="py-space-sm px-space-md text-on-surface">4 weak links</td>
+<td class="py-space-sm px-space-md text-secondary">DEHT01-AR02 (Access Uplink)</td>
+<td class="py-space-sm px-space-md text-on-surface">53 / 5</td>
+<td class="py-space-sm px-space-md text-secondary font-bold">+0.142</td>
+<td class="py-space-sm px-space-md text-right">
+<span class="px-space-sm py-space-2xs rounded font-label-caps text-label-caps uppercase font-bold bg-primary-container/20 text-primary">RECOMMENDED SPLIT</span>
+</td>
+</tr>
+<!-- Cut #2: Marginal -->
+<tr class="cursor-pointer bg-surface-container-low hover:bg-surface-container transition-colors" data-cut-row="" id="cut-row-2" onclick="switchCut('2', '0.185', '9', '68', '47', '11', '+0.061', 'MARGINAL ISOLATION', 'bg-tertiary-container/30 text-tertiary')">
+<td class="py-space-sm px-space-md font-medium text-on-surface flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-on-surface-variant text-[16px]">radio_button_unchecked</span>
+                Cut #2
+              </td>
+<td class="py-space-sm px-space-md text-tertiary font-bold">φ = 0.185</td>
+<td class="py-space-sm px-space-md text-on-surface">9 inter-rack links</td>
+<td class="py-space-sm px-space-md text-on-surface">SW-AGGR-09 (Secondary)</td>
+<td class="py-space-sm px-space-md text-on-surface">47 / 11</td>
+<td class="py-space-sm px-space-md text-on-surface-variant">+0.061</td>
+<td class="py-space-sm px-space-md text-right">
+<span class="px-space-sm py-space-2xs rounded font-label-caps text-label-caps uppercase font-bold bg-tertiary-container/30 text-tertiary">MARGINAL ISOLATION</span>
+</td>
+</tr>
+<!-- Cut #3: Rejected -->
+<tr class="cursor-pointer bg-surface-container-low hover:bg-surface-container transition-colors" data-cut-row="" id="cut-row-3" onclick="switchCut('3', '0.240', '14', '112', '38', '20', '-0.024', 'REJECTED (OVER-SPLIT)', 'bg-surface-variant text-on-surface-variant')">
+<td class="py-space-sm px-space-md font-medium text-on-surface-variant flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-on-surface-variant text-[16px]">radio_button_unchecked</span>
+                Cut #3
+              </td>
+<td class="py-space-sm px-space-md text-on-surface-variant">φ = 0.240</td>
+<td class="py-space-sm px-space-md text-on-surface-variant">14 dense mesh links</td>
+<td class="py-space-sm px-space-md text-on-surface-variant">DEHL01-SR02 (Transit Trunk)</td>
+<td class="py-space-sm px-space-md text-on-surface-variant">38 / 20</td>
+<td class="py-space-sm px-space-md text-error">-0.024</td>
+<td class="py-space-sm px-space-md text-right">
+<span class="px-space-sm py-space-2xs rounded font-label-caps text-label-caps uppercase font-bold bg-surface-variant text-on-surface-variant">REJECTED (OVER-SPLIT)</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<!-- Operator Decision & Split Execution Controls -->
+<div class="bg-surface-container p-space-md rounded flex flex-wrap items-center justify-between gap-space-md shadow-xl">
+<div class="flex items-center gap-space-md">
+<div class="w-10 h-10 rounded bg-primary-container/20 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[24px]">troubleshoot</span>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-md text-headline-md font-bold text-on-surface leading-tight">Execute Structural Remediation for Chain C2214039</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Candidate Cut #1 satisfies partition bounds: Isolates 5 peripheral alarms from core root cause stream.</span>
+</div>
+</div>
+<!-- Action Buttons -->
+<div class="flex items-center gap-space-sm">
+<button class="flex items-center gap-space-xs px-space-md py-space-xs bg-surface-container-high hover:bg-surface-bright text-on-surface font-headline-md text-body-md font-semibold rounded shadow transition-all active:scale-95" onclick="triggerActionToast('SPLIT_SIMULATION_SANDBOX')">
+<span class="material-symbols-outlined text-[18px] text-secondary">play_arrow</span>
+          Simulate Split Execution
+        </button>
+<button class="flex items-center gap-space-xs px-space-md py-space-xs bg-surface-container-high hover:bg-surface-bright text-on-surface-variant hover:text-on-surface font-headline-md text-body-md rounded shadow transition-all active:scale-95" onclick="triggerActionToast('OVERRIDE_LEGITIMATE_COFIRE')">
+<span class="material-symbols-outlined text-[18px]">lock_reset</span>
+          Override as Co-firing
+        </button>
+<button class="flex items-center gap-space-xs px-space-lg py-space-xs bg-primary hover:brightness-110 text-on-primary font-headline-md text-body-md font-bold rounded shadow-lg transition-all active:scale-95" onclick="triggerActionToast('PROPOSE_SPLIT_OPERATOR_REVIEW')">
+<span class="material-symbols-outlined text-[18px]">split_scene</span>
+          Propose Split to Reviewer
+        </button>
+</div>
+</div>
+<!-- Telemetry Diagnostic Context -->
+<div class="flex flex-wrap items-center justify-between text-on-surface-variant font-code-sm text-code-sm px-space-xs pb-space-lg">
+<div class="flex items-center gap-space-md">
+<span>FAIL_SAFEGUARD: <strong class="text-secondary">ACTIVE (NON-DESTRUCTIVE)</strong></span>
+<span>AUDIT_HASH: <strong class="text-on-surface">sha256:d8a94bc109f</strong></span>
+<span>SOLVER_TIME: <strong class="text-on-surface">4.12ms</strong></span>
+</div>
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-secondary text-[14px]">shield</span>
+<span>Hindsight Graph Engine v1.0.4 • Viettel NOC Operations</span>
+</div>
+</div>
+</div>
+</div></main><footer class="fixed bottom-0 w-full h-space-row-compact-h z-40 bg-surface-container-lowest/95 backdrop-blur-md shadow-[0_-1px_6px_rgba(0,0,0,0.5)] flex items-center justify-between px-space-lg font-code-sm text-code-sm text-on-surface-variant"><div class="flex items-center gap-space-lg"><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">PROVENANCE:</span><span class="text-on-surface font-semibold">REAL_EXPORT_REPLAY</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">CONFIG:</span><span class="text-on-surface">v1.0</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">ENGINE:</span><span class="text-secondary">hindsight-v1</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">ACTIVE SNAPSHOT:</span><span class="text-on-surface">real_alarm_20260801</span></span></div><div class="flex items-center gap-space-lg"><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">MOCK GATEWAY:</span><span class="text-secondary">:8085</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">API:</span><span class="text-secondary">:8000</span></span><span class="flex items-center gap-space-xs"><span class="w-1.5 h-1.5 rounded-full bg-secondary"></span><span class="font-label-caps text-label-caps uppercase text-on-surface">STREAM SYNCED</span></span></div></footer></body></html>

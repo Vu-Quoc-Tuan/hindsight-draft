@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+          "background": "#0c1322",
+          "primary-container": "#ff5451",
+          "surface-container": "#191f2f",
+          "secondary-fixed": "#c4e7ff",
+          "on-primary-fixed-variant": "#930013",
+          "surface": "#0c1322",
+          "surface-bright": "#323949",
+          "outline-variant": "#5b403e",
+          "secondary-container": "#00a6e0",
+          "on-tertiary-fixed-variant": "#653e00",
+          "surface-dim": "#0c1322",
+          "surface-variant": "#2e3545",
+          "inverse-surface": "#dce2f7",
+          "on-secondary-fixed": "#001e2c",
+          "surface-container-high": "#232a3a",
+          "on-background": "#dce2f7",
+          "secondary-fixed-dim": "#7bd0ff",
+          "error-container": "#93000a",
+          "on-surface-variant": "#e4beba",
+          "on-error": "#690005",
+          "on-surface": "#dce2f7",
+          "on-secondary-fixed-variant": "#004c69",
+          "on-error-container": "#ffdad6",
+          "inverse-primary": "#b91a24",
+          "outline": "#ab8986",
+          "surface-container-highest": "#2e3545",
+          "on-tertiary": "#472a00",
+          "on-tertiary-container": "#3e2400",
+          "on-primary": "#68000a",
+          "tertiary-fixed": "#ffddb8",
+          "surface-container-low": "#141b2b",
+          "tertiary": "#ffb95f",
+          "surface-container-lowest": "#070e1d",
+          "inverse-on-surface": "#293040",
+          "tertiary-container": "#ca8100",
+          "secondary": "#7bd0ff",
+          "primary-fixed": "#ffdad7",
+          "primary-fixed-dim": "#ffb3ad",
+          "tertiary-fixed-dim": "#ffb95f",
+          "on-tertiary-fixed": "#2a1700",
+          "on-secondary-container": "#00374d",
+          "on-secondary": "#00354a",
+          "error": "#ffb4ab",
+          "surface-tint": "#ffb3ad",
+          "on-primary-fixed": "#410004",
+          "primary": "#ffb3ad",
+          "on-primary-container": "#5c0008"
+        },
+        "borderRadius": {
+          "DEFAULT": "0.125rem",
+          "lg": "0.25rem",
+          "xl": "0.5rem",
+          "full": "0.75rem"
+        },
+        "spacing": {
+          "space-xs": "4px",
+          "space-md": "12px",
+          "row-standard-h": "36px",
+          "space-sm": "8px",
+          "space-2xs": "2px",
+          "panel-header-h": "36px",
+          "space-xl": "24px",
+          "space-2xl": "32px",
+          "space-lg": "16px",
+          "margin-screen": "16px",
+          "row-compact-h": "28px",
+          "gutter": "12px"
+        },
+        "fontFamily": {
+          "label-caps": [
+            "JetBrains Mono"
+          ],
+          "headline-lg": [
+            "Inter"
+          ],
+          "headline-md": [
+            "Inter"
+          ],
+          "body-md": [
+            "Inter"
+          ],
+          "headline-xl": [
+            "Inter"
+          ],
+          "code-lg": [
+            "JetBrains Mono"
+          ],
+          "code-md": [
+            "JetBrains Mono"
+          ],
+          "body-lg": [
+            "Inter"
+          ],
+          "code-sm": [
+            "JetBrains Mono"
+          ],
+          "body-sm": [
+            "Inter"
+          ]
+        },
+        "fontSize": {
+          "label-caps": [
+            "10px",
+            {
+              "lineHeight": "12px",
+              "letterSpacing": "0.08em",
+              "fontWeight": "700"
+            }
+          ],
+          "headline-lg": [
+            "24px",
+            {
+              "lineHeight": "32px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "600"
+            }
+          ],
+          "headline-md": [
+            "18px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "600"
+            }
+          ],
+          "body-md": [
+            "14px",
+            {
+              "lineHeight": "20px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ],
+          "headline-xl": [
+            "32px",
+            {
+              "lineHeight": "40px",
+              "letterSpacing": "-0.02em",
+              "fontWeight": "700"
+            }
+          ],
+          "code-lg": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "500"
+            }
+          ],
+          "code-md": [
+            "13px",
+            {
+              "lineHeight": "18px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "500"
+            }
+          ],
+          "body-lg": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ],
+          "code-sm": [
+            "11px",
+            {
+              "lineHeight": "14px",
+              "letterSpacing": "0.02em",
+              "fontWeight": "500"
+            }
+          ],
+          "body-sm": [
+            "12px",
+            {
+              "lineHeight": "16px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ]
+        }
+      },
+    },
+  }</script></head><body class="bg-background font-body-md text-body-md text-on-surface select-none antialiased min-h-screen"><header class="fixed top-0 w-full z-50 bg-surface-container-lowest/95 backdrop-blur-md shadow-[0_1px_8px_rgba(0,0,0,0.45)]"><div class="h-20 w-full px-space-lg flex flex-col justify-between pt-space-xs"><div class="flex items-center justify-between gap-space-lg h-space-panel-header-h"><div class="flex items-center gap-space-md"><img alt="Viettel NocPro Hindsight Logo" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1VLqt94IO72isT_Nhyfi3O0p329p6SPzfuOcFUhdjnn8X1-paKZEn3Kdz9cb87XnOV3_OjW9vFvGlm5nI0uryu9mBhLWEE_pMJPdW1t_aKh2AoCI1OF5xUWOKCff5NhVrtDKVdE4pqPxhqRRNezzPeDUhHpae3vlgJ8jBb4ZIZ66NnULybPG-B8sglXpVM1t-schU1EMCxfKCjw3Q9hz3Da91Ik7X0JYQv8Plu-0d9wOXmyK_aboUITYQ"/><div class="flex flex-col"><span class="font-headline-md text-headline-md font-bold tracking-tight text-on-surface leading-none">NocPro Hindsight</span><span class="font-label-caps text-label-caps uppercase text-secondary font-semibold tracking-wider">Chain Explain &amp; RCA Engine</span></div><div class="h-space-lg w-px bg-surface-container-highest ml-space-xs"></div><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container rounded cursor-pointer hover:bg-surface-container-high transition-colors"><span class="material-symbols-outlined text-secondary text-[16px]">history</span><div class="flex flex-col"><div class="flex items-center gap-space-xs"><span class="font-code-sm text-code-sm text-on-surface font-semibold">real_alarm_20260801</span><span class="material-symbols-outlined text-on-surface-variant text-[14px]">expand_more</span></div><span class="font-code-sm text-code-sm text-on-surface-variant">212,636 alarms • 1,845 chains • 10:00:00 UTC</span></div></div></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container-low rounded"><div class="w-2 h-2 rounded-full bg-secondary animate-pulse"></div><span class="font-code-sm text-code-sm text-on-surface font-semibold tracking-wide">ONLINE (READY)</span><span class="font-code-sm text-code-sm text-on-surface-variant">/ hindsight-v1</span></div><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container-low rounded"><span class="material-symbols-outlined text-secondary text-[14px]">wifi_tethering</span><span class="font-code-sm text-code-sm text-on-surface">:8085</span><span class="font-label-caps text-label-caps uppercase text-secondary font-bold">LIVE</span></div><div class="flex items-center gap-space-sm px-space-sm py-space-2xs bg-surface-container-low rounded"><div class="flex flex-col"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">LATENCY</span><span class="font-code-sm text-code-sm text-on-surface font-semibold">1.2ms</span></div><div class="h-4 w-px bg-surface-container-highest"></div><div class="flex flex-col"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">EPS</span><span class="font-code-sm text-code-sm text-on-surface font-semibold">14.2k/s</span></div></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div><nav class="w-full flex items-center gap-space-xs overflow-x-auto h-space-panel-header-h" data-active-classes="bg-surface-container-high text-secondary border-b-2 border-secondary font-semibold"><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="chain-hierarchy-and-tree" href="#">Chain Hierarchy &amp; Tree</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="member-diagnostics-table" href="#">Member Diagnostics Table</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="pair-why-and-evidence-matrix" href="#">Pair WHY &amp; Evidence Matrix</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="structural-audit-conductance" href="#">Structural Audit (Conductance)</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="counterfactual-review-5-ops" href="#">Counterfactual Review (5 Ops)</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="evolution-and-lineage" href="#">Evolution &amp; Lineage</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="topology-explorer-ip-it" href="#">Topology Explorer (IP/IT)</a></nav></div></header><main class="w-full pt-20 bg-background min-h-[calc(100vh-28px)]"><div class="flex flex-col w-full">
+<!-- Sub-Navigation / Audit Context Bar -->
+<div class="w-full bg-surface-container-lowest px-space-lg py-space-sm flex flex-col xl:flex-row xl:items-center justify-between gap-space-sm shadow-md">
+<div class="flex items-center flex-wrap gap-space-md min-w-0">
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm text-on-surface-variant whitespace-nowrap">
+<span class="text-secondary font-semibold">SNAPSHOT S102</span>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+<span class="text-on-surface font-semibold">CHAIN C2214039</span>
+<span class="px-space-xs py-0 bg-surface-container-high rounded text-on-surface font-code-sm">58 Alarms</span>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+<span>Audit</span>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+<span class="text-secondary font-semibold">Attribution (SHAP / Deletion)</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<button class="px-space-sm py-space-2xs bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-code-sm text-code-sm rounded transition-colors flex items-center gap-space-xs" type="button">
+<span class="material-symbols-outlined text-[14px]">hub</span>
+<span>G*_audit Graph</span>
+</button>
+<button class="px-space-sm py-space-2xs bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-code-sm text-code-sm rounded transition-colors flex items-center gap-space-xs" type="button">
+<span class="material-symbols-outlined text-[14px]">content_cut</span>
+<span>Candidate Cuts</span>
+<span class="px-1 py-0 rounded bg-surface-container-high text-on-surface font-semibold text-[10px]">3</span>
+</button>
+<button class="px-space-sm py-space-2xs bg-secondary text-on-secondary-container font-code-sm text-code-sm font-bold rounded flex items-center gap-space-xs shadow-sm" type="button">
+<span class="material-symbols-outlined text-[14px]">stacked_bar_chart</span>
+<span>Attribution (Active)</span>
+</button>
+</div>
+</div>
+<!-- Engine Evaluator Badges -->
+<div class="flex items-center gap-space-md flex-wrap">
+<div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container rounded">
+<span class="material-symbols-outlined text-secondary text-[14px]">calculate</span>
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">EVALUATOR:</span>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold">KernelSHAP + Causal Shapley</span>
+</div>
+<div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container rounded">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">REMOVAL ROBUSTNESS:</span>
+<span class="font-code-sm text-code-sm text-secondary font-bold">92.4%</span>
+</div>
+</div>
+</div>
+<!-- Primary Dashboard Canvas -->
+<div class="p-space-lg flex flex-col gap-space-lg w-full">
+<!-- Top KPI / Hero Row (4 Cards) -->
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-space-md">
+<!-- KPI 1: Primary Attribution Driver -->
+<div class="bg-surface-container-low p-space-md rounded shadow-sm flex flex-col justify-between relative overflow-hidden group">
+<div class="absolute -right-4 -bottom-4 w-20 h-20 bg-secondary/5 rounded-full blur-xl group-hover:bg-secondary/10 transition-colors"></div>
+<div class="flex items-center justify-between mb-space-xs">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant tracking-wider">Primary Attribution Driver</span>
+<span class="material-symbols-outlined text-secondary text-[18px]">bolt</span>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-md text-headline-md text-on-surface font-bold truncate">Temporal Clustering</span>
+<div class="flex items-baseline gap-space-sm mt-space-2xs">
+<span class="font-code-lg text-code-lg text-secondary font-bold">+38.4%</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">phi_val: 0.384</span>
+</div>
+</div>
+<div class="mt-space-sm pt-space-xs flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
+<span>Window Δt: 120s</span>
+<span class="text-secondary">Domination: 1.43x</span>
+</div>
+</div>
+<!-- KPI 2: Baseline Cohesion -->
+<div class="bg-surface-container-low p-space-md rounded shadow-sm flex flex-col justify-between relative overflow-hidden">
+<div class="flex items-center justify-between mb-space-xs">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant tracking-wider">Baseline Cohesion Φ</span>
+<span class="material-symbols-outlined text-secondary text-[18px]">grain</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-baseline gap-space-xs">
+<span class="font-headline-xl text-headline-xl text-on-surface font-bold leading-none">0.824</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">/ 1.000</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant mt-space-2xs">Full hypergraph baseline without cuts</span>
+</div>
+<div class="mt-space-sm pt-space-xs flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
+<span>Conductance: 0.081</span>
+<span class="text-secondary">Strong Core</span>
+</div>
+</div>
+<!-- KPI 3: AUC Degradation -->
+<div class="bg-surface-container-low p-space-md rounded shadow-sm flex flex-col justify-between relative overflow-hidden">
+<div class="flex items-center justify-between mb-space-xs">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant tracking-wider">AUC Degradation (Random)</span>
+<span class="material-symbols-outlined text-secondary text-[18px]">monitoring</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-baseline gap-space-xs">
+<span class="font-headline-xl text-headline-xl text-secondary font-bold leading-none">0.892</span>
+<span class="px-space-xs py-0 rounded bg-secondary/15 text-secondary font-label-caps text-label-caps">HIGH RESILIENCE</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant mt-space-2xs">Resilient against non-targeted edge dropout</span>
+</div>
+<div class="mt-space-sm pt-space-xs flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
+<span>Targeted drop knee: 18.4%</span>
+<span class="text-on-surface">Ratio: 4.84</span>
+</div>
+</div>
+<!-- KPI 4: Critical Fragility Factor -->
+<div class="bg-surface-container-low p-space-md rounded shadow-sm flex flex-col justify-between relative overflow-hidden">
+<div class="flex items-center justify-between mb-space-xs">
+<span class="font-label-caps text-label-caps uppercase text-primary font-bold tracking-wider flex items-center gap-space-2xs">
+<span class="material-symbols-outlined text-primary text-[14px]">warning</span>
+            Fragility Bottleneck
+          </span>
+<span class="font-label-caps text-label-caps text-on-surface-variant">ALM-47933128</span>
+</div>
+<div class="flex flex-col">
+<span class="font-code-md text-code-md text-on-surface font-semibold truncate">T_burst on Root PE</span>
+<div class="flex items-baseline gap-space-sm mt-space-2xs">
+<span class="font-code-lg text-code-lg text-primary font-bold">41.2%</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">total chain mass load</span>
+</div>
+</div>
+<div class="mt-space-sm pt-space-xs flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
+<span>Single-cut Vulnerability</span>
+<span class="text-primary font-semibold">HIGH IMPACT</span>
+</div>
+</div>
+</div>
+<!-- Two-Column Analytical Workspace (60% / 40%) -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-space-lg w-full items-start">
+<!-- LEFT COLUMN: Multi-Source Shapley & Deletion Curves (60% -> 7 cols on lg, 7 on xl) -->
+<div class="lg:col-span-7 flex flex-col gap-space-lg min-w-0">
+<!-- CARD 1: Channel Attribution Breakdown -->
+<div class="bg-surface-container-low rounded p-space-md shadow-sm">
+<div class="flex items-center justify-between pb-space-sm mb-space-md">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-secondary text-[20px]">tune</span>
+<div class="flex flex-col">
+<h3 class="font-headline-md text-headline-md text-on-surface leading-tight font-semibold">Channel Attribution Breakdown</h3>
+<span class="font-code-sm text-code-sm text-on-surface-variant">Multi-Source Shapley feature attribution decomposition over 6 channels</span>
+</div>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="px-space-sm py-space-2xs bg-surface-container text-on-surface-variant font-code-sm text-code-sm rounded">Norm: Σ|ϕ| = 1.00</span>
+</div>
+</div>
+<!-- Horizontal Bars Breakdown -->
+<div class="flex flex-col gap-space-md">
+<!-- Channel 1 -->
+<div class="flex flex-col gap-space-2xs">
+<div class="flex items-center justify-between font-body-sm text-body-sm">
+<span class="flex items-center gap-space-xs text-on-surface font-medium">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+                  1. Temporal Burst Co-occurrence (T_burst)
+                </span>
+<span class="font-code-sm text-code-sm text-secondary font-bold">+38.4% <span class="text-on-surface-variant font-normal">(ϕ = 0.384)</span></span>
+</div>
+<div class="w-full bg-surface-container-highest h-2.5 rounded overflow-hidden flex">
+<div class="bg-secondary h-full rounded-sm" style="width: 38.4%"></div>
+</div>
+<div class="flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
+<span>Poisson coincidence model p &lt; 1e-6</span>
+<span>Marginal Delta: +0.129</span>
+</div>
+</div>
+<!-- Channel 2 -->
+<div class="flex flex-col gap-space-2xs">
+<div class="flex items-center justify-between font-body-sm text-body-sm">
+<span class="flex items-center gap-space-xs text-on-surface font-medium">
+<span class="w-2 h-2 rounded-full bg-secondary-fixed-dim"></span>
+                  2. Physical L2/L3 Topology Adjacency (Topo_adj)
+                </span>
+<span class="font-code-sm text-code-sm text-secondary font-bold">+26.8% <span class="text-on-surface-variant font-normal">(ϕ = 0.268)</span></span>
+</div>
+<div class="w-full bg-surface-container-highest h-2.5 rounded overflow-hidden flex">
+<div class="bg-secondary-fixed-dim h-full rounded-sm" style="width: 26.8%"></div>
+</div>
+<div class="flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
+<span>IS-IS neighbor / LACP trunk bind verification</span>
+<span>Hop distance: 1.00</span>
+</div>
+</div>
+<!-- Channel 3 -->
+<div class="flex flex-col gap-space-2xs">
+<div class="flex items-center justify-between font-body-sm text-body-sm">
+<span class="flex items-center gap-space-xs text-on-surface font-medium">
+<span class="w-2 h-2 rounded-full bg-secondary-container"></span>
+                  3. Hardware Chassis / Linecard Locality (HW_local)
+                </span>
+<span class="font-code-sm text-code-sm text-secondary font-bold">+18.2% <span class="text-on-surface-variant font-normal">(ϕ = 0.182)</span></span>
+</div>
+<div class="w-full bg-surface-container-highest h-2.5 rounded overflow-hidden flex">
+<div class="bg-secondary-container h-full rounded-sm" style="width: 18.2%"></div>
+</div>
+<div class="flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
+<span>Slot 06/Linecard-B optics backplane coupling</span>
+<span>Chassis ID: LC-9801</span>
+</div>
+</div>
+<!-- Channel 4 -->
+<div class="flex flex-col gap-space-2xs">
+<div class="flex items-center justify-between font-body-sm text-body-sm">
+<span class="flex items-center gap-space-xs text-on-surface font-medium">
+<span class="w-2 h-2 rounded-full bg-tertiary"></span>
+                  4. Historical Co-occurrence Lift (Lift_hist, H=3.42)
+                </span>
+<span class="font-code-sm text-code-sm text-tertiary font-bold">+11.5% <span class="text-on-surface-variant font-normal">(ϕ = 0.115)</span></span>
+</div>
+<div class="w-full bg-surface-container-highest h-2.5 rounded overflow-hidden flex">
+<div class="bg-tertiary h-full rounded-sm" style="width: 11.5%"></div>
+</div>
+<div class="flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
+<span>Observed 89 times over last 90 days</span>
+<span>Conditional Confidence: 94.2%</span>
+</div>
+</div>
+<!-- Channel 5 -->
+<div class="flex flex-col gap-space-2xs">
+<div class="flex items-center justify-between font-body-sm text-body-sm">
+<span class="flex items-center gap-space-xs text-on-surface font-medium">
+<span class="w-2 h-2 rounded-full bg-tertiary-fixed-dim"></span>
+                  5. Semantic Message Similarity (Sem_embed)
+                </span>
+<span class="font-code-sm text-code-sm text-on-surface font-bold">+5.1% <span class="text-on-surface-variant font-normal">(ϕ = 0.051)</span></span>
+</div>
+<div class="w-full bg-surface-container-highest h-2.5 rounded overflow-hidden flex">
+<div class="bg-tertiary-fixed-dim h-full rounded-sm" style="width: 5.1%"></div>
+</div>
+<div class="flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
+<span>Cosine similarity on BERT-NOC tokens</span>
+<span>Score: 0.762</span>
+</div>
+</div>
+<!-- Channel 6: Safeguard Inactive -->
+<div class="flex flex-col gap-space-2xs bg-surface-container p-space-xs rounded">
+<div class="flex items-center justify-between font-body-sm text-body-sm">
+<span class="flex items-center gap-space-xs text-on-surface-variant font-medium">
+<span class="w-2 h-2 rounded-full bg-outline"></span>
+                  6. Temporal Propagation Delay (T_del)
+                </span>
+<span class="px-space-xs py-0 bg-surface-container-highest text-on-surface-variant font-code-sm text-code-sm rounded">UNAVAILABLE / SAFEGUARD 0.000</span>
+</div>
+<div class="w-full bg-surface-container-highest h-1.5 rounded overflow-hidden">
+<div class="bg-outline h-full" style="width: 0%"></div>
+</div>
+<div class="flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
+<span>Fail-closed protection: missing microsecond GPS timestamps on DEHT01</span>
+<span>Penalty Weight: 0.00</span>
+</div>
+</div>
+</div>
+</div>
+<!-- CARD 2: Deletion Curves (Channel & Member Ablation Test) -->
+<div class="bg-surface-container-low rounded p-space-md shadow-sm flex flex-col">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between pb-space-sm mb-space-sm gap-space-xs">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-secondary text-[20px]">ssid_chart</span>
+<div>
+<h3 class="font-headline-md text-headline-md text-on-surface leading-tight font-semibold">Deletion Curves (Ablation Sensitivity)</h3>
+<span class="font-code-sm text-code-sm text-on-surface-variant">Cohesion score decay under progressive edge elimination strategies</span>
+</div>
+</div>
+<div class="flex items-center gap-space-sm font-label-caps text-label-caps">
+<span class="flex items-center gap-space-2xs text-primary font-bold">
+<span class="w-3 h-0.5 bg-primary inline-block"></span> Adversarial (High Shapley)
+              </span>
+<span class="flex items-center gap-space-2xs text-secondary font-bold">
+<span class="w-3 h-0.5 bg-secondary inline-block"></span> Least-Attributed (Noise First)
+              </span>
+<span class="flex items-center gap-space-2xs text-on-surface-variant">
+<span class="w-3 h-0.5 border-b border-dotted border-on-surface-variant inline-block"></span> Random Uniform
+              </span>
+</div>
+</div>
+<!-- SVG Ablation Chart -->
+<div class="w-full bg-surface-container-lowest p-space-md rounded relative overflow-hidden">
+<svg class="w-full h-64 text-on-surface-variant" fill="none" preserveaspectratio="none" viewbox="0 0 700 280">
+<!-- Grid lines -->
+<line stroke="currentColor" stroke-opacity="0.1" stroke-width="1" x1="60" x2="680" y1="20" y2="20"></line>
+<line stroke="currentColor" stroke-opacity="0.1" stroke-width="1" x1="60" x2="680" y1="80" y2="80"></line>
+<line stroke="currentColor" stroke-opacity="0.1" stroke-width="1" x1="60" x2="680" y1="140" y2="140"></line>
+<line stroke="currentColor" stroke-opacity="0.1" stroke-width="1" x1="60" x2="680" y1="200" y2="200"></line>
+<line stroke="currentColor" stroke-opacity="0.25" stroke-width="1.5" x1="60" x2="680" y1="240" y2="240"></line>
+<line stroke="currentColor" stroke-opacity="0.25" stroke-width="1.5" x1="60" x2="60" y1="20" y2="240"></line>
+<line stroke="currentColor" stroke-opacity="0.08" stroke-width="1" x1="215" x2="215" y1="20" y2="240"></line>
+<line stroke="currentColor" stroke-opacity="0.08" stroke-width="1" x1="370" x2="370" y1="20" y2="240"></line>
+<line stroke="currentColor" stroke-opacity="0.08" stroke-width="1" x1="525" x2="525" y1="20" y2="240"></line>
+<line stroke="currentColor" stroke-opacity="0.08" stroke-width="1" x1="680" x2="680" y1="20" y2="240"></line>
+<!-- Y-Axis Labels -->
+<text class="font-code-sm text-[10px]" fill="currentColor" text-anchor="end" x="50" y="24">1.0 Φ</text>
+<text class="font-code-sm text-[10px]" fill="currentColor" text-anchor="end" x="50" y="84">0.75</text>
+<text class="font-code-sm text-[10px]" fill="currentColor" text-anchor="end" x="50" y="144">0.50</text>
+<text class="font-code-sm text-[10px]" fill="currentColor" text-anchor="end" x="50" y="204">0.25</text>
+<text class="font-code-sm text-[10px]" fill="currentColor" text-anchor="end" x="50" y="244">0.0</text>
+<!-- X-Axis Labels -->
+<text class="font-code-sm text-[10px]" fill="currentColor" text-anchor="middle" x="60" y="260">0%</text>
+<text class="font-code-sm text-[10px]" fill="currentColor" text-anchor="middle" x="215" y="260">25%</text>
+<text class="font-code-sm text-[10px]" fill="currentColor" text-anchor="middle" x="370" y="260">50%</text>
+<text class="font-code-sm text-[10px]" fill="currentColor" text-anchor="middle" x="525" y="260">75%</text>
+<text class="font-code-sm text-[10px]" fill="currentColor" text-anchor="middle" x="680" y="260">100% (All Edges)</text>
+<!-- Critical Knee Point Area Shade -->
+<rect fill="currentColor" fill-opacity="0.03" height="220" width="40" x="174" y="20"></rect>
+<line stroke="#ff5451" stroke-dasharray="3 3" stroke-width="1.5" x1="174.1" x2="174.1" y1="20" y2="240"></line>
+<!-- Curve 3: Least-Attributed Removal (Green / Secondary dash) -->
+<!-- Stays high above 0.8 until ~45% removal then rolls over -->
+<path d="M 60 58 C 150 59, 250 62, 339 74 C 400 88, 480 130, 560 185 C 620 220, 650 235, 680 240" fill="none" stroke="#7bd0ff" stroke-dasharray="6 3" stroke-width="2.5"></path>
+<!-- Curve 2: Random Uniform Removal (Slate dotted) -->
+<!-- Linear decline dropping to 0.2 at 74% removal (60 + 0.74*620 = 518.8) -->
+<path d="M 60 58 L 220 100 L 370 148 L 519 196 L 680 240" fill="none" opacity="0.8" stroke="#ab8986" stroke-dasharray="3 3" stroke-width="2"></path>
+<!-- Curve 1: Targeted Adversarial Removal (Red solid, steep plunge) -->
+<!-- Starts at phi 0.824 (y ~ 58.7), plunges to 0.20 (y=196) at 18.4% (x = 60 + 0.184*620 = 174.08) -->
+<path d="M 60 58.7 C 95 62, 130 95, 174.1 196 C 215 224, 280 236, 400 238 L 680 240" fill="none" stroke="#ff5451" stroke-width="3"></path>
+<!-- Knee point pin -->
+<circle cx="174.1" cy="196" fill="#ff5451" r="4"></circle>
+<circle cx="174.1" cy="196" r="8" stroke="#ff5451" stroke-opacity="0.5" stroke-width="1.5"></circle>
+</svg>
+<!-- Floating Tooltip Annotation on Chart -->
+<div class="absolute left-[28%] top-12 bg-surface-container-highest/95 backdrop-blur px-space-sm py-space-xs rounded shadow-md pointer-events-none max-w-xs">
+<div class="flex items-center gap-space-2xs text-primary font-code-sm text-code-sm font-bold">
+<span class="material-symbols-outlined text-[14px]">crisis_alert</span>
+<span>KNEE POINT: 18.4% REMOVAL</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface mt-0.5 leading-snug">
+                Chain splits into disjoint subgraphs upon targeted removal of top 4 interface pairs. Cohesion drops from <span class="font-semibold text-secondary">0.824 → 0.200</span>.
+              </p>
+</div>
+</div>
+<!-- Chart Footer Legend & Diagnostic Metrics -->
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-space-sm mt-space-md pt-space-sm">
+<div class="flex flex-col bg-surface-container p-space-xs rounded">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Adversarial AUC</span>
+<span class="font-code-md text-code-md text-primary font-bold">0.241 (Fragile)</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Steep catastrophic drop</span>
+</div>
+<div class="flex flex-col bg-surface-container p-space-xs rounded">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Random Drop AUC</span>
+<span class="font-code-md text-code-md text-on-surface font-bold">0.612 (Linear)</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">50% retention @ 48% edges</span>
+</div>
+<div class="flex flex-col bg-surface-container p-space-xs rounded">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Pruning Safety Margin</span>
+<span class="font-code-md text-code-md text-secondary font-bold">45.0% Noise Cap</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Can prune low-weight tail</span>
+</div>
+</div>
+</div>
+</div>
+<!-- RIGHT COLUMN: Edge Attribution Table & Sensitivity Conclusion (40% -> 5 cols) -->
+<div class="lg:col-span-5 flex flex-col gap-space-lg min-w-0">
+<!-- CARD 3: Top Attributed Edge Pairs -->
+<div class="bg-surface-container-low rounded p-space-md shadow-sm flex flex-col">
+<div class="flex items-center justify-between pb-space-sm mb-space-xs">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-secondary text-[20px]">share</span>
+<div class="flex flex-col">
+<h3 class="font-headline-md text-headline-md text-on-surface font-semibold leading-tight">Top Attributed Edge Pairs</h3>
+<span class="font-code-sm text-code-sm text-on-surface-variant">Marginal Shapley delta per hyperedge</span>
+</div>
+</div>
+<span class="font-code-sm text-code-sm text-on-surface-variant">Top 5 of 142</span>
+</div>
+<!-- Table Container -->
+<div class="flex flex-col gap-space-2xs mt-space-xs overflow-x-auto">
+<!-- Row 1: Core Physical Trunk -->
+<div class="bg-surface-container hover:bg-surface-container-high transition-colors p-space-xs rounded flex flex-col gap-space-2xs">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm font-semibold text-on-surface truncate">
+<span class="text-secondary">#1</span>
+<span class="truncate">DEHL01-CR01:Gi6/0/2 ↔ DEHT01-AR02</span>
+</div>
+<span class="font-code-md text-code-md font-bold text-secondary ml-space-sm whitespace-nowrap">+0.284</span>
+</div>
+<div class="flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
+<div class="flex items-center gap-space-xs">
+<span class="px-1.5 py-0 bg-secondary/10 text-secondary rounded text-[10px] font-bold">TEMPORAL</span>
+<span class="px-1.5 py-0 bg-secondary/10 text-secondary rounded text-[10px] font-bold">PHYSICAL L2</span>
+</div>
+<span>Weight: 0.94</span>
+</div>
+</div>
+<!-- Row 2: Optical/Syslog Root Core -->
+<div class="bg-surface-container hover:bg-surface-container-high transition-colors p-space-xs rounded flex flex-col gap-space-2xs">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm font-semibold text-on-surface truncate">
+<span class="text-secondary">#2</span>
+<span class="truncate">ALM-47933128 ↔ ALM-715054</span>
+</div>
+<span class="font-code-md text-code-md font-bold text-secondary ml-space-sm whitespace-nowrap">+0.241</span>
+</div>
+<div class="flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
+<div class="flex items-center gap-space-xs">
+<span class="px-1.5 py-0 bg-surface-container-highest text-on-surface rounded text-[10px]">T_BURST</span>
+<span class="px-1.5 py-0 bg-surface-container-highest text-on-surface rounded text-[10px]">SYSLOG</span>
+<span class="px-1.5 py-0 bg-surface-container-highest text-on-surface rounded text-[10px]">CHASSIS</span>
+</div>
+<span>Δt: 140ms</span>
+</div>
+</div>
+<!-- Row 3: Shared Linecard -->
+<div class="bg-surface-container hover:bg-surface-container-high transition-colors p-space-xs rounded flex flex-col gap-space-2xs">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm font-semibold text-on-surface truncate">
+<span class="text-secondary">#3</span>
+<span class="truncate">ALM-47933128 ↔ ALM-47933130</span>
+</div>
+<span class="font-code-md text-code-md font-bold text-secondary ml-space-sm whitespace-nowrap">+0.189</span>
+</div>
+<div class="flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
+<div class="flex items-center gap-space-xs">
+<span class="px-1.5 py-0 bg-surface-container-highest text-on-surface rounded text-[10px]">SHARED LINECARD-B</span>
+</div>
+<span>ASIC Fabric</span>
+</div>
+</div>
+<!-- Row 4: Subtended Loop -->
+<div class="bg-surface-container hover:bg-surface-container-high transition-colors p-space-xs rounded flex flex-col gap-space-2xs">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm font-semibold text-on-surface truncate">
+<span class="text-secondary">#4</span>
+<span class="truncate">DEHT01-AR02 ↔ CPE-081</span>
+</div>
+<span class="font-code-md text-code-md font-bold text-secondary-fixed-dim ml-space-sm whitespace-nowrap">+0.062</span>
+</div>
+<div class="flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
+<div class="flex items-center gap-space-xs">
+<span class="px-1.5 py-0 bg-surface-container-highest text-on-surface rounded text-[10px]">SUBTENDED LOOP</span>
+</div>
+<span>Downlink Leaf</span>
+</div>
+</div>
+<!-- Row 5: Negative Drag (Candidate Prune) -->
+<div class="bg-error-container/20 hover:bg-error-container/30 transition-colors p-space-xs rounded flex flex-col gap-space-2xs">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm font-semibold text-error truncate">
+<span class="text-error">#5</span>
+<span class="truncate">ALM-99210014 (CPU Temp) ↔ Root</span>
+</div>
+<span class="font-code-md text-code-md font-bold text-error ml-space-sm whitespace-nowrap">-0.048</span>
+</div>
+<div class="flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
+<div class="flex items-center gap-space-xs">
+<span class="px-1.5 py-0 bg-primary-container text-on-primary-container font-label-caps text-label-caps font-bold rounded">
+                    CANDIDATE PRUNE
+                  </span>
+<span class="text-error text-[10px]">Destabilizing Drag</span>
+</div>
+<span class="text-error font-semibold">Decouple Flagged</span>
+</div>
+</div>
+</div>
+</div>
+<!-- CARD 4: Attribution Verdict & Sensitivity Conclusion -->
+<div class="bg-surface-container-low rounded p-space-md shadow-sm flex flex-col gap-space-md">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-secondary text-[20px]">fact_check</span>
+<h3 class="font-headline-md text-headline-md text-on-surface font-semibold">Attribution Verdict &amp; Sensitivity</h3>
+</div>
+<!-- Structured Conclusion Box -->
+<div class="bg-surface-container p-space-md rounded flex flex-col gap-space-sm">
+<div class="flex items-start gap-space-sm">
+<span class="material-symbols-outlined text-secondary text-[20px] mt-0.5">verified</span>
+<p class="font-body-md text-body-md text-on-surface leading-relaxed">
+                Chain <strong class="text-secondary font-semibold">C2214039</strong> is structurally anchored by Root Optical/Physical interface telemetry (<strong class="text-on-surface">+65.2% combined</strong> attribution).
+              </p>
+</div>
+<div class="flex items-start gap-space-sm">
+<span class="material-symbols-outlined text-primary text-[20px] mt-0.5">content_cut</span>
+<p class="font-body-md text-body-md text-on-surface leading-relaxed">
+                Alarm <code class="text-error font-code-sm bg-surface-container-high px-1 py-0.5 rounded">ALM-99210014</code> acts as negative attribution drag (<span class="text-error font-semibold font-code-sm">-0.048</span>), confirming high confidence recommendation for <strong class="text-on-surface">spectral cut</strong>.
+              </p>
+</div>
+</div>
+<!-- Action Buttons Bar -->
+<div class="flex flex-col sm:flex-row items-center gap-space-sm pt-space-xs">
+<button class="w-full sm:w-1/2 px-space-md py-space-sm bg-surface-container hover:bg-surface-container-high text-on-surface font-body-sm text-body-sm font-semibold rounded flex items-center justify-center gap-space-xs transition-colors shadow-sm" type="button">
+<span class="material-symbols-outlined text-secondary text-[16px]">download</span>
+<span>Export Tensor (.npz)</span>
+</button>
+<button class="w-full sm:w-1/2 px-space-md py-space-sm bg-secondary text-on-secondary-container hover:bg-secondary-fixed-dim font-body-sm text-body-sm font-bold rounded flex items-center justify-center gap-space-xs transition-colors shadow-sm" type="button">
+<span class="material-symbols-outlined text-[16px]">autorenew</span>
+<span>Run Counterfactual</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div></main><footer class="fixed bottom-0 w-full h-space-row-compact-h z-40 bg-surface-container-lowest/95 backdrop-blur-md shadow-[0_-1px_6px_rgba(0,0,0,0.5)] flex items-center justify-between px-space-lg font-code-sm text-code-sm text-on-surface-variant"><div class="flex items-center gap-space-lg"><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">PROVENANCE:</span><span class="text-on-surface font-semibold">REAL_EXPORT_REPLAY</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">CONFIG:</span><span class="text-on-surface">v1.0</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">ENGINE:</span><span class="text-secondary">hindsight-v1</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">ACTIVE SNAPSHOT:</span><span class="text-on-surface">real_alarm_20260801</span></span></div><div class="flex items-center gap-space-lg"><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">MOCK GATEWAY:</span><span class="text-secondary">:8085</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">API:</span><span class="text-secondary">:8000</span></span><span class="flex items-center gap-space-xs"><span class="w-1.5 h-1.5 rounded-full bg-secondary"></span><span class="font-label-caps text-label-caps uppercase text-on-surface">STREAM SYNCED</span></span></div></footer></body></html>
