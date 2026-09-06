@@ -1,0 +1,905 @@
+<!DOCTYPE html><html class="dark" lang="en" style=""><svg class="inline-defs-container" aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden"></svg><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0" name="viewport"><link href="https://fonts.googleapis.com" rel="preconnect"><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+          "background": "#0c1322",
+          "primary-container": "#ff5451",
+          "surface-container": "#191f2f",
+          "secondary-fixed": "#c4e7ff",
+          "on-primary-fixed-variant": "#930013",
+          "surface": "#0c1322",
+          "surface-bright": "#323949",
+          "outline-variant": "#5b403e",
+          "secondary-container": "#00a6e0",
+          "on-tertiary-fixed-variant": "#653e00",
+          "surface-dim": "#0c1322",
+          "surface-variant": "#2e3545",
+          "inverse-surface": "#dce2f7",
+          "on-secondary-fixed": "#001e2c",
+          "surface-container-high": "#232a3a",
+          "on-background": "#dce2f7",
+          "secondary-fixed-dim": "#7bd0ff",
+          "error-container": "#93000a",
+          "on-surface-variant": "#e4beba",
+          "on-error": "#690005",
+          "on-surface": "#dce2f7",
+          "on-secondary-fixed-variant": "#004c69",
+          "on-error-container": "#ffdad6",
+          "inverse-primary": "#b91a24",
+          "outline": "#ab8986",
+          "surface-container-highest": "#2e3545",
+          "on-tertiary": "#472a00",
+          "on-tertiary-container": "#3e2400",
+          "on-primary": "#68000a",
+          "tertiary-fixed": "#ffddb8",
+          "surface-container-low": "#141b2b",
+          "tertiary": "#ffb95f",
+          "surface-container-lowest": "#070e1d",
+          "inverse-on-surface": "#293040",
+          "tertiary-container": "#ca8100",
+          "secondary": "#7bd0ff",
+          "primary-fixed": "#ffdad7",
+          "primary-fixed-dim": "#ffb3ad",
+          "tertiary-fixed-dim": "#ffb95f",
+          "on-tertiary-fixed": "#2a1700",
+          "on-secondary-container": "#00374d",
+          "on-secondary": "#00354a",
+          "error": "#ffb4ab",
+          "surface-tint": "#ffb3ad",
+          "on-primary-fixed": "#410004",
+          "primary": "#ffb3ad",
+          "on-primary-container": "#5c0008"
+        },
+        "borderRadius": {
+          "DEFAULT": "0.125rem",
+          "lg": "0.25rem",
+          "xl": "0.5rem",
+          "full": "0.75rem"
+        },
+        "spacing": {
+          "space-xs": "4px",
+          "space-md": "12px",
+          "row-standard-h": "36px",
+          "space-sm": "8px",
+          "space-2xs": "2px",
+          "panel-header-h": "36px",
+          "space-xl": "24px",
+          "space-2xl": "32px",
+          "space-lg": "16px",
+          "margin-screen": "16px",
+          "row-compact-h": "28px",
+          "gutter": "12px"
+        },
+        "fontFamily": {
+          "label-caps": [
+            "JetBrains Mono"
+          ],
+          "headline-lg": [
+            "Inter"
+          ],
+          "headline-md": [
+            "Inter"
+          ],
+          "body-md": [
+            "Inter"
+          ],
+          "headline-xl": [
+            "Inter"
+          ],
+          "code-lg": [
+            "JetBrains Mono"
+          ],
+          "code-md": [
+            "JetBrains Mono"
+          ],
+          "body-lg": [
+            "Inter"
+          ],
+          "code-sm": [
+            "JetBrains Mono"
+          ],
+          "body-sm": [
+            "Inter"
+          ]
+        },
+        "fontSize": {
+          "label-caps": [
+            "10px",
+            {
+              "lineHeight": "12px",
+              "letterSpacing": "0.08em",
+              "fontWeight": "700"
+            }
+          ],
+          "headline-lg": [
+            "24px",
+            {
+              "lineHeight": "32px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "600"
+            }
+          ],
+          "headline-md": [
+            "18px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "600"
+            }
+          ],
+          "body-md": [
+            "14px",
+            {
+              "lineHeight": "20px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ],
+          "headline-xl": [
+            "32px",
+            {
+              "lineHeight": "40px",
+              "letterSpacing": "-0.02em",
+              "fontWeight": "700"
+            }
+          ],
+          "code-lg": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "500"
+            }
+          ],
+          "code-md": [
+            "13px",
+            {
+              "lineHeight": "18px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "500"
+            }
+          ],
+          "body-lg": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ],
+          "code-sm": [
+            "11px",
+            {
+              "lineHeight": "14px",
+              "letterSpacing": "0.02em",
+              "fontWeight": "500"
+            }
+          ],
+          "body-sm": [
+            "12px",
+            {
+              "lineHeight": "16px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ]
+        }
+      },
+    },
+  }</script></head><body class="bg-background font-body-md text-body-md text-on-surface select-none antialiased min-h-screen"><header class="fixed top-0 w-full z-50 bg-surface-container-lowest/95 backdrop-blur-md shadow-[0_1px_8px_rgba(0,0,0,0.45)]"><div class="h-20 w-full px-space-lg flex flex-col justify-between pt-space-xs"><div class="flex items-center justify-between gap-space-lg h-space-panel-header-h"><div class="flex items-center gap-space-md"><img alt="Viettel NocPro Hindsight Logo" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1VLqt94IO72isT_Nhyfi3O0p329p6SPzfuOcFUhdjnn8X1-paKZEn3Kdz9cb87XnOV3_OjW9vFvGlm5nI0uryu9mBhLWEE_pMJPdW1t_aKh2AoCI1OF5xUWOKCff5NhVrtDKVdE4pqPxhqRRNezzPeDUhHpae3vlgJ8jBb4ZIZ66NnULybPG-B8sglXpVM1t-schU1EMCxfKCjw3Q9hz3Da91Ik7X0JYQv8Plu-0d9wOXmyK_aboUITYQ"><div class="flex flex-col"><span class="font-headline-md text-headline-md font-bold tracking-tight text-on-surface leading-none">NocPro Hindsight</span><span class="font-label-caps text-label-caps uppercase text-secondary font-semibold tracking-wider">Chain Explain &amp; RCA Engine</span></div><div class="h-space-lg w-px bg-surface-container-highest ml-space-xs"></div><div class="flex items-center gap-space-sm"><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container rounded cursor-pointer hover:bg-surface-container-high transition-colors"><span class="material-symbols-outlined text-secondary text-[16px]">history</span><div class="flex flex-col"><div class="flex items-center gap-space-xs"><span class="font-code-sm text-code-sm text-on-surface font-semibold">IT_SERVICES / S102 v1</span><span class="material-symbols-outlined text-on-surface-variant text-[14px]">expand_more</span></div><span class="font-code-sm text-code-sm text-on-surface-variant">8,714 alarms · 2,824 chains</span></div></div><div class="hidden md:flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container-low rounded border-none font-code-sm text-code-sm"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Capabilities</span><span class="text-on-surface font-semibold">[</span><span class="text-secondary font-semibold">2 Ready</span><span class="text-on-surface-variant">·</span><span class="text-tertiary font-semibold">1 Partial</span><span class="text-on-surface-variant">·</span><span class="text-error font-semibold">2 Limited</span><span class="text-on-surface font-semibold">]</span></div></div></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container-low rounded"><div class="w-2 h-2 rounded-full bg-secondary animate-pulse"></div><span class="font-code-sm text-code-sm text-on-surface font-semibold tracking-wide">ONLINE (READY)</span><span class="font-code-sm text-code-sm text-on-surface-variant">/ hindsight-v1</span></div><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container-low rounded"><span class="material-symbols-outlined text-secondary text-[14px]">wifi_tethering</span><span class="font-code-sm text-code-sm text-on-surface">:8085</span><span class="font-label-caps text-label-caps uppercase text-secondary font-bold">LIVE</span></div><div class="flex items-center gap-space-sm px-space-sm py-space-2xs bg-surface-container-low rounded"><div class="flex flex-col"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">LATENCY</span><span class="font-code-sm text-code-sm text-on-surface font-semibold">1.2ms</span></div><div class="h-4 w-px bg-surface-container-highest"></div><div class="flex flex-col"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">EPS</span><span class="font-code-sm text-code-sm text-on-surface font-semibold">14.2k/s</span></div></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div><nav class="w-full flex items-center gap-space-xs overflow-x-auto h-space-panel-header-h" data-active-classes="bg-surface-container-high text-secondary border-b-2 border-secondary font-semibold"><a class="px-space-md py-space-xs font-body-sm text-body-sm bg-surface-container-high text-secondary border-b-2 border-secondary font-semibold whitespace-nowrap" data-path="concurrent-chains" href="#">Concurrent Chains</a><a href="#" data-path="multi-chain-timeline" class="px-space-md py-space-xs font-body-sm text-body-sm bg-surface-container-high text-secondary border-b-2 border-secondary font-semibold whitespace-nowrap">Multi-Chain Timeline</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="chain-hierarchy-and-tree" href="#">Chain Hierarchy &amp; Tree</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="member-diagnostics-table" href="#">Member Diagnostics Table</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="pair-why-and-evidence-matrix" href="#">Pair WHY &amp; Evidence Matrix</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="structural-audit-conductance" href="#">Structural Audit (Conductance)</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="counterfactual-review-5-ops" href="#">Counterfactual Review (5 Ops)</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="evolution-and-lineage" href="#">Evolution &amp; Lineage</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="topology-explorer-ip-it" href="#">Topology Explorer (IP/IT)</a></nav></div></header><main class="w-full pt-20 bg-background min-h-[calc(100vh-28px)]"><div class="flex flex-col w-full px-space-lg py-space-md gap-space-md text-on-surface">
+<!-- Interactive State Controller Script Injection (Single source for timeline view) -->
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // Synchronize sub-nav indicator for 'Multi-Chain Timeline'
+      const navLinks = document.querySelectorAll('header nav a');
+      navLinks.forEach(link => {
+        link.classList.remove('bg-surface-container-high', 'text-secondary', 'border-b-2', 'border-secondary', 'font-semibold');
+        link.classList.add('text-on-surface-variant');
+        if (link.textContent.trim().includes('Multi-Chain') || link.getAttribute('data-path') === 'multi-chain-timeline') {
+          link.classList.add('bg-surface-container-high', 'text-secondary', 'border-b-2', 'border-secondary', 'font-semibold');
+          link.classList.remove('text-on-surface-variant');
+        }
+      });
+      // Fallback: If not present in DOM nav, append or mark active cleanly
+      const nav = document.querySelector('header nav');
+      if (nav && !Array.from(nav.children).some(el => el.textContent.includes('Multi-Chain Timeline'))) {
+        const item = document.createElement('a');
+        item.href = '#';
+        item.setAttribute('data-path', 'multi-chain-timeline');
+        item.className = 'px-space-md py-space-xs font-body-sm text-body-sm bg-surface-container-high text-secondary border-b-2 border-secondary font-semibold whitespace-nowrap';
+        item.textContent = 'Multi-Chain Timeline';
+        nav.insertBefore(item, nav.firstChild);
+      }
+
+      // Chain Selection Logic for Comparative HUD Floating Bar
+      const checkboxes = document.querySelectorAll('.chain-select-box');
+      const floatingBar = document.getElementById('floating-comparison-bar');
+      const countLabel = document.getElementById('selected-chain-count');
+      const compareBtn = document.getElementById('btn-run-comparison');
+      const chainRows = document.querySelectorAll('.gantt-chain-row');
+
+      function updateSelectionState() {
+        const selected = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.dataset.chainId);
+        if (selected.length > 0) {
+          floatingBar.classList.remove('translate-y-24', 'opacity-0', 'pointer-events-none');
+          floatingBar.classList.add('translate-y-0', 'opacity-100');
+          countLabel.textContent = `${selected.length} chain${selected.length > 1 ? 's' : ''} selected`;
+          if (selected.length === 2) {
+            compareBtn.removeAttribute('disabled');
+            compareBtn.classList.remove('opacity-40', 'cursor-not-allowed');
+            compareBtn.classList.add('hover:brightness-110');
+            compareBtn.innerHTML = `<span class="material-symbols-outlined text-[16px]">compare_arrows</span> Compare Selected Chains (2)`;
+          } else {
+            compareBtn.setAttribute('disabled', 'true');
+            compareBtn.classList.add('opacity-40', 'cursor-not-allowed');
+            compareBtn.classList.remove('hover:brightness-110');
+            compareBtn.innerHTML = `<span class="material-symbols-outlined text-[16px]">check</span> Select 2 Chains to Correlate`;
+          }
+        } else {
+          floatingBar.classList.add('translate-y-24', 'opacity-0', 'pointer-events-none');
+          floatingBar.classList.remove('translate-y-0', 'opacity-100');
+        }
+      }
+
+      checkboxes.forEach(cb => {
+        cb.addEventListener('change', updateSelectionState);
+      });
+
+      // Quick-select preset for the concurrent alert pair
+      window.selectConcurrentPair = function() {
+        checkboxes.forEach(cb => {
+          cb.checked = (cb.dataset.chainId === 'C2214039' || cb.dataset.chainId === 'C2214048');
+        });
+        updateSelectionState();
+      };
+
+      // Zoom level simulation
+      let zoomLevel = 100;
+      const zoomDisplay = document.getElementById('zoom-scale-text');
+      window.adjustZoom = function(delta) {
+        zoomLevel = Math.min(180, Math.max(70, zoomLevel + delta));
+        if (zoomDisplay) zoomDisplay.textContent = `${zoomLevel}%`;
+        const timelineCanvas = document.getElementById('timeline-interactive-surface');
+        if (timelineCanvas) {
+          timelineCanvas.style.transformOrigin = 'left center';
+          timelineCanvas.style.transform = `scaleX(${zoomLevel / 100})`;
+        }
+      };
+    });
+  </script>
+<!-- Top Action & Filter Ribbon -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm pb-space-xs border-b border-surface-container-high"><div class="flex flex-col gap-space-2xs"><div class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-secondary text-[22px]">timeline</span><h1 class="font-headline-md text-headline-md font-bold text-on-surface tracking-tight">03 - Concurrent Chains</h1><span class="px-space-xs py-space-2xs rounded bg-surface-container-highest text-secondary font-code-sm text-code-sm font-semibold">Temporal Overlap</span></div><p class="font-body-sm text-body-sm text-on-surface-variant">Chains overlapping in time within this snapshot</p></div><div class="flex items-center gap-space-sm font-code-sm text-code-sm"><span class="text-on-surface-variant">Active Analysis:</span><span class="text-primary font-bold bg-primary-container/20 px-space-xs py-space-2xs rounded">8,714 alarms · 2,824 chains</span></div></div><div class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-space-md p-space-md bg-surface-container rounded-lg shadow-md">
+<!-- Left: Temporal Window & Zoom Granularity -->
+<div class="flex flex-wrap items-center gap-space-md">
+<div class="flex items-center gap-space-sm bg-surface-container-lowest px-space-md py-space-2xs rounded">
+<span class="material-symbols-outlined text-secondary text-[18px]">timelapse</span>
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Active Incident Window</span>
+<span class="font-code-md text-code-md font-semibold text-on-surface tracking-tight">14:20 — 14:45 UTC <span class="text-secondary font-normal text-code-sm ml-space-xs">(25 mins)</span></span>
+</div>
+</div>
+<div class="h-space-lg w-px bg-surface-container-highest hidden sm:block"></div>
+<!-- Granularity Pill Selector -->
+<div class="flex items-center gap-space-xs bg-surface-container-low px-space-xs py-space-2xs rounded">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant px-space-xs">Interval</span>
+<button class="px-space-sm py-space-2xs rounded font-code-sm text-code-sm bg-secondary-container text-on-secondary-container font-semibold transition-all">1 min</button>
+<button class="px-space-sm py-space-2xs rounded font-code-sm text-code-sm text-on-surface-variant hover:text-on-surface transition-all">30s</button>
+<button class="px-space-sm py-space-2xs rounded font-code-sm text-code-sm text-on-surface-variant hover:text-on-surface transition-all">5s</button>
+</div>
+<!-- Zoom Precision Stepper -->
+<div class="flex items-center bg-surface-container-lowest rounded p-space-2xs gap-space-xs">
+<button class="w-6 h-6 flex items-center justify-center rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" onclick="adjustZoom(-15)" title="Zoom Out Timeline">
+<span class="material-symbols-outlined text-[16px]">remove</span>
+</button>
+<span class="font-code-sm text-code-sm text-secondary px-space-xs w-10 text-center font-semibold" id="zoom-scale-text">100%</span>
+<button class="w-6 h-6 flex items-center justify-center rounded text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" onclick="adjustZoom(15)" title="Zoom In Timeline">
+<span class="material-symbols-outlined text-[16px]">add</span>
+</button>
+</div>
+</div>
+<!-- Right: Operational NOC Filters & Search -->
+<div class="flex flex-wrap items-center gap-space-sm">
+<!-- Site Dropdown -->
+<div class="flex items-center gap-space-xs bg-surface-container-lowest px-space-sm py-space-2xs rounded cursor-pointer hover:bg-surface-container-high transition-colors">
+<span class="font-label-caps text-label-caps text-on-surface-variant">SITE:</span>
+<span class="font-code-sm text-code-sm font-semibold text-on-surface">All Sites</span>
+<span class="material-symbols-outlined text-on-surface-variant text-[14px]">expand_more</span>
+</div>
+<!-- Size Filter -->
+<div class="flex items-center gap-space-xs bg-surface-container-lowest px-space-sm py-space-2xs rounded cursor-pointer hover:bg-surface-container-high transition-colors">
+<span class="font-label-caps text-label-caps text-on-surface-variant">MIN SIZE:</span>
+<span class="font-code-sm text-code-sm font-semibold text-secondary">&gt;10 alms</span>
+<span class="material-symbols-outlined text-on-surface-variant text-[14px]">expand_more</span>
+</div>
+<!-- Needs Attention Toggle Checkbox -->
+<label class="flex items-center gap-space-xs bg-surface-container-lowest px-space-sm py-space-2xs rounded cursor-pointer select-none hover:bg-surface-container-low transition-colors">
+<input checked="" class="w-3.5 h-3.5 rounded bg-surface-container-highest border-none text-secondary focus:ring-0 accent-secondary" type="checkbox">
+<span class="font-code-sm text-code-sm text-on-surface font-semibold">Needs attention only</span>
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse ml-space-2xs"></span>
+</label>
+<!-- Quick Finder Input -->
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-space-sm text-on-surface-variant text-[16px]">search</span>
+<input class="bg-surface-container-lowest pl-8 pr-space-md py-space-2xs h-8 rounded font-code-sm text-code-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:bg-surface-container-high transition-colors w-64" placeholder="Filter chain or device (e.g. DEH-GW01)..." type="text">
+</div>
+</div>
+</div>
+<!-- Incident Concurrency Anomaly Banner -->
+<div class="relative overflow-hidden bg-surface-container-low p-space-md rounded-lg shadow-sm">
+<div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-space-md relative z-10">
+<div class="flex items-start gap-space-md">
+<div class="w-9 h-9 rounded bg-primary-container/20 flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-primary text-[22px]">warning</span>
+</div>
+<div class="flex flex-col gap-space-2xs">
+<div class="flex flex-wrap items-center gap-space-sm">
+<span class="font-label-caps text-label-caps uppercase text-primary px-space-xs py-space-2xs rounded bg-primary-container/20 font-bold">Temporal Concurrency Flag</span>
+<span class="font-code-sm text-code-sm font-semibold text-on-surface">Concurrent propagation observed between</span>
+<span class="font-code-sm text-code-sm text-primary font-bold px-space-xs py-space-2xs bg-surface-container-highest rounded">C2214039</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">and</span>
+<span class="font-code-sm text-code-sm text-secondary font-bold px-space-xs py-space-2xs bg-surface-container-highest rounded">C2214048</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">Δt ≤ 120s</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+            Heuristic propagation correlation index: <strong class="text-tertiary font-code-sm">0.89 (HIGH)</strong> • Shared boundary gateway topology: <code class="text-secondary font-code-sm bg-surface-container px-space-xs py-space-2xs rounded">DEH-GW01</code>. Both cascades exhibit cross-rack cut conductance drops.
+          </p>
+</div>
+</div>
+<div class="flex items-center gap-space-sm shrink-0 self-end md:self-center">
+<button class="px-space-md py-space-2xs bg-surface-container-high hover:bg-surface-bright text-secondary font-code-sm text-code-sm font-semibold rounded flex items-center gap-space-xs transition-colors shadow-sm" onclick="selectConcurrentPair()">
+<span class="material-symbols-outlined text-[16px]">sync_alt</span>
+          Isolate Pair
+        </button>
+<button class="px-space-md py-space-2xs bg-primary text-on-primary font-headline-md text-body-sm font-semibold rounded hover:brightness-110 flex items-center gap-space-xs transition-all shadow-sm">
+<span class="material-symbols-outlined text-[16px]">bubble_chart</span>
+          Deep RCA Trace
+        </button>
+</div>
+</div>
+</div>
+<!-- Main Multi-Chain Gantt Chart Matrix Surface -->
+<div class="flex flex-col bg-surface-container-lowest rounded-lg shadow-xl overflow-hidden">
+<!-- Timeline Matrix Header (Time Axis + Indicators) -->
+<div class="flex items-stretch bg-surface-container-high h-space-panel-header-h select-none">
+<!-- Chain Descriptor Axis (Fixed Width 360px) -->
+<div class="w-80 sm:w-96 shrink-0 px-space-md flex items-center justify-between bg-surface-container">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-secondary text-[16px]">lan</span>
+<span class="font-label-caps text-label-caps uppercase text-on-surface font-bold tracking-wider">Top Concurrent Chains (8)</span>
+</div>
+<span class="font-code-sm text-code-sm text-on-surface-variant">ALMS / DOMAIN</span>
+</div>
+<!-- Time Axis Header Columns (14:20 -> 14:45 UTC) -->
+<div class="flex-1 relative flex items-center font-code-sm text-code-sm text-on-surface-variant overflow-hidden">
+<!-- 5-minute ticks -->
+<div class="w-1/5 h-full flex items-center px-space-sm relative">
+<span class="">14:20</span>
+</div>
+<div class="w-1/5 h-full flex items-center px-space-sm relative">
+<span class="">14:25</span>
+</div>
+<!-- 14:30 Burst Peak Marker Column -->
+<div class="w-1/5 h-full flex items-center px-space-sm relative bg-primary/10">
+<span class="font-bold text-primary flex items-center gap-space-2xs">
+            14:30
+            <span class="font-label-caps text-[9px] uppercase px-1 py-0.5 rounded bg-primary text-on-primary font-black tracking-widest leading-none">BURST PEAK</span>
+</span>
+</div>
+<div class="w-1/5 h-full flex items-center px-space-sm relative">
+<span class="">14:35</span>
+</div>
+<div class="w-1/5 h-full flex items-center px-space-sm relative">
+<span class="">14:40</span>
+</div>
+</div>
+<!-- End Scale Cap -->
+<div class="w-14 shrink-0 flex items-center justify-end pr-space-md text-on-surface-variant font-code-sm text-code-sm">
+        14:45
+      </div>
+</div>
+<!-- Interactive Canvas with Concurrent Chain Rows -->
+<div class="relative flex flex-col w-full transition-transform duration-150" id="timeline-interactive-surface">
+<!-- Background Temporal Grid Lines & Burst Window Highlighting -->
+<div class="absolute inset-0 left-80 sm:left-96 right-14 pointer-events-none flex">
+<!-- Column 14:20-14:25 -->
+<div class="w-1/5 h-full bg-transparent"></div>
+<!-- Column 14:25-14:30 -->
+<div class="w-1/5 h-full bg-transparent"></div>
+<!-- Column 14:30-14:35 (PEAK INCIDENT OVERLAY) -->
+<div class="w-1/5 h-full bg-primary/5 relative">
+<!-- Ambient pulse vertical beam -->
+<div class="absolute left-0 top-0 bottom-0 w-0.5 bg-primary/40"></div>
+<div class="absolute right-0 top-0 bottom-0 w-px bg-primary/20"></div>
+</div>
+<!-- Column 14:35-14:40 -->
+<div class="w-1/5 h-full bg-transparent"></div>
+<!-- Column 14:40-14:45 -->
+<div class="w-1/5 h-full bg-transparent"></div>
+</div>
+<!-- Global Burst Spike Guide Indicator Line at 14:28:40 (DEH Cut Inception) -->
+<div class="absolute top-0 bottom-0 left-[calc(384px+34%)] w-px bg-primary/80 z-20 pointer-events-none flex flex-col items-center">
+<span class="font-code-sm text-[10px] bg-primary text-on-primary px-1 rounded-b font-bold tracking-tight shadow-lg">T₀ DEH CUT (14:28:40)</span>
+</div>
+<!-- ================= ROW 1: C2214039 (DEHL01) ================= -->
+<div class="gantt-chain-row group relative flex items-center h-14 hover:bg-surface-container transition-colors select-none">
+<!-- Chain Meta Lead -->
+<div class="w-80 sm:w-96 shrink-0 h-full px-space-md flex items-center justify-between bg-surface-container-low/50 z-10 group-hover:bg-surface-container">
+<div class="flex items-center gap-space-sm">
+<input class="chain-select-box w-3.5 h-3.5 rounded bg-surface-container-highest border-none text-secondary focus:ring-0 cursor-pointer accent-secondary" data-chain-id="C2214039" type="checkbox">
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-code-md text-code-md font-bold text-on-surface">C2214039</span>
+<span class="font-label-caps text-label-caps px-space-2xs py-0.5 rounded bg-error-container text-primary font-bold">CORE</span>
+<span class="material-symbols-outlined text-primary text-[14px]" title="Weak Cut Flag Detected">warning</span>
+</div>
+<span class="font-code-sm text-code-sm text-on-surface-variant flex items-center gap-space-xs">
+                58 alms • <span class="text-on-surface font-semibold">DEHL01</span> (BGP Downstream)
+              </span>
+</div>
+</div>
+<div class="flex flex-col items-end">
+<span class="font-code-sm text-code-sm text-primary font-semibold">9.2 a/s pk</span>
+<span class="font-label-caps text-[9px] uppercase text-error tracking-wider">WEAK CUT</span>
+</div>
+</div>
+<!-- Timeline Track -->
+<div class="flex-1 h-full relative flex items-center pr-14 pl-2">
+<!-- Gantt Burst Bar: starts at 14:27 (~28% offset), width represents 22s -->
+<div class="relative left-[28%] w-[18%] h-8 rounded bg-gradient-to-r from-primary-container to-primary flex items-center px-space-sm text-on-primary-container shadow-md cursor-pointer hover:brightness-125 transition-all group-hover:shadow-lg">
+<div class="flex items-center justify-between w-full font-code-sm text-code-sm font-semibold truncate">
+<span class="flex items-center gap-space-2xs truncate">
+<span class="material-symbols-outlined text-[14px]">electric_bolt</span>
+<span class="">14:27:00 (22s)</span>
+</span>
+<span class="font-bold text-[10px] bg-black/30 px-1 py-0.5 rounded ml-space-xs shrink-0">58 ALMS</span>
+</div>
+<!-- Weak cut badge indicator marker on bar -->
+<div class="absolute -top-2.5 right-2 bg-error-container text-primary px-1.5 py-0.2 rounded-full font-label-caps text-[8px] font-black uppercase flex items-center gap-0.5 shadow">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-ping"></span>
+              CUT CANDIDATE
+            </div>
+</div>
+<!-- Micro Hover Inspector Popover -->
+<div class="absolute left-[34%] -top-16 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto z-30 transition-all duration-200 transform translate-y-1 group-hover:translate-y-0">
+<div class="bg-surface-container-high p-space-sm rounded-md shadow-xl flex items-center gap-space-md whitespace-nowrap">
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-secondary">Start: 14:27:12 UTC</span>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold">Dominant: <span class="text-primary font-bold">DEH-CORE-R01</span> (BGP Peer Drop)</span>
+</div>
+<div class="h-6 w-px bg-surface-container-highest"></div>
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Max Burst Rate</span>
+<span class="font-code-sm text-code-sm font-bold text-primary">8.4 alarms/sec</span>
+</div>
+<button class="px-space-sm py-1 bg-surface-bright hover:bg-secondary text-secondary hover:text-on-secondary font-code-sm text-code-sm font-semibold rounded transition-colors ml-space-xs">
+                Open Workspace
+              </button>
+</div>
+</div>
+</div>
+</div>
+<!-- ================= ROW 2: C2214048 (DEHT01) ================= -->
+<div class="gantt-chain-row group relative flex items-center h-14 hover:bg-surface-container transition-colors select-none">
+<div class="w-80 sm:w-96 shrink-0 h-full px-space-md flex items-center justify-between bg-surface-container-low/50 z-10 group-hover:bg-surface-container">
+<div class="flex items-center gap-space-sm">
+<input class="chain-select-box w-3.5 h-3.5 rounded bg-surface-container-highest border-none text-secondary focus:ring-0 cursor-pointer accent-secondary" data-chain-id="C2214048" type="checkbox">
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-code-md text-code-md font-bold text-on-surface">C2214048</span>
+<span class="font-label-caps text-label-caps px-space-2xs py-0.5 rounded bg-secondary-container/20 text-secondary font-bold">BRIDGE</span>
+<span class="material-symbols-outlined text-secondary text-[14px]" title="Cross-Link Correlated">link</span>
+</div>
+<span class="font-code-sm text-code-sm text-on-surface-variant flex items-center gap-space-xs">
+                42 alms • <span class="text-on-surface font-semibold">DEHT01</span> (Transport Transit)
+              </span>
+</div>
+</div>
+<div class="flex flex-col items-end">
+<span class="font-code-sm text-code-sm text-secondary font-semibold">6.8 a/s pk</span>
+<span class="font-label-caps text-[9px] uppercase text-secondary tracking-wider">CONCURRENT</span>
+</div>
+</div>
+<div class="flex-1 h-full relative flex items-center pr-14 pl-2">
+<!-- Gantt Burst Bar: starts at 14:29 (~36% offset), width 24% for 31s -->
+<div class="relative left-[36%] w-[24%] h-8 rounded bg-gradient-to-r from-secondary-container to-secondary flex items-center px-space-sm text-on-secondary-container shadow-md cursor-pointer hover:brightness-125 transition-all group-hover:shadow-lg">
+<div class="flex items-center justify-between w-full font-code-sm text-code-sm font-semibold truncate">
+<span class="flex items-center gap-space-2xs truncate">
+<span class="material-symbols-outlined text-[14px]">device_hub</span>
+<span class="">14:29:08 (31s)</span>
+</span>
+<span class="font-bold text-[10px] bg-black/30 px-1 py-0.5 rounded ml-space-xs shrink-0">42 ALMS</span>
+</div>
+<!-- Temporal link connector to previous chain -->
+<div class="absolute -left-3 top-1/2 -translate-y-1/2 w-3 h-0.5 bg-secondary"></div>
+</div>
+<!-- Micro Hover Inspector Popover -->
+<div class="absolute left-[44%] -top-16 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto z-30 transition-all duration-200 transform translate-y-1 group-hover:translate-y-0">
+<div class="bg-surface-container-high p-space-sm rounded-md shadow-xl flex items-center gap-space-md whitespace-nowrap">
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-secondary">Start: 14:29:08 UTC</span>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold">Dominant: <span class="text-secondary font-bold">DEH-GW01</span> (Interface SFP LOS)</span>
+</div>
+<div class="h-6 w-px bg-surface-container-highest"></div>
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Correlation With C2214039</span>
+<span class="font-code-sm text-code-sm font-bold text-tertiary">0.89 Conductance Coinc</span>
+</div>
+<button class="px-space-sm py-1 bg-surface-bright hover:bg-secondary text-secondary hover:text-on-secondary font-code-sm text-code-sm font-semibold rounded transition-colors ml-space-xs">
+                Open Workspace
+              </button>
+</div>
+</div>
+</div>
+</div>
+<!-- ================= ROW 3: C2214091 (HAN-AGG) ================= -->
+<div class="gantt-chain-row group relative flex items-center h-14 hover:bg-surface-container transition-colors select-none">
+<div class="w-80 sm:w-96 shrink-0 h-full px-space-md flex items-center justify-between bg-surface-container-low/50 z-10 group-hover:bg-surface-container">
+<div class="flex items-center gap-space-sm">
+<input class="chain-select-box w-3.5 h-3.5 rounded bg-surface-container-highest border-none text-secondary focus:ring-0 cursor-pointer accent-secondary" data-chain-id="C2214091" type="checkbox">
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-code-md text-code-md font-bold text-on-surface">C2214091</span>
+<span class="font-label-caps text-label-caps px-space-2xs py-0.5 rounded bg-error-container text-primary font-bold">CORE</span>
+<span class="material-symbols-outlined text-primary text-[14px]">flag</span>
+</div>
+<span class="font-code-sm text-code-sm text-on-surface-variant flex items-center gap-space-xs">
+                64 alms • <span class="text-on-surface font-semibold">HAN-AGG</span> (Aggregation East)
+              </span>
+</div>
+</div>
+<div class="flex flex-col items-end">
+<span class="font-code-sm text-code-sm text-primary font-semibold">12.1 a/s pk</span>
+<span class="font-label-caps text-[9px] uppercase text-error tracking-wider">CUT CANDIDATE</span>
+</div>
+</div>
+<div class="flex-1 h-full relative flex items-center pr-14 pl-2">
+<!-- 14:25 - 14:28 (20% offset, 16% width) -->
+<div class="relative left-[20%] w-[16%] h-8 rounded bg-gradient-to-r from-primary to-primary-container flex items-center px-space-sm text-on-primary shadow-md cursor-pointer hover:brightness-125 transition-all group-hover:shadow-lg">
+<div class="flex items-center justify-between w-full font-code-sm text-code-sm font-semibold truncate">
+<span class="truncate">14:25:10 (3m 12s)</span>
+<span class="font-bold text-[10px] bg-black/30 px-1 py-0.5 rounded ml-space-xs shrink-0">64 ALMS</span>
+</div>
+</div>
+<!-- Micro Popover -->
+<div class="absolute left-[24%] -top-16 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto z-30 transition-all duration-200 transform translate-y-1 group-hover:translate-y-0">
+<div class="bg-surface-container-high p-space-sm rounded-md shadow-xl flex items-center gap-space-md whitespace-nowrap">
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-secondary">Start: 14:25:10 UTC</span>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold">Dominant: <span class="text-primary font-bold">HAN-AGG-02</span></span>
+</div>
+<div class="h-6 w-px bg-surface-container-highest"></div>
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Peak Rate</span>
+<span class="font-code-sm text-code-sm font-bold text-primary">12.1 alarms/sec</span>
+</div>
+<button class="px-space-sm py-1 bg-surface-bright hover:bg-secondary text-secondary hover:text-on-secondary font-code-sm text-code-sm font-semibold rounded transition-colors ml-space-xs">
+                Open Workspace
+              </button>
+</div>
+</div>
+</div>
+</div>
+<!-- ================= ROW 4: C2214107 (QNM-SUB) ================= -->
+<div class="gantt-chain-row group relative flex items-center h-14 hover:bg-surface-container transition-colors select-none">
+<div class="w-80 sm:w-96 shrink-0 h-full px-space-md flex items-center justify-between bg-surface-container-low/50 z-10 group-hover:bg-surface-container">
+<div class="flex items-center gap-space-sm">
+<input class="chain-select-box w-3.5 h-3.5 rounded bg-surface-container-highest border-none text-secondary focus:ring-0 cursor-pointer accent-secondary" data-chain-id="C2214107" type="checkbox">
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-code-md text-code-md font-bold text-on-surface">C2214107</span>
+<span class="font-label-caps text-label-caps px-space-2xs py-0.5 rounded bg-tertiary/20 text-tertiary font-bold">LEAF</span>
+</div>
+<span class="font-code-sm text-code-sm text-on-surface-variant flex items-center gap-space-xs">
+                31 alms • <span class="text-on-surface font-semibold">QNM-SUB</span> (Substation Optical)
+              </span>
+</div>
+</div>
+<div class="flex flex-col items-end">
+<span class="font-code-sm text-code-sm text-tertiary font-semibold">4.5 a/s pk</span>
+<span class="font-label-caps text-[9px] uppercase text-on-surface-variant">ISOLATED</span>
+</div>
+</div>
+<div class="flex-1 h-full relative flex items-center pr-14 pl-2">
+<!-- 14:31 (~44% offset, 11% width) -->
+<div class="relative left-[44%] w-[12%] h-8 rounded bg-gradient-to-r from-tertiary-container to-tertiary flex items-center px-space-sm text-on-tertiary-container shadow-md cursor-pointer hover:brightness-125 transition-all group-hover:shadow-lg">
+<div class="flex items-center justify-between w-full font-code-sm text-code-sm font-semibold truncate">
+<span class="truncate">14:31:22 (45s)</span>
+<span class="font-bold text-[10px] bg-black/30 px-1 py-0.5 rounded ml-space-xs shrink-0">31</span>
+</div>
+</div>
+<!-- Micro Popover -->
+<div class="absolute left-[48%] -top-16 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto z-30 transition-all duration-200 transform translate-y-1 group-hover:translate-y-0">
+<div class="bg-surface-container-high p-space-sm rounded-md shadow-xl flex items-center gap-space-md whitespace-nowrap">
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-secondary">Start: 14:31:22 UTC</span>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold">Dominant: <span class="text-tertiary font-bold">QNM-SUB-OTN</span></span>
+</div>
+<div class="h-6 w-px bg-surface-container-highest"></div>
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Burst Rate</span>
+<span class="font-code-sm text-code-sm font-bold text-tertiary">4.5 alarms/sec</span>
+</div>
+<button class="px-space-sm py-1 bg-surface-bright hover:bg-secondary text-secondary hover:text-on-secondary font-code-sm text-code-sm font-semibold rounded transition-colors ml-space-xs">
+                Open Workspace
+              </button>
+</div>
+</div>
+</div>
+</div>
+<!-- ================= ROW 5: C2214052 (LTE Core) ================= -->
+<div class="gantt-chain-row group relative flex items-center h-14 hover:bg-surface-container transition-colors select-none">
+<div class="w-80 sm:w-96 shrink-0 h-full px-space-md flex items-center justify-between bg-surface-container-low/50 z-10 group-hover:bg-surface-container">
+<div class="flex items-center gap-space-sm">
+<input class="chain-select-box w-3.5 h-3.5 rounded bg-surface-container-highest border-none text-secondary focus:ring-0 cursor-pointer accent-secondary" data-chain-id="C2214052" type="checkbox">
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-code-md text-code-md font-bold text-on-surface">C2214052</span>
+<span class="font-label-caps text-label-caps px-space-2xs py-0.5 rounded bg-tertiary/20 text-tertiary font-bold">LEAF</span>
+</div>
+<span class="font-code-sm text-code-sm text-on-surface-variant flex items-center gap-space-xs">
+                14 alms • <span class="text-on-surface font-semibold">LTE Core</span> (SGW User-plane)
+              </span>
+</div>
+</div>
+<div class="flex flex-col items-end">
+<span class="font-code-sm text-code-sm text-tertiary font-semibold">3.8 a/s pk</span>
+<span class="font-label-caps text-[9px] uppercase text-on-surface-variant">SECONDARY</span>
+</div>
+</div>
+<div class="flex-1 h-full relative flex items-center pr-14 pl-2">
+<!-- 14:33 (52% offset, 18s -> ~9% width) -->
+<div class="relative left-[52%] w-[9%] h-8 rounded bg-gradient-to-r from-tertiary to-tertiary-container flex items-center px-space-sm text-on-tertiary-container shadow-md cursor-pointer hover:brightness-125 transition-all group-hover:shadow-lg">
+<div class="flex items-center justify-between w-full font-code-sm text-code-sm font-semibold truncate">
+<span class="truncate">14:33 (18s)</span>
+<span class="font-bold text-[10px] bg-black/30 px-1 py-0.5 rounded ml-space-xs shrink-0">14</span>
+</div>
+</div>
+<!-- Micro Popover -->
+<div class="absolute left-[54%] -top-16 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto z-30 transition-all duration-200 transform translate-y-1 group-hover:translate-y-0">
+<div class="bg-surface-container-high p-space-sm rounded-md shadow-xl flex items-center gap-space-md whitespace-nowrap">
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-secondary">Start: 14:33:04 UTC</span>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold">Dominant: <span class="text-tertiary font-bold">HN-SGW-04</span></span>
+</div>
+<div class="h-6 w-px bg-surface-container-highest"></div>
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Peak Rate</span>
+<span class="font-code-sm text-code-sm font-bold text-tertiary">3.8 alarms/sec</span>
+</div>
+<button class="px-space-sm py-1 bg-surface-bright hover:bg-secondary text-secondary hover:text-on-secondary font-code-sm text-code-sm font-semibold rounded transition-colors ml-space-xs">
+                Open Workspace
+              </button>
+</div>
+</div>
+</div>
+</div>
+<!-- ================= ROW 6: C2214067 (DWDM Ring) ================= -->
+<div class="gantt-chain-row group relative flex items-center h-14 hover:bg-surface-container transition-colors select-none">
+<div class="w-80 sm:w-96 shrink-0 h-full px-space-md flex items-center justify-between bg-surface-container-low/50 z-10 group-hover:bg-surface-container">
+<div class="flex items-center gap-space-sm">
+<input class="chain-select-box w-3.5 h-3.5 rounded bg-surface-container-highest border-none text-secondary focus:ring-0 cursor-pointer accent-secondary" data-chain-id="C2214067" type="checkbox">
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-code-md text-code-md font-bold text-on-surface">C2214067</span>
+<span class="font-label-caps text-label-caps px-space-2xs py-0.5 rounded bg-surface-variant text-on-surface font-bold">WEAK</span>
+</div>
+<span class="font-code-sm text-code-sm text-on-surface-variant flex items-center gap-space-xs">
+                28 alms • <span class="text-on-surface font-semibold">DWDM Ring 04</span> (Protection Flap)
+              </span>
+</div>
+</div>
+<div class="flex flex-col items-end">
+<span class="font-code-sm text-code-sm text-on-surface font-semibold">5.0 a/s pk</span>
+<span class="font-label-caps text-[9px] uppercase text-on-surface-variant">FLAPPING</span>
+</div>
+</div>
+<div class="flex-1 h-full relative flex items-center pr-14 pl-2">
+<!-- 14:35 (60% offset, 45s -> ~14% width) -->
+<div class="relative left-[60%] w-[14%] h-8 rounded bg-surface-bright flex items-center px-space-sm text-on-surface shadow-md cursor-pointer hover:brightness-125 transition-all group-hover:shadow-lg">
+<div class="flex items-center justify-between w-full font-code-sm text-code-sm font-semibold truncate">
+<span class="truncate">14:35:00 (45s)</span>
+<span class="font-bold text-[10px] bg-black/40 px-1 py-0.5 rounded ml-space-xs shrink-0">28 ALMS</span>
+</div>
+</div>
+<!-- Micro Popover -->
+<div class="absolute left-[64%] -top-16 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto z-30 transition-all duration-200 transform translate-y-1 group-hover:translate-y-0">
+<div class="bg-surface-container-high p-space-sm rounded-md shadow-xl flex items-center gap-space-md whitespace-nowrap">
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-secondary">Start: 14:35:00 UTC</span>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold">Dominant: <span class="text-secondary font-bold">DWDM-W-ROADM</span></span>
+</div>
+<div class="h-6 w-px bg-surface-container-highest"></div>
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Peak Rate</span>
+<span class="font-code-sm text-code-sm font-bold text-on-surface">5.0 alarms/sec</span>
+</div>
+<button class="px-space-sm py-1 bg-surface-bright hover:bg-secondary text-secondary hover:text-on-secondary font-code-sm text-code-sm font-semibold rounded transition-colors ml-space-xs">
+                Open Workspace
+              </button>
+</div>
+</div>
+</div>
+</div>
+<!-- ================= ROW 7: C2214115 (HPG-METRO) ================= -->
+<div class="gantt-chain-row group relative flex items-center h-14 hover:bg-surface-container transition-colors select-none">
+<div class="w-80 sm:w-96 shrink-0 h-full px-space-md flex items-center justify-between bg-surface-container-low/50 z-10 group-hover:bg-surface-container">
+<div class="flex items-center gap-space-sm">
+<input class="chain-select-box w-3.5 h-3.5 rounded bg-surface-container-highest border-none text-secondary focus:ring-0 cursor-pointer accent-secondary" data-chain-id="C2214115" type="checkbox">
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-code-md text-code-md font-bold text-on-surface">C2214115</span>
+<span class="font-label-caps text-label-caps px-space-2xs py-0.5 rounded bg-secondary-container/20 text-secondary font-bold">BRIDGE</span>
+</div>
+<span class="font-code-sm text-code-sm text-on-surface-variant flex items-center gap-space-xs">
+                19 alms • <span class="text-on-surface font-semibold">HPG-METRO</span> (Loopback Flap)
+              </span>
+</div>
+</div>
+<div class="flex flex-col items-end">
+<span class="font-code-sm text-code-sm text-secondary font-semibold">2.9 a/s pk</span>
+<span class="font-label-caps text-[9px] uppercase text-on-surface-variant">TAIL TAIL</span>
+</div>
+</div>
+<div class="flex-1 h-full relative flex items-center pr-14 pl-2">
+<!-- 14:38 (72% offset, ~8% width) -->
+<div class="relative left-[72%] w-[8%] h-8 rounded bg-gradient-to-r from-secondary to-secondary-container flex items-center px-space-sm text-on-secondary shadow-md cursor-pointer hover:brightness-125 transition-all group-hover:shadow-lg">
+<div class="flex items-center justify-between w-full font-code-sm text-code-sm font-semibold truncate">
+<span class="truncate">14:38</span>
+<span class="font-bold text-[10px] bg-black/30 px-1 py-0.5 rounded ml-space-xs shrink-0">19</span>
+</div>
+</div>
+<!-- Micro Popover -->
+<div class="absolute left-[72%] -top-16 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto z-30 transition-all duration-200 transform translate-y-1 group-hover:translate-y-0">
+<div class="bg-surface-container-high p-space-sm rounded-md shadow-xl flex items-center gap-space-md whitespace-nowrap">
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-secondary">Start: 14:38:14 UTC</span>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold">Dominant: <span class="text-secondary font-bold">HPG-PE-01</span></span>
+</div>
+<div class="h-6 w-px bg-surface-container-highest"></div>
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Peak Rate</span>
+<span class="font-code-sm text-code-sm font-bold text-secondary">2.9 alarms/sec</span>
+</div>
+<button class="px-space-sm py-1 bg-surface-bright hover:bg-secondary text-secondary hover:text-on-secondary font-code-sm text-code-sm font-semibold rounded transition-colors ml-space-xs">
+                Open Workspace
+              </button>
+</div>
+</div>
+</div>
+</div>
+<!-- ================= ROW 8: C2214122 (DAN-EDGE) ================= -->
+<div class="gantt-chain-row group relative flex items-center h-14 hover:bg-surface-container transition-colors select-none">
+<div class="w-80 sm:w-96 shrink-0 h-full px-space-md flex items-center justify-between bg-surface-container-low/50 z-10 group-hover:bg-surface-container">
+<div class="flex items-center gap-space-sm">
+<input class="chain-select-box w-3.5 h-3.5 rounded bg-surface-container-highest border-none text-secondary focus:ring-0 cursor-pointer accent-secondary" data-chain-id="C2214122" type="checkbox">
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-code-md text-code-md font-bold text-on-surface">C2214122</span>
+<span class="font-label-caps text-label-caps px-space-2xs py-0.5 rounded bg-surface-variant text-on-surface font-bold">WEAK</span>
+</div>
+<span class="font-code-sm text-code-sm text-on-surface-variant flex items-center gap-space-xs">
+                12 alms • <span class="text-on-surface font-semibold">DAN-EDGE</span> (Border Gateway)
+              </span>
+</div>
+</div>
+<div class="flex flex-col items-end">
+<span class="font-code-sm text-code-sm text-on-surface font-semibold">1.4 a/s pk</span>
+<span class="font-label-caps text-[9px] uppercase text-on-surface-variant">INCIDENTAL</span>
+</div>
+</div>
+<div class="flex-1 h-full relative flex items-center pr-14 pl-2">
+<!-- 14:41 (84% offset, ~7% width) -->
+<div class="relative left-[84%] w-[7%] h-8 rounded bg-surface-container-high flex items-center px-space-sm text-on-surface-variant shadow-md cursor-pointer hover:brightness-125 transition-all group-hover:shadow-lg">
+<div class="flex items-center justify-between w-full font-code-sm text-code-sm font-semibold truncate">
+<span class="truncate">14:41</span>
+<span class="font-bold text-[10px] bg-black/40 px-1 py-0.5 rounded ml-space-xs shrink-0">12</span>
+</div>
+</div>
+<!-- Micro Popover -->
+<div class="absolute left-[80%] -top-16 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto z-30 transition-all duration-200 transform translate-y-1 group-hover:translate-y-0">
+<div class="bg-surface-container-high p-space-sm rounded-md shadow-xl flex items-center gap-space-md whitespace-nowrap">
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-secondary">Start: 14:41:30 UTC</span>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold">Dominant: <span class="text-on-surface font-bold">DAN-BGW-01</span></span>
+</div>
+<div class="h-6 w-px bg-surface-container-highest"></div>
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Peak Rate</span>
+<span class="font-code-sm text-code-sm font-bold text-on-surface">1.4 alarms/sec</span>
+</div>
+<button class="px-space-sm py-1 bg-surface-bright hover:bg-secondary text-secondary hover:text-on-secondary font-code-sm text-code-sm font-semibold rounded transition-colors ml-space-xs">
+                Open Workspace
+              </button>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Timeline Footer Status / Aggregate Pulse Metric Bar -->
+<div class="flex flex-col sm:flex-row items-center justify-between px-space-md py-space-xs bg-surface-container-low text-on-surface-variant font-code-sm text-code-sm">
+<div class="flex items-center gap-space-md">
+<div class="flex items-center gap-space-xs">
+<span class="w-2.5 h-2.5 rounded-sm bg-primary"></span>
+<span class="text-on-surface font-semibold">CORE Bursts</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="w-2.5 h-2.5 rounded-sm bg-secondary"></span>
+<span class="text-on-surface font-semibold">BRIDGE Cascades</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="w-2.5 h-2.5 rounded-sm bg-tertiary"></span>
+<span class="text-on-surface font-semibold">LEAF Propagations</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="w-2.5 h-2.5 rounded-sm bg-surface-bright"></span>
+<span class="text-on-surface font-semibold">WEAK Noise</span>
+</div>
+</div>
+<div class="flex items-center gap-space-lg">
+<span class="flex items-center gap-space-xs">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Cumulative Peak:</span>
+<span class="text-primary font-bold">14:29:45 UTC (38.2 EPS Total)</span>
+</span>
+<span class="flex items-center gap-space-xs">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Chains In Window:</span>
+<span class="text-secondary font-bold">8 Visible / 1,845 Total</span>
+</span>
+</div>
+</div>
+</div>
+<!-- Micro Inline SVG Density Spectrum Curve (Incident Ingestion Waterfall) -->
+<div class="flex flex-col bg-surface-container-low p-space-md rounded-lg shadow-md gap-space-xs">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-secondary text-[16px]">show_chart</span>
+<span class="font-headline-md text-body-sm font-semibold text-on-surface">Temporal Event Influx Distribution across 25m Window</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">(Σ 268 alarms in visible 8 chains)</span>
+</div>
+<span class="font-label-caps text-label-caps uppercase text-tertiary font-bold tracking-wider">Conductance Cut Correlation τ = 0.89</span>
+</div>
+<!-- Scaled SVG Profile -->
+<div class="w-full h-16 relative">
+<svg class="w-full h-full text-secondary" preserveAspectRatio="none" viewBox="0 0 1000 100">
+<!-- Burst Highlighting Shaded Box -->
+<rect class="text-primary/10" fill="currentColor" height="100" width="120" x="340" y="0"></rect>
+<line class="text-primary" stroke="currentColor" stroke-dasharray="3 3" x1="380" x2="380" y1="0" y2="100"></line>
+<!-- Gradient Fill for Event Velocity -->
+<defs>
+<linearGradient id="spectrumGradient" x1="0" x2="0" y1="0" y2="1">
+<stop offset="0%" stop-color="#ff5451" stop-opacity="0.45"></stop>
+<stop offset="50%" stop-color="#7bd0ff" stop-opacity="0.25"></stop>
+<stop offset="100%" stop-color="#0c1322" stop-opacity="0.0"></stop>
+</linearGradient>
+</defs>
+<!-- Wave Area Profile -->
+<path d="M 0 95 Q 120 90 200 75 T 280 40 T 360 10 T 400 8 T 460 25 T 520 60 T 600 50 T 720 70 T 840 85 T 1000 95 L 1000 100 L 0 100 Z" fill="url(#spectrumGradient)"></path>
+<!-- Wave Line -->
+<path d="M 0 95 Q 120 90 200 75 T 280 40 T 360 10 T 400 8 T 460 25 T 520 60 T 600 50 T 720 70 T 840 85 T 1000 95" fill="none" stroke="#7bd0ff" stroke-width="2"></path>
+</svg>
+</div>
+</div>
+<!-- FLOATING HUD BAR: Comparative Action Panel (Triggers upon selecting 2 chains) -->
+<div class="fixed bottom-10 left-1/2 -translate-x-1/2 z-50 transform translate-y-24 opacity-0 pointer-events-none transition-all duration-300 ease-out" id="floating-comparison-bar">
+<div class="bg-surface-container-highest/95 backdrop-blur-md p-space-sm px-space-lg rounded-xl shadow-2xl flex items-center gap-space-lg">
+<div class="flex items-center gap-space-sm">
+<div class="w-2.5 h-2.5 rounded-full bg-secondary animate-ping"></div>
+<span class="font-code-md text-code-md font-bold text-on-surface" id="selected-chain-count">2 chains selected</span>
+</div>
+<div class="h-6 w-px bg-surface-variant"></div>
+<div class="flex items-center gap-space-sm">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Direct Temporal Gap: <strong class="text-secondary font-code-sm">126s</strong></span>
+<button class="px-space-md py-space-xs bg-primary text-on-primary font-headline-md text-body-sm font-semibold rounded hover:brightness-110 flex items-center gap-space-xs shadow-lg transition-all" id="btn-run-comparison">
+<span class="material-symbols-outlined text-[16px]">compare_arrows</span>
+          Compare Selected Chains (2)
+        </button>
+<button class="p-space-2xs text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-bright transition-colors" onclick="document.querySelectorAll('.chain-select-box').forEach(c=&gt;c.checked=false); document.getElementById('floating-comparison-bar').classList.add('translate-y-24','opacity-0','pointer-events-none');" title="Clear selection">
+<span class="material-symbols-outlined text-[18px]">close</span>
+</button>
+</div>
+</div>
+</div>
+</div></main><footer class="fixed bottom-0 w-full h-space-row-compact-h z-40 bg-surface-container-lowest/95 backdrop-blur-md shadow-[0_-1px_6px_rgba(0,0,0,0.5)] flex items-center justify-between px-space-lg font-code-sm text-code-sm text-on-surface-variant"><div class="flex items-center gap-space-lg"><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">PROVENANCE:</span><span class="text-on-surface font-semibold">REAL_EXPORT_REPLAY</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">CONFIG:</span><span class="text-on-surface">v1.0</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">ENGINE:</span><span class="text-secondary">hindsight-v1</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">ACTIVE SNAPSHOT:</span><span class="text-on-surface">IT_SERVICES / S102 v1</span></span></div><div class="flex items-center gap-space-lg"><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">MOCK GATEWAY:</span><span class="text-secondary">:8085</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">API:</span><span class="text-secondary">:8000</span></span><span class="flex items-center gap-space-xs"><span class="w-1.5 h-1.5 rounded-full bg-secondary"></span><span class="font-label-caps text-label-caps uppercase text-on-surface">STREAM SYNCED</span></span></div></footer>
+
+</body></html>

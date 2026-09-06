@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+          "background": "#0c1322",
+          "primary-container": "#ff5451",
+          "surface-container": "#191f2f",
+          "secondary-fixed": "#c4e7ff",
+          "on-primary-fixed-variant": "#930013",
+          "surface": "#0c1322",
+          "surface-bright": "#323949",
+          "outline-variant": "#5b403e",
+          "secondary-container": "#00a6e0",
+          "on-tertiary-fixed-variant": "#653e00",
+          "surface-dim": "#0c1322",
+          "surface-variant": "#2e3545",
+          "inverse-surface": "#dce2f7",
+          "on-secondary-fixed": "#001e2c",
+          "surface-container-high": "#232a3a",
+          "on-background": "#dce2f7",
+          "secondary-fixed-dim": "#7bd0ff",
+          "error-container": "#93000a",
+          "on-surface-variant": "#e4beba",
+          "on-error": "#690005",
+          "on-surface": "#dce2f7",
+          "on-secondary-fixed-variant": "#004c69",
+          "on-error-container": "#ffdad6",
+          "inverse-primary": "#b91a24",
+          "outline": "#ab8986",
+          "surface-container-highest": "#2e3545",
+          "on-tertiary": "#472a00",
+          "on-tertiary-container": "#3e2400",
+          "on-primary": "#68000a",
+          "tertiary-fixed": "#ffddb8",
+          "surface-container-low": "#141b2b",
+          "tertiary": "#ffb95f",
+          "surface-container-lowest": "#070e1d",
+          "inverse-on-surface": "#293040",
+          "tertiary-container": "#ca8100",
+          "secondary": "#7bd0ff",
+          "primary-fixed": "#ffdad7",
+          "primary-fixed-dim": "#ffb3ad",
+          "tertiary-fixed-dim": "#ffb95f",
+          "on-tertiary-fixed": "#2a1700",
+          "on-secondary-container": "#00374d",
+          "on-secondary": "#00354a",
+          "error": "#ffb4ab",
+          "surface-tint": "#ffb3ad",
+          "on-primary-fixed": "#410004",
+          "primary": "#ffb3ad",
+          "on-primary-container": "#5c0008"
+        },
+        "borderRadius": {
+          "DEFAULT": "0.125rem",
+          "lg": "0.25rem",
+          "xl": "0.5rem",
+          "full": "0.75rem"
+        },
+        "spacing": {
+          "space-xs": "4px",
+          "space-md": "12px",
+          "row-standard-h": "36px",
+          "space-sm": "8px",
+          "space-2xs": "2px",
+          "panel-header-h": "36px",
+          "space-xl": "24px",
+          "space-2xl": "32px",
+          "space-lg": "16px",
+          "margin-screen": "16px",
+          "row-compact-h": "28px",
+          "gutter": "12px"
+        },
+        "fontFamily": {
+          "label-caps": [
+            "JetBrains Mono"
+          ],
+          "headline-lg": [
+            "Inter"
+          ],
+          "headline-md": [
+            "Inter"
+          ],
+          "body-md": [
+            "Inter"
+          ],
+          "headline-xl": [
+            "Inter"
+          ],
+          "code-lg": [
+            "JetBrains Mono"
+          ],
+          "code-md": [
+            "JetBrains Mono"
+          ],
+          "body-lg": [
+            "Inter"
+          ],
+          "code-sm": [
+            "JetBrains Mono"
+          ],
+          "body-sm": [
+            "Inter"
+          ]
+        },
+        "fontSize": {
+          "label-caps": [
+            "10px",
+            {
+              "lineHeight": "12px",
+              "letterSpacing": "0.08em",
+              "fontWeight": "700"
+            }
+          ],
+          "headline-lg": [
+            "24px",
+            {
+              "lineHeight": "32px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "600"
+            }
+          ],
+          "headline-md": [
+            "18px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "600"
+            }
+          ],
+          "body-md": [
+            "14px",
+            {
+              "lineHeight": "20px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ],
+          "headline-xl": [
+            "32px",
+            {
+              "lineHeight": "40px",
+              "letterSpacing": "-0.02em",
+              "fontWeight": "700"
+            }
+          ],
+          "code-lg": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "500"
+            }
+          ],
+          "code-md": [
+            "13px",
+            {
+              "lineHeight": "18px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "500"
+            }
+          ],
+          "body-lg": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ],
+          "code-sm": [
+            "11px",
+            {
+              "lineHeight": "14px",
+              "letterSpacing": "0.02em",
+              "fontWeight": "500"
+            }
+          ],
+          "body-sm": [
+            "12px",
+            {
+              "lineHeight": "16px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ]
+        }
+      },
+    },
+  }</script></head><body class="bg-background font-body-md text-body-md text-on-surface select-none antialiased min-h-screen"><header class="fixed top-0 w-full z-50 bg-surface-container-lowest/95 backdrop-blur-md shadow-[0_1px_8px_rgba(0,0,0,0.45)]"><div class="h-20 w-full px-space-lg flex flex-col justify-between pt-space-xs"><div class="flex items-center justify-between gap-space-lg h-space-panel-header-h"><div class="flex items-center gap-space-md"><img alt="Viettel NocPro Hindsight Logo" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1VLqt94IO72isT_Nhyfi3O0p329p6SPzfuOcFUhdjnn8X1-paKZEn3Kdz9cb87XnOV3_OjW9vFvGlm5nI0uryu9mBhLWEE_pMJPdW1t_aKh2AoCI1OF5xUWOKCff5NhVrtDKVdE4pqPxhqRRNezzPeDUhHpae3vlgJ8jBb4ZIZ66NnULybPG-B8sglXpVM1t-schU1EMCxfKCjw3Q9hz3Da91Ik7X0JYQv8Plu-0d9wOXmyK_aboUITYQ"/><div class="flex flex-col"><span class="font-headline-md text-headline-md font-bold tracking-tight text-on-surface leading-none">NocPro Hindsight</span><span class="font-label-caps text-label-caps uppercase text-secondary font-semibold tracking-wider">Chain Explain &amp; RCA Engine</span></div><div class="h-space-lg w-px bg-surface-container-highest ml-space-xs"></div><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container rounded cursor-pointer hover:bg-surface-container-high transition-colors"><span class="material-symbols-outlined text-secondary text-[16px]">history</span><div class="flex flex-col"><div class="flex items-center gap-space-xs"><span class="font-code-sm text-code-sm text-on-surface font-semibold">real_alarm_20260801</span><span class="material-symbols-outlined text-on-surface-variant text-[14px]">expand_more</span></div><span class="font-code-sm text-code-sm text-on-surface-variant">212,636 alarms • 1,845 chains • 10:00:00 UTC</span></div></div></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container-low rounded"><div class="w-2 h-2 rounded-full bg-secondary animate-pulse"></div><span class="font-code-sm text-code-sm text-on-surface font-semibold tracking-wide">ONLINE (READY)</span><span class="font-code-sm text-code-sm text-on-surface-variant">/ hindsight-v1</span></div><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container-low rounded"><span class="material-symbols-outlined text-secondary text-[14px]">wifi_tethering</span><span class="font-code-sm text-code-sm text-on-surface">:8085</span><span class="font-label-caps text-label-caps uppercase text-secondary font-bold">LIVE</span></div><div class="flex items-center gap-space-sm px-space-sm py-space-2xs bg-surface-container-low rounded"><div class="flex flex-col"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">LATENCY</span><span class="font-code-sm text-code-sm text-on-surface font-semibold">1.2ms</span></div><div class="h-4 w-px bg-surface-container-highest"></div><div class="flex flex-col"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">EPS</span><span class="font-code-sm text-code-sm text-on-surface font-semibold">14.2k/s</span></div></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div><nav class="w-full flex items-center gap-space-xs overflow-x-auto h-space-panel-header-h" data-active-classes="bg-surface-container-high text-secondary border-b-2 border-secondary font-semibold"><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="chain-hierarchy-and-tree" href="#">Chain Hierarchy &amp; Tree</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="member-diagnostics-table" href="#">Member Diagnostics Table</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="pair-why-and-evidence-matrix" href="#">Pair WHY &amp; Evidence Matrix</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="structural-audit-conductance" href="#">Structural Audit (Conductance)</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="counterfactual-review-5-ops" href="#">Counterfactual Review (5 Ops)</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="evolution-and-lineage" href="#">Evolution &amp; Lineage</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="topology-explorer-ip-it" href="#">Topology Explorer (IP/IT)</a></nav></div></header><main class="w-full pt-20 bg-background min-h-[calc(100vh-28px)]"><div class="flex flex-col w-full px-space-lg py-space-md space-y-space-md">
+<!-- Active Context Bar / Filter Strip -->
+<div class="flex items-center justify-between bg-surface-container px-space-md py-space-sm rounded-lg shadow-sm">
+<div class="flex items-center gap-space-md">
+<div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-secondary-container/20 rounded">
+<span class="material-symbols-outlined text-secondary text-[16px]">compare_arrows</span>
+<span class="font-label-caps text-label-caps uppercase text-secondary">CHAIN COMPARISON RUNTIME</span>
+</div>
+<div class="flex items-center gap-space-xs font-code-md text-code-md text-on-surface">
+<span class="font-semibold text-primary">C2214039</span>
+<span class="text-on-surface-variant font-label-caps uppercase">VS</span>
+<span class="font-semibold text-secondary">C2214048</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant">| Ref Snapshot: real_alarm_20260801 • Replay Sync #9214</span>
+</div>
+<div class="flex items-center gap-space-sm">
+<button class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container-high hover:bg-surface-container-highest text-on-surface rounded transition-colors text-body-sm font-body-sm font-semibold shadow-sm">
+<span class="material-symbols-outlined text-[14px] text-secondary">swap_horizontal_circle</span>
+<span>Change Selection</span>
+</button>
+<button class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container-high hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface rounded transition-colors text-body-sm font-body-sm">
+<span class="material-symbols-outlined text-[14px]">tune</span>
+<span>Differential Weights</span>
+</button>
+</div>
+</div>
+<!-- Side-by-Side Dual Column Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-space-md items-stretch">
+<!-- LEFT COLUMN: Chain C2214039 -->
+<div class="flex flex-col bg-surface-container rounded-lg p-space-md space-y-space-md shadow-md">
+<!-- Card Top: Identification & Status -->
+<div class="flex items-start justify-between">
+<div class="space-y-space-2xs">
+<div class="flex items-center gap-space-sm">
+<span class="font-headline-md text-headline-md font-bold text-on-surface">Chain C2214039</span>
+<span class="px-space-sm py-space-2xs bg-error-container text-error rounded font-label-caps text-label-caps uppercase tracking-wide flex items-center gap-space-2xs">
+<span class="w-1.5 h-1.5 rounded-full bg-error animate-pulse"></span>
+              Needs Attention
+            </span>
+</div>
+<p class="font-body-md text-body-md text-primary font-medium">
+            Interface down / Transmission Peering Tear
+          </p>
+<p class="font-code-sm text-code-sm text-on-surface-variant">
+            Identified Root: <span class="text-on-surface font-semibold">ALM-47933128</span> (GigE0/1/0/4.100 - IP_TRANSIT_CORE)
+          </p>
+</div>
+<div class="text-right">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant block">CONFIDENCE</span>
+<span class="font-code-lg text-code-lg text-primary font-bold">78.4%</span>
+</div>
+</div>
+<!-- Quick Metrics Strip -->
+<div class="grid grid-cols-3 gap-space-xs bg-surface-container-lowest p-space-sm rounded">
+<div>
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant block">Alarms</span>
+<span class="font-code-md text-code-md text-on-surface font-bold">58 alarms</span>
+</div>
+<div>
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant block">Duration</span>
+<span class="font-code-md text-code-md text-on-surface font-bold">22s burst</span>
+</div>
+<div>
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant block">Dominant Node</span>
+<span class="font-code-md text-code-md text-secondary font-bold">DEHL01 (92%)</span>
+</div>
+</div>
+<!-- Conductance & Support Gauges -->
+<div class="bg-surface-container-low p-space-sm rounded space-y-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-error text-[16px]">warning</span>
+<span class="font-label-caps text-label-caps uppercase text-on-surface">Conductance Score (φ)</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="font-code-md text-code-md font-bold text-error">0.12</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">(Weak split risk)</span>
+</div>
+</div>
+<!-- Progress track -->
+<div class="w-full bg-surface-container-lowest h-2 rounded overflow-hidden">
+<div class="bg-error h-full rounded" style="width: 24%"></div>
+</div>
+<div class="flex items-center justify-between pt-space-xs">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Min Association Support:</span>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold">0.31 (Threshold: 0.50)</span>
+</div>
+</div>
+<!-- Membership Breakdown Badges -->
+<div class="space-y-space-xs">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Topology Role Allocation</span>
+<div class="grid grid-cols-4 gap-space-xs">
+<div class="bg-surface-container-high p-space-xs rounded text-center">
+<span class="font-label-caps text-label-caps uppercase text-primary block">CORE</span>
+<span class="font-code-lg text-code-lg font-bold text-on-surface">42</span>
+</div>
+<div class="bg-surface-container-high p-space-xs rounded text-center">
+<span class="font-label-caps text-label-caps uppercase text-tertiary block">WEAK</span>
+<span class="font-code-lg text-code-lg font-bold text-on-surface">2</span>
+</div>
+<div class="bg-surface-container-high p-space-xs rounded text-center">
+<span class="font-label-caps text-label-caps uppercase text-secondary block">PERIPHERAL</span>
+<span class="font-code-lg text-code-lg font-bold text-on-surface">12</span>
+</div>
+<div class="bg-surface-container-high p-space-xs rounded text-center">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant block">INSUFFICIENT</span>
+<span class="font-code-lg text-code-lg font-bold text-error">2</span>
+</div>
+</div>
+</div>
+<!-- Key Alarms List -->
+<div class="flex-1 space-y-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Key Chain Alarms</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">Showing 4 of 58</span>
+</div>
+<div class="space-y-space-2xs font-code-sm text-code-sm">
+<!-- Item 1 (Root) -->
+<div class="flex items-center justify-between p-space-xs bg-surface-container-low hover:bg-surface-container-high rounded transition-colors">
+<div class="flex items-center gap-space-xs truncate">
+<span class="px-space-2xs py-0 bg-primary-container/20 text-primary font-bold rounded font-label-caps text-[9px]">ROOT</span>
+<span class="text-on-surface font-semibold">ALM-47933128</span>
+<span class="text-on-surface-variant truncate">BGP_NEIGHBOR_DOWN / 10.240.12.1</span>
+</div>
+<span class="text-primary font-semibold shrink-0">T+0.00s</span>
+</div>
+<!-- Item 2 -->
+<div class="flex items-center justify-between p-space-xs bg-surface-container-low hover:bg-surface-container-high rounded transition-colors">
+<div class="flex items-center gap-space-xs truncate">
+<span class="px-space-2xs py-0 bg-secondary-container/20 text-secondary rounded font-label-caps text-[9px]">CORE</span>
+<span class="text-on-surface">ALM-715054</span>
+<span class="text-on-surface-variant truncate">OSPF_ADJACENCY_CHANGE_DOWN</span>
+</div>
+<span class="text-on-surface-variant shrink-0">T+1.12s</span>
+</div>
+<!-- Item 3 -->
+<div class="flex items-center justify-between p-space-xs bg-surface-container-low hover:bg-surface-container-high rounded transition-colors">
+<div class="flex items-center gap-space-xs truncate">
+<span class="px-space-2xs py-0 bg-secondary-container/20 text-secondary rounded font-label-caps text-[9px]">CORE</span>
+<span class="text-on-surface">ALM-47933130</span>
+<span class="text-on-surface-variant truncate">ETH_LINK_FAULT_INDICATION</span>
+</div>
+<span class="text-on-surface-variant shrink-0">T+2.40s</span>
+</div>
+<!-- Item 4 (Weak) -->
+<div class="flex items-center justify-between p-space-xs bg-surface-container-low hover:bg-surface-container-high rounded transition-colors">
+<div class="flex items-center gap-space-xs truncate">
+<span class="px-space-2xs py-0 bg-tertiary-container/20 text-tertiary rounded font-label-caps text-[9px]">WEAK</span>
+<span class="text-on-surface">ALM-99210014</span>
+<span class="text-on-surface-variant truncate">SNMP_AUTH_FAIL_CLUSTER_GW</span>
+</div>
+<span class="text-on-surface-variant shrink-0">T+21.80s</span>
+</div>
+</div>
+</div>
+</div>
+<!-- RIGHT COLUMN: Chain C2214048 -->
+<div class="flex flex-col bg-surface-container rounded-lg p-space-md space-y-space-md shadow-md">
+<!-- Card Top: Identification & Status -->
+<div class="flex items-start justify-between">
+<div class="space-y-space-2xs">
+<div class="flex items-center gap-space-sm">
+<span class="font-headline-md text-headline-md font-bold text-on-surface">Chain C2214048</span>
+<span class="px-space-sm py-space-2xs bg-secondary-container/20 text-secondary rounded font-label-caps text-label-caps uppercase tracking-wide flex items-center gap-space-2xs">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+              Normal Cohesion
+            </span>
+</div>
+<p class="font-body-md text-body-md text-secondary font-medium">
+            Aggregated District Access Flap &amp; Optical SFP
+          </p>
+<p class="font-code-sm text-code-sm text-on-surface-variant">
+            Primary Origin: <span class="text-on-surface font-semibold">ALM-68219011</span> (TenGigE0/0/0/1 - METRO_EAST_RING)
+          </p>
+</div>
+<div class="text-right">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant block">CONFIDENCE</span>
+<span class="font-code-lg text-code-lg text-secondary font-bold">94.1%</span>
+</div>
+</div>
+<!-- Quick Metrics Strip -->
+<div class="grid grid-cols-3 gap-space-xs bg-surface-container-lowest p-space-sm rounded">
+<div>
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant block">Alarms</span>
+<span class="font-code-md text-code-md text-on-surface font-bold">42 alarms</span>
+</div>
+<div>
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant block">Duration</span>
+<span class="font-code-md text-code-md text-on-surface font-bold">31s burst</span>
+</div>
+<div>
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant block">Dominant Node</span>
+<span class="font-code-md text-code-md text-secondary font-bold">DEHT01 (86%)</span>
+</div>
+</div>
+<!-- Conductance & Support Gauges -->
+<div class="bg-surface-container-low p-space-sm rounded space-y-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-secondary text-[16px]">check_circle</span>
+<span class="font-label-caps text-label-caps uppercase text-on-surface">Conductance Score (φ)</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="font-code-md text-code-md font-bold text-secondary">0.44</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">(Dense cluster)</span>
+</div>
+</div>
+<!-- Progress track -->
+<div class="w-full bg-surface-container-lowest h-2 rounded overflow-hidden">
+<div class="bg-secondary h-full rounded" style="width: 88%"></div>
+</div>
+<div class="flex items-center justify-between pt-space-xs">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Min Association Support:</span>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold">0.68 (Threshold: 0.50)</span>
+</div>
+</div>
+<!-- Membership Breakdown Badges -->
+<div class="space-y-space-xs">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Topology Role Allocation</span>
+<div class="grid grid-cols-4 gap-space-xs">
+<div class="bg-surface-container-high p-space-xs rounded text-center">
+<span class="font-label-caps text-label-caps uppercase text-primary block">CORE</span>
+<span class="font-code-lg text-code-lg font-bold text-on-surface">30</span>
+</div>
+<div class="bg-surface-container-high p-space-xs rounded text-center">
+<span class="font-label-caps text-label-caps uppercase text-tertiary block">WEAK</span>
+<span class="font-code-lg text-code-lg font-bold text-on-surface">1</span>
+</div>
+<div class="bg-surface-container-high p-space-xs rounded text-center">
+<span class="font-label-caps text-label-caps uppercase text-secondary block">PERIPHERAL</span>
+<span class="font-code-lg text-code-lg font-bold text-on-surface">11</span>
+</div>
+<div class="bg-surface-container-high p-space-xs rounded text-center">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant block">INSUFFICIENT</span>
+<span class="font-code-lg text-code-lg font-bold text-on-surface">0</span>
+</div>
+</div>
+</div>
+<!-- Key Alarms List -->
+<div class="flex-1 space-y-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Key Chain Alarms</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">Showing 3 of 42</span>
+</div>
+<div class="space-y-space-2xs font-code-sm text-code-sm">
+<!-- Item 1 -->
+<div class="flex items-center justify-between p-space-xs bg-surface-container-low hover:bg-surface-container-high rounded transition-colors">
+<div class="flex items-center gap-space-xs truncate">
+<span class="px-space-2xs py-0 bg-primary-container/20 text-primary font-bold rounded font-label-caps text-[9px]">ORIGIN</span>
+<span class="text-on-surface font-semibold">ALM-68219011</span>
+<span class="text-on-surface-variant truncate">OPTICAL_POWER_RX_DEGRADED</span>
+</div>
+<span class="text-on-surface font-semibold shrink-0">T+0.00s</span>
+</div>
+<!-- Item 2 -->
+<div class="flex items-center justify-between p-space-xs bg-surface-container-low hover:bg-surface-container-high rounded transition-colors">
+<div class="flex items-center gap-space-xs truncate">
+<span class="px-space-2xs py-0 bg-secondary-container/20 text-secondary rounded font-label-caps text-[9px]">CORE</span>
+<span class="text-on-surface">ALM-68219012</span>
+<span class="text-on-surface-variant truncate">SDH_LOS_LOSS_OF_SIGNAL</span>
+</div>
+<span class="text-on-surface-variant shrink-0">T+0.85s</span>
+</div>
+<!-- Item 3 -->
+<div class="flex items-center justify-between p-space-xs bg-surface-container-low hover:bg-surface-container-high rounded transition-colors">
+<div class="flex items-center gap-space-xs truncate">
+<span class="px-space-2xs py-0 bg-secondary-container/20 text-secondary rounded font-label-caps text-[9px]">CORE</span>
+<span class="text-on-surface">ALM-68219020</span>
+<span class="text-on-surface-variant truncate">PORT_ERR_DISABLE_LACP_FAIL</span>
+</div>
+<span class="text-on-surface-variant shrink-0">T+3.15s</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- BOTTOM CROSS-CHAIN EVIDENCE & EVALUATION HUB -->
+<div class="bg-surface-container rounded-lg p-space-md space-y-space-md shadow-lg">
+<!-- Header of bottom section -->
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-space-sm pb-space-xs">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-secondary text-[20px]">hub</span>
+<div>
+<span class="font-headline-md text-headline-md font-bold text-on-surface">Cross-Chain Evidence &amp; Synthesis Hub</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant block">Cross-graph association mining • Counterfactual hypothesis evaluation</span>
+</div>
+</div>
+<!-- Quick Summary Badges -->
+<div class="flex flex-wrap items-center gap-space-xs">
+<div class="flex items-center gap-space-xs bg-surface-container-lowest px-space-sm py-space-2xs rounded">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">BLOCKING SIM:</span>
+<span class="font-code-sm text-code-sm text-primary font-bold">High (0.84)</span>
+</div>
+<div class="flex items-center gap-space-xs bg-surface-container-lowest px-space-sm py-space-2xs rounded">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">CROSS AUDIT EDGES:</span>
+<span class="font-code-sm text-code-sm text-secondary font-bold">4</span>
+</div>
+<div class="flex items-center gap-space-xs bg-surface-container-lowest px-space-sm py-space-2xs rounded">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">EVIDENCE VIEWS:</span>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold">3 active</span>
+</div>
+<div class="flex items-center gap-space-xs bg-surface-container-lowest px-space-sm py-space-2xs rounded">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">TOPOLOGY OVERLAP:</span>
+<span class="font-code-sm text-code-sm text-tertiary font-semibold">DEHL01 ↔ DEHT01</span>
+</div>
+</div>
+</div>
+<!-- Comparative Visual Flow: Inline Vector Schema -->
+<div class="p-space-sm bg-surface-container-lowest rounded flex flex-col md:flex-row items-center justify-between gap-space-md">
+<!-- Chain 1 Abstract Node -->
+<div class="flex items-center gap-space-sm w-full md:w-auto">
+<div class="w-10 h-10 rounded bg-primary-container/20 flex items-center justify-center shrink-0">
+<span class="font-code-md text-code-md font-bold text-primary">C1</span>
+</div>
+<div>
+<span class="font-code-sm text-code-sm font-bold text-on-surface block">C2214039 (DEHL01)</span>
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">42 Core / 12 Periph</span>
+</div>
+</div>
+<!-- Connector with 4 Cross Audit Edges visual -->
+<div class="flex-1 w-full flex flex-col items-center justify-center px-space-md">
+<div class="w-full flex items-center justify-between font-label-caps text-[9px] uppercase text-on-surface-variant px-space-xs">
+<span>Temporal Lead (-8.2s)</span>
+<span class="text-secondary font-bold">4 Cross-Chain Interlinks</span>
+<span>Optical Peering Layer 2</span>
+</div>
+<!-- Vector edge schematic -->
+<div class="w-full h-8 flex items-center justify-center relative">
+<svg class="w-full h-6" preserveaspectratio="none" viewbox="0 0 400 24">
+<line class="text-surface-variant" stroke="currentColor" stroke-dasharray="4 4" stroke-width="2" x1="0" x2="400" y1="12" y2="12"></line>
+<line class="text-secondary" stroke="currentColor" stroke-width="1.5" x1="20" x2="380" y1="6" y2="6"></line>
+<line class="text-tertiary" stroke="currentColor" stroke-width="1.5" x1="30" x2="370" y1="18" y2="18"></line>
+<circle class="text-secondary" cx="200" cy="12" fill="currentColor" r="5"></circle>
+</svg>
+</div>
+</div>
+<!-- Chain 2 Abstract Node -->
+<div class="flex items-center gap-space-sm w-full md:w-auto justify-end">
+<div class="text-right">
+<span class="font-code-sm text-code-sm font-bold text-on-surface block">C2214048 (DEHT01)</span>
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">30 Core / 11 Periph</span>
+</div>
+<div class="w-10 h-10 rounded bg-secondary-container/20 flex items-center justify-center shrink-0">
+<span class="font-code-md text-code-md font-bold text-secondary">C2</span>
+</div>
+</div>
+</div>
+<!-- Observational Banner -->
+<div class="flex items-center gap-space-sm px-space-md py-space-sm bg-surface-container-low rounded">
+<span class="material-symbols-outlined text-secondary text-[18px]">info</span>
+<span class="font-body-sm text-body-sm text-on-surface">
+<strong class="text-secondary font-semibold">Observational Safety Guard:</strong> Compare mode is purely observational. It isolates cross-chain telemetry and topology overlaps without mutating chains, updating rule bases, or repartitioning runtime clusters.
+      </span>
+</div>
+<!-- Action Evaluation Triggers -->
+<div class="flex flex-wrap items-center justify-end gap-space-sm pt-space-xs">
+<button class="flex items-center gap-space-xs px-space-md py-space-xs bg-surface-container-high hover:bg-surface-container-highest text-on-surface rounded transition-colors font-body-sm text-body-sm font-medium shadow-sm">
+<span class="material-symbols-outlined text-[16px] text-secondary">grid_on</span>
+<span>Inspect Cross-Chain Evidence Matrix</span>
+</button>
+<button class="flex items-center gap-space-xs px-space-md py-space-xs bg-surface-container-high hover:bg-surface-container-highest text-on-surface rounded transition-colors font-body-sm text-body-sm font-medium shadow-sm">
+<span class="material-symbols-outlined text-[16px] text-tertiary">drive_file_move</span>
+<span>Evaluate Move Candidate <span class="font-code-sm text-code-sm text-tertiary">(ALM-47933128 → C2214048)</span></span>
+</button>
+<button class="flex items-center gap-space-xs px-space-md py-space-xs bg-primary hover:bg-primary/90 text-on-primary rounded transition-colors font-body-sm text-body-sm font-bold shadow-md">
+<span class="material-symbols-outlined text-[16px]">merge</span>
+<span>Evaluate Merge Feasibility (C2214039 + C2214048)</span>
+</button>
+</div>
+</div>
+</div>
+<script>
+  // Simple interactive mock for operator feedback
+  document.addEventListener('DOMContentLoaded', () => {
+    const buttons = document.querySelectorAll('button');
+    buttons.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const text = btn.innerText.trim();
+        console.log(`[Hindsight Comparison Audit] Operator dispatched action: ${text}`);
+      });
+    });
+  });
+</script></main><footer class="fixed bottom-0 w-full h-space-row-compact-h z-40 bg-surface-container-lowest/95 backdrop-blur-md shadow-[0_-1px_6px_rgba(0,0,0,0.5)] flex items-center justify-between px-space-lg font-code-sm text-code-sm text-on-surface-variant"><div class="flex items-center gap-space-lg"><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">PROVENANCE:</span><span class="text-on-surface font-semibold">REAL_EXPORT_REPLAY</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">CONFIG:</span><span class="text-on-surface">v1.0</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">ENGINE:</span><span class="text-secondary">hindsight-v1</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">ACTIVE SNAPSHOT:</span><span class="text-on-surface">real_alarm_20260801</span></span></div><div class="flex items-center gap-space-lg"><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">MOCK GATEWAY:</span><span class="text-secondary">:8085</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">API:</span><span class="text-secondary">:8000</span></span><span class="flex items-center gap-space-xs"><span class="w-1.5 h-1.5 rounded-full bg-secondary"></span><span class="font-label-caps text-label-caps uppercase text-on-surface">STREAM SYNCED</span></span></div></footer></body></html>

@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+          "background": "#0c1322",
+          "primary-container": "#ff5451",
+          "surface-container": "#191f2f",
+          "secondary-fixed": "#c4e7ff",
+          "on-primary-fixed-variant": "#930013",
+          "surface": "#0c1322",
+          "surface-bright": "#323949",
+          "outline-variant": "#5b403e",
+          "secondary-container": "#00a6e0",
+          "on-tertiary-fixed-variant": "#653e00",
+          "surface-dim": "#0c1322",
+          "surface-variant": "#2e3545",
+          "inverse-surface": "#dce2f7",
+          "on-secondary-fixed": "#001e2c",
+          "surface-container-high": "#232a3a",
+          "on-background": "#dce2f7",
+          "secondary-fixed-dim": "#7bd0ff",
+          "error-container": "#93000a",
+          "on-surface-variant": "#e4beba",
+          "on-error": "#690005",
+          "on-surface": "#dce2f7",
+          "on-secondary-fixed-variant": "#004c69",
+          "on-error-container": "#ffdad6",
+          "inverse-primary": "#b91a24",
+          "outline": "#ab8986",
+          "surface-container-highest": "#2e3545",
+          "on-tertiary": "#472a00",
+          "on-tertiary-container": "#3e2400",
+          "on-primary": "#68000a",
+          "tertiary-fixed": "#ffddb8",
+          "surface-container-low": "#141b2b",
+          "tertiary": "#ffb95f",
+          "surface-container-lowest": "#070e1d",
+          "inverse-on-surface": "#293040",
+          "tertiary-container": "#ca8100",
+          "secondary": "#7bd0ff",
+          "primary-fixed": "#ffdad7",
+          "primary-fixed-dim": "#ffb3ad",
+          "tertiary-fixed-dim": "#ffb95f",
+          "on-tertiary-fixed": "#2a1700",
+          "on-secondary-container": "#00374d",
+          "on-secondary": "#00354a",
+          "error": "#ffb4ab",
+          "surface-tint": "#ffb3ad",
+          "on-primary-fixed": "#410004",
+          "primary": "#ffb3ad",
+          "on-primary-container": "#5c0008"
+        },
+        "borderRadius": {
+          "DEFAULT": "0.125rem",
+          "lg": "0.25rem",
+          "xl": "0.5rem",
+          "full": "0.75rem"
+        },
+        "spacing": {
+          "space-xs": "4px",
+          "space-md": "12px",
+          "row-standard-h": "36px",
+          "space-sm": "8px",
+          "space-2xs": "2px",
+          "panel-header-h": "36px",
+          "space-xl": "24px",
+          "space-2xl": "32px",
+          "space-lg": "16px",
+          "margin-screen": "16px",
+          "row-compact-h": "28px",
+          "gutter": "12px"
+        },
+        "fontFamily": {
+          "label-caps": [
+            "JetBrains Mono"
+          ],
+          "headline-lg": [
+            "Inter"
+          ],
+          "headline-md": [
+            "Inter"
+          ],
+          "body-md": [
+            "Inter"
+          ],
+          "headline-xl": [
+            "Inter"
+          ],
+          "code-lg": [
+            "JetBrains Mono"
+          ],
+          "code-md": [
+            "JetBrains Mono"
+          ],
+          "body-lg": [
+            "Inter"
+          ],
+          "code-sm": [
+            "JetBrains Mono"
+          ],
+          "body-sm": [
+            "Inter"
+          ]
+        },
+        "fontSize": {
+          "label-caps": [
+            "10px",
+            {
+              "lineHeight": "12px",
+              "letterSpacing": "0.08em",
+              "fontWeight": "700"
+            }
+          ],
+          "headline-lg": [
+            "24px",
+            {
+              "lineHeight": "32px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "600"
+            }
+          ],
+          "headline-md": [
+            "18px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "600"
+            }
+          ],
+          "body-md": [
+            "14px",
+            {
+              "lineHeight": "20px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ],
+          "headline-xl": [
+            "32px",
+            {
+              "lineHeight": "40px",
+              "letterSpacing": "-0.02em",
+              "fontWeight": "700"
+            }
+          ],
+          "code-lg": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "500"
+            }
+          ],
+          "code-md": [
+            "13px",
+            {
+              "lineHeight": "18px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "500"
+            }
+          ],
+          "body-lg": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ],
+          "code-sm": [
+            "11px",
+            {
+              "lineHeight": "14px",
+              "letterSpacing": "0.02em",
+              "fontWeight": "500"
+            }
+          ],
+          "body-sm": [
+            "12px",
+            {
+              "lineHeight": "16px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ]
+        }
+      },
+    },
+  }</script></head><body class="bg-background font-body-md text-body-md text-on-surface select-none antialiased min-h-screen"><header class="fixed top-0 w-full z-50 bg-surface-container-lowest/95 backdrop-blur-md shadow-[0_1px_8px_rgba(0,0,0,0.45)]"><div class="h-20 w-full px-space-lg flex flex-col justify-between pt-space-xs"><div class="flex items-center justify-between gap-space-lg h-space-panel-header-h"><div class="flex items-center gap-space-md"><img alt="Viettel NocPro Hindsight Logo" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1VLqt94IO72isT_Nhyfi3O0p329p6SPzfuOcFUhdjnn8X1-paKZEn3Kdz9cb87XnOV3_OjW9vFvGlm5nI0uryu9mBhLWEE_pMJPdW1t_aKh2AoCI1OF5xUWOKCff5NhVrtDKVdE4pqPxhqRRNezzPeDUhHpae3vlgJ8jBb4ZIZ66NnULybPG-B8sglXpVM1t-schU1EMCxfKCjw3Q9hz3Da91Ik7X0JYQv8Plu-0d9wOXmyK_aboUITYQ"/><div class="flex flex-col"><span class="font-headline-md text-headline-md font-bold tracking-tight text-on-surface leading-none">NocPro Hindsight</span><span class="font-label-caps text-label-caps uppercase text-secondary font-semibold tracking-wider">Chain Explain &amp; RCA Engine</span></div><div class="h-space-lg w-px bg-surface-container-highest ml-space-xs"></div><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container rounded cursor-pointer hover:bg-surface-container-high transition-colors"><span class="material-symbols-outlined text-secondary text-[16px]">history</span><div class="flex flex-col"><div class="flex items-center gap-space-xs"><span class="font-code-sm text-code-sm text-on-surface font-semibold">real_alarm_20260801</span><span class="material-symbols-outlined text-on-surface-variant text-[14px]">expand_more</span></div><span class="font-code-sm text-code-sm text-on-surface-variant">212,636 alarms • 1,845 chains • 10:00:00 UTC</span></div></div></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container-low rounded"><div class="w-2 h-2 rounded-full bg-secondary animate-pulse"></div><span class="font-code-sm text-code-sm text-on-surface font-semibold tracking-wide">ONLINE (READY)</span><span class="font-code-sm text-code-sm text-on-surface-variant">/ hindsight-v1</span></div><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container-low rounded"><span class="material-symbols-outlined text-secondary text-[14px]">wifi_tethering</span><span class="font-code-sm text-code-sm text-on-surface">:8085</span><span class="font-label-caps text-label-caps uppercase text-secondary font-bold">LIVE</span></div><div class="flex items-center gap-space-sm px-space-sm py-space-2xs bg-surface-container-low rounded"><div class="flex flex-col"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">LATENCY</span><span class="font-code-sm text-code-sm text-on-surface font-semibold">1.2ms</span></div><div class="h-4 w-px bg-surface-container-highest"></div><div class="flex flex-col"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">EPS</span><span class="font-code-sm text-code-sm text-on-surface font-semibold">14.2k/s</span></div></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div><nav class="w-full flex items-center gap-space-xs overflow-x-auto h-space-panel-header-h" data-active-classes="bg-surface-container-high text-secondary border-b-2 border-secondary font-semibold"><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="chain-hierarchy-and-tree" href="#">Chain Hierarchy &amp; Tree</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="member-diagnostics-table" href="#">Member Diagnostics Table</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="pair-why-and-evidence-matrix" href="#">Pair WHY &amp; Evidence Matrix</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="structural-audit-conductance" href="#">Structural Audit (Conductance)</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="counterfactual-review-5-ops" href="#">Counterfactual Review (5 Ops)</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="evolution-and-lineage" href="#">Evolution &amp; Lineage</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="topology-explorer-ip-it" href="#">Topology Explorer (IP/IT)</a></nav></div></header><main class="w-full pt-20 bg-background min-h-[calc(100vh-28px)]"><div class="flex flex-col w-full">
+<!-- Sub-navigation context bar -->
+<div class="w-full bg-surface-container-lowest px-space-lg py-space-xs flex flex-wrap items-center justify-between gap-space-md shadow-sm">
+<div class="flex items-center gap-space-sm">
+<div class="flex items-center gap-space-2xs font-code-sm text-code-sm">
+<span class="text-on-surface-variant font-label-caps uppercase">SNAPSHOT</span>
+<span class="text-secondary font-semibold bg-surface-container-high px-space-xs py-space-2xs rounded">S102</span>
+<span class="text-outline-variant">/</span>
+<span class="text-on-surface-variant font-label-caps uppercase">CHAIN</span>
+<span class="text-on-surface font-semibold bg-surface-container-high px-space-xs py-space-2xs rounded">C2214039</span>
+<span class="text-outline-variant">/</span>
+<span class="text-on-surface-variant">Evolution</span>
+<span class="text-outline-variant">/</span>
+<span class="text-secondary font-semibold">Lineage &amp; State Transitions</span>
+</div>
+<div class="h-4 w-px bg-surface-container-highest"></div>
+<div class="flex items-center gap-space-2xs bg-surface-container-low px-space-sm py-space-2xs rounded">
+<span class="material-symbols-outlined text-secondary text-[14px]">sync</span>
+<span class="font-code-sm text-code-sm text-secondary font-semibold">SNAPSHOT REPLAY SYNCED</span>
+<span class="text-on-surface-variant font-code-sm text-code-sm">t=10:00:22.418Z</span>
+</div>
+</div>
+<div class="flex items-center gap-space-md">
+<div class="flex items-center bg-surface-container-low p-space-2xs rounded">
+<button class="px-space-sm py-space-2xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface transition-colors rounded">
+          Timeline View
+        </button>
+<button class="px-space-sm py-space-2xs font-body-sm text-body-sm font-semibold bg-secondary text-on-secondary rounded shadow-sm flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[14px]">account_tree</span>
+          Lineage Graph &amp; WHY
+        </button>
+</div>
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm text-on-surface-variant bg-surface-container-low px-space-sm py-space-2xs rounded">
+<span class="font-label-caps uppercase text-secondary">EPOCHS:</span>
+<span class="text-on-surface font-semibold">#1 Genesis</span>
+<span class="material-symbols-outlined text-[12px] text-outline">arrow_forward</span>
+<span class="text-primary-fixed font-semibold">#4 Current Stable</span>
+</div>
+</div>
+</div>
+<!-- Top Metric Overview Strip -->
+<div class="w-full px-space-lg py-space-md">
+<div class="grid grid-cols-1 md:grid-cols-4 gap-gutter">
+<!-- Metric 1 -->
+<div class="bg-surface-container-low p-space-md rounded flex flex-col justify-between shadow-sm relative overflow-hidden">
+<div class="flex items-center justify-between mb-space-xs">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant tracking-wider">Lineage Span</span>
+<span class="material-symbols-outlined text-secondary text-[16px]">history_toggle_off</span>
+</div>
+<div class="flex flex-col">
+<div class="font-headline-md text-headline-md font-bold text-on-surface">4 Epochs</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant">Over 18m 22s clustering window</div>
+</div>
+<div class="mt-space-sm flex items-center gap-space-xs">
+<div class="h-1 flex-1 bg-secondary rounded"></div>
+<div class="h-1 flex-1 bg-secondary rounded"></div>
+<div class="h-1 flex-1 bg-secondary rounded"></div>
+<div class="h-1 flex-1 bg-tertiary rounded"></div>
+</div>
+</div>
+<!-- Metric 2 -->
+<div class="bg-surface-container-low p-space-md rounded flex flex-col justify-between shadow-sm">
+<div class="flex items-center justify-between mb-space-xs">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant tracking-wider">Current State</span>
+<div class="flex items-center gap-space-2xs">
+<span class="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
+<span class="font-label-caps text-label-caps text-secondary font-bold">LOCKED</span>
+</div>
+</div>
+<div class="flex flex-col">
+<div class="font-headline-md text-headline-md font-bold text-secondary flex items-baseline gap-space-xs">
+            58 Alarms <span class="font-code-sm text-code-sm text-on-surface-variant">/ 8 Sites</span>
+</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant">Cohesion <span class="text-tertiary font-code-sm font-semibold">0.824</span> (Conductance 0.120)</div>
+</div>
+<div class="mt-space-sm text-body-sm text-tertiary flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[14px]">warning</span>
+          Spurious ingress detected in Epoch #4
+        </div>
+</div>
+<!-- Metric 3 -->
+<div class="bg-surface-container-low p-space-md rounded flex flex-col justify-between shadow-sm">
+<div class="flex items-center justify-between mb-space-xs">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant tracking-wider">Mutations Log</span>
+<span class="font-code-sm text-code-sm bg-surface-container-high px-space-xs rounded text-on-surface">3 Events</span>
+</div>
+<div class="flex flex-col">
+<div class="font-headline-md text-headline-md font-bold text-on-surface">E1→E2 Split • E3 Influx</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant">E3→E4 Spurious Leak flagged</div>
+</div>
+<div class="mt-space-sm flex items-center gap-space-sm font-code-sm text-code-sm text-on-surface-variant">
+<span class="text-secondary font-semibold">1 SPLIT</span>
+<span class="text-outline-variant">•</span>
+<span class="text-secondary font-semibold">1 MERGE</span>
+<span class="text-outline-variant">•</span>
+<span class="text-tertiary font-semibold">1 LEAK</span>
+</div>
+</div>
+<!-- Metric 4 -->
+<div class="bg-surface-container-low p-space-md rounded flex flex-col justify-between shadow-sm">
+<div class="flex items-center justify-between mb-space-xs">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant tracking-wider">Causal Invariant</span>
+<span class="font-label-caps text-label-caps uppercase text-secondary font-bold bg-secondary/10 px-space-xs rounded">100% INVARIANT</span>
+</div>
+<div class="flex flex-col">
+<div class="font-headline-md text-headline-md font-bold text-primary flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[20px]">hub</span>
+            DEHL01-CR01
+          </div>
+<div class="font-body-sm text-body-sm text-on-surface-variant">Root node preserved across all 4 epochs</div>
+</div>
+<div class="mt-space-sm font-code-sm text-code-sm text-on-surface-variant">
+          Invariant Hash: <span class="text-on-surface">0x8F92...B41A</span> (ALM-47933128)
+        </div>
+</div>
+</div>
+</div>
+<!-- Main Body: 65% Graph / 35% WHY Explainability -->
+<div class="w-full px-space-lg pb-space-2xl grid grid-cols-1 lg:grid-cols-12 gap-gutter items-start">
+<!-- LEFT PANEL: Multi-Epoch Lineage Evolution Graph (65% -> 8 cols on 12-col grid) -->
+<div class="lg:col-span-8 flex flex-col bg-surface-container-low rounded shadow-md overflow-hidden">
+<!-- Panel Header -->
+<div class="h-space-panel-header-h px-space-md bg-surface-container flex items-center justify-between shadow-sm">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-secondary text-[18px]">timeline</span>
+<span class="font-headline-md text-headline-md text-on-surface font-semibold text-[14px]">Chain Lineage Evolution Graph</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">DAG Directed Acyclic View</span>
+</div>
+<div class="flex items-center gap-space-sm">
+<div class="flex items-center gap-space-xs text-on-surface-variant font-code-sm text-code-sm">
+<span class="w-2 h-2 rounded-full bg-secondary"></span> Cohesion &gt; 0.90
+            <span class="w-2 h-2 rounded-full bg-tertiary ml-space-xs"></span> Degradation Flag
+            <span class="w-2 h-2 rounded-full bg-primary ml-space-xs"></span> Root Hub
+          </div>
+<div class="h-4 w-px bg-surface-container-highest"></div>
+<button class="text-on-surface-variant hover:text-on-surface p-space-2xs rounded bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-[16px]">fit_screen</span>
+</button>
+</div>
+</div>
+<!-- Graph Stage Canvas -->
+<div class="p-space-lg relative flex flex-col gap-space-xl overflow-x-auto">
+<!-- Connecting decorative flow track -->
+<div class="absolute left-10 top-12 bottom-12 w-0.5 bg-surface-container-highest z-0"></div>
+<!-- ================= EPOCH #1 ================= -->
+<div class="relative z-10 flex items-start gap-space-lg">
+<!-- Timeline Marker & Badge -->
+<div class="flex flex-col items-center">
+<div class="w-8 h-8 rounded-full bg-secondary-container text-on-secondary flex items-center justify-center font-code-sm font-bold shadow-md">
+              1
+            </div>
+<span class="font-label-caps text-label-caps text-on-surface-variant mt-space-2xs">GENESIS</span>
+</div>
+<!-- Epoch Node Card -->
+<div class="flex-1 bg-surface-container p-space-md rounded shadow-sm hover:bg-surface-container-high transition-all">
+<div class="flex flex-wrap items-center justify-between gap-space-sm mb-space-xs">
+<div class="flex items-center gap-space-xs">
+<span class="font-code-sm text-code-sm font-bold text-on-surface bg-surface-container-lowest px-space-sm py-space-2xs rounded">
+                  EPOCH #1
+                </span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">10:00:00.000 UTC</span>
+<span class="px-space-xs py-space-2xs font-label-caps text-label-caps uppercase rounded bg-secondary/15 text-secondary">
+                  CORE EPICENTER
+                </span>
+</div>
+<div class="flex items-center gap-space-sm font-code-sm text-code-sm">
+<span class="text-on-surface-variant">Cohesion:</span>
+<span class="text-secondary font-bold">0.982</span>
+<span class="text-outline-variant">|</span>
+<span class="text-on-surface-variant">Alarms:</span>
+<span class="text-on-surface font-bold">5</span>
+</div>
+</div>
+<!-- Content preview -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-space-sm bg-surface-container-lowest p-space-sm rounded mt-space-sm font-code-sm text-code-sm">
+<div>
+<span class="font-label-caps text-on-surface-variant uppercase block text-[10px]">Epicenter Member</span>
+<span class="text-primary font-semibold flex items-center gap-space-2xs">
+<span class="material-symbols-outlined text-[14px]">bolt</span>
+                  DEHL01-CR01
+                </span>
+</div>
+<div>
+<span class="font-label-caps text-on-surface-variant uppercase block text-[10px]">Alarm Signature</span>
+<span class="text-on-surface">OPT_PWR_LOW_FIBER</span>
+</div>
+<div>
+<span class="font-label-caps text-on-surface-variant uppercase block text-[10px]">Graph Modularity</span>
+<span class="text-secondary">Q = 0.941 • Dia: 1</span>
+</div>
+</div>
+</div>
+</div>
+<!-- TRANSITION BADGE 1->2 -->
+<div class="relative z-10 ml-12 pl-space-md flex items-center gap-space-sm">
+<div class="flex items-center gap-space-xs bg-surface-container-high px-space-sm py-space-2xs rounded shadow-sm font-code-sm text-code-sm text-secondary">
+<span class="material-symbols-outlined text-[14px]">arrow_downward</span>
+<span>Cascade Event • <strong class="text-on-surface">+0.14s</strong></span>
+<span class="bg-surface-container-lowest px-space-xs rounded text-secondary font-semibold text-[10px]">FAST BURST</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Neighboring OSPF/BGP link flaps tripped in rapid succession</span>
+</div>
+<!-- ================= EPOCH #2 ================= -->
+<div class="relative z-10 flex items-start gap-space-lg">
+<div class="flex flex-col items-center">
+<div class="w-8 h-8 rounded-full bg-surface-container-highest text-secondary flex items-center justify-center font-code-sm font-bold shadow-md">
+              2
+            </div>
+<span class="font-label-caps text-label-caps text-on-surface-variant mt-space-2xs">PROTOCOL</span>
+</div>
+<div class="flex-1 flex flex-col md:flex-row gap-space-md">
+<!-- Main Branch Node A02 -->
+<div class="flex-1 bg-surface-container p-space-md rounded shadow-sm hover:bg-surface-container-high transition-all">
+<div class="flex flex-wrap items-center justify-between gap-space-sm mb-space-xs">
+<div class="flex items-center gap-space-xs">
+<span class="font-code-sm text-code-sm font-bold text-on-surface bg-surface-container-lowest px-space-sm py-space-2xs rounded">
+                    EPOCH #2 (MAIN)
+                  </span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">10:00:02.140 UTC</span>
+</div>
+<div class="flex items-center gap-space-sm font-code-sm text-code-sm">
+<span class="text-on-surface-variant">Cohesion:</span>
+<span class="text-secondary font-bold">0.940</span>
+<span class="text-outline-variant">|</span>
+<span class="text-on-surface">42 Alarms</span>
+</div>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-space-xs">
+                Major protocol storm (BGP session resets &amp; MPLS LSP drops across DEHL01 aggregation matrix).
+              </p>
+<div class="flex items-center gap-space-sm font-code-sm text-code-sm text-on-surface-variant">
+<span class="px-space-xs bg-surface-container-low rounded text-on-surface">DEHL01 Tier 1</span>
+<span>Conductance: 0.061</span>
+<span class="text-secondary">Diameter: 2 hops</span>
+</div>
+</div>
+<!-- Splinter Branch Sub-chain C02 -->
+<div class="w-full md:w-56 bg-surface-container-low p-space-md rounded shadow-sm opacity-90">
+<div class="flex items-center justify-between mb-space-2xs">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">SPLINTER BRANCH</span>
+<span class="material-symbols-outlined text-outline text-[16px]">call_split</span>
+</div>
+<div class="font-code-sm text-code-sm font-bold text-on-surface mb-space-2xs">Sub-chain C02</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant">6 Alarms split off (DEHL02 metro loop isolated via auto-reroute).</div>
+<div class="mt-space-xs font-code-sm text-code-sm text-secondary">Cohesion: 0.910</div>
+</div>
+</div>
+</div>
+<!-- TRANSITION BADGE 2->3 -->
+<div class="relative z-10 ml-12 pl-space-md flex items-center gap-space-sm">
+<div class="flex items-center gap-space-xs bg-surface-container-high px-space-sm py-space-2xs rounded shadow-sm font-code-sm text-code-sm text-secondary">
+<span class="material-symbols-outlined text-[14px]">arrow_downward</span>
+<span>Inter-site Influx • <strong class="text-on-surface">+4.10s</strong></span>
+<span class="bg-surface-container-lowest px-space-xs rounded text-on-surface font-semibold text-[10px]">AGGREGATION MERGE</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant">High-density backhaul saturation propagated to secondary transit hub DEHT01</span>
+</div>
+<!-- ================= EPOCH #3 ================= -->
+<div class="relative z-10 flex items-start gap-space-lg">
+<div class="flex flex-col items-center">
+<div class="w-8 h-8 rounded-full bg-surface-container-highest text-secondary flex items-center justify-center font-code-sm font-bold shadow-md">
+              3
+            </div>
+<span class="font-label-caps text-label-caps text-on-surface-variant mt-space-2xs">EXPANSION</span>
+</div>
+<div class="flex-1 bg-surface-container p-space-md rounded shadow-sm hover:bg-surface-container-high transition-all">
+<div class="flex flex-wrap items-center justify-between gap-space-sm mb-space-xs">
+<div class="flex items-center gap-space-xs">
+<span class="font-code-sm text-code-sm font-bold text-on-surface bg-surface-container-lowest px-space-sm py-space-2xs rounded">
+                  EPOCH #3
+                </span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">10:00:06.240 UTC</span>
+<span class="px-space-xs py-space-2xs font-label-caps text-label-caps uppercase rounded bg-secondary/15 text-secondary">
+                  DEHL01 + DEHT01 MERGED
+                </span>
+</div>
+<div class="flex items-center gap-space-sm font-code-sm text-code-sm">
+<span class="text-on-surface-variant">Cohesion:</span>
+<span class="text-secondary font-bold">0.880</span>
+<span class="text-outline-variant">|</span>
+<span class="text-on-surface">52 Alarms</span>
+</div>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Cross-site propagation confirmed. Both transit and core routers now form a unified cohesive fault cluster.
+            </p>
+<div class="mt-space-sm flex flex-wrap items-center gap-space-md font-code-sm text-code-sm">
+<span class="text-on-surface">Causal Invariance: <strong class="text-secondary">98.4%</strong></span>
+<span class="text-on-surface-variant">Conductance: 0.082</span>
+<span class="text-on-surface-variant">Internal Cut Edges: 14</span>
+</div>
+</div>
+</div>
+<!-- TRANSITION BADGE 3->4 (WARNING/SPURIOUS) -->
+<div class="relative z-10 ml-12 pl-space-md flex flex-wrap items-center gap-space-sm">
+<div class="flex items-center gap-space-xs bg-tertiary-container text-on-tertiary-container px-space-sm py-space-2xs rounded shadow-md font-code-sm text-code-sm font-bold">
+<span class="material-symbols-outlined text-[16px]">report_problem</span>
+<span>Spurious Leak Infiltration • +14.1s</span>
+</div>
+<span class="font-body-sm text-body-sm text-tertiary font-medium">
+            Threshold drift (60s default window) absorbed 6 uncorrelated peripheral environmental alerts.
+          </span>
+</div>
+<!-- ================= EPOCH #4 (CURRENT ACTIVE) ================= -->
+<div class="relative z-10 flex items-start gap-space-lg">
+<div class="flex flex-col items-center">
+<div class="w-8 h-8 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-code-sm font-bold shadow-lg animate-pulse">
+              4
+            </div>
+<span class="font-label-caps text-label-caps text-primary-fixed mt-space-2xs font-bold">CURRENT</span>
+</div>
+<!-- Active Chain Card with Prune Boundary Callout -->
+<div class="flex-1 bg-surface-container-high p-space-md rounded shadow-lg relative">
+<div class="flex flex-wrap items-center justify-between gap-space-sm mb-space-sm">
+<div class="flex items-center gap-space-xs">
+<span class="font-code-sm text-code-sm font-bold text-on-primary bg-primary px-space-sm py-space-2xs rounded">
+                  EPOCH #4 (ACTIVE)
+                </span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">10:00:22.418 UTC</span>
+<span class="px-space-xs py-space-2xs font-label-caps text-label-caps uppercase rounded bg-tertiary/20 text-tertiary">
+                  CONTAMINATED TAIL
+                </span>
+</div>
+<div class="flex items-center gap-space-sm font-code-sm text-code-sm">
+<span class="text-on-surface-variant">Cohesion:</span>
+<span class="text-tertiary font-bold">0.824 (-0.056)</span>
+<span class="text-outline-variant">|</span>
+<span class="text-on-surface font-bold">58 Alarms</span>
+</div>
+</div>
+<!-- Callout: Candidate Prune Boundary -->
+<div class="bg-surface-container-lowest p-space-md rounded shadow-sm mt-space-sm">
+<div class="flex items-center justify-between mb-space-xs">
+<span class="font-label-caps text-label-caps uppercase text-tertiary font-bold flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[14px]">content_cut</span>
+                  Recommended Boundary Prune (Counterfactual Target)
+                </span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">Conductance Delta: +0.038</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-space-md text-code-sm font-code-sm">
+<div class="bg-surface-container p-space-sm rounded">
+<span class="font-label-caps text-on-surface-variant uppercase block text-[10px]">Infiltrating Peripheral Nodes</span>
+<div class="text-on-surface mt-space-2xs font-semibold">
+                    DEHL-ENV-SVR04 • ALM-99210014 <span class="text-tertiary text-[11px]">(CPU Temp Spike)</span>
+</div>
+<div class="text-on-surface mt-space-2xs font-semibold">
+                    DEHL01-ACC-SW09 • ALM-47933130 <span class="text-tertiary text-[11px]">(PSU Fan Redundancy)</span>
+</div>
+</div>
+<div class="flex flex-col justify-between bg-surface-container p-space-sm rounded">
+<div>
+<span class="font-label-caps text-on-surface-variant uppercase block text-[10px]">Engine Prune Recommendation</span>
+<span class="text-body-sm text-on-surface mt-space-2xs block">
+                      Sever 2 weak conductance links to restore core lineage purity to 0.880 cohesion.
+                    </span>
+</div>
+<div class="mt-space-xs flex items-center gap-space-xs text-secondary font-semibold text-[11px]">
+<span class="material-symbols-outlined text-[14px]">auto_fix_high</span>
+                    Counterfactual simulation ready
+                  </div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Graph Footer Toolstrip -->
+<div class="h-space-panel-header-h px-space-md bg-surface-container flex items-center justify-between text-code-sm font-code-sm text-on-surface-variant">
+<div class="flex items-center gap-space-md">
+<span>Active Graph Nodes: <strong class="text-on-surface">58</strong></span>
+<span>Inter-Epoch Mutations: <strong class="text-on-surface">3</strong></span>
+<span>Max Spanning Radius: <strong class="text-on-surface">3 Hops</strong></span>
+</div>
+<div class="flex items-center gap-space-xs text-secondary cursor-pointer hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined text-[16px]">file_download</span>
+<span>Export DAG Matrix (.json)</span>
+</div>
+</div>
+</div>
+<!-- RIGHT PANEL: Transition WHY & Mutation Explainability (35% -> 4 cols on 12-col grid) -->
+<div class="lg:col-span-4 flex flex-col gap-space-md">
+<!-- Card 1: Detailed Transition WHY -->
+<div class="bg-surface-container-low p-space-md rounded shadow-md flex flex-col">
+<div class="flex items-center justify-between pb-space-sm shadow-sm mb-space-md">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-tertiary text-[18px]">psychology_alt</span>
+<span class="font-headline-md text-headline-md text-on-surface font-semibold text-[14px]">WHY This Transition</span>
+</div>
+<span class="px-space-xs py-space-2xs font-code-sm text-code-sm bg-surface-container-highest text-tertiary rounded font-semibold">
+            Epoch #3 → #4
+          </span>
+</div>
+<div class="space-y-space-md">
+<div>
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Mutation Classification</span>
+<div class="font-headline-md text-headline-md text-tertiary font-bold mt-space-2xs">
+              Spurious Peripheral Absorption
+            </div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-space-2xs">
+              The clustering kernel merged low-gravity hardware telemetry into the mission-critical core outage cluster.
+            </p>
+</div>
+<div class="bg-surface-container p-space-sm rounded">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">Triggering Alarms</span>
+<div class="mt-space-xs space-y-space-xs font-code-sm text-code-sm">
+<div class="flex items-center justify-between bg-surface-container-lowest px-space-xs py-space-2xs rounded">
+<span class="text-on-surface font-semibold">ALM-99210014</span>
+<span class="text-tertiary">Temp High (DEHL-ENV)</span>
+</div>
+<div class="flex items-center justify-between bg-surface-container-lowest px-space-xs py-space-2xs rounded">
+<span class="text-on-surface font-semibold">ALM-47933130</span>
+<span class="text-tertiary">Fan Degraded (ACC-SW09)</span>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-space-sm font-code-sm text-code-sm">
+<div class="bg-surface-container p-space-sm rounded">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant block">Modularity Impact</span>
+<span class="text-primary font-bold text-[14px]">-0.056</span>
+<span class="text-on-surface-variant text-[11px] block">0.880 → 0.824</span>
+</div>
+<div class="bg-surface-container p-space-sm rounded">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant block">Conductance</span>
+<span class="text-primary font-bold text-[14px]">0.120</span>
+<span class="text-on-surface-variant text-[11px] block">Worsened from 0.082</span>
+</div>
+</div>
+<div class="bg-surface-container p-space-sm rounded">
+<span class="font-label-caps text-label-caps uppercase text-secondary font-bold flex items-center gap-space-xs mb-space-2xs">
+<span class="material-symbols-outlined text-[14px]">verified</span>
+              Engine RCA Verdict
+            </span>
+<p class="font-body-sm text-body-sm text-on-surface leading-relaxed">
+              Absorption occurred because temporal windowing (<strong class="text-secondary">Δt=60s</strong>) overpowered topological distance penalties. Counterfactual audit strongly suggests rolling back this absorption to keep Chain C2214039 pure.
+            </p>
+</div>
+</div>
+</div>
+<!-- Card 2: Lineage Invariance & Drift Check -->
+<div class="bg-surface-container-low p-space-md rounded shadow-md flex flex-col">
+<div class="flex items-center justify-between pb-space-sm shadow-sm mb-space-md">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-secondary text-[18px]">verified_user</span>
+<span class="font-headline-md text-headline-md text-on-surface font-semibold text-[14px]">Invariance &amp; Drift Audit</span>
+</div>
+<span class="font-label-caps text-label-caps uppercase text-secondary bg-secondary/10 px-space-xs py-space-2xs rounded font-bold">
+            CONFIRMED
+          </span>
+</div>
+<div class="space-y-space-md">
+<!-- Metric Bar 1 -->
+<div>
+<div class="flex items-center justify-between font-code-sm text-code-sm mb-space-2xs">
+<span class="text-on-surface-variant">Core Membership Invariance</span>
+<span class="text-secondary font-bold">96.2%</span>
+</div>
+<div class="w-full bg-surface-container h-2 rounded overflow-hidden">
+<div class="bg-secondary h-full rounded" style="width: 96.2%"></div>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant text-[11px] mt-space-2xs block">
+              Core members remained stable across all 4 epochs without displacement.
+            </span>
+</div>
+<!-- Metric Bar 2 -->
+<div>
+<div class="flex items-center justify-between font-code-sm text-code-sm mb-space-2xs">
+<span class="text-on-surface-variant">Root Cause Stability</span>
+<span class="text-primary font-bold">100.0%</span>
+</div>
+<div class="w-full bg-surface-container h-2 rounded overflow-hidden">
+<div class="bg-primary h-full rounded" style="width: 100%"></div>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant text-[11px] mt-space-2xs block">
+              Root causality never shifted away from ALM-47933128 (DEHL01-CR01).
+            </span>
+</div>
+<!-- Metric Bar 3 -->
+<div>
+<div class="flex items-center justify-between font-code-sm text-code-sm mb-space-2xs">
+<span class="text-on-surface-variant">Peripheral Churn</span>
+<span class="text-tertiary font-bold">24.1%</span>
+</div>
+<div class="w-full bg-surface-container h-2 rounded overflow-hidden">
+<div class="bg-tertiary h-full rounded" style="width: 24.1%"></div>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant text-[11px] mt-space-2xs block">
+              High volatility in leaf-tier access routers and out-of-band nodes.
+            </span>
+</div>
+</div>
+</div>
+<!-- Action Buttons Panel -->
+<div class="flex flex-col gap-space-sm">
+<button class="w-full h-9 bg-surface-container-high hover:bg-surface-bright text-on-surface px-space-md rounded font-body-sm font-semibold flex items-center justify-center gap-space-sm shadow-sm transition-all active:scale-[0.98]">
+<span class="material-symbols-outlined text-secondary text-[18px]">replay</span>
+          Replay Lineage Step-by-Step
+        </button>
+<button class="w-full h-9 bg-primary-container hover:brightness-110 text-on-primary-container px-space-md rounded font-body-sm font-bold flex items-center justify-center gap-space-sm shadow-md transition-all active:scale-[0.98]">
+<span class="material-symbols-outlined text-[18px]">fork_right</span>
+          Fork Counterfactual Chain from Epoch #3
+        </button>
+</div>
+</div>
+</div>
+</div></main><footer class="fixed bottom-0 w-full h-space-row-compact-h z-40 bg-surface-container-lowest/95 backdrop-blur-md shadow-[0_-1px_6px_rgba(0,0,0,0.5)] flex items-center justify-between px-space-lg font-code-sm text-code-sm text-on-surface-variant"><div class="flex items-center gap-space-lg"><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">PROVENANCE:</span><span class="text-on-surface font-semibold">REAL_EXPORT_REPLAY</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">CONFIG:</span><span class="text-on-surface">v1.0</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">ENGINE:</span><span class="text-secondary">hindsight-v1</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">ACTIVE SNAPSHOT:</span><span class="text-on-surface">real_alarm_20260801</span></span></div><div class="flex items-center gap-space-lg"><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">MOCK GATEWAY:</span><span class="text-secondary">:8085</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">API:</span><span class="text-secondary">:8000</span></span><span class="flex items-center gap-space-xs"><span class="w-1.5 h-1.5 rounded-full bg-secondary"></span><span class="font-label-caps text-label-caps uppercase text-on-surface">STREAM SYNCED</span></span></div></footer></body></html>

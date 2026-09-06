@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+          "background": "#0c1322",
+          "primary-container": "#ff5451",
+          "surface-container": "#191f2f",
+          "secondary-fixed": "#c4e7ff",
+          "on-primary-fixed-variant": "#930013",
+          "surface": "#0c1322",
+          "surface-bright": "#323949",
+          "outline-variant": "#5b403e",
+          "secondary-container": "#00a6e0",
+          "on-tertiary-fixed-variant": "#653e00",
+          "surface-dim": "#0c1322",
+          "surface-variant": "#2e3545",
+          "inverse-surface": "#dce2f7",
+          "on-secondary-fixed": "#001e2c",
+          "surface-container-high": "#232a3a",
+          "on-background": "#dce2f7",
+          "secondary-fixed-dim": "#7bd0ff",
+          "error-container": "#93000a",
+          "on-surface-variant": "#e4beba",
+          "on-error": "#690005",
+          "on-surface": "#dce2f7",
+          "on-secondary-fixed-variant": "#004c69",
+          "on-error-container": "#ffdad6",
+          "inverse-primary": "#b91a24",
+          "outline": "#ab8986",
+          "surface-container-highest": "#2e3545",
+          "on-tertiary": "#472a00",
+          "on-tertiary-container": "#3e2400",
+          "on-primary": "#68000a",
+          "tertiary-fixed": "#ffddb8",
+          "surface-container-low": "#141b2b",
+          "tertiary": "#ffb95f",
+          "surface-container-lowest": "#070e1d",
+          "inverse-on-surface": "#293040",
+          "tertiary-container": "#ca8100",
+          "secondary": "#7bd0ff",
+          "primary-fixed": "#ffdad7",
+          "primary-fixed-dim": "#ffb3ad",
+          "tertiary-fixed-dim": "#ffb95f",
+          "on-tertiary-fixed": "#2a1700",
+          "on-secondary-container": "#00374d",
+          "on-secondary": "#00354a",
+          "error": "#ffb4ab",
+          "surface-tint": "#ffb3ad",
+          "on-primary-fixed": "#410004",
+          "primary": "#ffb3ad",
+          "on-primary-container": "#5c0008"
+        },
+        "borderRadius": {
+          "DEFAULT": "0.125rem",
+          "lg": "0.25rem",
+          "xl": "0.5rem",
+          "full": "0.75rem"
+        },
+        "spacing": {
+          "space-xs": "4px",
+          "space-md": "12px",
+          "row-standard-h": "36px",
+          "space-sm": "8px",
+          "space-2xs": "2px",
+          "panel-header-h": "36px",
+          "space-xl": "24px",
+          "space-2xl": "32px",
+          "space-lg": "16px",
+          "margin-screen": "16px",
+          "row-compact-h": "28px",
+          "gutter": "12px"
+        },
+        "fontFamily": {
+          "label-caps": [
+            "JetBrains Mono"
+          ],
+          "headline-lg": [
+            "Inter"
+          ],
+          "headline-md": [
+            "Inter"
+          ],
+          "body-md": [
+            "Inter"
+          ],
+          "headline-xl": [
+            "Inter"
+          ],
+          "code-lg": [
+            "JetBrains Mono"
+          ],
+          "code-md": [
+            "JetBrains Mono"
+          ],
+          "body-lg": [
+            "Inter"
+          ],
+          "code-sm": [
+            "JetBrains Mono"
+          ],
+          "body-sm": [
+            "Inter"
+          ]
+        },
+        "fontSize": {
+          "label-caps": [
+            "10px",
+            {
+              "lineHeight": "12px",
+              "letterSpacing": "0.08em",
+              "fontWeight": "700"
+            }
+          ],
+          "headline-lg": [
+            "24px",
+            {
+              "lineHeight": "32px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "600"
+            }
+          ],
+          "headline-md": [
+            "18px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "600"
+            }
+          ],
+          "body-md": [
+            "14px",
+            {
+              "lineHeight": "20px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ],
+          "headline-xl": [
+            "32px",
+            {
+              "lineHeight": "40px",
+              "letterSpacing": "-0.02em",
+              "fontWeight": "700"
+            }
+          ],
+          "code-lg": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "500"
+            }
+          ],
+          "code-md": [
+            "13px",
+            {
+              "lineHeight": "18px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "500"
+            }
+          ],
+          "body-lg": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ],
+          "code-sm": [
+            "11px",
+            {
+              "lineHeight": "14px",
+              "letterSpacing": "0.02em",
+              "fontWeight": "500"
+            }
+          ],
+          "body-sm": [
+            "12px",
+            {
+              "lineHeight": "16px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ]
+        }
+      },
+    },
+  }</script></head><body class="bg-background font-body-md text-body-md text-on-surface select-none antialiased min-h-screen"><header class="fixed top-0 w-full z-50 bg-surface-container-lowest/95 backdrop-blur-md shadow-[0_1px_8px_rgba(0,0,0,0.45)]"><div class="h-20 w-full px-space-lg flex flex-col justify-between pt-space-xs"><div class="flex items-center justify-between gap-space-lg h-space-panel-header-h"><div class="flex items-center gap-space-md"><img alt="Viettel NocPro Hindsight Logo" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1VLqt94IO72isT_Nhyfi3O0p329p6SPzfuOcFUhdjnn8X1-paKZEn3Kdz9cb87XnOV3_OjW9vFvGlm5nI0uryu9mBhLWEE_pMJPdW1t_aKh2AoCI1OF5xUWOKCff5NhVrtDKVdE4pqPxhqRRNezzPeDUhHpae3vlgJ8jBb4ZIZ66NnULybPG-B8sglXpVM1t-schU1EMCxfKCjw3Q9hz3Da91Ik7X0JYQv8Plu-0d9wOXmyK_aboUITYQ"/><div class="flex flex-col"><span class="font-headline-md text-headline-md font-bold tracking-tight text-on-surface leading-none">NocPro Hindsight</span><span class="font-label-caps text-label-caps uppercase text-secondary font-semibold tracking-wider">Chain Explain &amp; RCA Engine</span></div><div class="h-space-lg w-px bg-surface-container-highest ml-space-xs"></div><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container rounded cursor-pointer hover:bg-surface-container-high transition-colors"><span class="material-symbols-outlined text-secondary text-[16px]">history</span><div class="flex flex-col"><div class="flex items-center gap-space-xs"><span class="font-code-sm text-code-sm text-on-surface font-semibold">real_alarm_20260801</span><span class="material-symbols-outlined text-on-surface-variant text-[14px]">expand_more</span></div><span class="font-code-sm text-code-sm text-on-surface-variant">212,636 alarms • 1,845 chains • 10:00:00 UTC</span></div></div></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container-low rounded"><div class="w-2 h-2 rounded-full bg-secondary animate-pulse"></div><span class="font-code-sm text-code-sm text-on-surface font-semibold tracking-wide">ONLINE (READY)</span><span class="font-code-sm text-code-sm text-on-surface-variant">/ hindsight-v1</span></div><div class="flex items-center gap-space-xs px-space-sm py-space-2xs bg-surface-container-low rounded"><span class="material-symbols-outlined text-secondary text-[14px]">wifi_tethering</span><span class="font-code-sm text-code-sm text-on-surface">:8085</span><span class="font-label-caps text-label-caps uppercase text-secondary font-bold">LIVE</span></div><div class="flex items-center gap-space-sm px-space-sm py-space-2xs bg-surface-container-low rounded"><div class="flex flex-col"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">LATENCY</span><span class="font-code-sm text-code-sm text-on-surface font-semibold">1.2ms</span></div><div class="h-4 w-px bg-surface-container-highest"></div><div class="flex flex-col"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">EPS</span><span class="font-code-sm text-code-sm text-on-surface font-semibold">14.2k/s</span></div></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div><nav class="w-full flex items-center gap-space-xs overflow-x-auto h-space-panel-header-h" data-active-classes="bg-surface-container-high text-secondary border-b-2 border-secondary font-semibold"><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="chain-hierarchy-and-tree" href="#">Chain Hierarchy &amp; Tree</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="member-diagnostics-table" href="#">Member Diagnostics Table</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="pair-why-and-evidence-matrix" href="#">Pair WHY &amp; Evidence Matrix</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="structural-audit-conductance" href="#">Structural Audit (Conductance)</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="counterfactual-review-5-ops" href="#">Counterfactual Review (5 Ops)</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="evolution-and-lineage" href="#">Evolution &amp; Lineage</a><a class="px-space-md py-space-xs font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors whitespace-nowrap" data-path="topology-explorer-ip-it" href="#">Topology Explorer (IP/IT)</a></nav></div></header><main class="w-full pt-20 bg-background min-h-[calc(100vh-28px)]"><div class="flex flex-col w-full">
+<!-- Sub-Header / Operational Context Banner -->
+<div class="w-full bg-surface-container-lowest px-space-lg py-space-sm flex flex-col lg:flex-row lg:items-center justify-between gap-space-md">
+<div class="flex flex-col gap-space-2xs">
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm text-on-surface-variant">
+<span class="hover:text-secondary cursor-pointer">Snapshot S102</span>
+<span class="material-symbols-outlined text-[12px]">chevron_right</span>
+<span class="text-secondary font-semibold">Chain C2214039</span>
+<span class="material-symbols-outlined text-[12px]">chevron_right</span>
+<span class="text-on-surface">Topology (IT Service Relations &amp; IP Physical Overlay)</span>
+</div>
+<div class="flex items-center gap-space-sm">
+<h1 class="font-headline-md text-headline-md text-on-surface font-bold tracking-tight">
+          17 - Topology: IT Service Relation Tree &amp; IP Overlay
+        </h1>
+<span class="px-space-xs py-space-2xs bg-primary-container/20 text-error font-code-sm text-code-sm rounded font-bold uppercase tracking-wider flex items-center gap-space-2xs">
+<span class="w-1.5 h-1.5 rounded-full bg-primary-container animate-ping"></span>
+          INCIDENT ROOT T0
+        </span>
+</div>
+</div>
+<!-- Technical Status Telemetry Strip -->
+<div class="flex flex-wrap items-center gap-space-xs">
+<div class="flex items-center gap-space-xs px-space-sm py-space-xs bg-surface-container rounded">
+<span class="material-symbols-outlined text-secondary text-[16px]">account_tree</span>
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">IP PHYSICAL</span>
+<span class="font-code-sm text-code-sm text-secondary font-semibold">41 / 58 Mapped (70.6%)</span>
+</div>
+</div>
+<div class="flex items-center gap-space-xs px-space-sm py-space-xs bg-surface-container rounded">
+<span class="material-symbols-outlined text-tertiary text-[16px]">fiber_manual_record</span>
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">OPTICAL DWDM</span>
+<span class="font-code-sm text-code-sm text-tertiary font-semibold">17 Drops Unmapped</span>
+</div>
+</div>
+<div class="flex items-center gap-space-xs px-space-sm py-space-xs bg-surface-container rounded">
+<span class="material-symbols-outlined text-on-surface-variant text-[16px]">hub</span>
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">IT RELATIONS</span>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold">Tier-1 Core Backbone</span>
+</div>
+</div>
+<div class="flex items-center gap-space-xs px-space-sm py-space-xs bg-surface-container-high rounded">
+<span class="material-symbols-outlined text-secondary text-[16px]">cloud_sync</span>
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">CMDB SYNC</span>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold">NetBox v3.7 LIVE</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Interactive Control Ribbon -->
+<div class="w-full bg-surface-container-low px-space-lg py-space-xs flex flex-wrap items-center justify-between gap-space-md">
+<div class="flex items-center gap-space-sm">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant tracking-wider">LAYERS:</span>
+<button class="px-space-sm py-space-2xs bg-secondary-container/20 text-secondary rounded font-code-sm text-code-sm font-semibold flex items-center gap-space-xs hover:bg-secondary-container/30 transition-colors" id="toggle-l3">
+<span class="material-symbols-outlined text-[14px]">check_box</span>
+<span>IP Layer-3 Mesh</span>
+</button>
+<button class="px-space-sm py-space-2xs bg-secondary-container/20 text-secondary rounded font-code-sm text-code-sm font-semibold flex items-center gap-space-xs hover:bg-secondary-container/30 transition-colors" id="toggle-it">
+<span class="material-symbols-outlined text-[14px]">check_box</span>
+<span>IT Service Hierarchy</span>
+</button>
+<button class="px-space-sm py-space-2xs bg-primary-container/20 text-error rounded font-code-sm text-code-sm font-semibold flex items-center gap-space-xs hover:bg-primary-container/30 transition-colors" id="toggle-alarms">
+<span class="material-symbols-outlined text-[14px]">check_box</span>
+<span>Active Chain Alarms (58)</span>
+</button>
+<button class="px-space-sm py-space-2xs bg-tertiary-container/20 text-tertiary rounded font-code-sm text-code-sm font-semibold flex items-center gap-space-xs hover:bg-tertiary-container/30 transition-colors" id="toggle-cut">
+<span class="material-symbols-outlined text-[14px]">check_box</span>
+<span>Filter Cheeger Cut Edges</span>
+</button>
+</div>
+<div class="flex items-center gap-space-sm">
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-2 text-on-surface-variant text-[16px]">search</span>
+<input class="bg-surface-container-lowest text-on-surface font-code-sm text-code-sm pl-7 pr-space-sm py-space-2xs rounded w-64 focus:outline-none focus:bg-surface-container-high" placeholder="Filter node, circuit #, SLA..." type="text"/>
+</div>
+<button class="px-space-sm py-space-2xs bg-surface-container text-on-surface hover:bg-surface-container-high rounded font-code-sm text-code-sm flex items-center gap-space-2xs">
+<span class="material-symbols-outlined text-[16px]">refresh</span>
+<span>Re-layout</span>
+</button>
+</div>
+</div>
+<!-- Primary Split-Screen Content Layout (35% IT Tree | 65% Network Mesh Overlay) -->
+<div class="w-full px-space-lg py-space-md grid grid-cols-1 lg:grid-cols-12 gap-space-md">
+<!-- LEFT PANEL (35% / 4 Cols on 12-col grid): IT Service & Enterprise Customer Impact Tree -->
+<div class="lg:col-span-4 flex flex-col gap-space-md">
+<div class="bg-surface-container rounded shadow-md overflow-hidden flex flex-col h-[740px]">
+<!-- Panel Header -->
+<div class="h-space-panel-header-h px-space-md bg-surface-container-high flex items-center justify-between shrink-0">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-secondary text-[18px]">domain</span>
+<span class="font-headline-md text-body-md font-bold text-on-surface">IT Service &amp; Customer Impact Tree</span>
+</div>
+<span class="px-space-xs py-space-2xs bg-primary-container text-on-primary font-label-caps text-label-caps rounded uppercase font-bold">
+            3 High SLAs Degraded
+          </span>
+</div>
+<!-- Hierarchical Tree Content Container -->
+<div class="p-space-md overflow-y-auto flex-1 flex flex-col gap-space-sm font-code-sm text-code-sm">
+<!-- Root Level Node -->
+<div class="flex flex-col bg-surface-container-lowest p-space-sm rounded">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs cursor-pointer">
+<span class="material-symbols-outlined text-on-surface text-[18px]">indeterminate_check_box</span>
+<span class="material-symbols-outlined text-error text-[18px]">lan</span>
+<span class="font-bold text-on-surface font-body-md text-body-md">Enterprise Core Services</span>
+</div>
+<span class="px-space-xs py-space-2xs bg-error-container text-on-error-container font-label-caps text-label-caps uppercase rounded font-semibold">
+                CRITICAL IMPERIAL
+              </span>
+</div>
+<div class="text-on-surface-variant font-code-sm text-code-sm mt-space-2xs pl-6">
+              Anchor: Viettel National Backbone - Pop DEHL01
+            </div>
+<!-- Subtree Connector Lines Wrapper -->
+<div class="mt-space-sm pl-4 flex flex-col gap-space-md relative">
+<div class="absolute left-2 top-0 bottom-3 w-px bg-surface-variant"></div>
+<!-- Branch 1: Banking & Financial Leased Lines -->
+<div class="relative pl-4 flex flex-col gap-space-xs">
+<div class="absolute -left-2 top-3 w-3 h-px bg-surface-variant"></div>
+<div class="flex items-center justify-between cursor-pointer bg-surface-container-low p-space-xs rounded hover:bg-surface-container-high">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-error text-[16px]">account_balance</span>
+<span class="font-bold text-error">Banking &amp; Financial Leased Lines</span>
+</div>
+<span class="font-label-caps text-label-caps bg-error/20 text-error px-space-xs py-space-2xs rounded">SLA 99.99%</span>
+</div>
+<span class="text-on-surface-variant font-code-sm text-code-sm pl-2">3 Circuits affected • Financial Corridor Tier 1</span>
+<!-- Circuit Leaf 1.1 -->
+<div class="ml-4 p-space-xs bg-surface-container-lowest rounded flex flex-col gap-space-2xs">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="w-1.5 h-1.5 rounded-full bg-primary-container animate-ping"></span>
+<span class="font-semibold text-on-surface">Vietcombank Primary Trunk</span>
+</div>
+<span class="text-error font-bold font-code-sm text-code-sm">IMPACT 100%</span>
+</div>
+<div class="flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
+<span>Circuit #VCB-HN-SG-01</span>
+<span class="text-error font-code-sm text-code-sm">[ALM-47933128: PE Down]</span>
+</div>
+<div class="w-full bg-surface-container-high h-1 rounded overflow-hidden mt-1">
+<div class="bg-primary-container h-full w-full"></div>
+</div>
+</div>
+<!-- Circuit Leaf 1.2 -->
+<div class="ml-4 p-space-xs bg-surface-container-lowest rounded flex flex-col gap-space-2xs">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span>
+<span class="font-semibold text-on-surface">Techcombank DR Link</span>
+</div>
+<span class="text-tertiary font-bold font-code-sm text-code-sm">DEGRADED</span>
+</div>
+<div class="flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
+<span>Circuit #TCB-HN-DA-02</span>
+<span class="text-tertiary font-code-sm text-code-sm">[ALM-715054: BGP Teardown]</span>
+</div>
+<div class="w-full bg-surface-container-high h-1 rounded overflow-hidden mt-1">
+<div class="bg-tertiary h-full w-3/4"></div>
+</div>
+</div>
+</div>
+<!-- Branch 2: National Government Backbone (CPNet) -->
+<div class="relative pl-4 flex flex-col gap-space-xs">
+<div class="absolute -left-2 top-3 w-3 h-px bg-surface-variant"></div>
+<div class="flex items-center justify-between cursor-pointer bg-surface-container-low p-space-xs rounded hover:bg-surface-container-high">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-tertiary text-[16px]">security</span>
+<span class="font-bold text-tertiary">National Government Backbone</span>
+</div>
+<span class="font-label-caps text-label-caps bg-tertiary/20 text-tertiary px-space-xs py-space-2xs rounded">CPNet / GovNet</span>
+</div>
+<span class="text-on-surface-variant font-code-sm text-code-sm pl-2">2 Circuits degraded • High security priority</span>
+<!-- Circuit Leaf 2.1 -->
+<div class="ml-4 p-space-xs bg-surface-container-lowest rounded flex flex-col gap-space-2xs">
+<div class="flex items-center justify-between">
+<span class="font-semibold text-on-surface">GovNet Hanoi Ring A</span>
+<span class="text-tertiary font-bold font-code-sm text-code-sm">REROUTED</span>
+</div>
+<div class="flex items-center justify-between text-on-surface-variant font-code-sm text-code-sm">
+<span>Trunk #GVN-09-RING</span>
+<span class="text-tertiary font-code-sm text-code-sm">[ALM-47933130: Carrier Loss]</span>
+</div>
+</div>
+</div>
+<!-- Branch 3: 4G/5G Backhaul & SGW Data Plane -->
+<div class="relative pl-4 flex flex-col gap-space-xs">
+<div class="absolute -left-2 top-3 w-3 h-px bg-surface-variant"></div>
+<div class="flex items-center justify-between cursor-pointer bg-surface-container-low p-space-xs rounded hover:bg-surface-container-high">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-secondary text-[16px]">cell_tower</span>
+<span class="font-bold text-secondary">4G/5G Backhaul &amp; SGW Data Plane</span>
+</div>
+<span class="font-label-caps text-label-caps bg-secondary/20 text-secondary px-space-xs py-space-2xs rounded">FAILOVER ACTIVE</span>
+</div>
+<!-- Circuit Leaf 3.1 -->
+<div class="ml-4 p-space-xs bg-surface-container-lowest rounded flex flex-col gap-space-2xs">
+<div class="flex items-center justify-between">
+<span class="font-semibold text-on-surface">SGW-Hanoi-04 Data Plane</span>
+<span class="text-secondary font-bold font-code-sm text-code-sm">PROTECTED</span>
+</div>
+<div class="text-on-surface-variant font-code-sm text-code-sm">
+                    Auto-rerouted via Aggregator DEHT01-AR01
+                  </div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Metric KPI Footer Card -->
+<div class="p-space-sm bg-surface-container-lowest flex flex-col gap-space-xs shrink-0">
+<div class="grid grid-cols-3 gap-space-xs text-center">
+<div class="bg-surface-container p-space-xs rounded">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">REVENUE RISK</span>
+<div class="font-code-md text-code-md font-bold text-error mt-0.5">HIGH LEVEL</div>
+</div>
+<div class="bg-surface-container p-space-xs rounded">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">SLA BREACHES</span>
+<div class="font-code-md text-code-md font-bold text-error mt-0.5">2 CRITICAL</div>
+</div>
+<div class="bg-surface-container p-space-xs rounded">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant">DEGRADATION</span>
+<div class="font-code-md text-code-md font-bold text-tertiary mt-0.5">14m 22s</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- RIGHT PANEL (65% / 8 Cols on 12-col grid): IP Physical Topology & Alarm Incident Overlay -->
+<div class="lg:col-span-8 flex flex-col gap-space-md">
+<div class="bg-surface-container rounded shadow-md overflow-hidden flex flex-col h-[740px]">
+<!-- Panel Header -->
+<div class="h-space-panel-header-h px-space-md bg-surface-container-high flex items-center justify-between shrink-0">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-secondary text-[18px]">device_hub</span>
+<span class="font-headline-md text-body-md font-bold text-on-surface">
+              IP Physical Topology &amp; Incident Chain Overlay (Layer 3 Mesh + DWDM Drops)
+            </span>
+</div>
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm">
+<span class="px-space-xs py-space-2xs bg-surface-container text-on-surface-variant rounded">Zoom: 100%</span>
+<span class="px-space-xs py-space-2xs bg-surface-container text-secondary rounded flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+              L3 Graph Active
+            </span>
+</div>
+</div>
+<!-- Canvas Container with Inline Interactive Graph Visual -->
+<div class="relative flex-1 bg-surface-container-lowest overflow-hidden flex items-center justify-center p-space-sm">
+<!-- Background Coordinate Matrix Grid Pattern -->
+<div class="absolute inset-0 opacity-20 bg-[radial-gradient(#5b403e_1px,transparent_1px)] [background-size:24px_24px]"></div>
+<!-- Network Canvas SVG Graph -->
+<svg class="w-full h-full" fill="none" viewbox="0 0 820 480" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<!-- Glowing Filters -->
+<filter height="140%" id="glow-red" width="140%" x="-20%" y="-20%">
+<fegaussianblur result="blur" stddeviation="6"></fegaussianblur>
+<fecomposite in="SourceGraphic" in2="blur" operator="over"></fecomposite>
+</filter>
+<filter height="140%" id="glow-yellow" width="140%" x="-20%" y="-20%">
+<fegaussianblur result="blur" stddeviation="4"></fegaussianblur>
+<fecomposite in="SourceGraphic" in2="blur" operator="over"></fecomposite>
+</filter>
+</defs>
+<!-- REGION BACKGROUNDS (CLUSTERS) -->
+<!-- DEHL01 Core Region Box -->
+<rect fill="#141b2b" fill-opacity="0.8" height="390" rx="8" width="310" x="60" y="40"></rect>
+<text fill="#7bd0ff" font-family="JetBrains Mono" font-size="11" font-weight="700" letter-spacing="0.08em" x="80" y="70">CLUSTER: DEHL01 (CORE POP T0)</text>
+<!-- DEHT01 Aggregation Region Box -->
+<rect fill="#141b2b" fill-opacity="0.8" height="270" rx="8" width="290" x="470" y="40"></rect>
+<text fill="#ffb95f" font-family="JetBrains Mono" font-size="11" font-weight="700" letter-spacing="0.08em" x="490" y="70">CLUSTER: DEHT01 (TRANSIT AGG)</text>
+<!-- IT Server Leaf Region Box -->
+<rect fill="#141b2b" fill-opacity="0.5" height="95" rx="8" width="290" x="470" y="335"></rect>
+<text fill="#dce2f7" font-family="JetBrains Mono" font-size="10" font-weight="600" opacity="0.6" x="490" y="360">ISOLATED PERIPHERAL / OUT-OF-BAND</text>
+<!-- CONNECTING PHYSICAL TRUNKS & INTER-CHASSIS EDGES -->
+<!-- Core Intra-Cluster 100G Trunk -->
+<line stroke="#00a6e0" stroke-opacity="0.9" stroke-width="3" x1="170" x2="170" y1="170" y2="330"></line>
+<text fill="#7bd0ff" font-family="JetBrains Mono" font-size="10" x="180" y="250">100GE LACP TRUNK</text>
+<!-- Core to DWDM Optical Mux Link -->
+<line stroke="#ca8100" stroke-dasharray="4 3" stroke-width="2" x1="170" x2="300" y1="170" y2="250"></line>
+<line stroke="#ca8100" stroke-dasharray="4 3" stroke-width="1.5" x1="170" x2="300" y1="330" y2="250"></line>
+<!-- INTER-CLUSTER CHEEGER CUT PLANE INTERFACES (Candidate split links) -->
+<!-- Link 1: DEHL01-CR01 to DEHT01-AR01 -->
+<path d="M170 170 C 300 120, 400 120, 560 140" stroke="#ff5451" stroke-dasharray="6 4" stroke-width="2.5"></path>
+<!-- Link 2: DEHL01-CR01 to DEHT01-AR02 -->
+<path d="M170 170 C 320 200, 420 210, 560 250" stroke="#ff5451" stroke-dasharray="6 4" stroke-width="2"></path>
+<!-- Link 3: DEHL01-CR02 to DEHT01-AR01 -->
+<path d="M170 330 C 340 300, 440 180, 560 140" stroke="#ffb95f" stroke-dasharray="5 5" stroke-width="1.5"></path>
+<!-- Link 4: DEHL01-CR02 to DEHT01-AR02 -->
+<path d="M170 330 C 330 330, 450 290, 560 250" stroke="#ffb95f" stroke-dasharray="5 5" stroke-width="1.5"></path>
+<!-- Aggregation Intra-Cluster Peer Link -->
+<line stroke="#00a6e0" stroke-width="2" x1="560" x2="560" y1="140" y2="250"></line>
+<!-- Server Leaf Link (Out of band telemetry) -->
+<line stroke="#5b403e" stroke-dasharray="2 4" stroke-width="1.5" x1="170" x2="560" y1="330" y2="390"></line>
+<!-- CUT PLANE LASER HIGHLIGHT (CHEEGER BOUNDARY) -->
+<line filter="url(#glow-yellow)" stroke="#ffb95f" stroke-dasharray="8 6" stroke-width="2" x1="410" x2="410" y1="30" y2="440"></line>
+<rect fill="#070e1d" height="24" rx="4" stroke="#ca8100" stroke-width="1" width="130" x="345" y="40"></rect>
+<text fill="#ffb95f" font-family="JetBrains Mono" font-size="10" font-weight="700" x="352" y="56">CUT: Φ = 0.038</text>
+<!-- TOPOLOGY NODES -->
+<!-- 1. DEHL01-CR01 (CORE ROOT T0 INCIDENT) -->
+<g class="cursor-pointer" transform="translate(170, 170)">
+<!-- Pulsing halo -->
+<circle class="animate-pulse" fill="#ff5451" fill-opacity="0.15" r="34"></circle>
+<circle fill="#232a3a" filter="url(#glow-red)" r="26" stroke="#ff5451" stroke-width="3"></circle>
+<circle fill="#ff5451" r="12"></circle>
+<text fill="#ffffff" font-family="JetBrains Mono" font-size="10" font-weight="700" text-anchor="middle" x="0" y="4">CR01</text>
+<!-- Label Pin -->
+<rect fill="#070e1d" height="20" rx="3" stroke="#ff5451" stroke-width="1" width="140" x="-70" y="-46"></rect>
+<text fill="#ffdad6" font-family="JetBrains Mono" font-size="10" font-weight="600" text-anchor="middle" x="0" y="-32">DEHL01-CR01 [T0]</text>
+<!-- Alarms Count Badge -->
+<circle cx="22" cy="-20" fill="#93000a" r="10"></circle>
+<text fill="#ffdad6" font-family="JetBrains Mono" font-size="9" font-weight="700" text-anchor="middle" x="22" y="-16">42</text>
+</g>
+<!-- 2. DEHL01-CR02 (SECONDARY CORE PEER) -->
+<g class="cursor-pointer" transform="translate(170, 330)">
+<circle fill="#232a3a" r="24" stroke="#7bd0ff" stroke-width="2"></circle>
+<circle fill="#00a6e0" r="8"></circle>
+<rect fill="#070e1d" height="18" rx="3" stroke="#1f2937" stroke-width="1" width="130" x="-65" y="28"></rect>
+<text fill="#dce2f7" font-family="JetBrains Mono" font-size="10" font-weight="500" text-anchor="middle" x="0" y="41">DEHL01-CR02 (100G)</text>
+<circle cx="18" cy="-16" fill="#ca8100" r="8"></circle>
+<text fill="#ffffff" font-family="JetBrains Mono" font-size="8" font-weight="700" text-anchor="middle" x="18" y="-13">6</text>
+</g>
+<!-- 3. DEHL01-DWDM OPTICAL MUX -->
+<g class="cursor-pointer" transform="translate(300, 250)">
+<polygon fill="#232a3a" points="0,-18 18,0 0,18 -18,0" stroke="#ca8100" stroke-width="2"></polygon>
+<text fill="#ffb95f" font-family="JetBrains Mono" font-size="9" font-weight="700" text-anchor="middle" x="0" y="4">MUX</text>
+<rect fill="#070e1d" height="18" rx="3" stroke="#ca8100" stroke-width="1" width="110" x="-55" y="22"></rect>
+<text fill="#ffb95f" font-family="JetBrains Mono" font-size="9" font-weight="500" text-anchor="middle" x="0" y="35">OPT-MUX-DEHL01</text>
+<!-- 17 Optical Alarms Pin -->
+<rect fill="#ca8100" height="14" rx="2" width="22" x="12" y="-22"></rect>
+<text fill="#070e1d" font-family="JetBrains Mono" font-size="9" font-weight="700" text-anchor="middle" x="23" y="-12">17</text>
+</g>
+<!-- 4. DEHT01-AR01 (TRANSIT AGG ROUTER 1) -->
+<g class="cursor-pointer" transform="translate(560, 140)">
+<circle fill="#232a3a" r="22" stroke="#ffb95f" stroke-width="2"></circle>
+<circle fill="#ffb95f" r="7"></circle>
+<rect fill="#070e1d" height="18" rx="3" stroke="#1f2937" stroke-width="1" width="120" x="-60" y="-36"></rect>
+<text fill="#dce2f7" font-family="JetBrains Mono" font-size="10" font-weight="500" text-anchor="middle" x="0" y="-23">DEHT01-AR01</text>
+<circle cx="16" cy="-14" fill="#ca8100" r="8"></circle>
+<text fill="#ffffff" font-family="JetBrains Mono" font-size="8" font-weight="700" text-anchor="middle" x="16" y="-11">4</text>
+</g>
+<!-- 5. DEHT01-AR02 (TRANSIT AGG ROUTER 2) -->
+<g class="cursor-pointer" transform="translate(560, 250)">
+<circle fill="#232a3a" r="22" stroke="#7bd0ff" stroke-width="2"></circle>
+<circle fill="#00a6e0" r="7"></circle>
+<rect fill="#070e1d" height="18" rx="3" stroke="#1f2937" stroke-width="1" width="120" x="-60" y="26"></rect>
+<text fill="#dce2f7" font-family="JetBrains Mono" font-size="10" font-weight="500" text-anchor="middle" x="0" y="39">DEHT01-AR02</text>
+<circle cx="16" cy="-14" fill="#ca8100" r="8"></circle>
+<text fill="#ffffff" font-family="JetBrains Mono" font-size="8" font-weight="700" text-anchor="middle" x="16" y="-11">2</text>
+</g>
+<!-- 6. DEHL-ENV-SVR04 (ISOLATED TEMPERATURE LEAF) -->
+<g class="cursor-pointer" transform="translate(560, 390)">
+<rect fill="#232a3a" height="28" rx="4" stroke="#e4beba" stroke-width="1.5" width="32" x="-16" y="-14"></rect>
+<text fill="#dce2f7" font-family="JetBrains Mono" font-size="9" font-weight="700" text-anchor="middle" x="0" y="3">SRV</text>
+<rect fill="#070e1d" height="20" rx="3" stroke="#5b403e" stroke-width="1" width="170" x="22" y="-10"></rect>
+<text fill="#e4beba" font-family="JetBrains Mono" font-size="9" font-weight="500" text-anchor="middle" x="107" y="4">ENV-SVR04 [ALM-99210014]</text>
+</g>
+</svg>
+<!-- Floating Map Legend Overlay -->
+<div class="absolute bottom-space-sm left-space-sm bg-surface-container-lowest/90 backdrop-blur p-space-xs rounded font-code-sm text-code-sm flex flex-col gap-space-2xs shadow-lg max-w-sm">
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant font-bold">GRAPH LEGEND &amp; SEMANTICS</span>
+<div class="grid grid-cols-2 gap-x-space-md gap-y-1 text-on-surface">
+<div class="flex items-center gap-1.5">
+<span class="w-3 h-3 rounded-full bg-error inline-block"></span>
+<span>Core Pop (T0 Source)</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-3 h-3 rounded-full bg-tertiary inline-block"></span>
+<span>Transit Aggregation</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-4 h-0.5 bg-secondary inline-block"></span>
+<span>Physical L3 Trunk (100G)</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-4 h-0.5 bg-primary-container border-b border-dashed inline-block"></span>
+<span>Cheeger Weak Inter-Links</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Diagnostic Mapping Matrix & Topological Splitting Verdict -->
+<div class="p-space-sm bg-surface-container-low shrink-0 flex flex-col gap-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-label-caps text-label-caps uppercase text-secondary font-bold tracking-wider">
+              TOPOLOGICAL ALARM VERIFICATION MATRIX
+            </span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">41 Verified / 17 Inferred / 0 Unlinked</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-space-sm font-code-sm text-code-sm">
+<div class="p-space-xs bg-surface-container rounded flex flex-col gap-space-2xs">
+<div class="flex items-center justify-between">
+<span class="text-on-surface font-semibold">Physical L2/L3 Verified</span>
+<span class="text-secondary font-bold">41 Alarms</span>
+</div>
+<p class="text-on-surface-variant font-body-sm text-body-sm leading-tight">
+                All 41 interfaces directly map to NetBox hardware IDs on Core DEHL01 chassis.
+              </p>
+</div>
+<div class="p-space-xs bg-surface-container rounded flex flex-col gap-space-2xs">
+<div class="flex items-center justify-between">
+<span class="text-on-surface font-semibold">Optical DWDM Drops</span>
+<span class="text-tertiary font-bold">17 Alarms</span>
+</div>
+<p class="text-on-surface-variant font-body-sm text-body-sm leading-tight">
+                Passive mux drops inferred via span heuristic (DEHL01-OPT04). Transponders healthy.
+              </p>
+</div>
+<div class="p-space-xs bg-surface-container rounded flex flex-col gap-space-2xs">
+<div class="flex items-center justify-between">
+<span class="text-on-surface font-semibold">Partition Conductance</span>
+<span class="text-error font-bold">Φ = 0.038 (Clean Cut)</span>
+</div>
+<p class="text-on-surface-variant font-body-sm text-body-sm leading-tight">
+                DEHT01 cluster can be carved into sub-chain C2214039-B without SLA impact.
+              </p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Operational Action Dock / Bottom Commands -->
+<div class="w-full bg-surface-container-lowest px-space-lg py-space-sm flex flex-wrap items-center justify-between gap-space-md mb-8">
+<div class="flex items-center gap-space-sm font-code-sm text-code-sm">
+<span class="px-space-xs py-space-2xs bg-surface-container text-on-surface-variant rounded">
+        GEOJSON: 105.8542°E, 21.0285°N (Hanoi Pop 01)
+      </span>
+<span class="px-space-xs py-space-2xs bg-surface-container text-on-surface-variant rounded">
+        CROSS-CHASSIS CONDUCTANCE: 0.0382
+      </span>
+<span class="px-space-xs py-space-2xs bg-surface-container-high text-secondary rounded">
+        GRAPH ENGINE: D3 Force-Directed v7
+      </span>
+</div>
+<div class="flex items-center gap-space-sm">
+<button class="px-space-md py-space-xs bg-surface-container text-on-surface hover:bg-surface-container-high rounded font-code-sm text-code-sm font-semibold flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[16px]">file_download</span>
+<span>Export Topology GeoJSON / NetBox Sync</span>
+</button>
+<button class="px-space-md py-space-xs bg-surface-container-high text-tertiary hover:bg-surface-bright rounded font-code-sm text-code-sm font-semibold flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[16px]">analytics</span>
+<span>Inspect Conductance on Graph</span>
+</button>
+<button class="px-space-md py-space-xs bg-primary-container text-on-primary hover:brightness-110 active:scale-95 transition-transform rounded font-code-sm text-code-sm font-bold flex items-center gap-space-xs shadow-md">
+<span class="material-symbols-outlined text-[16px]">smart_toy</span>
+<span>Send Topology Context to AI Analyst</span>
+</button>
+</div>
+</div>
+</div>
+<script>
+  // Micro-interaction toggles for operator graph overlay controls
+  const toggleButtons = ['toggle-l3', 'toggle-it', 'toggle-alarms', 'toggle-cut'];
+  toggleButtons.forEach(id => {
+    const btn = document.getElementById(id);
+    if(btn) {
+      btn.addEventListener('click', () => {
+        const icon = btn.querySelector('.material-symbols-outlined');
+        if(icon.textContent === 'check_box') {
+          icon.textContent = 'check_box_outline_blank';
+          btn.classList.add('opacity-50');
+        } else {
+          icon.textContent = 'check_box';
+          btn.classList.remove('opacity-50');
+        }
+      });
+    }
+  });
+</script></main><footer class="fixed bottom-0 w-full h-space-row-compact-h z-40 bg-surface-container-lowest/95 backdrop-blur-md shadow-[0_-1px_6px_rgba(0,0,0,0.5)] flex items-center justify-between px-space-lg font-code-sm text-code-sm text-on-surface-variant"><div class="flex items-center gap-space-lg"><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">PROVENANCE:</span><span class="text-on-surface font-semibold">REAL_EXPORT_REPLAY</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">CONFIG:</span><span class="text-on-surface">v1.0</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">ENGINE:</span><span class="text-secondary">hindsight-v1</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">ACTIVE SNAPSHOT:</span><span class="text-on-surface">real_alarm_20260801</span></span></div><div class="flex items-center gap-space-lg"><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">MOCK GATEWAY:</span><span class="text-secondary">:8085</span></span><span class="flex items-center gap-space-xs"><span class="font-label-caps text-label-caps uppercase text-on-surface-variant">API:</span><span class="text-secondary">:8000</span></span><span class="flex items-center gap-space-xs"><span class="w-1.5 h-1.5 rounded-full bg-secondary"></span><span class="font-label-caps text-label-caps uppercase text-on-surface">STREAM SYNCED</span></span></div></footer></body></html>
