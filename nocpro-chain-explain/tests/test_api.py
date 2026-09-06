@@ -9,6 +9,7 @@ from typing import TypeVar
 import httpx2
 
 from nocpro_api import create_app
+from nocpro_api.workspace import Workspace
 from nocpro_api.persistence import (
     StoredEvolution,
     StoredEvolutionEdge,
@@ -437,6 +438,68 @@ def test_deep_dive_is_submitted_and_polled_as_a_job():
     assert topology["dependency_scope"]["status"] == "UNAVAILABLE"
     assert topology["dependency_scope"]["resource_details"]["missing_resources"] is None
     assert topology["dependency_scope"]["resource_details"]["extra_resources"] is None
+
+
+def test_audit_visualization_read_is_unavailable_without_submitting_deep_dive():
+    async def run():
+        service = Workspace()
+        app = create_app(workspace=service)
+        transport = httpx2.ASGITransport(app=app)
+        try:
+            async with httpx2.AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as client:
+                await client.post("/api/v1/snapshots", json=_payload())
+                before = len(service.jobs._jobs)
+                response = await client.get(
+                    "/api/v1/chains/C1/audit-visualization"
+                )
+                after = len(service.jobs._jobs)
+                return response, before, after
+        finally:
+            service.close()
+
+    response, before, after = asyncio.run(run())
+
+    assert response.status_code == 200
+    assert before == after == 0
+    body = response.json()
+    assert body["snapshot_id"] == "s1"
+    assert body["snapshot_version"] == "1"
+    assert body["chain_id"] == "C1"
+    assert body["audit_artifact_id"] is None
+    assert body["audit_artifact_fingerprint"] is None
+    assert body["visualization"]["status"] == "UNAVAILABLE"
+    assert body["visualization"]["reason"] == "AUDIT_ARTIFACT_NOT_AVAILABLE"
+    assert body["visualization"]["nodes"] == []
+    assert body["visualization"]["edges"] == []
+
+
+def test_audit_visualization_read_returns_the_frozen_job_projection():
+    async def exercise(client: httpx2.AsyncClient):
+        await client.post("/api/v1/snapshots", json=_payload())
+        submission = await client.post("/api/v1/chains/C1/deep-dive")
+        job_id = submission.json()["job_id"]
+        polled = await client.get(f"/api/v1/jobs/{job_id}")
+        for _ in range(20):
+            if polled.json()["status"] in {"SUCCEEDED", "FAILED"}:
+                break
+            await asyncio.sleep(0.01)
+            polled = await client.get(f"/api/v1/jobs/{job_id}")
+        projected = await client.get("/api/v1/chains/C1/audit-visualization")
+        return polled, projected
+
+    polled, projected = run_api_test(exercise)
+
+    assert polled.json()["status"] == "SUCCEEDED"
+    assert projected.status_code == 200
+    body = projected.json()
+    assert body["audit_artifact_id"]
+    assert body["audit_artifact_fingerprint"]
+    assert body["visualization"] == polled.json()["result"]["audit_visualization"]
+    assert body["visualization"]["status"] == "AVAILABLE"
+    assert body["visualization"]["shown_node_count"] == 3
+    assert len(body["visualization"]["nodes"]) == 3
 
 
 def test_singleton_deep_dive_serializes_not_applicable_attribution():

@@ -8,7 +8,7 @@ import hashlib
 import asyncio
 import uuid
 from concurrent.futures import Future
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,9 +30,12 @@ from tier1a import CacheTier, SnapshotPrecompute, Tier1Cache, precompute_snapsho
 from tier1b import analyze_chain_configured
 from tier2 import (
     AUDIT_ANALYSIS_VERSION,
+    AuditVisualization,
+    ReviewAuditArtifact,
     SimilarityQueryContext,
     Tier2JobManager,
     chain_membership_fingerprint,
+    unavailable_audit_visualization,
 )
 from tier2.counterfactual import (
     CounterfactualJobManager,
@@ -45,6 +48,15 @@ from tier2.counterfactual.public_contract import public_review_result
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_CONFIG = ROOT / "config" / "thresholds" / "v1.yaml"
+
+
+@dataclass(frozen=True)
+class AuditVisualizationLookup:
+    snapshot_id: str
+    snapshot_version: str
+    chain_id: str
+    audit_artifact: ReviewAuditArtifact | None
+    visualization: AuditVisualization
 
 EDITABLE_PARAMETER_METADATA: list[dict[str, Any]] = [
     {
@@ -488,6 +500,59 @@ class Workspace:
             chain_id,
             analysis_config=self.config,
             similarity_context=similarity_context,
+        )
+
+    async def latest_audit_visualization(
+        self, chain_id: str
+    ) -> AuditVisualizationLookup:
+        """Read the latest compatible frozen projection without submitting work."""
+        package = self.require_package()
+        if chain_id not in package.chains:
+            raise KeyError(f"unknown chain_id {chain_id!r}")
+        members = package.members_of(chain_id)
+        job = self.jobs.latest_succeeded(
+            package.snapshot.snapshot_id,
+            package.snapshot.snapshot_version,
+            chain_id,
+        )
+        artifact = job.audit_artifact if job is not None else None
+        if artifact is not None and not artifact.is_compatible(
+            snapshot_id=package.snapshot.snapshot_id,
+            snapshot_version=package.snapshot.snapshot_version,
+            chain_id=chain_id,
+            members=members,
+            analysis_version=AUDIT_ANALYSIS_VERSION,
+            analysis_config_version=self.config.config_version,
+        ):
+            artifact = None
+        if artifact is None and self.repository is not None:
+            await self.flush_audit_persistence()
+            artifact = await self.repository.latest_compatible_audit_artifact(
+                snapshot_id=package.snapshot.snapshot_id,
+                snapshot_version=package.snapshot.snapshot_version,
+                chain_id=chain_id,
+                chain_fingerprint=chain_membership_fingerprint(members),
+                analysis_version=AUDIT_ANALYSIS_VERSION,
+                analysis_config_version=self.config.config_version,
+            )
+        if artifact is None:
+            visualization = unavailable_audit_visualization(
+                "AUDIT_ARTIFACT_NOT_AVAILABLE",
+                total_node_count=len(members),
+            )
+        elif artifact.visualization is None:
+            visualization = unavailable_audit_visualization(
+                "BOUNDED_PUBLIC_AUDIT_GRAPH_ARTIFACT_NOT_AVAILABLE",
+                total_node_count=len(members),
+            )
+        else:
+            visualization = artifact.visualization
+        return AuditVisualizationLookup(
+            snapshot_id=package.snapshot.snapshot_id,
+            snapshot_version=package.snapshot.snapshot_version,
+            chain_id=chain_id,
+            audit_artifact=artifact,
+            visualization=visualization,
         )
 
     async def _review_context(self, chain_id: str):

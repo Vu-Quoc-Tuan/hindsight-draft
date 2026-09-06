@@ -22,6 +22,7 @@ from .schemas import (
     AISuggestionView,
     AssistantQueryInput,
     AssistantResponseView,
+    AuditVisualizationArtifactView,
     CalibrationReportView,
     ConfigUpdateInput,
     ConfigView,
@@ -37,6 +38,7 @@ from .serializers import (
     counterfactual_job_view,
     operator_feedback_view,
     ai_suggestion_view,
+    audit_visualization_artifact_view,
     evolution_view,
     job_view,
     pair_evidence_view,
@@ -190,6 +192,20 @@ async def submit_deep_dive(
         cache_hit=result.cache_hit,
         deduplicated=result.deduplicated,
     )
+
+
+@router.get(
+    "/chains/{chain_id}/audit-visualization",
+    response_model=AuditVisualizationArtifactView,
+)
+async def get_audit_visualization(
+    chain_id: str, request: Request
+) -> AuditVisualizationArtifactView:
+    try:
+        lookup = await workspace(request).latest_audit_visualization(chain_id)
+        return audit_visualization_artifact_view(lookup)
+    except Exception as exc:
+        raise translate_error(exc) from exc
 
 
 @router.get("/jobs/{job_id}", response_model=JobView)

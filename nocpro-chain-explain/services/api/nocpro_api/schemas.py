@@ -193,6 +193,48 @@ class StructuralAuditView(ApiModel):
     best_cut_phi: float | None
 
 
+class AuditVisualizationNodeView(ApiModel):
+    alarm_id: str
+    weighted_degree: float
+    cut_side: Literal["A", "B", "NONE"]
+    structural_role: str | None
+
+
+class AuditVisualizationEdgeView(ApiModel):
+    source_alarm_id: str
+    target_alarm_id: str
+    weight: float
+    supporting_groups: list[str]
+    crosses_best_cut: bool
+
+
+class AuditVisualizationView(ApiModel):
+    status: Literal["AVAILABLE", "UNAVAILABLE"]
+    reason: str | None
+    projection_version: str
+    selection_strategy: str
+    max_nodes: int
+    max_edges: int
+    total_node_count: int
+    shown_node_count: int
+    hidden_node_count: int
+    total_edge_count: int
+    shown_edge_count: int
+    hidden_edge_count: int
+    truncated: bool
+    nodes: list[AuditVisualizationNodeView]
+    edges: list[AuditVisualizationEdgeView]
+
+
+class AuditVisualizationArtifactView(ApiModel):
+    snapshot_id: str
+    snapshot_version: str
+    chain_id: str
+    audit_artifact_id: str | None
+    audit_artifact_fingerprint: str | None
+    visualization: AuditVisualizationView
+
+
 class DominatorView(ApiModel):
     status: str
     reason: str | None
@@ -356,6 +398,7 @@ class DeepDiveView(ApiModel):
     chain_id: str
     audit_graph_mode: str
     structural_audit: StructuralAuditView
+    audit_visualization: AuditVisualizationView
     over_merge_strength: str
     over_merge_narrative: str
     similar_chains: list[dict[str, Any]]
@@ -611,4 +654,3 @@ class CalibrationReportView(ApiModel):
     calibrated_parameters: list[ParameterCalibrationView]
     output_config_path: str
     status: str
-

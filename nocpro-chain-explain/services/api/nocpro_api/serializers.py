@@ -8,6 +8,7 @@ from datetime import datetime
 from channels import ChannelValue
 from tier1b import ChainAnalysis
 from tier2 import Tier2JobView
+from tier2 import AuditVisualization
 from tier2.counterfactual import CounterfactualJobView as DomainCounterfactualJobView
 from tier2.counterfactual.public_contract import public_review_result
 from tier2.topology_hypotheses import (
@@ -23,6 +24,10 @@ from .schemas import (
     CounterfactualJobView,
     OperatorFeedbackView,
     AISuggestionView,
+    AuditVisualizationArtifactView,
+    AuditVisualizationEdgeView,
+    AuditVisualizationNodeView,
+    AuditVisualizationView,
     DeepDiveView,
     DescriptorView,
     EvidenceCoverageAttributionView,
@@ -43,6 +48,57 @@ from .schemas import (
     ResourceDetailsView,
     TopologyHypothesesView,
 )
+
+
+def audit_visualization_view(value: AuditVisualization) -> AuditVisualizationView:
+    return AuditVisualizationView(
+        status=value.status,
+        reason=value.reason,
+        projection_version=value.projection_version,
+        selection_strategy=value.selection_strategy,
+        max_nodes=value.max_nodes,
+        max_edges=value.max_edges,
+        total_node_count=value.total_node_count,
+        shown_node_count=value.shown_node_count,
+        hidden_node_count=value.hidden_node_count,
+        total_edge_count=value.total_edge_count,
+        shown_edge_count=value.shown_edge_count,
+        hidden_edge_count=value.hidden_edge_count,
+        truncated=value.truncated,
+        nodes=[
+            AuditVisualizationNodeView(
+                alarm_id=node.alarm_id,
+                weighted_degree=node.weighted_degree,
+                cut_side=node.cut_side,
+                structural_role=node.structural_role,
+            )
+            for node in value.nodes
+        ],
+        edges=[
+            AuditVisualizationEdgeView(
+                source_alarm_id=edge.source_alarm_id,
+                target_alarm_id=edge.target_alarm_id,
+                weight=edge.weight,
+                supporting_groups=list(edge.supporting_groups),
+                crosses_best_cut=edge.crosses_best_cut,
+            )
+            for edge in value.edges
+        ],
+    )
+
+
+def audit_visualization_artifact_view(lookup) -> AuditVisualizationArtifactView:
+    artifact = lookup.audit_artifact
+    return AuditVisualizationArtifactView(
+        snapshot_id=lookup.snapshot_id,
+        snapshot_version=lookup.snapshot_version,
+        chain_id=lookup.chain_id,
+        audit_artifact_id=artifact.artifact_id if artifact is not None else None,
+        audit_artifact_fingerprint=(
+            artifact.artifact_fingerprint if artifact is not None else None
+        ),
+        visualization=audit_visualization_view(lookup.visualization),
+    )
 
 
 def _metric_value_view(value):
@@ -392,6 +448,7 @@ def deep_dive_view(result) -> DeepDiveView:
             best_cut_label=best.candidate.label if best else None,
             best_cut_phi=best.conductance.phi if best else None,
         ),
+        audit_visualization=audit_visualization_view(result.audit_visualization),
         over_merge_strength=result.over_merge.strength.value,
         over_merge_narrative=result.over_merge.narrative,
         similar_chains=[asdict(item) for item in result.similar_chains],
