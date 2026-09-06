@@ -167,13 +167,14 @@ synthetic_temporal_topology_v1
 with its authoritative test adapter alongside the Kafka/PostgreSQL stages.
 It deliberately does **not** make the container's production-shaped baseline
 invent taxonomy; that baseline remains fail-closed. The latest full-stack Docker
-acceptance run passed on 2026-09-05: migration/runtime failure tests (`6/6`),
+acceptance run passed on 2026-09-06: migration/runtime failure tests (`6/6`),
 P2 Kafka tests (`3/3`), Evolution Chromium (`1/1`), H/T_delay model tests
-(`18/18`), Counterfactual Kafka/PostgreSQL/restart (`1/1`), Counterfactual
-Chromium (`1/1`), Assistant Chromium (`1/1`), real-topology Chromium (`1/1`),
+(`21/21`), Counterfactual Kafka/PostgreSQL/restart (`1/1`), Counterfactual
+Chromium (`1/1`), Assistant Chromium (`2/2`, including stale-context suppression),
+real-topology Chromium (`1/1`),
 raw-export replay, IP `Dep_hop`, and generic Pair WHY Chromium/operator flow
-(`2/2`). Snapshot `acceptance-real-20260905T164924Z` was used, and the
-1,072-member Tier-1B request completed in `0.875132 s`. Cleanup removed the
+(`2/2`). Snapshot `acceptance-real-20260906T030009Z` was used, and the
+1,072-member Tier-1B request completed in `0.890271 s`. Cleanup removed the
 isolated containers, network, and PostgreSQL volume.
 The raw-export replay path uses
 `nocpro-mock/datasets/raw/alarm/alarm_data.csv` when that file is mounted into
@@ -237,9 +238,9 @@ per missing internal operation: raw-chain attribution P50/P95 was `0.0132 s` /
 cross-chain evidence was `0.0055 s` / `0.0055 s`; and Review serialization was
 `0.00014 s` / `0.00017 s`. These retain their raw-export or synthetic scope.
 
-The 2026-09-05 local Docker runtime benchmark measured 20 committed Review
+The 2026-09-06 local Docker runtime benchmark measured 20 committed Review
 writes with repository read-back before restarting the API 20 times and
 hydrating the persisted MOVE Review after each restart. Review persistence
-P50/P95 was `0.0118 s` / `0.0533 s`; restart-to-health was `1.0289 s` /
-`1.0339 s`; and repository-backed hydration was `0.0401 s` / `0.0515 s`.
+P50/P95 was `0.0135 s` / `0.0576 s`; restart-to-health was `1.0305 s` /
+`1.2297 s`; and repository-backed hydration was `0.0416 s` / `0.0548 s`.
 Those timings are acceptance-stack characterisation, not a production SLO.
