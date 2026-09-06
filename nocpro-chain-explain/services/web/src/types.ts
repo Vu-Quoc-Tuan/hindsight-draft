@@ -3,6 +3,9 @@ export type ChainSummary = {
   member_count: number
   is_singleton: boolean
   title: string
+  start_time: string | null
+  end_time: string | null
+  duration_seconds: number | null
 }
 
 export type ChainList = {
@@ -589,4 +592,3 @@ export type CalibrationReport = {
   output_config_path: string
   status: string
 }
-

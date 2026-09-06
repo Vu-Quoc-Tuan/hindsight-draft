@@ -115,7 +115,15 @@ def test_snapshot_ingest_lists_and_explains_chains():
         },
     }
     assert listed.status_code == 200
-    assert listed.json()["chains"][0]["chain_id"] == "C1"
+    assert listed.json()["chains"][0] == {
+        "chain_id": "C1",
+        "member_count": 3,
+        "is_singleton": False,
+        "title": listed.json()["chains"][0]["title"],
+        "start_time": "2026-01-01T00:00:01",
+        "end_time": "2026-01-01T00:00:03",
+        "duration_seconds": 2.0,
+    }
     assert explained.status_code == 200
     body = explained.json()
     assert body["chain_id"] == "C1"

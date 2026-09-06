@@ -29,6 +29,9 @@ class ChainSummaryView(ApiModel):
     member_count: int
     is_singleton: bool
     title: str
+    start_time: str | None
+    end_time: str | None
+    duration_seconds: float | None
 
 
 class ChainListView(ApiModel):
@@ -608,5 +611,4 @@ class CalibrationReportView(ApiModel):
     calibrated_parameters: list[ParameterCalibrationView]
     output_config_path: str
     status: str
-
 

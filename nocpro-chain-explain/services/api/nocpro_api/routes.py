@@ -121,6 +121,9 @@ async def list_chains(request: Request) -> ChainListView:
                 member_count=item.member_count,
                 is_singleton=item.is_singleton,
                 title=item.auto_title,
+                start_time=item.start_time,
+                end_time=item.end_time,
+                duration_seconds=item.duration_seconds,
             )
             for item in sorted(result.chains.values(), key=lambda value: value.chain_id)
         ],
