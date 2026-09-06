@@ -564,3 +564,5 @@ class AssistantResponseView(ApiModel):
     actions: list[AssistantActionView]
     model: str
     provider_status: str
+    chart_data: dict[str, Any] | None = None
+

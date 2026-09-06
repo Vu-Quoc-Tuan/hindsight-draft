@@ -355,16 +355,14 @@ async def query_assistant(
         from .assistant import answer_query, render_answer
 
         context = request_body.context.model_dump()
-        deterministic = answer_query(
-            workspace(request),
-            request_body.query,
-            context,
-        )
-        result = await _run_grounded_provider(
-            render_answer,
-            context=context,
-            deterministic=deterministic,
-        )
+        ws = workspace(request)
+        query_text = request_body.query
+
+        def _execute_assistant_flow() -> dict[str, Any]:
+            deterministic = answer_query(ws, query_text, context)
+            return render_answer(context=context, deterministic=deterministic)
+
+        result = await _run_grounded_provider(_execute_assistant_flow)
         return AssistantResponseView(
             contract_version="nocpro-assistant-v1",
             **result,
