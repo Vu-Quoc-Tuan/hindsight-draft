@@ -42,8 +42,8 @@ class DelayObservation:
     source_chain_id: str | None = None
 
     def __post_init__(self) -> None:
-        if self.delay_seconds < 0:
-            raise ValueError("directed delay must be nonnegative")
+        if self.delay_seconds <= 0:
+            raise ValueError("directed delay must be strictly positive")
 
 
 @dataclass(frozen=True)
@@ -56,8 +56,8 @@ class DelayModelConfig:
     local_mass_halfwidth_candidates_seconds: tuple[float, ...]
     histogram_bin_width_candidates_seconds: tuple[float, ...]
     kde_bandwidth_candidates_seconds: tuple[float, ...]
-    fallback_model: DelayEstimator
-    fallback_local_mass_halfwidth_seconds: float
+    fallback_model: DelayEstimator | None
+    fallback_local_mass_halfwidth_seconds: float | None
     fallback_histogram_bin_width_seconds: float | None = None
     fallback_kde_bandwidth_seconds: float | None = None
 
@@ -72,10 +72,28 @@ class DelayModelConfig:
             raise ValueError("histogram bin candidates are required")
         if not self.kde_bandwidth_candidates_seconds or any(v <= 0 for v in self.kde_bandwidth_candidates_seconds):
             raise ValueError("KDE bandwidth candidates are required")
-        if self.fallback_local_mass_halfwidth_seconds <= 0:
-            raise ValueError("fallback local mass halfwidth is required")
+        if self.fallback_model is not None and not isinstance(
+            self.fallback_model, DelayEstimator
+        ):
+            raise ValueError("fallback model is unsupported")
+        if (
+            self.fallback_local_mass_halfwidth_seconds is not None
+            and self.fallback_local_mass_halfwidth_seconds <= 0
+        ):
+            raise ValueError("fallback local mass halfwidth must be positive")
+        for name, value in (
+            (
+                "fallback histogram bin width",
+                self.fallback_histogram_bin_width_seconds,
+            ),
+            ("fallback KDE bandwidth", self.fallback_kde_bandwidth_seconds),
+        ):
+            if value is not None and value <= 0:
+                raise ValueError(f"{name} must be positive")
 
     def fallback_parameter(self) -> float | None:
+        if self.fallback_model is None:
+            return None
         value = self.fallback_histogram_bin_width_seconds if self.fallback_model is DelayEstimator.HISTOGRAM else self.fallback_kde_bandwidth_seconds
         return float(value) if value is not None and value > 0 else None
 
@@ -186,7 +204,8 @@ def model_from_dict(value: dict) -> FrozenDelayModel:
     config_payload = dict(value["config"])
     for name in ("local_mass_halfwidth_candidates_seconds", "histogram_bin_width_candidates_seconds", "kde_bandwidth_candidates_seconds"):
         config_payload[name] = tuple(config_payload[name])
-    config_payload["fallback_model"] = DelayEstimator(config_payload["fallback_model"])
+    if config_payload.get("fallback_model") is not None:
+        config_payload["fallback_model"] = DelayEstimator(config_payload["fallback_model"])
     config = DelayModelConfig(**config_payload)
     relations = {}
     for raw in value["relations"]:
@@ -210,9 +229,11 @@ class DelayLookup:
     positive_score: float
     backoff_reason: str | None = None
 
-    @property
-    def supports(self) -> bool:
-        return self.available and self.positive_score > 0
+    def supports_at(self, threshold: float) -> bool:
+        """Apply T_delay's explicit threshold; positive KDE mass alone is not support."""
+        if not 0 <= threshold <= 1:
+            raise ValueError("temporal delay support threshold must be in [0, 1]")
+        return self.available and self.positive_score >= threshold
 
 
 def _split(episode_id: str, seed: int, model_salt: str, fraction: float) -> bool:
@@ -250,10 +271,11 @@ def _select(key: DelayRelationKey, observations: tuple[DelayObservation, ...], c
         mode = "HELD_OUT_SELECTED"
     else:
         estimator = config.fallback_model
+        halfwidth = config.fallback_local_mass_halfwidth_seconds
         parameter = config.fallback_parameter()
-        if parameter is None:
+        if estimator is None or halfwidth is None or parameter is None:
             return None, "TEMPORAL_DELAY_CONFIG_INCOMPLETE"
-        halfwidth, score, mode = config.fallback_local_mass_halfwidth_seconds, None, "CONFIGURED_FALLBACK"
+        score, mode = None, "CONFIGURED_FALLBACK"
     return SelectedDelayRelation(key, observations, len(episodes), len(observations), float(len(episodes)), estimator, halfwidth, float(parameter), mode, score, tuple(sorted(train)) if mode == "HELD_OUT_SELECTED" else tuple(episodes), tuple(sorted(holdout)) if mode == "HELD_OUT_SELECTED" else ()), None
 
 

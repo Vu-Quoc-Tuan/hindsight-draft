@@ -89,8 +89,8 @@ class TemporalDelayPolicy:
     local_mass_halfwidth_candidates_seconds: tuple[float, ...]
     histogram_bin_width_candidates_seconds: tuple[float, ...]
     kde_bandwidth_candidates_seconds: tuple[float, ...]
-    fallback_model: str
-    fallback_local_mass_halfwidth_seconds: float
+    fallback_model: str | None
+    fallback_local_mass_halfwidth_seconds: float | None
     fallback_histogram_bin_width_seconds: float | None
     fallback_kde_bandwidth_seconds: float | None
     support_threshold: ConfiguredValue
@@ -521,17 +521,24 @@ def _load_optional_temporal_delay(
                 raise AnalysisConfigError(f"temporal.delay.{name} must be non-empty positive numeric list")
             return tuple(float(v) for v in values)
         fallback_model = raw.get("fallback_model")
-        if fallback_model not in {"HISTOGRAM", "GAUSSIAN_KDE"}:
-            raise AnalysisConfigError("temporal.delay.fallback_model is required")
+        if fallback_model is not None and fallback_model not in {"HISTOGRAM", "GAUSSIAN_KDE"}:
+            raise AnalysisConfigError("temporal.delay.fallback_model is unsupported")
         fallback_halfwidth = raw.get("fallback_local_mass_halfwidth_seconds")
-        if isinstance(fallback_halfwidth, bool) or not isinstance(fallback_halfwidth, (int, float)) or fallback_halfwidth <= 0:
-            raise AnalysisConfigError("temporal.delay.fallback_local_mass_halfwidth_seconds is required")
+        if fallback_halfwidth is not None and (
+            isinstance(fallback_halfwidth, bool)
+            or not isinstance(fallback_halfwidth, (int, float))
+            or fallback_halfwidth <= 0
+        ):
+            raise AnalysisConfigError(
+                "temporal.delay.fallback_local_mass_halfwidth_seconds must be positive"
+            )
         histogram, kde = raw.get("fallback_histogram_bin_width_seconds"), raw.get("fallback_kde_bandwidth_seconds")
         return TemporalDelayPolicy(
             scalar("min_relation_episodes", _POSITIVE_INT), scalar("model_selection_min_episodes", _POSITIVE_INT),
             scalar("validation_fraction", _STRICT_PROBABILITY), scalar("model_selection_seed", _NONNEGATIVE_INT),
             sequence("local_mass_halfwidth_candidates_seconds"), sequence("histogram_bin_width_candidates_seconds"), sequence("kde_bandwidth_candidates_seconds"),
-            fallback_model, float(fallback_halfwidth),
+            fallback_model,
+            float(fallback_halfwidth) if fallback_halfwidth is not None else None,
             float(histogram) if isinstance(histogram, (int, float)) and not isinstance(histogram, bool) and histogram > 0 else None,
             float(kde) if isinstance(kde, (int, float)) and not isinstance(kde, bool) and kde > 0 else None,
             parameters["temporal.delay.support_threshold"],
@@ -797,6 +804,14 @@ def load_analysis_config(
         if config.value("lineage.boundary_threshold") > config.value("lineage.stable_threshold"):
             raise AnalysisConfigError(
                 "lineage.boundary_threshold must be <= lineage.stable_threshold"
+            )
+        if config.value("lineage.stable_threshold") != 0.9:
+            raise AnalysisConfigError(
+                "lineage.stable_threshold is frozen at 0.9 by V2.3.1"
+            )
+        if config.value("lineage.boundary_threshold") != 0.3:
+            raise AnalysisConfigError(
+                "lineage.boundary_threshold is frozen at 0.3 by V2.3.1"
             )
     if (
         "audit.small_chain_threshold" in parameters

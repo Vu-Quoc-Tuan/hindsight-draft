@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from evolution import GlobalEpisodeDag, LineageConfig
 from history import HistoricalTaxonomy, TaxonomyLevel, TaxonomyTokens
 from libs.contracts import load_package
@@ -14,6 +16,12 @@ def config():
 def observation(episode: str, source: str, target: str, delay: float, *, reverse: bool = False):
     left, right = ("B", "A") if reverse else ("A", "B")
     return DelayObservation(episode, source, target, DelayRelationKey(TaxonomyLevel.TYPE, left, right), delay)
+
+
+@pytest.mark.parametrize("delay", [0.0, -0.1])
+def test_directed_observation_requires_strictly_positive_delay(delay: float):
+    with pytest.raises(ValueError, match="strictly positive"):
+        observation("episode", "a", "b", delay)
 
 
 def test_snapshot_dedup_and_episode_balancing_are_relation_local():
@@ -95,7 +103,9 @@ def test_runtime_reverses_relation_only_when_current_order_reverses():
 
 
 def test_missing_fallback_is_relation_unavailable_not_global_build_failure():
-    broken = DelayModelConfig("delay-broken", 2, 4, 0.4, 42, (2.0,), (2.0,), (1.0,), DelayEstimator.HISTOGRAM, 2.0)
+    broken = DelayModelConfig(
+        "delay-broken", 2, 4, 0.4, 42, (2.0,), (2.0,), (1.0,), None, None
+    )
     selected = [observation(f"selected-{i}", f"a{i}", f"b{i}", 2) for i in range(6)]
     fallback = [DelayObservation(f"fallback-{i}", f"c{i}", f"d{i}", DelayRelationKey(TaxonomyLevel.TYPE, "C", "D"), 3) for i in range(2)]
     model = build_delay_model([*selected, *fallback], training_cutoff="2026-01-02T00:00:00Z", lineage_prefix_fingerprint="prefix", taxonomy_source_id="syn", taxonomy_source_version="v1", config=broken)
@@ -103,6 +113,36 @@ def test_missing_fallback_is_relation_unavailable_not_global_build_failure():
     failed = evaluate_delay_model(TaxonomyTokens(type="C", family="FC"), TaxonomyTokens(type="D", family="FD"), delay_seconds=3, model=model)
     assert failed.available is False
     assert failed.reason == "TEMPORAL_DELAY_CONFIG_INCOMPLETE"
+    assert evaluate_delay_model(
+        TaxonomyTokens(type="A"),
+        TaxonomyTokens(type="B"),
+        delay_seconds=2,
+        model=model,
+    ).available is True
+
+
+def test_lookup_support_requires_explicit_t_delay_threshold():
+    samples = [observation(f"e{i}", f"a{i}", f"b{i}", 2) for i in range(4)]
+    model = build_delay_model(
+        samples,
+        training_cutoff="2026-01-02T00:00:00Z",
+        lineage_prefix_fingerprint="prefix",
+        taxonomy_source_id="syn",
+        taxonomy_source_version="v1",
+        config=config(),
+    )
+    lookup = evaluate_delay_model(
+        TaxonomyTokens(type="A"),
+        TaxonomyTokens(type="B"),
+        delay_seconds=50,
+        model=model,
+    )
+
+    assert lookup.available is True
+    assert lookup.positive_score == 0
+    assert lookup.supports_at(0.5) is False
+    with pytest.raises(ValueError, match="threshold"):
+        lookup.supports_at(1.1)
 
 
 def test_held_out_split_is_episode_isolated_and_order_independent():

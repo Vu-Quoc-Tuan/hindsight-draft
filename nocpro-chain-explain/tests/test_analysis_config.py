@@ -92,6 +92,45 @@ def test_synthetic_e2e_config_enables_p2_without_changing_production_default():
     assert config.incremental_snapshot.enabled is False
 
 
+def test_missing_temporal_fallback_is_relation_local_not_global_policy_failure(
+    tmp_path: Path,
+):
+    text = SYNTHETIC_E2E_CONFIG.read_text(encoding="utf-8")
+    text = text.replace("    fallback_model: HISTOGRAM\n", "", 1)
+    text = text.replace(
+        "    fallback_local_mass_halfwidth_seconds: 5.0\n", "", 1
+    )
+
+    config = load_analysis_config(_write(tmp_path, text))
+
+    assert config.temporal_delay is not None
+    assert config.temporal_delay_reason is None
+    assert config.temporal_delay.fallback_model is None
+    assert config.temporal_delay.fallback_local_mass_halfwidth_seconds is None
+
+
+@pytest.mark.parametrize(
+    ("path", "replacement"),
+    [
+        (
+            "  stable_threshold: {value: 0.9, source: DOCUMENTED_DEFAULT}",
+            "  stable_threshold: {value: 0.8, source: DOCUMENTED_DEFAULT}",
+        ),
+        (
+            "  boundary_threshold: {value: 0.3, source: DOCUMENTED_DEFAULT}",
+            "  boundary_threshold: {value: 0.2, source: DOCUMENTED_DEFAULT}",
+        ),
+    ],
+)
+def test_evolution_stability_thresholds_cannot_drift_from_frozen_contract(
+    tmp_path: Path, path: str, replacement: str
+):
+    text = SHIPPED_CONFIG.read_text(encoding="utf-8").replace(path, replacement, 1)
+
+    with pytest.raises(AnalysisConfigError, match="frozen"):
+        load_analysis_config(_write(tmp_path, text))
+
+
 def test_counterfactual_e2e_explicitly_deletes_chunks_only_after_ready():
     config = load_analysis_config(ROOT / "config/thresholds/e2e-counterfactual.yaml")
 

@@ -375,7 +375,22 @@ class Tier1ACoordinator:
                 observations, training_cutoff=cutoff,
                 lineage_prefix_fingerprint=lineage_prefix_fingerprint(packages, dag=dag, cutoff=cutoff),
                 taxonomy_source_id=taxonomy.source_id, taxonomy_source_version=taxonomy.source_version,
-                config=DelayModelConfig(self.workspace.config.config_version, int(policy.min_relation_episodes.value), int(policy.model_selection_min_episodes.value), float(policy.validation_fraction.value), int(policy.model_selection_seed.value), policy.local_mass_halfwidth_candidates_seconds, policy.histogram_bin_width_candidates_seconds, policy.kde_bandwidth_candidates_seconds, DelayEstimator(policy.fallback_model), policy.fallback_local_mass_halfwidth_seconds, policy.fallback_histogram_bin_width_seconds, policy.fallback_kde_bandwidth_seconds),
+                config=DelayModelConfig(
+                    self.workspace.config.config_version,
+                    int(policy.min_relation_episodes.value),
+                    int(policy.model_selection_min_episodes.value),
+                    float(policy.validation_fraction.value),
+                    int(policy.model_selection_seed.value),
+                    policy.local_mass_halfwidth_candidates_seconds,
+                    policy.histogram_bin_width_candidates_seconds,
+                    policy.kde_bandwidth_candidates_seconds,
+                    DelayEstimator(policy.fallback_model)
+                    if policy.fallback_model is not None
+                    else None,
+                    policy.fallback_local_mass_halfwidth_seconds,
+                    policy.fallback_histogram_bin_width_seconds,
+                    policy.fallback_kde_bandwidth_seconds,
+                ),
             )
             await self.repository.persist_temporal_delay_model(snapshot_id=package.snapshot.snapshot_id, snapshot_version=package.snapshot.snapshot_version, model=model, taxonomy=taxonomy)
         else:
