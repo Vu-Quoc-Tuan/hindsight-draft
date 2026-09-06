@@ -1,0 +1,61 @@
+{
+  "timestamp": "2026-09-06T06:01:04.057182+00:00",
+  "database_url_masked": "postgresql+asyncpg://nocpro:****@localhost:5432/nocpro",
+  "snapshots_loaded": 1,
+  "chains_evaluated": 1,
+  "alarms_evaluated": 2,
+  "calibrated_parameters": [
+    {
+      "path": "temporal.burst.gap_seconds",
+      "previous_value": 120,
+      "calibrated_value": 120,
+      "source": "DOCUMENTED_DEFAULT",
+      "sample_count": 1,
+      "metric_details": {
+        "reason": "insufficient_gap_samples",
+        "fallback": 120
+      }
+    },
+    {
+      "path": "role.s_min",
+      "previous_value": 0.6,
+      "calibrated_value": 0.6,
+      "source": "DOCUMENTED_DEFAULT",
+      "sample_count": 0,
+      "metric_details": {
+        "reason": "insufficient_support_samples",
+        "fallback": [
+          0.6,
+          0.3
+        ]
+      }
+    },
+    {
+      "path": "role.s_weak",
+      "previous_value": 0.3,
+      "calibrated_value": 0.3,
+      "source": "DOCUMENTED_DEFAULT",
+      "sample_count": 0,
+      "metric_details": {
+        "reason": "insufficient_support_samples",
+        "fallback": [
+          0.6,
+          0.3
+        ]
+      }
+    },
+    {
+      "path": "audit.global_weak_baseline",
+      "previous_value": 0.3,
+      "calibrated_value": 0.3,
+      "source": "DOCUMENTED_DEFAULT",
+      "sample_count": 0,
+      "metric_details": {
+        "reason": "insufficient_conductance_samples",
+        "fallback": 0.3
+      }
+    }
+  ],
+  "output_config_path": "/home/vqt/UET/Project/hindsight/nocpro-chain-explain/config/thresholds/calibrated.yaml",
+  "status": "baseline_requires_calibration"
+}

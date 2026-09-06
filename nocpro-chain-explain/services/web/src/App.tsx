@@ -9,6 +9,7 @@ import { EvolutionPanel } from './EvolutionPanel'
 import { ChainTree } from './ChainTree'
 import { TopologyTree, type TopologyTreePayload } from './TopologyTree'
 import { NocProAssistantPanel } from './NocProAssistantPanel'
+import { AnalysisSettingsModal } from './AnalysisSettingsModal'
 import type { AssistantAction, ChainAnalysis, ChainList, Job, Member, PairEvidence, PairWhy } from './types'
 import './App.css'
 
@@ -34,15 +35,17 @@ const evidenceLayers: Array<{ id: EvidenceLayer; label: string }> = [
   { id: 'POST_HOC', label: 'Post-hoc' },
 ]
 
-function Icon({ name }: { name: 'pulse' | 'search' | 'upload' | 'arrow' }) {
+function Icon({ name }: { name: 'pulse' | 'search' | 'upload' | 'arrow' | 'gear' }) {
   const paths = {
     pulse: <path d="M2 12h4l2.2-7 4 14L15 9l2 3h5" />,
     search: <><circle cx="11" cy="11" r="7" /><path d="m16 16 5 5" /></>,
     upload: <><path d="M12 16V3m0 0L7 8m5-5 5 5" /><path d="M4 14v6h16v-6" /></>,
     arrow: <><path d="M5 12h14" /><path d="m14 7 5 5-5 5" /></>,
+    gear: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></>,
   }
   return <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>
 }
+
 
 function statusTone(value: string) {
   if (['SUPPORT', 'CORE', 'SUCCEEDED', 'EXACT_INDEXED'].includes(value)) return 'positive'
@@ -371,15 +374,78 @@ function MemberTable({ members, selected, onSelect, onInspect }: {
   )
 }
 
-function StructurePanel({ job, onRun, submitting }: { job: Job | null; onRun: () => void; submitting: boolean }) {
+function StructurePanel({
+  job,
+  onRun,
+  submitting,
+  onSelectTab,
+}: {
+  job: Job | null
+  onRun: () => void
+  submitting: boolean
+  onSelectTab?: (tab: Tab) => void
+}) {
   const result = job?.result
+  const isSmallChain = result?.structural_audit.verdict === 'SKIPPED_SMALL_CHAIN'
   return (
     <section className="structure-card">
-      <div className="structure-copy"><p className="kicker">Tier 2 · structural audit</p><h2>Materialize only when the question needs it.</h2><p>Conductance, over-merge evidence and similar-chain search run behind a versioned asynchronous job boundary.</p><button className="primary-action" onClick={onRun} disabled={submitting || job?.status === 'RUNNING'}>{submitting ? 'Submitting…' : job?.status === 'RUNNING' ? `Running · ${job.progress_percent}%` : 'Run deep dive'} <Icon name="arrow" /></button></div>
+      <div className="structure-copy">
+        <p className="kicker">Tier 2 · structural audit</p>
+        <h2>Materialize only when the question needs it.</h2>
+        <p>Conductance, over-merge evidence and similar-chain search run behind a versioned asynchronous job boundary.</p>
+        <button className="primary-action" onClick={onRun} disabled={submitting || job?.status === 'RUNNING'}>
+          {submitting ? 'Submitting…' : job?.status === 'RUNNING' ? `Running · ${job.progress_percent}%` : 'Run deep dive'} <Icon name="arrow" />
+        </button>
+      </div>
       <div className="audit-result">
         {!job && <div className="audit-empty"><span>G*</span><p>Audit graph not computed</p></div>}
         {job && !result && <div className="audit-empty"><span>{job.progress_percent}%</span><p>{job.status}</p>{job.error && <small>{job.error}</small>}</div>}
-        {result && <>
+        {result && isSmallChain && (
+          <div className="audit-small-chain-banner" style={{
+            backgroundColor: 'rgba(15, 23, 42, 0.7)',
+            border: '1px solid #334155',
+            borderRadius: '8px',
+            padding: '1.25rem',
+            marginBottom: '1rem',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+              <Pill tone="muted">NOT APPLICABLE</Pill>
+              <strong style={{ color: '#f8fafc', fontSize: '1rem' }}>Balanced Audit: Chain Too Small (&lt;10 alarms)</strong>
+            </div>
+            <p style={{ color: '#94a3b8', fontSize: '0.875rem', lineHeight: 1.5, margin: '0 0 1rem 0' }}>
+              {result.structural_audit.reason}. Balanced graph cut partitioning requires sufficient alarm volume for statistical significance. You can examine member roles, pair justifications, and dependency structure in other views.
+            </p>
+            {onSelectTab && (
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
+                  onClick={() => onSelectTab('why')}
+                >
+                  View Pair WHY Evidence
+                </button>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
+                  onClick={() => onSelectTab('tree')}
+                >
+                  Inspect Topology Tree
+                </button>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
+                  onClick={() => onSelectTab('members')}
+                >
+                  View All Members
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        {result && !isSmallChain && <>
           <div className="audit-verdict"><Pill tone={statusTone(result.structural_audit.verdict)}>{result.structural_audit.verdict}</Pill><strong>{result.audit_graph_mode}</strong></div>
           <p>{result.structural_audit.reason}</p>
           <dl className="metric-row"><div><dt>best cut</dt><dd>{result.structural_audit.best_cut_label ?? 'none'}</dd></div><div><dt>conductance</dt><dd>{result.structural_audit.best_cut_phi?.toFixed(3) ?? '⊥'}</dd></div><div><dt>over-merge</dt><dd>{humanize(result.over_merge_strength)}</dd></div></dl>
@@ -421,6 +487,7 @@ function StructurePanel({ job, onRun, submitting }: { job: Job | null; onRun: ()
   )
 }
 
+
 function App() {
   const [apiStatus, setApiStatus] = useState('checking')
   const [chainList, setChainList] = useState<ChainList | null>(null)
@@ -451,6 +518,9 @@ function App() {
     payload: TopologyTreePayload
   } | null>(null)
   const [topologySourceResolution, setTopologySourceResolution] = useState<TopologyNavigationResolution | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [configEpoch, setConfigEpoch] = useState(0)
+  const [activeConfigVersion, setActiveConfigVersion] = useState<string | null>(null)
   const snapshotKey = chainList ? `${chainList.snapshot_id}:${chainList.snapshot_version}` : null
   const analysis = analysisState?.snapshotKey === snapshotKey ? analysisState.payload : null
   const pairWhy = pairWhyState?.snapshotKey === snapshotKey ? pairWhyState.payload : null
@@ -461,6 +531,9 @@ function App() {
       try {
         await api.health(controller.signal)
         setApiStatus('online')
+        api.getConfig(controller.signal).then((cfg) => {
+          setActiveConfigVersion(cfg.config_version)
+        }).catch(() => {})
         try {
           const existing = await api.chains(controller.signal)
           setChainList(existing)
@@ -488,7 +561,7 @@ function App() {
       if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Analysis failed')
     })
     return () => controller.abort()
-  }, [chainId, snapshotKey])
+  }, [chainId, snapshotKey, configEpoch])
 
   useEffect(() => {
     if (selectedMembers.length !== 2 || !chainId || !snapshotKey) return
@@ -499,7 +572,8 @@ function App() {
       if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Pair evaluation failed')
     })
     return () => controller.abort()
-  }, [chainId, selectedMembers, snapshotKey])
+  }, [chainId, selectedMembers, snapshotKey, configEpoch])
+
 
   useEffect(() => {
     if (!job || !['QUEUED', 'RUNNING'].includes(job.status)) return
@@ -669,6 +743,24 @@ function App() {
             <span className="connection-dot connection-dot--online" />
             <span>{chainList.snapshot_id}</span>
           </div>
+          <button
+            type="button"
+            className="secondary-action"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              padding: '0.35rem 0.65rem',
+              fontSize: '0.8rem',
+              borderRadius: '6px',
+            }}
+            onClick={() => setSettingsOpen(true)}
+            title="Configure analysis thresholds and parameters"
+          >
+            <Icon name="gear" />
+            <span>Settings</span>
+            <Pill tone="neutral">{activeConfigVersion ?? analysis?.config_version ?? 'v1'}</Pill>
+          </button>
           <label className="upload-compact" title="Load another snapshot JSON file">
             <input
               type="file"
@@ -683,6 +775,7 @@ function App() {
             <span>Load JSON</span>
           </label>
         </div>
+
       </header>
 
       {/* Clean Tab Bar */}
@@ -758,10 +851,15 @@ function App() {
                 <strong>{humanize(analysis.statistics_mode)}</strong>
               </div>
               <div className="kpi-block">
+                <span>Config Version</span>
+                <strong style={{ color: 'var(--primary-color, #38bdf8)' }}>{analysis.config_version}</strong>
+              </div>
+              <div className="kpi-block">
                 <span>Active Basis</span>
                 <strong>{humanize(analysis.pair_materialization)}</strong>
               </div>
             </div>
+
           </section>
 
           {/* Main Layout Grid (Expands to full width when side panel is closed!) */}
@@ -788,12 +886,18 @@ function App() {
                 {tab === 'why' && <WhyPanel analysis={analysis} />}
                 {tab === 'structure' && (
                   <>
-                    <StructurePanel job={visibleJob} onRun={() => void runDeepDive()} submitting={submitting} />
+                    <StructurePanel
+                      job={visibleJob}
+                      onRun={() => void runDeepDive()}
+                      submitting={submitting}
+                      onSelectTab={(newTab) => setTab(newTab)}
+                    />
                     {visibleJob?.result?.topology_hypotheses && (
                       <TopologyHypotheses topology_hypotheses={visibleJob.result.topology_hypotheses} />
                     )}
                   </>
                 )}
+
                 {tab === 'topology' && (
                   <section className="topology-workspace">
                     <header className="topology-workspace-header">
@@ -885,8 +989,21 @@ function App() {
           </div>
         </main>
       )}
+
+      <AnalysisSettingsModal
+
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onConfigChanged={(cfg) => {
+          setActiveConfigVersion(cfg.config_version)
+          setConfigEpoch((e) => e + 1)
+          setJob(null)
+          setPairWhyState(null)
+        }}
+      />
     </div>
   )
 }
+
 
 export default App

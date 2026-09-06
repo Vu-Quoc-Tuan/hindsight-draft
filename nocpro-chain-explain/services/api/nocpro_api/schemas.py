@@ -566,3 +566,47 @@ class AssistantResponseView(ApiModel):
     provider_status: str
     chart_data: dict[str, Any] | None = None
 
+
+class ParameterItemView(ApiModel):
+    path: str
+    key: str
+    label: str
+    value: float | int
+    source: str
+    min: float | None = None
+    max: float | None = None
+    step: float | None = None
+    description: str | None = None
+
+
+class ConfigView(ApiModel):
+    config_version: str
+    status: str
+    editable_parameters: dict[str, float | int]
+    parameters_detail: list[ParameterItemView]
+
+
+class ConfigUpdateInput(ApiModel):
+    parameters: dict[str, float | int]
+
+
+class ParameterCalibrationView(ApiModel):
+    path: str
+    previous_value: float | int
+    calibrated_value: float | int
+    source: str
+    sample_count: int
+    metric_details: dict[str, Any]
+
+
+class CalibrationReportView(ApiModel):
+    timestamp: str
+    database_url_masked: str
+    snapshots_loaded: int
+    chains_evaluated: int
+    alarms_evaluated: int
+    calibrated_parameters: list[ParameterCalibrationView]
+    output_config_path: str
+    status: str
+
+

@@ -22,6 +22,9 @@ from .schemas import (
     AISuggestionView,
     AssistantQueryInput,
     AssistantResponseView,
+    CalibrationReportView,
+    ConfigUpdateInput,
+    ConfigView,
     EvolutionView,
     JobSubmissionView,
     JobView,
@@ -43,6 +46,7 @@ from .workspace import SnapshotNotLoaded, Workspace
 
 router = APIRouter(prefix="/api/v1")
 logger = logging.getLogger(__name__)
+
 
 
 def workspace(request: Request) -> Workspace:
@@ -369,3 +373,40 @@ async def query_assistant(
         )
     except Exception as exc:
         raise translate_error(exc) from exc
+
+
+@router.get("/config", response_model=ConfigView)
+async def get_config(request: Request) -> ConfigView:
+    try:
+        data = workspace(request).get_active_parameters()
+        return ConfigView(**data)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.post("/config", response_model=ConfigView)
+async def update_config(payload: ConfigUpdateInput, request: Request) -> ConfigView:
+    try:
+        data = workspace(request).update_parameters(payload.parameters)
+        return ConfigView(**data)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.post("/config/reset", response_model=ConfigView)
+async def reset_config(request: Request) -> ConfigView:
+    try:
+        data = workspace(request).reset_parameters()
+        return ConfigView(**data)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.post("/config/calibrate", response_model=CalibrationReportView)
+async def calibrate_config(request: Request) -> CalibrationReportView:
+    try:
+        report = await workspace(request).calibrate_from_database(include_fixtures=True)
+        return CalibrationReportView(**report)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+

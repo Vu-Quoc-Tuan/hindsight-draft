@@ -1,5 +1,19 @@
-import type { AISuggestion, AssistantContext, AssistantResponse, ChainAnalysis, ChainList, CounterfactualJob, Evolution, Job, OperatorFeedback, PairWhy } from './types'
+import type {
+  AISuggestion,
+  AnalysisConfigView,
+  AssistantContext,
+  AssistantResponse,
+  CalibrationReport,
+  ChainAnalysis,
+  ChainList,
+  CounterfactualJob,
+  Evolution,
+  Job,
+  OperatorFeedback,
+  PairWhy,
+} from './types'
 import type { TopologyTreePayload } from './TopologyTree'
+
 
 export class ApiError extends Error {
   status: number
@@ -202,4 +216,23 @@ export const api = {
     topologySearchRequest(profileId, query, signal),
   topologyResolve: (profileId: string, identifier: string, signal?: AbortSignal) =>
     topologyResolveRequest(profileId, identifier, signal),
+  getConfig: (signal?: AbortSignal) => request<AnalysisConfigView>('/api/v1/config', { signal }),
+  updateConfig: (parameters: Record<string, number>, signal?: AbortSignal) =>
+    request<AnalysisConfigView>('/api/v1/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parameters }),
+      signal,
+    }),
+  resetConfig: (signal?: AbortSignal) =>
+    request<AnalysisConfigView>('/api/v1/config/reset', {
+      method: 'POST',
+      signal,
+    }),
+  calibrateConfig: (signal?: AbortSignal) =>
+    request<CalibrationReport>('/api/v1/config/calibrate', {
+      method: 'POST',
+      signal,
+    }),
 }
+

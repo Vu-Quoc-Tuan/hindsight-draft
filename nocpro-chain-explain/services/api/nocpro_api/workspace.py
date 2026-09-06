@@ -6,6 +6,8 @@ import os
 import asyncio
 import uuid
 from concurrent.futures import Future
+from dataclasses import asdict, replace
+
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock
@@ -14,7 +16,13 @@ from typing import Any
 from channels import evaluate_pair_channels
 from history import HistoricalEvidenceModel, HistoricalTaxonomy
 from temporal_delay import FrozenDelayModel
-from configuration import AnalysisConfig, load_analysis_config
+from configuration import (
+    AnalysisConfig,
+    ConfiguredValue,
+    ParameterSource,
+    PARAMETER_RULES,
+    load_analysis_config,
+)
 from libs.contracts import IngestedPackage, load_validated_package
 from tier1a import CacheTier, SnapshotPrecompute, Tier1Cache, precompute_snapshot
 from tier1b import analyze_chain_configured
@@ -36,6 +44,74 @@ from tier2.counterfactual.public_contract import public_review_result
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_CONFIG = ROOT / "config" / "thresholds" / "v1.yaml"
 
+EDITABLE_PARAMETER_METADATA: list[dict[str, Any]] = [
+    {
+        "key": "s_min",
+        "path": "role.s_min",
+        "label": "s_min (Core Support)",
+        "description": "Minimum membership support for core role assignment",
+        "min": 0.1,
+        "max": 1.0,
+        "step": 0.05,
+    },
+    {
+        "key": "s_weak",
+        "path": "role.s_weak",
+        "label": "s_weak (Weak Support)",
+        "description": "Weak boundary membership support threshold",
+        "min": 0.05,
+        "max": 0.9,
+        "step": 0.05,
+    },
+    {
+        "key": "rho",
+        "path": "audit.rho",
+        "label": "rho (Balance Ratio)",
+        "description": "Balance constraint ratio for candidate cuts (|S| / |V|)",
+        "min": 0.01,
+        "max": 0.49,
+        "step": 0.01,
+    },
+    {
+        "key": "gap_seconds",
+        "path": "temporal.burst.gap_seconds",
+        "label": "gap_seconds (Burst Gap)",
+        "description": "Silent temporal burst gap in seconds between alarms",
+        "min": 10,
+        "max": 600,
+        "step": 10,
+    },
+    {
+        "key": "c_min",
+        "path": "role.c_min",
+        "label": "c_min (Core Clustering)",
+        "description": "Minimum clustering coefficient for core role assignment",
+        "min": 0.1,
+        "max": 1.0,
+        "step": 0.05,
+    },
+    {
+        "key": "r_min",
+        "path": "role.r_min",
+        "label": "r_min (Core Representativeness)",
+        "description": "Minimum representativeness score for core alarms",
+        "min": 0.1,
+        "max": 1.0,
+        "step": 0.05,
+    },
+    {
+        "key": "global_weak_baseline",
+        "path": "audit.global_weak_baseline",
+        "label": "global_weak_baseline (Conductance Baseline)",
+        "description": "Global fallback baseline for conductance threshold epsilon",
+        "min": 0.05,
+        "max": 1.0,
+        "step": 0.05,
+    },
+]
+
+KEY_TO_PATH = {item["key"]: item["path"] for item in EDITABLE_PARAMETER_METADATA}
+
 
 class SnapshotNotLoaded(RuntimeError):
     pass
@@ -48,6 +124,8 @@ class Workspace:
         selected_config = config_path or Path(
             os.environ.get("ANALYSIS_CONFIG_PATH", str(DEFAULT_CONFIG))
         )
+        self._base_config_path = selected_config
+        self._custom_config_counter = 0
         self.config: AnalysisConfig = load_analysis_config(selected_config)
         self.cache = Tier1Cache()
         self.jobs = Tier2JobManager(cache=self.cache)
@@ -73,6 +151,104 @@ class Workspace:
         self._review_persistence_futures: list[Future] = []
         self._audit_persistence_futures: list[Future] = []
         self.operator_feedbacks: list[dict[str, Any]] = []
+
+    def get_active_parameters(self) -> dict[str, Any]:
+        editable = {}
+        details = []
+        for item in EDITABLE_PARAMETER_METADATA:
+            path = item["path"]
+            configured = self.config.parameter(path)
+            editable[item["key"]] = configured.value
+            details.append(
+                {
+                    "path": path,
+                    "key": item["key"],
+                    "label": item["label"],
+                    "value": configured.value,
+                    "source": configured.source.value,
+                    "min": item.get("min"),
+                    "max": item.get("max"),
+                    "step": item.get("step"),
+                    "description": item.get("description"),
+                }
+            )
+        return {
+            "config_version": self.config.config_version,
+            "status": self.config.status,
+            "editable_parameters": editable,
+            "parameters_detail": details,
+        }
+
+    def update_parameters(self, overrides: dict[str, float | int]) -> dict[str, Any]:
+        normalized_overrides: dict[str, float | int] = {}
+        for raw_key, raw_val in overrides.items():
+            path = KEY_TO_PATH.get(raw_key, raw_key)
+            rule = PARAMETER_RULES.get(path)
+            if rule is None:
+                raise ValueError(f"Unknown or non-configurable parameter {raw_key!r}")
+            norm_val = rule.validate(path, raw_val)
+            normalized_overrides[path] = norm_val
+
+        # Cross parameter validations
+        cur_s_min = normalized_overrides.get("role.s_min", self.config.value("role.s_min"))
+        cur_s_weak = normalized_overrides.get("role.s_weak", self.config.value("role.s_weak"))
+        if cur_s_weak > cur_s_min:
+            raise ValueError(f"role.s_weak ({cur_s_weak}) must be <= role.s_min ({cur_s_min})")
+
+        with self._lock:
+            self._custom_config_counter += 1
+            base_ver = self.config.config_version.split("-custom-")[0]
+            new_version = f"{base_ver}-custom-{self._custom_config_counter}"
+
+            new_parameters = dict(self.config.parameters)
+            for path, val in normalized_overrides.items():
+                new_parameters[path] = ConfiguredValue(
+                    path=path,
+                    value=val,
+                    source=ParameterSource.SYSTEM_PROVIDED,
+                )
+
+            self.config = replace(
+                self.config,
+                config_version=new_version,
+                parameters=new_parameters,
+            )
+            self.cache.entries.clear()
+            self.jobs.cache.entries.clear()
+
+        return self.get_active_parameters()
+
+    def reset_parameters(self) -> dict[str, Any]:
+        with self._lock:
+            calibrated_path = ROOT / "config" / "thresholds" / "calibrated.yaml"
+            target_path = calibrated_path if calibrated_path.exists() else self._base_config_path
+            self.config = load_analysis_config(target_path)
+            self._custom_config_counter = 0
+            self.cache.entries.clear()
+            self.jobs.cache.entries.clear()
+        return self.get_active_parameters()
+
+    async def calibrate_from_database(
+        self,
+        database_url: str | None = None,
+        include_fixtures: bool = False,
+    ) -> dict[str, Any]:
+        from benchmarks.calibrate_thresholds import calibrate_from_postgres
+
+        calibrated_output = ROOT / "config" / "thresholds" / "calibrated.yaml"
+        report = await calibrate_from_postgres(
+            database_url=database_url,
+            output_yaml=calibrated_output,
+            include_fixtures=include_fixtures,
+        )
+        with self._lock:
+            self.config = load_analysis_config(calibrated_output)
+            self._custom_config_counter = 0
+            self.cache.entries.clear()
+            self.jobs.cache.entries.clear()
+
+        return asdict(report)
+
 
     def close(self) -> None:
         self.review_jobs.shutdown()

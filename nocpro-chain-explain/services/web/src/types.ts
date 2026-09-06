@@ -550,3 +550,43 @@ export type AssistantContext = {
   topology_resource_id?: string
   filters: Record<string, string>
 }
+
+export type ParameterItem = {
+  path: string
+  key: string
+  label: string
+  value: number
+  source: string
+  min?: number
+  max?: number
+  step?: number
+  description?: string
+}
+
+export type AnalysisConfigView = {
+  config_version: string
+  status: string
+  editable_parameters: Record<string, number>
+  parameters_detail: ParameterItem[]
+}
+
+export type ParameterCalibration = {
+  path: string
+  previous_value: number
+  calibrated_value: number
+  source: string
+  sample_count: number
+  metric_details: Record<string, any>
+}
+
+export type CalibrationReport = {
+  timestamp: string
+  database_url_masked: string
+  snapshots_loaded: number
+  chains_evaluated: number
+  alarms_evaluated: number
+  calibrated_parameters: ParameterCalibration[]
+  output_config_path: string
+  status: string
+}
+
