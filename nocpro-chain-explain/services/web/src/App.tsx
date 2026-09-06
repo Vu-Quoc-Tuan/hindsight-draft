@@ -59,7 +59,6 @@ export default function App() {
   const [comparePair, setComparePair] = useState<[string, string]>(['C2214039', 'C2214048'])
   const [isDrawerOpen, setDrawerOpen] = useState(false)
   const [isValidationModalOpen, setValidationModalOpen] = useState(false)
-  const [operatorMode, setOperatorMode] = useState<'operator' | 'research'>('operator')
 
   const snapshotKey = chainList ? `${chainList.snapshot_id}:${chainList.snapshot_version}` : null
   const analysis = analysisState?.snapshotKey === snapshotKey ? analysisState.payload : null
@@ -272,8 +271,6 @@ export default function App() {
         }}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenAIAnalyst={() => setDrawerOpen(true)}
-        viewMode={operatorMode}
-        onToggleViewMode={mode => setOperatorMode(mode)}
       />
 
       {/* 2. System Capabilities Strip */}
