@@ -1,8 +1,6 @@
 interface NocHeaderProps {
   datasetName?: string
   snapshotId?: string
-  totalAlarms?: number
-  totalChains?: number
   currentView: string
   onNavigate: (view: string) => void
   onOpenSettings: () => void
@@ -12,8 +10,6 @@ interface NocHeaderProps {
 export function NocHeader({
   datasetName = 'IT_SERVICES',
   snapshotId = 'S102 / v1',
-  totalAlarms = 8714,
-  totalChains = 2824,
   currentView,
   onNavigate,
   onOpenSettings,
@@ -47,10 +43,6 @@ export function NocHeader({
             <span className="text-secondary font-bold">{datasetName}</span>
             <span>/</span>
             <span className="text-primary font-bold">{snapshotId}</span>
-            <span>•</span>
-            <span className="text-on-surface font-semibold">{totalAlarms.toLocaleString()} alarms</span>
-            <span>·</span>
-            <span className="text-on-surface font-semibold">{totalChains.toLocaleString()} chains</span>
           </div>
         </div>
 

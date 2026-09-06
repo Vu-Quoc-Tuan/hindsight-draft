@@ -269,8 +269,6 @@ export default function App() {
       <NocHeader
         datasetName="IT_SERVICES"
         snapshotId={chainList?.snapshot_id ?? 'real_alarm_20260801'}
-        totalAlarms={chainList?.chains.reduce((a, c) => a + c.member_count, 0) ?? 8714}
-        totalChains={chainList?.chains.length ?? 2824}
         currentView={currentTab}
         onNavigate={tabName => {
           if (tabName === 'Snapshot Overview') setCurrentTab('snapshot-overview')
