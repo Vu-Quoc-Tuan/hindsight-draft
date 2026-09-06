@@ -1,29 +1,4 @@
-import { useState } from 'react'
-
-/**
- * Tiny tooltip: renders a `?` circle that shows a popup on hover/click.
- */
-function InfoTip({ text }: { text: string }) {
-  const [visible, setVisible] = useState(false)
-
-  return (
-    <span
-      className="relative inline-flex"
-      onMouseEnter={() => setVisible(true)}
-      onMouseLeave={() => setVisible(false)}
-      onClick={(e) => { e.stopPropagation(); setVisible((v) => !v) }}
-    >
-      <span className="w-4 h-4 rounded-full bg-surface-container-highest/70 text-on-surface-variant flex items-center justify-center text-[10px] font-bold cursor-help select-none hover:bg-surface-container-highest hover:text-on-surface transition-colors">
-        ?
-      </span>
-      {visible && (
-        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-52 px-2.5 py-2 bg-surface-container-highest text-on-surface text-[11px] font-body-sm rounded-md shadow-lg border border-surface-container-high/50 z-50 leading-relaxed pointer-events-none animate-fadeIn">
-          {text}
-        </span>
-      )}
-    </span>
-  )
-}
+import { InfoTip } from './InfoTip'
 
 type CapStatus = 'ready' | 'partial' | 'baseline'
 
@@ -79,60 +54,31 @@ const statusText: Record<CapStatus, string> = {
   baseline: 'text-on-surface-variant',
 }
 
-interface ContextRibbonProps {
-  datasetName?: string
-  snapshotId?: string
-  totalAlarms?: number
-  totalChains?: number
-}
-
-export function ContextRibbon({
-  datasetName = 'IT_SERVICES',
-  snapshotId = 'S102 / v1',
-  totalAlarms = 8714,
-  totalChains = 2824,
-}: ContextRibbonProps) {
+export function ContextRibbon() {
   return (
-    <div className="w-full bg-surface-container-lowest px-space-lg py-space-sm shadow-md border-b border-surface-container-high/40">
-      <div className="flex flex-wrap items-center justify-between gap-space-md">
-        {/* Left: Dataset & Specifiers */}
-        <div className="flex flex-wrap items-center gap-space-md">
-          <div className="flex items-center gap-space-xs bg-surface-container px-space-sm py-space-2xs rounded border border-surface-container-highest">
-            <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">DATASET</span>
-            <span className="font-code-sm text-code-sm text-secondary font-bold">{datasetName}</span>
-          </div>
-          <div className="flex items-center gap-space-xs bg-surface-container px-space-sm py-space-2xs rounded border border-surface-container-highest">
-            <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">SNAPSHOT</span>
-            <span className="font-code-sm text-code-sm text-primary font-bold">{snapshotId}</span>
-          </div>
-          <div className="flex items-center gap-space-xs text-on-surface-variant font-code-sm text-code-sm">
-            <span className="material-symbols-outlined text-secondary text-[15px]">analytics</span>
-            <span className="text-on-surface font-semibold">{totalAlarms.toLocaleString()} alarms</span>
-            <span>•</span>
-            <span className="text-on-surface font-semibold">{totalChains.toLocaleString()} chains</span>
-          </div>
-        </div>
-
-        {/* Right: Live Engine Status */}
-        <div className="flex items-center gap-space-sm font-code-sm text-code-sm text-on-surface-variant">
-          <span className="flex h-2 w-2 relative">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-secondary opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-secondary"></span>
-          </span>
-          <span className="text-on-surface font-medium">Engine Online</span>
-        </div>
-      </div>
-
+    <div className="w-full bg-surface-container-lowest px-space-lg py-2 shadow-xs border-b border-surface-container-high/40 flex flex-wrap items-center justify-between gap-space-sm text-[12px] font-code-sm text-on-surface-variant">
       {/* Capability Dots – compact with ? tooltip */}
-      <div className="mt-space-xs pt-space-xs border-t border-surface-container/60 flex flex-wrap items-center gap-space-md font-code-sm text-[12px] text-on-surface-variant">
+      <div className="flex flex-wrap items-center gap-space-md">
+        <span className="font-label-caps uppercase text-on-surface-variant/70 text-[10px] font-bold tracking-wider">
+          System Capabilities:
+        </span>
         {CAPS.map((cap) => (
-          <div key={cap.label} className="flex items-center gap-1">
+          <div key={cap.label} className="flex items-center gap-1.5">
             <span className={`w-1.5 h-1.5 rounded-full ${statusDot[cap.status]}`}></span>
             <span>{cap.label}:</span>
             <span className={`font-semibold ${statusText[cap.status]}`}>{cap.value}</span>
             <InfoTip text={cap.tip} />
           </div>
         ))}
+      </div>
+
+      {/* Right: Live Engine Status */}
+      <div className="flex items-center gap-1.5 text-on-surface-variant text-[11px]">
+        <span className="flex h-2 w-2 relative">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-secondary opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-secondary"></span>
+        </span>
+        <span className="text-on-surface font-medium">Engine Online</span>
       </div>
     </div>
   )

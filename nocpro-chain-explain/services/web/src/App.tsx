@@ -32,7 +32,7 @@ export default function App() {
   const [chainList, setChainList] = useState<ChainList | null>(null)
   const [chainId, setChainId] = useState<string>('')
   const [, setLoadingSnapshot] = useState(false)
-  const [, setApiStatus] = useState<'online' | 'offline' | 'checking'>('checking')
+  const [apiStatus, setApiStatus] = useState<'online' | 'offline' | 'checking'>('checking')
   const [analysisState, setAnalysisState] = useState<{
     snapshotKey: string
     payload: ChainAnalysis
@@ -85,7 +85,11 @@ export default function App() {
       } catch (cause) {
         if (!controller.signal.aborted) {
           setApiStatus('offline')
-          setError(cause instanceof Error ? cause.message : 'API offline')
+          // Do not show full-screen 502 error on initial load; app falls back to demo data
+          const msg = cause instanceof Error ? cause.message : 'API offline'
+          if (!msg.includes('502') && !msg.includes('Failed to fetch')) {
+            setError(msg)
+          }
         }
       }
     }
@@ -100,7 +104,12 @@ export default function App() {
     api.analysis(chainId, controller.signal).then(payload => {
       if (!controller.signal.aborted) setAnalysisState({ snapshotKey, payload })
     }).catch((cause: unknown) => {
-      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Analysis failed')
+      if (!controller.signal.aborted) {
+        const msg = cause instanceof Error ? cause.message : 'Analysis failed'
+        if (!msg.includes('502') && !msg.includes('Failed to fetch')) {
+          setError(msg)
+        }
+      }
     })
     return () => controller.abort()
   }, [chainId, snapshotKey, configEpoch])
@@ -273,13 +282,8 @@ export default function App() {
         onOpenAIAnalyst={() => setDrawerOpen(true)}
       />
 
-      {/* 2. System Capabilities Strip */}
-      <ContextRibbon
-        datasetName="IT_SERVICES"
-        snapshotId={chainList?.snapshot_id ?? 'S102 / v1'}
-        totalAlarms={chainList?.chains.reduce((a, c) => a + c.member_count, 0) ?? 8714}
-        totalChains={chainList?.chains.length ?? 2824}
-      />
+      {/* 2. System Capabilities Strip - only show on snapshot level when no chain is selected */}
+      {!chainId && <ContextRibbon />}
 
       {/* 3. Sub Navigation Bar */}
       <SubNavBar
@@ -416,16 +420,10 @@ export default function App() {
         }}
       />
 
-      {/* 7. Footer Status Bar */}
+      {/* 7. Footer Status Bar - clean, without redundant snapshot info or mock gateway */}
       <footer className="w-full h-8 bg-surface-container-lowest border-t border-surface-container-highest px-space-lg flex items-center justify-between text-[11px] font-code-sm text-on-surface-variant select-none">
         <div className="flex items-center gap-space-lg">
-          <span>PROVENANCE: <strong className="text-on-surface font-semibold">REAL_EXPORT_REPLAY</strong></span>
-          <span>CONFIG: <span className="text-on-surface">v1.0</span></span>
-          <span>ENGINE: <span className="text-secondary font-bold">hindsight-v1</span></span>
-          <span>ACTIVE SNAPSHOT: <span className="text-on-surface">{chainList?.snapshot_id ?? 'real_alarm_20260801'}</span></span>
-        </div>
-        <div className="flex items-center gap-space-lg">
-          <label className="cursor-pointer hover:text-secondary flex items-center gap-1">
+          <label className="cursor-pointer hover:text-secondary flex items-center gap-1.5 transition-colors">
             <span className="material-symbols-outlined text-[14px]">upload_file</span>
             <span>Load Snapshot JSON</span>
             <input
@@ -438,8 +436,14 @@ export default function App() {
               }}
             />
           </label>
-          <span>MOCK GATEWAY: <strong className="text-secondary">:8085</strong></span>
-          <span className="flex items-center gap-1 text-on-surface">
+        </div>
+        <div className="flex items-center gap-space-lg">
+          {apiStatus === 'offline' && (
+            <span className="px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant text-[10px]">
+              Demo Mode (API Offline)
+            </span>
+          )}
+          <span className="flex items-center gap-1.5 text-on-surface">
             <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
             STREAM SYNCED
           </span>

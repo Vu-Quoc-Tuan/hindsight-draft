@@ -10,7 +10,7 @@ interface AuditStructureViewProps {
 type AuditTab = 'GRAPH' | 'CUTS' | 'ATTRIBUTION'
 
 export function AuditStructureView({
-  analysis,
+  analysis: _analysis,
   onOpenValidationModal,
 }: AuditStructureViewProps) {
   const [activeTab, setActiveTab] = useState<AuditTab>('GRAPH')
@@ -56,22 +56,14 @@ export function AuditStructureView({
       {/* Subheader & Context Controls */}
       <div className="w-full bg-surface-container-lowest px-space-lg py-space-sm rounded-lg shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-space-md">
-          {/* Breadcrumb */}
+          {/* Active Audit Mode Title */}
           <div className="flex items-center gap-space-xs font-code-sm text-code-sm">
-            <span className="text-on-surface-variant">Snapshot S102</span>
-            <span className="text-surface-variant font-bold">/</span>
-            <span className="px-space-xs py-space-2xs bg-surface-container rounded text-secondary font-semibold">
-              Chain {analysis.chain_id}
-            </span>
-            <span className="text-surface-variant font-bold">/</span>
-            <span className="text-on-surface-variant">Audit</span>
-            <span className="text-surface-variant font-bold">/</span>
             <div className="flex items-center gap-space-xs text-on-surface bg-surface-container-high px-space-sm py-space-2xs rounded">
               <span className="material-symbols-outlined text-secondary text-[14px]">hub</span>
               <span className="font-bold text-on-surface">
-                {activeTab === 'GRAPH' && '11 - G*_audit Full Graph Inspection'}
-                {activeTab === 'CUTS' && '12 - Candidate Cut Selected'}
-                {activeTab === 'ATTRIBUTION' && '13 - Attribution Deletion Curves'}
+                {activeTab === 'GRAPH' && 'G*_audit Full Graph Inspection'}
+                {activeTab === 'CUTS' && 'Candidate Cut Selected'}
+                {activeTab === 'ATTRIBUTION' && 'Attribution Deletion Curves'}
               </span>
             </div>
           </div>

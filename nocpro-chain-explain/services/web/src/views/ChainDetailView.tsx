@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import type { ChainAnalysis, Member } from '../types'
 import { EvidenceAttribution } from '../EvidenceAttribution'
 import { ChainTree } from '../ChainTree'
+import { InfoTip } from '../components/InfoTip'
 
 interface ChainDetailViewProps {
   analysis: ChainAnalysis
@@ -18,7 +19,7 @@ export function ChainDetailView({
   activeSubTab,
   onSubTabChange,
   onInspectMember,
-  onOpenDrawer,
+  onOpenDrawer: _onOpenDrawer,
 }: ChainDetailViewProps) {
   const [whyScope, setWhyScope] = useState<WhyScope>('Chain')
   const [isScopeMenuOpen, setIsScopeMenuOpen] = useState(false)
@@ -67,135 +68,8 @@ export function ChainDetailView({
 
   return (
     <div className="flex flex-col w-full gap-space-md pb-12 select-none animate-fadeIn">
-      {/* Chain Detail Header Ribbon */}
-      <div className="w-full bg-surface-container-low px-space-lg py-space-sm rounded-lg flex flex-col gap-space-xs shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-space-sm">
-          <div className="flex flex-wrap items-center gap-space-sm font-code-sm text-code-sm">
-            <span className="text-on-surface-variant font-semibold">IT_SERVICES</span>
-            <span className="text-surface-variant">/</span>
-            <span className="text-on-surface-variant">S102 v1</span>
-            <span className="text-surface-variant">/</span>
-            <div className="flex items-center gap-space-xs bg-surface-container px-space-sm py-space-2xs rounded">
-              <span className="font-label-caps text-label-caps text-secondary uppercase font-bold">CHAIN</span>
-              <span className="font-bold text-on-surface tracking-wider">{analysis.chain_id}</span>
-              {weakCount > 0 && <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>}
-            </div>
-            <span className="text-on-surface font-semibold">•</span>
-            <span className="text-secondary font-semibold font-mono">{totalMembers} alarms</span>
-            <span className="text-surface-variant">·</span>
-            <span className="text-on-surface-variant font-mono">{(analysis as any).duration_seconds ?? 22}s</span>
-            <div className="flex items-center gap-space-xs bg-surface-container px-space-sm py-space-2xs rounded ml-space-xs">
-              <span className="material-symbols-outlined text-secondary text-[14px]">verified_user</span>
-              <span className="font-label-caps text-label-caps uppercase text-on-surface-variant">Capabilities:</span>
-              <span className="font-code-sm text-code-sm text-secondary font-medium">
-                [Pattern: Ready · Delay: Available · Topo: Partial]
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center gap-space-xs">
-            <button
-              onClick={onOpenDrawer}
-              className="px-space-sm py-space-2xs bg-secondary-container/30 text-secondary hover:bg-secondary-container/50 font-code-sm text-code-sm font-semibold rounded flex items-center gap-space-xs transition-colors shadow-sm"
-            >
-              <span className="text-secondary font-bold">✦</span>
-              <span>AI Analyst</span>
-            </button>
-            <button
-              onClick={() => onSubTabChange('WHY')}
-              className="px-space-sm py-space-2xs bg-primary-container text-on-primary font-code-sm text-code-sm font-semibold rounded flex items-center gap-space-xs shadow-sm hover:brightness-110 active:scale-95 transition-all"
-            >
-              <span className="material-symbols-outlined text-[14px]">bolt</span>
-              <span>Root Cause Action</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Sub Tab Navigation */}
-      <div className="w-full bg-surface-container px-space-lg py-space-2xs rounded-lg flex items-center justify-between shadow-sm">
-        <div className="flex items-center gap-space-xs overflow-x-auto">
-          <button
-            onClick={() => onSubTabChange('OVERVIEW')}
-            className={`px-space-md py-space-xs font-body-sm text-body-sm rounded transition-colors flex items-center gap-space-xs ${
-              activeSubTab === 'OVERVIEW'
-                ? 'bg-surface-container-high text-secondary font-semibold shadow-sm'
-                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[15px]">hub</span>
-            <span>05 - Overview</span>
-            {activeSubTab === 'OVERVIEW' && <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span>}
-          </button>
-          <button
-            onClick={() => onSubTabChange('WHY')}
-            className={`px-space-md py-space-xs font-body-sm text-body-sm rounded transition-colors flex items-center gap-space-xs ${
-              activeSubTab === 'WHY'
-                ? 'bg-surface-container-high text-secondary font-semibold shadow-sm'
-                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[15px]">psychology</span>
-            <span>06-09 - WHY (Scope: {whyScope})</span>
-            {activeSubTab === 'WHY' && <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span>}
-          </button>
-          <button
-            onClick={() => onSubTabChange('MEMBERS')}
-            className={`px-space-md py-space-xs font-body-sm text-body-sm rounded transition-colors flex items-center gap-space-xs ${
-              activeSubTab === 'MEMBERS'
-                ? 'bg-surface-container-high text-secondary font-semibold shadow-sm'
-                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[15px]">table_rows</span>
-            <span>10 - Member Diagnostics</span>
-            {weakCount > 0 && (
-              <span className="bg-primary-container/20 text-primary font-code-sm text-code-sm px-space-xs rounded font-bold">
-                {weakCount} Weak
-              </span>
-            )}
-          </button>
-        </div>
-
-        {/* Scope Dropdown (When on WHY tab) */}
-        {activeSubTab === 'WHY' && (
-          <div className="relative">
-            <div
-              onClick={() => setIsScopeMenuOpen(!isScopeMenuOpen)}
-              className="flex items-center gap-space-xs bg-surface-container-high px-space-sm py-1 rounded shadow-inner cursor-pointer hover:bg-surface-bright transition-colors"
-            >
-              <span className="font-label-caps text-label-caps uppercase text-secondary font-bold tracking-wider">
-                Scope:
-              </span>
-              <div className="flex items-center gap-space-2xs">
-                <span className="font-code-md text-code-md text-on-surface font-bold">{whyScope}</span>
-                <span className="material-symbols-outlined text-secondary text-[16px]">arrow_drop_down</span>
-              </div>
-            </div>
-            {isScopeMenuOpen && (
-              <div className="absolute right-0 mt-space-2xs w-48 bg-surface-container-highest shadow-xl rounded py-space-2xs z-30 font-code-sm text-code-sm border border-surface-container-high">
-                {(['Chain', 'Member', 'Pair', 'Group'] as WhyScope[]).map(sc => (
-                  <div
-                    key={sc}
-                    onClick={() => {
-                      setWhyScope(sc)
-                      setIsScopeMenuOpen(false)
-                    }}
-                    className={`px-space-md py-space-xs cursor-pointer flex items-center justify-between hover:bg-surface-bright ${
-                      whyScope === sc ? 'text-secondary font-bold' : 'text-on-surface'
-                    }`}
-                  >
-                    <span>{sc}</span>
-                    {whyScope === sc && <span className="material-symbols-outlined text-[14px]">check</span>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
       {/* ========================================================================= */}
-      {/* TAB 1: OVERVIEW (Screen 05) */}
+      {/* TAB 1: OVERVIEW */}
       {/* ========================================================================= */}
       {activeSubTab === 'OVERVIEW' && (
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-space-lg items-start">
@@ -342,28 +216,64 @@ export function ChainDetailView({
       {/* ========================================================================= */}
       {activeSubTab === 'WHY' && (
         <div className="flex flex-col gap-space-md">
-          {/* Scope Explanation Card */}
+          {/* Scope Header Card */}
           <div className="p-space-md bg-surface-container rounded-lg shadow-sm border border-secondary/20 flex flex-col md:flex-row items-start md:items-center justify-between gap-space-md">
-            <div className="flex items-start gap-space-md">
+            <div className="flex items-center gap-space-md">
               <div className="w-10 h-10 rounded-lg bg-secondary-container/20 flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined text-secondary text-[24px]">psychology</span>
               </div>
-              <div className="flex flex-col gap-space-2xs">
-                <div className="flex items-center gap-space-sm">
-                  <span className="font-headline-md text-headline-md font-bold text-on-surface">
-                    WHY Scope: {whyScope}
-                  </span>
-                  <span className="px-space-xs py-0.5 rounded bg-secondary-container/30 text-secondary font-code-sm text-code-sm font-semibold">
-                    Multi-Evidence Attribution
-                  </span>
-                </div>
-                <p className="font-body-sm text-body-sm text-on-surface-variant max-w-3xl">
-                  {whyScope === 'Chain' && 'Holistic evaluation of chain cohesion across 4 independent evidence channels: Graph Support, Learned Directed Temporal Delay, Topology Mapping, and Historical Co-occurrence.'}
-                  {whyScope === 'Member' && 'Individual member membership roles, cohesion fit, and local rival margins across adjacent incident clusters.'}
-                  {whyScope === 'Pair' && 'Edge correlation weights between alarm pairs: A → B temporal delays, shared device affinities, and directional cascade paths.'}
-                  {whyScope === 'Group' && 'Chassis, card, and line-protocol grouping. Isolates multi-card blast radiuses from transit transmission links.'}
-                </p>
+              <div className="flex items-center gap-space-sm flex-wrap">
+                <span className="font-headline-md text-headline-md font-bold text-on-surface">
+                  WHY Scope: {whyScope}
+                </span>
+                <span className="px-space-xs py-0.5 rounded bg-secondary-container/30 text-secondary font-code-sm text-code-sm font-semibold">
+                  Multi-Evidence Attribution
+                </span>
+                <InfoTip
+                  text={
+                    whyScope === 'Chain'
+                      ? 'Đánh giá liên kết toàn chuỗi qua 4 kênh bằng chứng độc lập: Graph Support, Directed Temporal Delay, Topology Mapping, và Historical Co-occurrence.'
+                      : whyScope === 'Member'
+                      ? 'Vai trò thành viên cá thể, độ phù hợp cohesion fit và biên phân tách đối thủ giữa các cụm sự cố lân cận.'
+                      : whyScope === 'Pair'
+                      ? 'Trọng số tương quan cạnh giữa cặp cảnh báo: trễ thời gian A → B, mức độ liên kết thiết bị và luồng lan truyền.'
+                      : 'Gom nhóm theo khung máy, card và giao thức đường truyền. Cô lập bán kính ảnh hưởng đa card với tuyến truyền dẫn quá cảnh.'
+                  }
+                />
               </div>
+            </div>
+
+            {/* Scope Dropdown */}
+            <div className="relative">
+              <div
+                onClick={() => setIsScopeMenuOpen(!isScopeMenuOpen)}
+                className="flex items-center gap-space-xs bg-surface-container-high px-space-sm py-1.5 rounded shadow-inner cursor-pointer hover:bg-surface-bright transition-colors border border-surface-container-highest"
+              >
+                <span className="font-label-caps text-label-caps uppercase text-secondary font-bold tracking-wider">
+                  Scope:
+                </span>
+                <span className="font-code-md text-code-md text-on-surface font-bold">{whyScope}</span>
+                <span className="material-symbols-outlined text-secondary text-[16px]">arrow_drop_down</span>
+              </div>
+              {isScopeMenuOpen && (
+                <div className="absolute right-0 mt-1 w-44 bg-surface-container-highest shadow-xl rounded py-1 z-30 font-code-sm text-code-sm border border-surface-container-high">
+                  {(['Chain', 'Member', 'Pair', 'Group'] as WhyScope[]).map(sc => (
+                    <div
+                      key={sc}
+                      onClick={() => {
+                        setWhyScope(sc)
+                        setIsScopeMenuOpen(false)
+                      }}
+                      className={`px-space-md py-space-xs cursor-pointer flex items-center justify-between hover:bg-surface-bright ${
+                        whyScope === sc ? 'text-secondary font-bold' : 'text-on-surface'
+                      }`}
+                    >
+                      <span>{sc}</span>
+                      {whyScope === sc && <span className="material-symbols-outlined text-[14px]">check</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -376,47 +286,46 @@ export function ChainDetailView({
                 evaluation={(analysis as any).attribution_deletion_evaluation}
               />
 
-              {/* 4 Multi-Evidence Channels Matrix */}
+              {/* 4 Multi-Evidence Channels Matrix - Compact with ? InfoTip */}
               <div className="bg-surface-container rounded-lg p-space-md shadow-sm">
                 <span className="font-label-caps text-label-caps uppercase text-on-surface-variant font-bold block mb-space-sm">
                   Evidence Channels Grounding Ledger
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-space-sm font-code-sm text-code-sm">
-                  <div className="p-space-sm bg-surface-container-low rounded flex flex-col gap-space-xs">
-                    <div className="flex items-center justify-between">
+                  <div className="p-space-sm bg-surface-container-low rounded flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-secondary"></span>
                       <span className="text-on-surface font-semibold">1. Pattern Memory</span>
-                      <span className="text-secondary font-bold">READY (0.84)</span>
+                      <InfoTip text="Historical co-occurrence pattern matched with 94.2% confidence against cluster archive." />
                     </div>
-                    <p className="font-body-sm text-body-sm text-on-surface-variant">
-                      Historical co-occurrence pattern matched with 94.2% confidence against cluster archive.
-                    </p>
+                    <span className="text-secondary font-bold font-mono">READY (0.84)</span>
                   </div>
-                  <div className="p-space-sm bg-surface-container-low rounded flex flex-col gap-space-xs">
-                    <div className="flex items-center justify-between">
+
+                  <div className="p-space-sm bg-surface-container-low rounded flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-secondary"></span>
                       <span className="text-on-surface font-semibold">2. Temporal Delay (T_delay)</span>
-                      <span className="text-secondary font-bold">AVAILABLE (0.91)</span>
+                      <InfoTip text="Learned directed delay A → B confirms root trigger at T0 + 1.2s propagation." />
                     </div>
-                    <p className="font-body-sm text-body-sm text-on-surface-variant">
-                      Learned directed delay A → B confirms root trigger at T0 + 1.2s propagation.
-                    </p>
+                    <span className="text-secondary font-bold font-mono">AVAILABLE (0.91)</span>
                   </div>
-                  <div className="p-space-sm bg-surface-container-low rounded flex flex-col gap-space-xs">
-                    <div className="flex items-center justify-between">
+
+                  <div className="p-space-sm bg-surface-container-low rounded flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-tertiary"></span>
                       <span className="text-on-surface font-semibold">3. Topology Mapping</span>
-                      <span className="text-tertiary font-bold">PARTIAL (0.64)</span>
+                      <InfoTip text="NetBox IP layer matched 41/58 nodes; DWDM optical transponders lack live port telemetry." />
                     </div>
-                    <p className="font-body-sm text-body-sm text-on-surface-variant">
-                      NetBox IP layer matched 41/58 nodes; DWDM optical transponders lack live port telemetry.
-                    </p>
+                    <span className="text-tertiary font-bold font-mono">PARTIAL (0.64)</span>
                   </div>
-                  <div className="p-space-sm bg-surface-container-low rounded flex flex-col gap-space-xs">
-                    <div className="flex items-center justify-between">
+
+                  <div className="p-space-sm bg-surface-container-low rounded flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-secondary"></span>
                       <span className="text-on-surface font-semibold">4. Counterfactual Policy</span>
-                      <span className="text-secondary font-bold">ENGAGED (5 Ops)</span>
+                      <InfoTip text="Pareto frontier computed; partition candidate generated for weak cut boundary." />
                     </div>
-                    <p className="font-body-sm text-body-sm text-on-surface-variant">
-                      Pareto frontier computed; partition candidate generated for weak cut boundary.
-                    </p>
+                    <span className="text-secondary font-bold font-mono">ENGAGED (5 Ops)</span>
                   </div>
                 </div>
               </div>
