@@ -65,6 +65,101 @@ def test_closure_manifest_reads_review_measurements_from_artifact(tmp_path):
     assert remove["status"] == "NOT_RUN"
 
 
+def test_closure_manifest_reads_isolated_stage_measurements(tmp_path):
+    (tmp_path / "isolated-latest.json").write_text(json.dumps({
+        "contract": "isolated-closure-benchmark-v1",
+        "measurements": [
+            {
+                "operation": "evidence_attribution",
+                "scope": "LOCAL_RAW_EXPORT_PERFORMANCE_ONLY",
+                "workload": "chain-1072",
+                "p50_seconds": 0.01,
+                "p95_seconds": 0.01,
+                "p95_reliable": True,
+                "repetitions": 20,
+                "samples_seconds": [0.01] * 20,
+            },
+            {
+                "operation": "review_serialization",
+                "scope": "SYNTHETIC_CORRECTNESS_ONLY",
+                "workload": "counterfactual_merge",
+                "p50_seconds": 0.001,
+                "p95_seconds": 0.001,
+                "p95_reliable": True,
+                "repetitions": 20,
+                "samples_seconds": [0.001] * 20,
+            },
+        ],
+    }))
+    output = run(tmp_path / "closure.json", results_dir=tmp_path)
+    payload = json.loads(output.read_text())
+    attribution = next(item for item in payload["results"] if item["operation"] == "evidence_attribution")
+    serialization = next(item for item in payload["results"] if item["operation"] == "review_serialization")
+    deletion = next(item for item in payload["results"] if item["operation"] == "attribution_deletion_curve")
+    assert attribution["status"] == "MEASURED"
+    assert attribution["scope"] == "LOCAL_RAW_EXPORT_PERFORMANCE_ONLY"
+    assert attribution["p95_seconds"] == 0.01
+    assert serialization["status"] == "MEASURED"
+    assert deletion["status"] == "NOT_RUN"
+
+
+def test_closure_manifest_reads_isolated_review_persistence(tmp_path):
+    (tmp_path / "runtime-review-latest.json").write_text(json.dumps({
+        "scope": "LOCAL_DOCKER_RUNTIME_ONLY",
+        "repetitions": 20,
+        "review_persistence": {
+            "p50_s": 0.01,
+            "p95_s": 0.01,
+            "p95_reliable": True,
+            "samples_s": [0.01] * 20,
+        },
+    }))
+    output = run(tmp_path / "closure.json", results_dir=tmp_path)
+    payload = json.loads(output.read_text())
+    persistence = next(item for item in payload["results"] if item["operation"] == "review_persistence")
+    assert persistence["status"] == "MEASURED"
+    assert persistence["scope"] == "LOCAL_DOCKER_RUNTIME_ONLY"
+    assert persistence["p95_seconds"] == 0.01
+    assert persistence["provenance"] == "benchmarks/results/runtime-review-latest.json"
+
+
+def test_closure_manifest_rejects_runtime_measurement_without_all_raw_samples(tmp_path):
+    (tmp_path / "runtime-review-latest.json").write_text(json.dumps({
+        "scope": "LOCAL_DOCKER_RUNTIME_ONLY",
+        "repetitions": 20,
+        "review_persistence": {
+            "p50_s": 0.01,
+            "p95_s": 0.02,
+            "p95_reliable": True,
+            "samples_s": [0.01] * 19,
+        },
+    }))
+    output = run(tmp_path / "closure.json", results_dir=tmp_path)
+    payload = json.loads(output.read_text())
+    persistence = next(item for item in payload["results"] if item["operation"] == "review_persistence")
+    assert persistence["status"] == "NOT_RUN"
+    assert persistence["reason"] == "INVALID_OR_INCOMPLETE_BENCHMARK_EVIDENCE"
+
+
+def test_closure_manifest_rejects_summary_that_does_not_match_raw_samples(tmp_path):
+    (tmp_path / "isolated-latest.json").write_text(json.dumps({
+        "measurements": [{
+            "operation": "review_serialization",
+            "scope": "SYNTHETIC_CORRECTNESS_ONLY",
+            "p50_seconds": 0.01,
+            "p95_seconds": 9.0,
+            "p95_reliable": True,
+            "repetitions": 20,
+            "samples_seconds": [0.01] * 20,
+        }],
+    }))
+    output = run(tmp_path / "closure.json", results_dir=tmp_path)
+    payload = json.loads(output.read_text())
+    serialization = next(item for item in payload["results"] if item["operation"] == "review_serialization")
+    assert serialization["status"] == "NOT_RUN"
+    assert serialization["reason"] == "INVALID_OR_INCOMPLETE_BENCHMARK_EVIDENCE"
+
+
 def test_closure_manifest_does_not_claim_reliable_p95_without_reliable_samples(tmp_path):
     (tmp_path / "latest.json").write_text(json.dumps({
         "results": [{

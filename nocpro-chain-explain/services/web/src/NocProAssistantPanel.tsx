@@ -19,9 +19,12 @@ export function NocProAssistantPanel({
   onNavigate: (action: AssistantAction) => void
 }) {
   const [query, setQuery] = useState('')
-  const [result, setResult] = useState<AssistantResponse | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [responseState, setResponseState] = useState<{
+    contextKey: string
+    result: AssistantResponse | null
+    loading: boolean
+    error: string | null
+  }>({ contextKey: '', result: null, loading: false, error: null })
   const requestRef = useRef<{ id: number; controller: AbortController } | null>(null)
   const contextKey = [
     context.snapshot_id,
@@ -30,8 +33,9 @@ export function NocProAssistantPanel({
     context.pair_alarm_id_a ?? '',
     context.pair_alarm_id_b ?? '',
   ].join('\u0000')
-  const contextKeyRef = useRef(contextKey)
-  contextKeyRef.current = contextKey
+  useEffect(() => {
+    requestRef.current?.controller.abort()
+  }, [contextKey])
 
   useEffect(() => () => requestRef.current?.controller.abort(), [])
 
@@ -42,21 +46,29 @@ export function NocProAssistantPanel({
     const request = { id: (requestRef.current?.id ?? 0) + 1, controller: new AbortController() }
     requestRef.current = request
     const requestedContextKey = contextKey
-    setLoading(true)
-    setError(null)
-    setResult(null)
+    setResponseState({ contextKey: requestedContextKey, result: null, loading: true, error: null })
     try {
       const response = await api.assistantQuery(trimmed, context, request.controller.signal)
-      if (requestRef.current?.id === request.id && contextKeyRef.current === requestedContextKey) setResult(response)
+      if (requestRef.current?.id === request.id) {
+        setResponseState({ contextKey: requestedContextKey, result: response, loading: false, error: null })
+      }
     } catch (cause) {
       if (request.controller.signal.aborted) return
       if (requestRef.current?.id === request.id) {
-        setError(cause instanceof Error ? cause.message : 'Không thể tải NocPro Assistant')
+        setResponseState({
+          contextKey: requestedContextKey,
+          result: null,
+          loading: false,
+          error: cause instanceof Error ? cause.message : 'Không thể tải NocPro Assistant',
+        })
       }
-    } finally {
-      if (requestRef.current?.id === request.id) setLoading(false)
     }
   }
+
+  const responseMatchesContext = responseState.contextKey === contextKey
+  const result = responseMatchesContext ? responseState.result : null
+  const loading = responseMatchesContext ? responseState.loading : false
+  const error = responseMatchesContext ? responseState.error : null
 
   return (
     <section className="ai-advisor-panel nocpro-assistant-panel">

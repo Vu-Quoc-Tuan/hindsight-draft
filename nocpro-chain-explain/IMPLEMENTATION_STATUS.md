@@ -40,7 +40,7 @@ It separates **capability** from evidence that the capability was exercised;
 | Counterfactual `REMOVE_MEMBER`, `SPLIT_CHAIN`, `MOVE_MEMBER`, connector annotation | `READY` | `PASS` | `PASS` | `PASS` Kafka/PostgreSQL/restart/Chromium | `NOT_CALIBRATED` | Proposal-only; feedback is persisted evaluation data and cannot mutate NocPro. Production recommendation policy requires operator corrections/calibration. |
 | Counterfactual `MERGE_CHAINS` | `READY` | `PASS` | `PASS` | `PASS` Kafka/PostgreSQL/restart/Chromium | `NOT_CALIBRATED` | Exact cross-chain evidence and persisted Review reload have runtime acceptance. |
 | Counterfactual `ADD_MEMBER` | `BLOCKED` | N/A | N/A | N/A | `BLOCKED` | `UNKNOWN_UPSTREAM_SEMANTICS`: first-class zero-membership alarms have not been verified upstream. A singleton-source transfer is canonical `MOVE_MEMBER`, never ADD. |
-| NocPro Assistant registry/search/navigation | `READY` (ADR-0024 epistemic boundaries) | `PASS` API/UI contract | N/A | `NOT_RUN` for current revision | `READY` for deterministic read-only navigation; `UNAVAILABLE` for ungrounded LLM inference | Every action is bound to an exact snapshot/version and validated again by the client. Pair WHY actions require two current same-chain members; assistant Review navigation can display only a persisted Review and never submits a job. |
+| NocPro Assistant registry/search/navigation | `READY` (ADR-0024 epistemic boundaries) | `PASS` API/UI contract | N/A | `PASS` full-stack Chromium flow; `PASS` current-component stale-context Chromium harness | `READY` for deterministic read-only navigation; `UNAVAILABLE` for ungrounded LLM inference | Every action is bound to an exact snapshot/version and validated again by the client. Pair WHY actions require two current same-chain members; assistant Review navigation can display only a persisted Review and never submits a job. |
 | IT source-field topology joins | `READY` for structural navigation; excluded from P2 mapping | `PASS` | `PASS` | `PASS` resolver unit/HTTP contract + real IT Chromium navigation | `PARTIAL_SOURCE_FIELD_EXACT` for navigation; `UNAVAILABLE` for P2 promotion | The resolver opens only unambiguous source fields in the bounded relation tree and returns `p2_mapping_eligible=false`. The real files yield 169,836/258,344 uniquely resolved alarm rows (65.740%), 44,992 multi-resource conflicts, 441 rows touching an ambiguous alias, and 43,106 rows with no alias hit. These exact source-record joins are useful, but their direction and business meaning remain unverified. |
 
 ## NocPro Assistant boundary
@@ -121,14 +121,20 @@ boundary, not a deferred dense fallback.
 ## Closure benchmark and acceptance harness
 
 - `benchmarks/run_benchmark.py` measures the current real-export Tier-1 / Tier-2 exact matrix.
+- `benchmarks/run_isolated_closure_benchmark.py` measures attribution and
+  deletion separately on the 1,072-member raw-export chain, plus cross-chain
+  merge evidence and Review serialization on the frozen synthetic merge
+  fixture. It persists all 20 raw timing samples per operation with an explicit
+  scope; synthetic measurements are never promoted to production evidence.
 - `benchmarks/run_closure_benchmark.py` projects only persisted benchmark
-  artifacts into the complete closure manifest. It intentionally records
-  attribution/deletion, merge-cross-evidence, serialization, and persistence
-  as `NOT_RUN` when no isolated timing exists; it never manufactures a number
-  from a parent operation or a source-code constant. A measurement is accepted
-  only with finite non-negative P50/P95 values, `P50 <= P95`, explicit positive
-  repetitions, and an explicit P95-reliability flag; missing fields never
-  default to a reliable P95 or 20 repetitions.
+  artifacts into the complete closure manifest. Attribution/deletion,
+  merge-cross-evidence, serialization, and PostgreSQL persistence now have
+  isolated measurements; if their artifacts or required fields are absent,
+  they return `NOT_RUN` or invalid evidence rather than inheriting a parent
+  operation's timing. A measurement is accepted only with finite non-negative
+  P50/P95 values, `P50 <= P95`, explicit positive repetitions, and an explicit
+  P95-reliability flag; missing fields never default to a reliable P95 or 20
+  repetitions.
 - `tests/spec_sanity/test_tier1_execution_boundary.py` pins the 1072-member
   anti-all-pairs invariant.
 - `tests/e2e/check_closure_acceptance.sh` validates the full acceptance inputs
@@ -148,11 +154,15 @@ synthetic_temporal_topology_v1
 `run_acceptance.sh` runs the explicit T_delay synthetic model/Pair WHY suite
 with its authoritative test adapter alongside the Kafka/PostgreSQL stages.
 It deliberately does **not** make the container's production-shaped baseline
-invent taxonomy; that baseline remains fail-closed. The Docker acceptance run
-passed on 2026-09-04: migration/runtime failure tests (6), P2 Kafka tests (3),
-Evolution Chromium (1), H/T_delay model tests (18), Counterfactual
-Kafka/PostgreSQL/restart (1), Counterfactual Chromium (1), raw-export replay,
-and generic Pair WHY Chromium/operator flow.
+invent taxonomy; that baseline remains fail-closed. The latest full-stack Docker
+acceptance run passed on 2026-09-05: migration/runtime failure tests (`6/6`),
+P2 Kafka tests (`3/3`), Evolution Chromium (`1/1`), H/T_delay model tests
+(`18/18`), Counterfactual Kafka/PostgreSQL/restart (`1/1`), Counterfactual
+Chromium (`1/1`), Assistant Chromium (`1/1`), real-topology Chromium (`1/1`),
+raw-export replay, IP `Dep_hop`, and generic Pair WHY Chromium/operator flow
+(`2/2`). Snapshot `acceptance-real-20260905T164924Z` was used, and the
+1,072-member Tier-1B request completed in `0.875132 s`. Cleanup removed the
+isolated containers, network, and PostgreSQL volume.
 The raw-export replay path uses
 `nocpro-mock/datasets/raw/alarm/alarm_data.csv` when that file is mounted into
 the Docker producer. H/T_delay Pair WHY through the production-shaped
@@ -209,9 +219,15 @@ The persisted synthetic Review benchmark artifact
 (`benchmarks/results/counterfactual-latest.json`) ran 20 repetitions per
 operation: `REMOVE`, `SPLIT`, `MOVE`, and `MERGE` all retained exact repair
 accuracy, ARI, and AMI of `1.0`; combined Review latency P50/P95 was
-`0.2444 s` / `0.6711 s`. This is synthetic correctness/performance only. A separate local
-Docker runtime benchmark restarted the API 20 times and then hydrated the
-persisted MOVE Review on every restart: restart-to-health P50/P95 was `1.2203 s`
-/ `1.2261 s`, and repository-backed Review hydration P50/P95 was `0.0472 s` /
-`0.0710 s`. Those timings are acceptance-stack characterisation, not a
-production SLO.
+`0.2444 s` / `0.6711 s`. The isolated closure artifact adds 20 observations
+per missing internal operation: raw-chain attribution P50/P95 was `0.0132 s` /
+`0.0134 s`; its deletion curve was `0.0016 s` / `0.0016 s`; synthetic merge
+cross-chain evidence was `0.0055 s` / `0.0055 s`; and Review serialization was
+`0.00014 s` / `0.00017 s`. These retain their raw-export or synthetic scope.
+
+The 2026-09-05 local Docker runtime benchmark measured 20 committed Review
+writes with repository read-back before restarting the API 20 times and
+hydrating the persisted MOVE Review after each restart. Review persistence
+P50/P95 was `0.0118 s` / `0.0533 s`; restart-to-health was `1.0289 s` /
+`1.0339 s`; and repository-backed hydration was `0.0401 s` / `0.0515 s`.
+Those timings are acceptance-stack characterisation, not a production SLO.
