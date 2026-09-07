@@ -2,28 +2,60 @@ import { expect, test } from '@playwright/test'
 
 type ChainSummary = { chain_id: string; member_count: number }
 
+async function openChain(page: import('@playwright/test').Page, chainId: string) {
+  await page.getByRole('button', { name: 'Chains Explorer' }).click()
+  const row = page.getByRole('row').filter({
+    has: page.getByRole('cell', { name: chainId, exact: true }),
+  })
+  await row.getByRole('button', { name: 'Inspect →' }).click()
+}
+
 async function selectPairContext(page: import('@playwright/test').Page) {
   const response = await page.request.get('/api/v1/chains')
   expect(response.ok()).toBeTruthy()
   const inventory = await response.json() as { chains: ChainSummary[] }
-  const chain = inventory.chains.find((item) => item.member_count >= 2 && item.member_count <= 9)
+  const chain = inventory.chains.find((item) => item.member_count >= 3 && item.member_count <= 9)
   expect(chain, 'active snapshot needs a bounded pair chain').toBeDefined()
 
   await page.goto('/')
-  await page.getByLabel('Select alarm chain').selectOption(chain!.chain_id)
-  await page.getByRole('button', { name: 'Chain Tree' }).click()
-  const compareControls = page.getByLabel('Hierarchical alarm chain tree').locator('.node-compare-btn')
-  await compareControls.nth(0).click()
+  await openChain(page, chain!.chain_id)
+  await page.getByRole('button', { name: 'WHY Grouped' }).click()
+  await page.getByText('Scope:', { exact: true }).click()
+  await page.getByText('Pair', { exact: true }).last().click()
+  const members = await page.getByLabel('Pair endpoint A').locator('option').evaluateAll(options =>
+    options.map(option => (option as HTMLOptionElement).value).filter(Boolean),
+  )
+  expect(members.length).toBeGreaterThanOrEqual(2)
+  await page.getByLabel('Pair endpoint A').selectOption(members[0])
   await Promise.all([
     page.waitForResponse((item) => item.url().includes('/pairs/') && item.ok()),
-    compareControls.nth(1).click(),
+    page.getByLabel('Pair endpoint B').selectOption(members[1]),
   ])
   await page.getByRole('button', { name: 'NocPro Assistant' }).click()
 }
 
+async function changePairEndpoint(page: import('@playwright/test').Page) {
+  await page.getByRole('button', { name: 'Đóng chat' }).click()
+  const endpointB = page.getByLabel('Pair endpoint B')
+  const current = await endpointB.inputValue()
+  const endpointA = await page.getByLabel('Pair endpoint A').inputValue()
+  const replacement = await endpointB.locator('option').evaluateAll(
+    (options, excluded) => options
+      .map(option => (option as HTMLOptionElement).value)
+      .find(value => Boolean(value) && !(excluded as string[]).includes(value)),
+    [current, endpointA],
+  )
+  expect(replacement, 'pair-chain fixture needs a third distinct endpoint').toBeTruthy()
+  await endpointB.selectOption(replacement!)
+}
+
 test('NocPro Assistant is snapshot-bound, read-only, and navigates with typed actions', async ({ page }) => {
+  const inventoryResponse = await page.request.get('/api/v1/chains')
+  expect(inventoryResponse.ok()).toBeTruthy()
+  const inventory = await inventoryResponse.json() as { snapshot_id: string; snapshot_version: string }
   const consoleErrors: string[] = []
-  const expectedMissingReviewResponses: string[] = []
+  const reviewReadResponses: string[] = []
+  const missingReviewResponses: string[] = []
   const mutationRequests: string[] = []
   page.on('console', (message) => {
     if (message.type() === 'error') consoleErrors.push(message.text())
@@ -35,15 +67,17 @@ test('NocPro Assistant is snapshot-bound, read-only, and navigates with typed ac
     )) mutationRequests.push(`${request.method()} ${url}`)
   })
   page.on('response', (response) => {
-    if (
-      response.status() === 404
-      && /\/api\/v1\/chains\/[^/]+\/review$/.test(new URL(response.url()).pathname)
-    ) {
-      expectedMissingReviewResponses.push(response.url())
+    if (/\/api\/v1\/chains\/[^/]+\/review$/.test(new URL(response.url()).pathname)) {
+      reviewReadResponses.push(response.url())
+      if (response.status() === 404) missingReviewResponses.push(response.url())
     }
   })
 
   await page.goto('/')
+  await expect(page.getByRole('main').getByText(
+    `${inventory.snapshot_id}@${inventory.snapshot_version}`,
+    { exact: true },
+  )).toBeVisible()
   await page.getByRole('button', { name: 'NocPro Assistant' }).click()
   await expect(page.getByRole('heading', { name: 'NocPro Assistant' })).toBeVisible()
   await expect(page.getByText('Assistant không thay đổi analysis')).toBeVisible()
@@ -65,7 +99,7 @@ test('NocPro Assistant is snapshot-bound, read-only, and navigates with typed ac
     page.getByRole('button', { name: 'Hỏi' }).click(),
   ])
   await page.getByRole('button', { name: 'Open Structural Audit' }).click()
-  await expect(page.getByRole('button', { name: 'Structure' })).toHaveClass(/is-active/)
+  await expect(page.getByRole('button', { name: 'Audit & Structure' })).toHaveClass(/bg-secondary/)
 
   await page.getByRole('button', { name: 'NocPro Assistant' }).click()
   await query.fill('Open review')
@@ -74,10 +108,10 @@ test('NocPro Assistant is snapshot-bound, read-only, and navigates with typed ac
     page.getByRole('button', { name: 'Hỏi' }).click(),
   ])
   await page.getByRole('button', { name: 'Open Counterfactual Review' }).click()
-  await expect(page.getByRole('button', { name: 'Review' })).toHaveClass(/is-active/)
+  await expect(page.getByRole('button', { name: 'Recommendations' })).toHaveClass(/bg-secondary/)
   await expect(page.getByRole('heading', { name: 'No persisted Counterfactual Review is available.' })).toBeVisible()
   expect(mutationRequests, 'Assistant navigation must not start analysis or mutate Review/feedback').toEqual([])
-  expect(expectedMissingReviewResponses, 'read-only navigation must probe exactly one persisted Review').toHaveLength(1)
+  expect(reviewReadResponses, 'read-only navigation must fetch exactly one persisted Review').toHaveLength(1)
   const expected404Messages = consoleErrors.filter((message) => (
     message === 'Failed to load resource: the server responded with a status of 404 (Not Found)'
   ))
@@ -88,7 +122,7 @@ test('NocPro Assistant is snapshot-bound, read-only, and navigates with typed ac
   expect(
     expected404Messages.length,
     'the browser may log at most the one expected missing persisted-Review probe',
-  ).toBeLessThanOrEqual(expectedMissingReviewResponses.length)
+  ).toBeLessThanOrEqual(missingReviewResponses.length)
 })
 
 test('Assistant hides completed and delayed responses when pair context changes', async ({ page }) => {
@@ -105,8 +139,9 @@ test('Assistant hides completed and delayed responses when pair context changes'
     page.getByRole('button', { name: 'Hỏi' }).click(),
   ])
   await expect(page.locator('.assistant-result')).toBeVisible()
-  await page.getByRole('button', { name: 'Close pair comparison' }).click()
-  await expect(page.locator('.assistant-result')).toBeHidden()
+  await changePairEndpoint(page)
+  await page.getByRole('button', { name: 'NocPro Assistant' }).click()
+  await expect(page.locator('.assistant-result')).toHaveCount(0)
 
   await selectPairContext(page)
   let releaseResponse!: () => void
@@ -133,10 +168,11 @@ test('Assistant hides completed and delayed responses when pair context changes'
   await query.fill('Open Pair WHY')
   await page.getByRole('button', { name: 'Hỏi' }).click()
   await requestGate
-  await page.getByRole('button', { name: 'Close pair comparison' }).click()
+  await changePairEndpoint(page)
   releaseResponse()
   await finishedGate
   await page.waitForTimeout(100)
+  await page.getByRole('button', { name: 'NocPro Assistant' }).click()
   await expect(page.getByText('STALE_PAIR_RESPONSE_MUST_NOT_RENDER')).toBeHidden()
   expect(consoleProblems, 'context change must not produce browser errors or warnings').toEqual([])
 })

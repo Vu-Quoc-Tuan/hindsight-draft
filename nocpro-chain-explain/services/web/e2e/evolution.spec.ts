@@ -22,7 +22,11 @@ test('synthetic verified sequence renders persisted Evolution without production
     if (message.type() === 'error') consoleErrors.push(message.text())
   })
   await page.goto('/')
-  await page.getByLabel('Select alarm chain').selectOption(chainId)
+  await page.getByRole('button', { name: 'Chains Explorer' }).click()
+  const row = page.getByRole('row').filter({
+    has: page.getByRole('cell', { name: chainId, exact: true }),
+  })
+  await row.getByRole('button', { name: 'Inspect →' }).click()
   await page.getByRole('button', { name: 'Evolution' }).click()
 
   const panel = page.getByLabel('Persisted chain evolution')

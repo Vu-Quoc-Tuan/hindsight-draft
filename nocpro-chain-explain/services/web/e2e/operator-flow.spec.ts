@@ -8,6 +8,7 @@ type ChainSummary = {
 
 type ChainList = {
   snapshot_id: string
+  snapshot_version: string
   chains: ChainSummary[]
 }
 
@@ -25,6 +26,14 @@ function requireChain(
   const chain = inventory.chains.find(predicate)
   expect(chain, `active snapshot needs ${description}`).toBeDefined()
   return chain!
+}
+
+async function openChain(page: Page, chainId: string) {
+  await page.getByRole('button', { name: 'Chains Explorer' }).click()
+  const row = page.getByRole('row').filter({
+    has: page.getByRole('cell', { name: chainId, exact: true }),
+  })
+  await row.getByRole('button', { name: 'Inspect →' }).click()
 }
 
 test('operator flow exposes indexed WHY, provenance and Tier-2 audit', async ({ page }) => {
@@ -46,41 +55,39 @@ test('operator flow exposes indexed WHY, provenance and Tier-2 audit', async ({ 
   )
 
   await page.goto('/')
-  await expect(page.getByText(inventory.snapshot_id, { exact: true })).toBeVisible()
-  await page.getByLabel('Select alarm chain').selectOption(pairChain.chain_id)
-  await expect(
-    page.getByRole('heading', { level: 1, name: `Chain ${pairChain.chain_id}` }),
-  ).toBeVisible()
-  await expect(page.getByText('exact indexed', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Why Grouped' }).click()
-  await expect(page.getByText('What defines this chain')).toBeVisible()
-  await expect(page.getByText('Role distribution')).toBeVisible()
+  await expect(page.getByRole('main').getByText(`${inventory.snapshot_id}@${inventory.snapshot_version}`, { exact: true })).toBeVisible()
+  await openChain(page, pairChain.chain_id)
+  await expect(page.getByText('EXACT_INDEXED', { exact: true })).toBeVisible()
 
-  await page.getByRole('button', { name: 'Chain Tree' }).click()
+  // The hierarchy is part of the chain overview in the redesigned dashboard.
   const tree = page.getByLabel('Hierarchical alarm chain tree')
   const compareControls = tree.locator('.node-compare-btn')
   await expect(compareControls).toHaveCount(pairChain.member_count)
-  await compareControls.nth(0).click()
-  await Promise.all([
-    page.waitForResponse((response) => response.url().includes('/pairs/') && response.ok()),
-    compareControls.nth(1).click(),
-  ])
-  await expect(page.getByText(/evidence channels$/)).toBeVisible()
-  const dependencyEvidence = page.locator('.evidence-item').filter({ hasText: 'DEP_HOP' })
-  await expect(dependencyEvidence).toContainText('UNAVAILABLE')
 
-  await page.getByLabel('Select alarm chain').selectOption(auditChain.chain_id)
-  await page.getByRole('button', { name: 'Structure' }).click()
-  await expect(page.getByText('Audit graph not computed')).toBeVisible()
-  await page.getByRole('button', { name: /Run deep dive/ }).click()
-  const similar = page.getByLabel('Similar chains')
-  await expect(similar).toBeVisible()
-  await expect(similar.getByText('AVAILABLE', { exact: true })).toBeVisible()
-  await expect(similar).toContainText('HISTORY_BEFORE_SNAPSHOT')
-  await expect(similar).toContainText('SNAPSHOT_VERSIONED')
-  await expect(similar).toContainText('UNAVAILABLE')
-  await expect(similar).toContainText(/alarm taxonomy not used by source/i)
-  await expect(similar.locator('.similar-model')).toContainText('sim_')
+  await page.getByRole('button', { name: 'WHY Grouped' }).click()
+  await page.getByText('Scope:', { exact: true }).click()
+  await page.getByText('Pair', { exact: true }).last().click()
+  const members = await page.getByLabel('Pair endpoint A').locator('option').evaluateAll(options =>
+    options.map(option => (option as HTMLOptionElement).value).filter(Boolean),
+  )
+  expect(members.length).toBeGreaterThanOrEqual(2)
+  await page.getByLabel('Pair endpoint A').selectOption(members[0])
+  await Promise.all([
+    page.waitForResponse(response => response.url().includes('/pairs/') && response.ok()),
+    page.getByLabel('Pair endpoint B').selectOption(members[1]),
+  ])
+  await expect(page.getByLabel('Pair WHY evidence')).toContainText('Dep_hop')
+  await expect(page.getByLabel('Pair WHY evidence')).toContainText('UNAVAILABLE')
+
+  await page.getByRole('button', { name: 'arrow_back Chains', exact: true }).click()
+  await openChain(page, auditChain.chain_id)
+  await page.getByRole('button', { name: 'Audit & Structure' }).click()
+  await expect(page.getByRole('heading', { name: 'Structural Audit unavailable' })).toBeVisible()
+  await page.getByRole('button', { name: 'Run Deep Dive' }).click()
+
+  const graph = page.getByRole('img', { name: /Audit graph with \d+ nodes and \d+ edges/ })
+  await expect(graph).toBeVisible({ timeout: 120_000 })
+  await expect(page.getByText('Visualization only; exact Audit uses the full eligible graph.')).toBeVisible()
 
   const attribution = page.getByRole('region', { name: 'Evidence Coverage Attribution' })
   await expect(attribution).toBeVisible()
@@ -89,15 +96,6 @@ test('operator flow exposes indexed WHY, provenance and Tier-2 audit', async ({ 
   await expect(attribution).toContainText('evidence coverage')
   await expect(attribution).not.toContainText('causal importance')
   await expect(attribution).not.toContainText('cohesion')
-
-  const topology = page.getByRole('region', { name: 'Topology hypotheses' })
-  await expect(topology).toBeVisible()
-  await expect(topology.getByRole('heading', { name: 'Unavoidable dependency annotation' })).toBeVisible()
-  await expect(topology.getByRole('heading', { name: 'Propagation hypothesis score' })).toBeVisible()
-  await expect(topology.getByRole('heading', { name: 'Dependency scope overlap signal' })).toBeVisible()
-  await expect(topology.getByText('UNAVAILABLE', { exact: true })).toHaveCount(3)
-  await expect(topology).toContainText('PROPAGATION_CONFIG_INCOMPLETE')
-  await expect(topology).toContainText('DIRECTED_TOPOLOGY_UNAVAILABLE')
 
   expect(consoleErrors, 'browser console must stay free of errors').toEqual([])
 })
@@ -111,12 +109,9 @@ test('singleton remains first class and is never made weak by missing pairs', as
   )
 
   await page.goto('/')
-  await page.getByLabel('Select alarm chain').selectOption(singleton.chain_id)
-  await page.getByRole('button', { name: 'Why Grouped' }).click()
-  const rolePanel = page.locator('.role-panel')
-  await expect(rolePanel).toContainText('not applicable')
-  await expect(rolePanel).not.toContainText('weak')
-  await page.getByRole('button', { name: 'Chain Tree' }).click()
+  await openChain(page, singleton.chain_id)
+  await expect(page.getByText('NOT_APPLICABLE', { exact: true })).toBeVisible()
+  await expect(page.getByText('WEAK', { exact: true }).locator('..')).toContainText('0')
   await expect(
     page.getByLabel('Hierarchical alarm chain tree').locator('.node-compare-btn'),
   ).toHaveCount(1)

@@ -40,7 +40,7 @@ It separates **capability** from evidence that the capability was exercised;
 | `T_delay` full-chain indexed Role contribution | `UNAVAILABLE` | `PASS` fail-closed | N/A | N/A | `UNAVAILABLE` | `NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH`. Dense pairwise fallback is forbidden. |
 | `T_delay` full-chain indexed Audit contribution | `UNAVAILABLE` | `PASS` fail-closed | N/A | N/A | `UNAVAILABLE` | `NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH`. Eligibility metadata does not manufacture an exact indexed statistic. |
 | Structural Audit, attribution, deletion evaluation | `READY` under exact ceilings | `PASS` | `PASS` | `PASS` synthetic Docker stack for Audit/Review; raw 1072-member exact run completed | Input/config-dependent | A one-run local raw-export 1072-member Audit completed in 80.633 s with Audit/Attribution/deletion all exact. This is a measurement, not a P95/SLO. Ceiling exceedance is component `UNAVAILABLE`, not a fabricated approximation or a failed Tier-2 job. |
-| Bounded Audit graph visualization | `READY` (`audit-visualization-v1`, 80 nodes / 160 edges) | `PASS` deterministic projection, isolation, v1/v2 artifact and API hydration suites | `PASS` exact synthetic graph projection | `PASS` scoped Chromium data-truth/mobile/context suite; PostgreSQL runtime test `NOT_RUN` without `TEST_DATABASE_URL` | Input-dependent | Visualization is derived only after exact Audit, persisted in immutable `review-audit-v2`, and read without submitting or recomputing Deep Dive. It never feeds Audit, roles, P2, or Counterfactual. Legacy v1/missing artifacts return explicit `UNAVAILABLE`. |
+| Bounded Audit graph visualization | `READY` (`audit-visualization-v1`, 80 nodes / 160 edges) | `PASS` deterministic projection, isolation, v1/v2 artifact and API hydration suites | `PASS` exact synthetic graph projection | `PASS` full Docker/PostgreSQL restart plus Chromium operator flow | Input-dependent | Visualization is derived only after exact Audit, persisted in immutable `review-audit-v2`, and read without submitting or recomputing Deep Dive. It never feeds Audit, roles, P2, or Counterfactual. Legacy v1/missing artifacts return explicit `UNAVAILABLE`. |
 | Similar Chains | `READY` | `PASS` | `PASS` | `PASS` raw-export replay | Degraded / input-dependent | Raw `group_name` can be used only as an observed source field; it does not establish authoritative production taxonomy. |
 | Evolution v1 persisted lineage projection | `READY` | `PASS` | `PASS` | `PASS` synthetic Docker stack | `BLOCKED_BY_DATA_AVAILABILITY` | The sequence slicer creates `DERIVED_REPLAY` windows from one export; production evolution requires verified sequential upstream snapshots. |
 | Directed topology P2 semantics | `READY` only for compatible synthetic inputs | `PASS` | `PASS` | `PASS` synthetic Docker stack | `UNAVAILABLE` | IP is structural adjacency and IT is unverified source relation. Display hierarchy never supplies dependency direction, active paths, dominators, propagation, or failure domains. |
@@ -179,14 +179,17 @@ synthetic_temporal_topology_v1
 with its authoritative test adapter alongside the Kafka/PostgreSQL stages.
 It deliberately does **not** make the container's production-shaped baseline
 invent taxonomy; that baseline remains fail-closed. The latest full-stack Docker
-acceptance run passed on 2026-09-06: migration/runtime failure tests (`6/6`),
+acceptance run passed on 2026-09-07: migration/runtime failure tests (`7/7`),
 P2 Kafka tests (`3/3`), Evolution Chromium (`1/1`), H/T_delay model tests
-(`21/21`), Counterfactual Kafka/PostgreSQL/restart (`1/1`), Counterfactual
+(`26/26`), Counterfactual Kafka/PostgreSQL/restart (`1/1`), Counterfactual
 Chromium (`1/1`), Assistant Chromium (`2/2`, including stale-context suppression),
 real-topology Chromium (`1/1`),
 raw-export replay, IP `Dep_hop`, and generic Pair WHY Chromium/operator flow
-(`2/2`). Snapshot `acceptance-real-20260906T035108Z` was used, and the
-1,072-member Tier-1B request completed in `1.489519 s`. Cleanup removed the
+(`2/2`). Snapshot `acceptance-real-20260907T014600Z` was used, and the
+1,072-member Tier-1B request completed in `1.089319 s`. The operator flow also
+loaded the bounded Audit visualization after exact Deep Dive, and the
+PostgreSQL-backed exact Audit artifact survived API recreation with a valid
+fingerprint. Cleanup removed the
 isolated containers, network, and PostgreSQL volume.
 The raw-export replay path uses
 `nocpro-mock/datasets/raw/alarm/alarm_data.csv` when that file is mounted into
@@ -250,9 +253,9 @@ per missing internal operation: raw-chain attribution P50/P95 was `0.0132 s` /
 cross-chain evidence was `0.0055 s` / `0.0055 s`; and Review serialization was
 `0.00014 s` / `0.00017 s`. These retain their raw-export or synthetic scope.
 
-The 2026-09-06 local Docker runtime benchmark measured 20 committed Review
+The 2026-09-07 local Docker runtime benchmark measured 20 committed Review
 writes with repository read-back before restarting the API 20 times and
 hydrating the persisted MOVE Review after each restart. Review persistence
-P50/P95 was `0.0135 s` / `0.0576 s`; restart-to-health was `1.0305 s` /
-`1.2297 s`; and repository-backed hydration was `0.0416 s` / `0.0548 s`.
+P50/P95 was `0.0094 s` / `0.0108 s`; restart-to-health was `1.0186 s` /
+`1.2182 s`; and repository-backed hydration was `0.0426 s` / `0.0516 s`.
 Those timings are acceptance-stack characterisation, not a production SLO.
