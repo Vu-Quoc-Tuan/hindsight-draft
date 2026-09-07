@@ -1,3 +1,5 @@
+export type WhyScope = 'Chain' | 'Member' | 'Pair' | 'Group'
+
 export type ChainSummary = {
   chain_id: string
   member_count: number

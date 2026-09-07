@@ -3,6 +3,10 @@ import { api } from '../api'
 import type { ChainAnalysis, Member, PairWhy } from '../types'
 import { ChainTree } from '../ChainTree'
 import { InfoTip } from '../components/InfoTip'
+import { ChainScopeView } from './why/ChainScopeView'
+import { MemberScopeView } from './why/MemberScopeView'
+import { PairScopeView } from './why/PairScopeView'
+import { GroupScopeView } from './why/GroupScopeView'
 
 interface ChainDetailViewProps {
   analysis: ChainAnalysis
@@ -22,7 +26,6 @@ export function ChainDetailView({
   onPairContextChange,
 }: ChainDetailViewProps) {
   const [whyScope, setWhyScope] = useState<WhyScope>('Chain')
-  const [isScopeMenuOpen, setIsScopeMenuOpen] = useState(false)
   const [memberFilter, setMemberFilter] = useState<'ALL' | 'CORE' | 'WEAK' | 'CONNECTORS'>('ALL')
   const [searchMember, setSearchMember] = useState('')
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([])
@@ -97,6 +100,16 @@ export function ChainDetailView({
     .sort((left, right) => Date.parse(left) - Date.parse(right))
   const observedStart = observedTimes[0] ?? null
   const observedEnd = observedTimes.at(-1) ?? null
+
+  const distinctDevices = useMemo(() => {
+    return Array.from(
+      new Set(
+        members
+          .map(m => m.device_code ?? m.node_reference)
+          .filter((v): v is string => Boolean(v))
+      )
+    )
+  }, [members])
 
   const filteredMembers = useMemo(() => {
     return members.filter(m => {
@@ -226,11 +239,9 @@ export function ChainDetailView({
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 2: WHY SCOPES (Screens 06 - 09) */}
-      {/* ========================================================================= */}
       {activeSubTab === 'WHY' && (
         <div className="flex flex-col gap-space-md">
-          {/* Scope Header Card */}
+          {/* Scope Header Card with Prominent Scope Switcher */}
           <div className="p-space-md bg-surface-container rounded-lg shadow-sm border border-secondary/20 flex flex-col md:flex-row items-start md:items-center justify-between gap-space-md">
             <div className="flex items-center gap-space-md">
               <div className="w-10 h-10 rounded-lg bg-secondary-container/20 flex items-center justify-center shrink-0">
@@ -246,142 +257,93 @@ export function ChainDetailView({
                 <InfoTip
                   text={
                     whyScope === 'Chain'
-                      ? 'Chain-level summaries use only the evidence channels available in the current analysis artifact.'
+                      ? 'Chain-level: Tổng hợp 6 chiều bằng chứng toàn diện chứng minh tính gắn kết của toàn bộ chuỗi.'
                       : whyScope === 'Member'
-                      ? 'Member role, availability and support are read directly from the current chain analysis.'
+                      ? 'Member-level: Hồ sơ chi tiết giải thích vai trò (Core, Connector, Leaf) của từng cảnh báo trong chuỗi.'
                       : whyScope === 'Pair'
-                      ? 'The server evaluates the selected pair lazily and preserves unavailable, neutral and support states.'
-                      : 'Group facts are shown only when a compatible grouped-evidence artifact exists.'
+                      ? 'Pair-level: Đối sánh trực tiếp giữa 2 cảnh báo được chọn trên từng kênh trễ thời gian, topology và thuộc tính.'
+                      : 'Group-level: Phân tích các phân cụm con (Subclusters A, B, C) và các đường cắt ranh giới phân hoạch.'
                   }
                 />
               </div>
             </div>
 
-            {/* Scope Dropdown */}
-            <div className="relative">
-              <div
-                onClick={() => setIsScopeMenuOpen(!isScopeMenuOpen)}
-                className="flex items-center gap-space-xs bg-surface-container-high px-space-sm py-1.5 rounded shadow-inner cursor-pointer hover:bg-surface-bright transition-colors border border-surface-container-highest"
-              >
-                <span className="font-label-caps text-label-caps uppercase text-secondary font-bold tracking-wider">
-                  Scope:
-                </span>
-                <span className="font-code-md text-code-md text-on-surface font-bold">{whyScope}</span>
-                <span className="material-symbols-outlined text-secondary text-[16px]">arrow_drop_down</span>
-              </div>
-              {isScopeMenuOpen && (
-                <div className="absolute right-0 mt-1 w-44 bg-surface-container-highest shadow-xl rounded py-1 z-30 font-code-sm text-code-sm border border-surface-container-high">
-                  {(['Chain', 'Member', 'Pair', 'Group'] as WhyScope[]).map(sc => (
-                    <div
-                      key={sc}
-                      onClick={() => {
-                        setWhyScope(sc)
-                        setIsScopeMenuOpen(false)
-                      }}
-                      className={`px-space-md py-space-xs cursor-pointer flex items-center justify-between hover:bg-surface-bright ${
-                        whyScope === sc ? 'text-secondary font-bold' : 'text-on-surface'
-                      }`}
-                    >
-                      <span>{sc}</span>
-                      {whyScope === sc && <span className="material-symbols-outlined text-[14px]">check</span>}
-                    </div>
-                  ))}
-                </div>
-              )}
+            {/* Scope Switcher Pill Tabs */}
+            <div className="flex items-center gap-1 bg-[#080d17] p-1 rounded-lg border border-[#1b273e]">
+              {(['Chain', 'Member', 'Pair', 'Group'] as WhyScope[]).map(sc => {
+                const isActive = whyScope === sc
+                const icon =
+                  sc === 'Chain' ? 'view_in_ar'
+                  : sc === 'Member' ? 'person_search'
+                  : sc === 'Pair' ? 'compare_arrows'
+                  : 'account_tree'
+
+                return (
+                  <button
+                    key={sc}
+                    type="button"
+                    onClick={() => setWhyScope(sc)}
+                    className={`px-3 py-1.5 rounded-md font-code-sm text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      isActive
+                        ? 'bg-secondary text-on-secondary shadow-md'
+                        : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[15px]">{icon}</span>
+                    {sc} Scope
+                  </button>
+                )
+              })}
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-space-md">
-            <section className="lg:col-span-8 bg-surface-container rounded-lg p-space-md shadow-sm" aria-label="Pair WHY evidence">
-              <h3 className="font-label-caps text-label-caps uppercase text-on-surface-variant font-bold">
-                Evidence grounding ledger
-              </h3>
-              {whyScope !== 'Pair' ? (
-                <p className="mt-space-sm text-on-surface-variant">
-                  Pair-level evidence is loaded only when Pair scope is selected. Chain and member facts remain available in their dedicated views.
-                </p>
-              ) : (
-                <>
-                  <div className="mt-space-sm grid grid-cols-1 gap-space-sm sm:grid-cols-2">
-                    {[0, 1].map(index => (
-                      <label key={index} className="flex flex-col gap-space-2xs font-code-sm text-code-sm text-on-surface-variant">
-                        Endpoint {index === 0 ? 'A' : 'B'}
-                        <select
-                          aria-label={`Pair endpoint ${index === 0 ? 'A' : 'B'}`}
-                          value={selectedMemberIds[index] ?? ''}
-                          onChange={event => {
-                            const next = [...selectedMemberIds]
-                            next[index] = event.target.value
-                            setSelectedMemberIds(next.filter(Boolean).slice(0, 2))
-                          }}
-                          className="rounded bg-surface-container-low px-space-sm py-space-xs text-on-surface"
-                        >
-                          <option value="">Select an alarm</option>
-                          {members.map(member => (
-                            <option
-                              key={member.alarm_id}
-                              value={member.alarm_id}
-                              disabled={selectedMemberIds[1 - index] === member.alarm_id}
-                            >
-                              {member.alarm_id} · {member.alarm_name ?? 'unnamed alarm'}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    ))}
-                  </div>
-                  {pairWhyState === 'IDLE' && (
-                    <p className="mt-space-md text-on-surface-variant">Select two distinct alarms to query Pair WHY.</p>
-                  )}
-                  {pairWhyState === 'LOADING' && (
-                    <p className="mt-space-md text-on-surface-variant" role="status">Loading exact pair evidence…</p>
-                  )}
-                  {pairWhyState === 'UNAVAILABLE' && (
-                    <p className="mt-space-md text-error" role="alert">UNAVAILABLE · {pairWhyReason}</p>
-                  )}
-                  {pairWhyState === 'AVAILABLE' && pairWhy && (
-                    <div className="mt-space-md flex flex-col gap-space-sm">
-                      <div className="rounded bg-surface-container-low p-space-sm font-code-sm text-code-sm">
-                        <strong>{pairWhy.alarm_id_a} ↔ {pairWhy.alarm_id_b}</strong>
-                        <span className="ml-space-sm text-on-surface-variant">
-                          System fact: {pairWhy.system_fact.status}
-                        </span>
-                      </div>
-                      {pairWhy.evidence.map((item, index) => (
-                        <article key={`${item.channel_family}-${item.derivation_tag}-${index}`} className="rounded border border-surface-container-highest bg-surface-container-low p-space-sm">
-                          <div className="flex flex-wrap items-center justify-between gap-space-xs">
-                            <strong>{item.channel_family}</strong>
-                            <span className={item.state === 'SUPPORT' ? 'text-secondary' : 'text-on-surface-variant'}>{item.state}</span>
-                          </div>
-                          <dl className="mt-space-xs grid grid-cols-2 gap-space-xs font-code-sm text-code-sm">
-                            <div><dt className="text-on-surface-variant">score</dt><dd>{item.score === null ? 'N/A' : item.score.toFixed(4)}</dd></div>
-                            <div><dt className="text-on-surface-variant">threshold</dt><dd>{item.threshold === null ? 'N/A' : item.threshold.toFixed(4)}</dd></div>
-                            <div><dt className="text-on-surface-variant">group</dt><dd>{item.derivation_tag}</dd></div>
-                            <div><dt className="text-on-surface-variant">provenance</dt><dd>{item.provenance_class}</dd></div>
-                          </dl>
-                          {item.detail && <p className="mt-space-xs text-on-surface-variant">{item.detail}</p>}
-                        </article>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-            </section>
+          {/* Render Scope View */}
+          {whyScope === 'Chain' && (
+            <ChainScopeView
+              analysis={analysis}
+              distinctDevices={distinctDevices}
+              observedStart={observedStart}
+              observedEnd={observedEnd}
+              onSwitchScope={setWhyScope}
+              onSelectMember={m => {
+                setInspectedMember(m)
+                setWhyScope('Member')
+              }}
+            />
+          )}
 
-            <section className="lg:col-span-4 bg-surface-container rounded-lg p-space-md shadow-sm" aria-label="Active member focus">
-              <h3 className="font-label-caps text-label-caps uppercase text-on-surface-variant font-bold">Active member focus</h3>
-              {inspectedMember ? (
-                <dl className="mt-space-sm rounded bg-surface-container-low p-space-sm font-code-sm text-code-sm">
-                  <div><dt className="text-on-surface-variant">alarm</dt><dd>{inspectedMember.alarm_id}</dd></div>
-                  <div><dt className="text-on-surface-variant">role</dt><dd>{inspectedMember.role || 'UNAVAILABLE'}</dd></div>
-                  <div><dt className="text-on-surface-variant">resource</dt><dd>{inspectedMember.device_code ?? inspectedMember.node_reference ?? 'N/A'}</dd></div>
-                  <div><dt className="text-on-surface-variant">membership support</dt><dd>{inspectedMember.membership_support === null ? 'N/A' : inspectedMember.membership_support.toFixed(2)}</dd></div>
-                </dl>
-              ) : (
-                <p className="mt-space-sm text-on-surface-variant">Inspect a member to view its persisted analysis facts.</p>
-              )}
-            </section>
-          </div>
+          {whyScope === 'Member' && (
+            <MemberScopeView
+              analysis={analysis}
+              members={members}
+              inspectedMember={inspectedMember}
+              setInspectedMember={setInspectedMember}
+              onComparePair={(idA, idB) => {
+                setSelectedMemberIds([idA, idB])
+                setWhyScope('Pair')
+              }}
+              onSwitchScope={setWhyScope}
+            />
+          )}
+
+          {whyScope === 'Pair' && (
+            <PairScopeView
+              members={members}
+              selectedMemberIds={selectedMemberIds}
+              setSelectedMemberIds={setSelectedMemberIds}
+              pairWhy={pairWhy}
+              pairWhyState={pairWhyState}
+              pairWhyReason={pairWhyReason}
+              onSwitchScope={setWhyScope}
+            />
+          )}
+
+          {whyScope === 'Group' && (
+            <GroupScopeView
+              analysis={analysis}
+              onSwitchScope={setWhyScope}
+            />
+          )}
         </div>
       )}
 

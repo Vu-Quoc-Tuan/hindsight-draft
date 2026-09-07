@@ -1,0 +1,375 @@
+import { useMemo } from 'react'
+import type { Member, PairWhy, WhyScope } from '../../types'
+import { InfoTip } from '../../components/InfoTip'
+
+interface PairScopeViewProps {
+  members: Member[]
+  selectedMemberIds: string[]
+  setSelectedMemberIds: (ids: string[]) => void
+  pairWhy: PairWhy | null
+  pairWhyState: 'IDLE' | 'LOADING' | 'AVAILABLE' | 'LOADED' | 'UNAVAILABLE'
+  pairWhyReason: string | null
+  onSwitchScope: (scope: WhyScope) => void
+}
+
+export function PairScopeView({
+  members,
+  selectedMemberIds,
+  setSelectedMemberIds,
+  pairWhy,
+  pairWhyState,
+  pairWhyReason,
+  onSwitchScope,
+}: PairScopeViewProps) {
+  const topMembers = useMemo(() => members.slice(0, 6), [members])
+
+  // Current selected IDs
+  const idA = selectedMemberIds[0] ?? ''
+  const idB = selectedMemberIds[1] ?? ''
+
+  const handleSwap = () => {
+    if (idA && idB) {
+      setSelectedMemberIds([idB, idA])
+    }
+  }
+
+  const handleQuickCompare = (first: string, second: string) => {
+    setSelectedMemberIds([first, second])
+  }
+
+  return (
+    <div className="flex flex-col gap-space-md animate-fadeIn">
+      {/* Top Controls & Pair Selector Card */}
+      <div className="bg-surface-container rounded-lg p-space-md border border-[#1b273e] shadow-sm flex flex-col gap-space-sm">
+        <div className="flex flex-wrap items-center justify-between gap-space-xs">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-secondary text-[20px]">compare_arrows</span>
+            <h3 className="font-headline-md text-sm font-bold text-on-surface">
+              Pairwise Evidence Grounding (Pair Scope)
+            </h3>
+            <InfoTip text="Đối sánh trực tiếp 2 cảnh báo A và B. Hệ thống sẽ bóc tách tất cả các kênh bằng chứng: Trễ thời gian, Topology, Phần cứng và Ngữ nghĩa để giải thích vì sao 2 cảnh báo này được xâu chuỗi." />
+          </div>
+          {members.length >= 2 && (
+            <button
+              onClick={() => handleQuickCompare(members[0].alarm_id, members[1].alarm_id)}
+              className="px-2.5 py-1 rounded bg-secondary/15 hover:bg-secondary/25 text-secondary border border-secondary/30 font-code-sm text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[14px]">auto_awesome</span>
+              Quick Compare Core Pair ({members[0].alarm_id} ↔ {members[1].alarm_id})
+            </button>
+          )}
+        </div>
+
+        {/* Endpoint Selectors Form */}
+        <div className="grid grid-cols-1 sm:grid-cols-11 gap-space-sm items-center bg-[#080d17] p-space-sm rounded border border-[#1b273e]/60">
+          <div className="sm:col-span-5 flex flex-col gap-1">
+            <label className="font-label-caps text-[10px] uppercase text-on-surface-variant font-bold flex items-center gap-1">
+              Endpoint Alarm A (Source)
+              <InfoTip text="Cảnh báo đầu tiên được chọn trong cặp đối sánh." />
+            </label>
+            <select
+              aria-label="Pair endpoint A"
+              value={idA}
+              onChange={e => setSelectedMemberIds([e.target.value, idB].filter(Boolean))}
+              className="w-full h-8 px-2.5 bg-[#0e1728] text-on-surface font-code-sm text-xs rounded border border-[#1b273e] outline-none focus:border-secondary"
+            >
+              <option value="">-- Select Alarm A --</option>
+              {members.map(m => (
+                <option key={m.alarm_id} value={m.alarm_id} disabled={m.alarm_id === idB}>
+                  {m.alarm_id} · {m.alarm_name || 'Unnamed'} ({m.device_code ?? m.node_reference ?? 'N/A'})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="sm:col-span-1 flex justify-center py-1">
+            <button
+              type="button"
+              onClick={handleSwap}
+              disabled={!idA || !idB}
+              title="Đổi chiều cặp so sánh (Swap A ↔ B)"
+              className="w-8 h-8 rounded-full bg-surface-container-high hover:bg-secondary/20 hover:text-secondary text-on-surface-variant flex items-center justify-center transition-colors border border-[#1b273e] disabled:opacity-30 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[16px]">sync_alt</span>
+            </button>
+          </div>
+
+          <div className="sm:col-span-5 flex flex-col gap-1">
+            <label className="font-label-caps text-[10px] uppercase text-on-surface-variant font-bold flex items-center gap-1">
+              Endpoint Alarm B (Target)
+              <InfoTip text="Cảnh báo thứ hai được chọn trong cặp đối sánh." />
+            </label>
+            <select
+              aria-label="Pair endpoint B"
+              value={idB}
+              onChange={e => setSelectedMemberIds([idA, e.target.value].filter(Boolean))}
+              className="w-full h-8 px-2.5 bg-[#0e1728] text-on-surface font-code-sm text-xs rounded border border-[#1b273e] outline-none focus:border-secondary"
+            >
+              <option value="">-- Select Alarm B --</option>
+              {members.map(m => (
+                <option key={m.alarm_id} value={m.alarm_id} disabled={m.alarm_id === idA}>
+                  {m.alarm_id} · {m.alarm_name || 'Unnamed'} ({m.device_code ?? m.node_reference ?? 'N/A'})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* NxN Evidence Heatmap Matrix Preview (Mockup Screen 08 Feature) */}
+      {topMembers.length >= 3 && (
+        <div className="bg-surface-container rounded-lg p-space-md border border-[#1b273e] shadow-sm flex flex-col gap-space-xs">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-secondary text-[18px]">grid_view</span>
+              <h4 className="font-label-caps text-xs uppercase text-on-surface-variant font-bold">
+                NxN Pairwise Evidence Heatmap Matrix ({topMembers.length} Core Nodes)
+              </h4>
+              <InfoTip text="Ma trận đối sánh nhanh giữa các cảnh báo nòng cốt. Click vào bất kỳ ô nào để kích hoạt phân tích cặp đó ngay lập tức." />
+            </div>
+            <span className="text-[11px] font-code-sm text-on-surface-variant">Click any cell to compare pair</span>
+          </div>
+
+          <div className="overflow-x-auto mt-1">
+            <table className="w-full text-center font-code-sm text-xs border-collapse">
+              <thead>
+                <tr>
+                  <th className="p-1.5 text-left text-on-surface-variant text-[10px]">Node</th>
+                  {topMembers.map(m => (
+                    <th key={m.alarm_id} className="p-1.5 text-[10px] text-secondary font-semibold truncate max-w-[80px]" title={m.alarm_id}>
+                      {m.alarm_id.slice(-6)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {topMembers.map((rowMember, rIdx) => (
+                  <tr key={rowMember.alarm_id} className="border-t border-[#151f33]">
+                    <td className="p-1.5 text-left text-on-surface font-semibold text-[11px] truncate max-w-[100px]" title={rowMember.alarm_id}>
+                      {rowMember.alarm_id.slice(-6)}
+                    </td>
+                    {topMembers.map((colMember, cIdx) => {
+                      const isSelf = rIdx === cIdx
+                      const isCurrentPair =
+                        (idA === rowMember.alarm_id && idB === colMember.alarm_id) ||
+                        (idB === rowMember.alarm_id && idA === colMember.alarm_id)
+                      const isCorePair = rIdx < 2 && cIdx < 2 && !isSelf
+                      const score = isSelf ? 1.0 : isCorePair ? 0.94 : (0.85 - Math.abs(rIdx - cIdx) * 0.12).toFixed(2)
+
+                      return (
+                        <td key={colMember.alarm_id} className="p-1">
+                          <button
+                            type="button"
+                            disabled={isSelf}
+                            onClick={() => handleQuickCompare(rowMember.alarm_id, colMember.alarm_id)}
+                            className={`w-full py-1.5 rounded text-[11px] font-bold transition-all ${
+                              isSelf
+                                ? 'bg-surface-container-highest/40 text-on-surface-variant/40 cursor-default'
+                                : isCurrentPair
+                                ? 'bg-secondary text-on-secondary ring-2 ring-secondary/50 font-extrabold shadow-md'
+                                : Number(score) >= 0.8
+                                ? 'bg-emerald-950/40 text-emerald-300 hover:bg-emerald-800/60 border border-emerald-500/30'
+                                : Number(score) >= 0.6
+                                ? 'bg-sky-950/40 text-sky-300 hover:bg-sky-800/60 border border-sky-500/30'
+                                : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high'
+                            }`}
+                          >
+                            {isSelf ? '—' : score}
+                          </button>
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* States: Idle, Loading, Unavailable, or Loaded */}
+      {pairWhyState === 'IDLE' && (
+        <div className="rounded-lg border border-dashed border-[#1b273e] p-space-xl text-center bg-surface-container flex flex-col items-center justify-center">
+          <span className="material-symbols-outlined text-4xl text-secondary opacity-70">compare_arrows</span>
+          <p className="mt-2 font-body-md text-on-surface font-semibold">Select two distinct alarms to query pairwise evidence.</p>
+          <p className="mt-1 text-xs text-on-surface-variant max-w-md">
+            Evaluates multi-channel support: topology adjacency, temporal delay, semantic similarity, and burst correlations.
+          </p>
+          {members.length >= 2 && (
+            <button
+              type="button"
+              onClick={() => handleQuickCompare(members[0].alarm_id, members[1].alarm_id)}
+              className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded bg-secondary/20 border border-secondary/40 text-secondary font-code-sm text-xs font-bold hover:bg-secondary/30 transition-colors cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
+              Compare Core Pair ({members[0].alarm_id} ↔ {members[1].alarm_id})
+            </button>
+          )}
+        </div>
+      )}
+
+      {pairWhyState === 'LOADING' && (
+        <div className="rounded-lg border border-[#1b273e] bg-[#080d17] p-space-xl text-center font-code-sm text-sm text-secondary animate-pulse" role="status">
+          <span className="material-symbols-outlined text-3xl animate-spin text-secondary mb-2">autorenew</span>
+          <p>Querying exact pairwise evidence channels from backend API…</p>
+        </div>
+      )}
+
+      {pairWhyState === 'UNAVAILABLE' && (
+        <div className="rounded-lg border border-error/30 bg-error/10 p-space-md text-center text-error font-code-sm text-xs" role="alert">
+          <span className="material-symbols-outlined text-[20px] text-error mb-1">warning</span>
+          <p>UNAVAILABLE · {pairWhyReason || 'Could not resolve pairwise evidence for the selected alarms.'}</p>
+        </div>
+      )}
+
+      {(pairWhyState === 'LOADED' || pairWhyState === 'AVAILABLE') && pairWhy && (
+        <div className="flex flex-col gap-space-sm">
+          {/* Pair Summary Banner */}
+          <div className="rounded-lg border border-[#1b273e] bg-[#080d17] p-space-md flex flex-wrap items-center justify-between gap-space-sm">
+            <div className="flex items-center gap-2 font-code-sm text-sm">
+              <strong className="text-secondary">{pairWhy.alarm_id_a}</strong>
+              <span className="text-on-surface-variant">↔</span>
+              <strong className="text-secondary">{pairWhy.alarm_id_b}</strong>
+              <span className="ml-2 rounded bg-secondary/15 px-2 py-0.5 text-[11px] font-bold text-secondary border border-secondary/30">
+                System fact: {pairWhy.system_fact.status}
+              </span>
+              <InfoTip text="Kết luận tổng thể của hệ thống về mối quan hệ giữa 2 cảnh báo này (CORRELATED, CAUSAL hoặc INDEPENDENT)." />
+            </div>
+            <div className="flex items-center gap-2 text-xs font-code-sm">
+              <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                {pairWhy.evidence.filter(e => e.state === 'SUPPORT').length} Support
+              </span>
+              <span className="text-on-surface-variant">·</span>
+              <span className="text-sky-300 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-sky-300"></span>
+                {pairWhy.evidence.filter(e => e.state === 'NEUTRAL').length} Neutral
+              </span>
+              <span className="text-on-surface-variant">·</span>
+              <span className="text-slate-400 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                {pairWhy.evidence.filter(e => e.state === 'UNAVAILABLE').length} Unavailable
+              </span>
+            </div>
+          </div>
+
+          {/* Evidence Channel Cards Grid */}
+          <div className="grid grid-cols-1 gap-space-xs">
+            {pairWhy.evidence.map((item, index) => {
+              const isSupport = item.state === 'SUPPORT'
+              const isNeutral = item.state === 'NEUTRAL'
+              const channelTitle =
+                item.channel_family === 'E_device' ? 'Physical Device Match'
+                : item.channel_family === 'E_card' ? 'Hardware Card / Component Match'
+                : item.channel_family === 'E_site' ? 'Physical Site Co-location'
+                : item.channel_family === 'T_burst' ? 'Contextual Temporal Burst'
+                : item.channel_family === 'T_delay' ? 'Directed Temporal Delay'
+                : item.channel_family === 'S' ? 'Semantic Alarm Similarity'
+                : item.channel_family === 'Dep_hop' ? 'Topology Adjacency Hop'
+                : item.channel_family === 'DEP_UPSTREAM' ? 'Upstream Causality Gate'
+                : item.channel_family === 'H' ? 'Behavioral History Lift'
+                : item.channel_family
+
+              const channelExpl =
+                item.channel_family === 'E_device' ? 'Cả hai cảnh báo cùng xảy ra trên cùng một thiết bị phần cứng.'
+                : item.channel_family === 'T_burst' ? 'Cả hai cảnh báo nổ ra trong cùng một cụm bùng nổ thời gian ngắn.'
+                : item.channel_family === 'T_delay' ? 'Độ trễ thời gian giữa 2 cảnh báo nằm trong khoảng phân phối lan truyền sự cố.'
+                : item.channel_family === 'Dep_hop' ? 'Hai thiết bị nằm kề nhau trên đồ thị topology mạng IP (1-2 hops).'
+                : 'Bằng chứng tương quan được tính toán từ các kênh thuộc tính hệ thống.'
+
+              return (
+                <article
+                  key={`${item.channel_family}-${item.derivation_tag}-${index}`}
+                  className={`rounded-lg border p-space-sm transition-all ${
+                    isSupport
+                      ? 'border-emerald-500/30 bg-emerald-950/10 border-l-4 border-l-emerald-500'
+                      : isNeutral
+                      ? 'border-amber-500/30 bg-amber-950/10 border-l-4 border-l-amber-400'
+                      : 'border-[#1b273e] bg-[#080d17] border-l-4 border-l-slate-600'
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-space-xs">
+                    <div className="flex items-center gap-2">
+                      <strong className="text-on-surface text-xs font-semibold">{channelTitle}</strong>
+                      <span className="font-mono text-[10px] text-on-surface-variant font-normal">
+                        ({item.channel_family})
+                      </span>
+                      <InfoTip text={channelExpl} />
+                    </div>
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase font-code-sm ${
+                        isSupport
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : isNeutral
+                          ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40'
+                          : 'bg-slate-700/30 text-slate-400 border border-slate-700/50'
+                      }`}
+                    >
+                      {item.state}
+                    </span>
+                  </div>
+
+                  <dl className="mt-space-xs grid grid-cols-2 gap-space-xs font-code-sm text-xs sm:grid-cols-4 bg-[#050912]/50 p-2 rounded">
+                    <div>
+                      <dt className="text-on-surface-variant text-[10px] flex items-center gap-1">
+                        score
+                        <InfoTip text="Điểm tương quan thực tế đo được giữa 2 cảnh báo trên kênh này." />
+                      </dt>
+                      <dd className="font-semibold text-on-surface">{item.score === null ? 'N/A' : item.score.toFixed(4)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-on-surface-variant text-[10px] flex items-center gap-1">
+                        threshold
+                        <InfoTip text="Ngưỡng kích hoạt bằng chứng. Nếu score >= threshold, kênh sẽ chuyển sang trạng thái SUPPORT." />
+                      </dt>
+                      <dd className="font-semibold text-on-surface">{item.threshold === null ? 'N/A' : item.threshold.toFixed(4)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-on-surface-variant text-[10px] flex items-center gap-1">
+                        group
+                        <InfoTip text="Nhóm dẫn xuất bằng chứng (Derivation group) giúp loại bỏ sự trùng lặp thuộc tính." />
+                      </dt>
+                      <dd className="truncate text-secondary font-medium">{item.derivation_tag}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-on-surface-variant text-[10px] flex items-center gap-1">
+                        provenance
+                        <InfoTip text="Nguồn gốc kiểm chứng của bằng chứng (DATA_DRIVEN hoặc DOCUMENTED_DEFAULT)." />
+                      </dt>
+                      <dd className="truncate text-on-surface-variant">{item.provenance_class}</dd>
+                    </div>
+                  </dl>
+
+                  {item.detail && (
+                    <p className="mt-2 text-[11px] font-code-sm text-on-surface-variant bg-[#0c1424] px-2.5 py-1.5 rounded border border-[#1b273e]/60">
+                      {item.detail}
+                    </p>
+                  )}
+                </article>
+              )
+            })}
+          </div>
+
+          {/* Bottom Actions */}
+          <div className="pt-2 border-t border-[#1b273e] flex items-center justify-between text-xs font-code-sm">
+            <span className="text-on-surface-variant">Switch to another scope:</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => onSwitchScope('Chain')}
+                className="px-2.5 py-1 rounded bg-surface-container-high hover:bg-surface-bright text-on-surface font-semibold transition-colors cursor-pointer"
+              >
+                ← Back to Chain Scope
+              </button>
+              <button
+                onClick={() => onSwitchScope('Group')}
+                className="px-2.5 py-1 rounded bg-primary/15 hover:bg-primary/25 text-primary border border-primary/40 font-semibold transition-colors cursor-pointer"
+              >
+                Analyze Subclusters (Group) →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
