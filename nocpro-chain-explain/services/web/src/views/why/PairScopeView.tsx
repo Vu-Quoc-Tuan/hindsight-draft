@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useEffect } from 'react'
 import type { Member, PairWhy, WhyScope } from '../../types'
 import { InfoTip } from '../../components/InfoTip'
 
@@ -21,6 +21,13 @@ export function PairScopeView({
   pairWhyReason,
   onSwitchScope,
 }: PairScopeViewProps) {
+  // Auto-select first two members if not already selected
+  useEffect(() => {
+    if (selectedMemberIds.length < 2 && members.length >= 2) {
+      setSelectedMemberIds([members[0].alarm_id, members[1].alarm_id])
+    }
+  }, [members, selectedMemberIds.length, setSelectedMemberIds])
+
   const topMembers = useMemo(() => members.slice(0, 6), [members])
 
   // Current selected IDs
@@ -55,7 +62,7 @@ export function PairScopeView({
               className="px-2.5 py-1 rounded bg-secondary/15 hover:bg-secondary/25 text-secondary border border-secondary/30 font-code-sm text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <span className="material-symbols-outlined text-[14px]">auto_awesome</span>
-              Quick Compare Core Pair ({members[0].alarm_id} ↔ {members[1].alarm_id})
+              Compare Core Pair ({members[0].alarm_id} ↔ {members[1].alarm_id})
             </button>
           )}
         </div>
@@ -87,7 +94,7 @@ export function PairScopeView({
               type="button"
               onClick={handleSwap}
               disabled={!idA || !idB}
-              title="Đổi chiều cặp so sánh (Swap A ↔ B)"
+              aria-label="Swap A and B"
               className="w-8 h-8 rounded-full bg-surface-container-high hover:bg-secondary/20 hover:text-secondary text-on-surface-variant flex items-center justify-center transition-colors border border-[#1b273e] disabled:opacity-30 cursor-pointer"
             >
               <span className="material-symbols-outlined text-[16px]">sync_alt</span>
@@ -116,18 +123,18 @@ export function PairScopeView({
         </div>
       </div>
 
-      {/* NxN Evidence Heatmap Matrix Preview (Mockup Screen 08 Feature) */}
-      {topMembers.length >= 3 && (
+      {/* NxN Evidence Heatmap Matrix Preview */}
+      {topMembers.length >= 2 && (
         <div className="bg-surface-container rounded-lg p-space-md border border-[#1b273e] shadow-sm flex flex-col gap-space-xs">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-secondary text-[18px]">grid_view</span>
               <h4 className="font-label-caps text-xs uppercase text-on-surface-variant font-bold">
-                NxN Pairwise Evidence Heatmap Matrix ({topMembers.length} Core Nodes)
+                Pairwise Trajectory Matrix ({topMembers.length} Core Nodes)
               </h4>
-              <InfoTip text="Ma trận đối sánh nhanh giữa các cảnh báo nòng cốt. Click vào bất kỳ ô nào để kích hoạt phân tích cặp đó ngay lập tức." />
+              <InfoTip text="Ma trận đối sánh nhanh giữa các cảnh báo. Nhấp vào ô bất kỳ để gửi truy vấn trực tiếp lên backend giải thích cặp cảnh báo đó." />
             </div>
-            <span className="text-[11px] font-code-sm text-on-surface-variant">Click any cell to compare pair</span>
+            <span className="text-[11px] font-code-sm text-on-surface-variant">Click any cell to query pair channels</span>
           </div>
 
           <div className="overflow-x-auto mt-1">
@@ -136,7 +143,7 @@ export function PairScopeView({
                 <tr>
                   <th className="p-1.5 text-left text-on-surface-variant text-[10px]">Node</th>
                   {topMembers.map(m => (
-                    <th key={m.alarm_id} className="p-1.5 text-[10px] text-secondary font-semibold truncate max-w-[80px]" title={m.alarm_id}>
+                    <th key={m.alarm_id} className="p-1.5 text-[10px] text-secondary font-semibold truncate max-w-[90px]">
                       {m.alarm_id.slice(-6)}
                     </th>
                   ))}
@@ -145,7 +152,7 @@ export function PairScopeView({
               <tbody>
                 {topMembers.map((rowMember, rIdx) => (
                   <tr key={rowMember.alarm_id} className="border-t border-[#151f33]">
-                    <td className="p-1.5 text-left text-on-surface font-semibold text-[11px] truncate max-w-[100px]" title={rowMember.alarm_id}>
+                    <td className="p-1.5 text-left text-on-surface font-semibold text-[11px] truncate max-w-[100px]">
                       {rowMember.alarm_id.slice(-6)}
                     </td>
                     {topMembers.map((colMember, cIdx) => {
@@ -153,8 +160,22 @@ export function PairScopeView({
                       const isCurrentPair =
                         (idA === rowMember.alarm_id && idB === colMember.alarm_id) ||
                         (idB === rowMember.alarm_id && idA === colMember.alarm_id)
-                      const isCorePair = rIdx < 2 && cIdx < 2 && !isSelf
-                      const score = isSelf ? 1.0 : isCorePair ? 0.94 : (0.85 - Math.abs(rIdx - cIdx) * 0.12).toFixed(2)
+
+                      const sameDev =
+                        (rowMember.device_code ?? rowMember.node_reference) ===
+                        (colMember.device_code ?? colMember.node_reference)
+
+                      const t1 = Date.parse(rowMember.canonical_start_time || '0')
+                      const t2 = Date.parse(colMember.canonical_start_time || '0')
+                      const diffSec = Math.abs(t1 - t2) / 1000
+
+                      const cellText = isSelf
+                        ? '—'
+                        : sameDev
+                        ? 'Chassis'
+                        : !isNaN(diffSec) && diffSec <= 60
+                        ? `Δ${diffSec}s`
+                        : 'Link'
 
                       return (
                         <td key={colMember.alarm_id} className="p-1">
@@ -164,17 +185,15 @@ export function PairScopeView({
                             onClick={() => handleQuickCompare(rowMember.alarm_id, colMember.alarm_id)}
                             className={`w-full py-1.5 rounded text-[11px] font-bold transition-all ${
                               isSelf
-                                ? 'bg-surface-container-highest/40 text-on-surface-variant/40 cursor-default'
+                                ? 'bg-surface-container-highest/30 text-on-surface-variant/30 cursor-default'
                                 : isCurrentPair
                                 ? 'bg-secondary text-on-secondary ring-2 ring-secondary/50 font-extrabold shadow-md'
-                                : Number(score) >= 0.8
+                                : sameDev
                                 ? 'bg-emerald-950/40 text-emerald-300 hover:bg-emerald-800/60 border border-emerald-500/30'
-                                : Number(score) >= 0.6
-                                ? 'bg-sky-950/40 text-sky-300 hover:bg-sky-800/60 border border-sky-500/30'
                                 : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high'
                             }`}
                           >
-                            {isSelf ? '—' : score}
+                            {cellText}
                           </button>
                         </td>
                       )
@@ -195,16 +214,6 @@ export function PairScopeView({
           <p className="mt-1 text-xs text-on-surface-variant max-w-md">
             Evaluates multi-channel support: topology adjacency, temporal delay, semantic similarity, and burst correlations.
           </p>
-          {members.length >= 2 && (
-            <button
-              type="button"
-              onClick={() => handleQuickCompare(members[0].alarm_id, members[1].alarm_id)}
-              className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded bg-secondary/20 border border-secondary/40 text-secondary font-code-sm text-xs font-bold hover:bg-secondary/30 transition-colors cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
-              Compare Core Pair ({members[0].alarm_id} ↔ {members[1].alarm_id})
-            </button>
-          )}
         </div>
       )}
 
@@ -225,7 +234,7 @@ export function PairScopeView({
       {(pairWhyState === 'LOADED' || pairWhyState === 'AVAILABLE') && pairWhy && (
         <div className="flex flex-col gap-space-sm">
           {/* Pair Summary Banner */}
-          <div className="rounded-lg border border-[#1b273e] bg-[#080d17] p-space-md flex flex-wrap items-center justify-between gap-space-sm">
+          <div className="rounded-lg border border-[#1b273e] bg-[#080d17] p-space-md flex flex-wrap items-center justify-between gap-space-sm shadow-sm">
             <div className="flex items-center gap-2 font-code-sm text-sm">
               <strong className="text-secondary">{pairWhy.alarm_id_a}</strong>
               <span className="text-on-surface-variant">↔</span>
@@ -241,8 +250,8 @@ export function PairScopeView({
                 {pairWhy.evidence.filter(e => e.state === 'SUPPORT').length} Support
               </span>
               <span className="text-on-surface-variant">·</span>
-              <span className="text-sky-300 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-sky-300"></span>
+              <span className="text-amber-300 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-300"></span>
                 {pairWhy.evidence.filter(e => e.state === 'NEUTRAL').length} Neutral
               </span>
               <span className="text-on-surface-variant">·</span>
@@ -253,7 +262,7 @@ export function PairScopeView({
             </div>
           </div>
 
-          {/* Evidence Channel Cards Grid */}
+          {/* Real Evidence Channel Cards Grid (100% from backend) */}
           <div className="grid grid-cols-1 gap-space-xs">
             {pairWhy.evidence.map((item, index) => {
               const isSupport = item.state === 'SUPPORT'
@@ -262,6 +271,7 @@ export function PairScopeView({
                 item.channel_family === 'E_device' ? 'Physical Device Match'
                 : item.channel_family === 'E_card' ? 'Hardware Card / Component Match'
                 : item.channel_family === 'E_site' ? 'Physical Site Co-location'
+                : item.channel_family === 'E_remote' ? 'Remote Node Adjacency'
                 : item.channel_family === 'T_burst' ? 'Contextual Temporal Burst'
                 : item.channel_family === 'T_delay' ? 'Directed Temporal Delay'
                 : item.channel_family === 'S' ? 'Semantic Alarm Similarity'
@@ -272,6 +282,7 @@ export function PairScopeView({
 
               const channelExpl =
                 item.channel_family === 'E_device' ? 'Cả hai cảnh báo cùng xảy ra trên cùng một thiết bị phần cứng.'
+                : item.channel_family === 'E_card' ? 'Kiểm định thành phần card mạng, cổng hoặc sub-interface.'
                 : item.channel_family === 'T_burst' ? 'Cả hai cảnh báo nổ ra trong cùng một cụm bùng nổ thời gian ngắn.'
                 : item.channel_family === 'T_delay' ? 'Độ trễ thời gian giữa 2 cảnh báo nằm trong khoảng phân phối lan truyền sự cố.'
                 : item.channel_family === 'Dep_hop' ? 'Hai thiết bị nằm kề nhau trên đồ thị topology mạng IP (1-2 hops).'
@@ -309,7 +320,7 @@ export function PairScopeView({
                     </span>
                   </div>
 
-                  <dl className="mt-space-xs grid grid-cols-2 gap-space-xs font-code-sm text-xs sm:grid-cols-4 bg-[#050912]/50 p-2 rounded">
+                  <dl className="mt-space-xs grid grid-cols-2 gap-space-xs font-code-sm text-xs sm:grid-cols-4 bg-[#050912]/60 p-2 rounded">
                     <div>
                       <dt className="text-on-surface-variant text-[10px] flex items-center gap-1">
                         score
@@ -342,7 +353,7 @@ export function PairScopeView({
 
                   {item.detail && (
                     <p className="mt-2 text-[11px] font-code-sm text-on-surface-variant bg-[#0c1424] px-2.5 py-1.5 rounded border border-[#1b273e]/60">
-                      {item.detail}
+                      Detail: <span className="text-slate-200">{item.detail}</span>
                     </p>
                   )}
                 </article>
