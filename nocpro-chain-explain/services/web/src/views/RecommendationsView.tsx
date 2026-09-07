@@ -1,7 +1,7 @@
 import { CounterfactualReview } from '../CounterfactualReview'
 import type { ChainAnalysis } from '../types'
 
-export function RecommendationsView({ analysis }: { analysis: ChainAnalysis }) {
+export function RecommendationsView({ analysis, readOnly = false }: { analysis: ChainAnalysis; readOnly?: boolean }) {
   return (
     <div className="flex w-full flex-col gap-space-md pb-12 animate-fadeIn">
       <section className="rounded-lg bg-surface-container-lowest p-space-md shadow-sm">
@@ -12,7 +12,7 @@ export function RecommendationsView({ analysis }: { analysis: ChainAnalysis }) {
         </p>
       </section>
       <div className="rounded-lg bg-surface-container p-space-lg shadow-md">
-        <CounterfactualReview key={analysis.chain_id} chainId={analysis.chain_id} />
+        <CounterfactualReview key={analysis.chain_id} chainId={analysis.chain_id} readOnly={readOnly} />
       </div>
     </div>
   )

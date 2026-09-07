@@ -75,7 +75,11 @@ def audit_visualization_to_dict(value: AuditVisualization) -> dict:
         "nodes": [
             {
                 "alarm_id": node.alarm_id,
-                "weighted_degree": node.weighted_degree,
+                # Canonical JSON must not depend on whether an empty degree was
+                # produced as ``0`` or ``0.0``.  The artifact fingerprint is
+                # computed before PostgreSQL JSONB hydration, so normalize all
+                # numeric visualization values at the serialization boundary.
+                "weighted_degree": float(node.weighted_degree),
                 "cut_side": node.cut_side,
                 "structural_role": node.structural_role,
             }
@@ -85,7 +89,7 @@ def audit_visualization_to_dict(value: AuditVisualization) -> dict:
             {
                 "source_alarm_id": edge.source_alarm_id,
                 "target_alarm_id": edge.target_alarm_id,
-                "weight": edge.weight,
+                "weight": float(edge.weight),
                 "supporting_groups": list(edge.supporting_groups),
                 "crosses_best_cut": edge.crosses_best_cut,
             }

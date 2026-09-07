@@ -113,6 +113,36 @@ def test_exact_audit_artifact_v2_round_trips_with_bounded_visualization():
     assert payload["scored_cuts"][0]["members"] == ["a1", "a2"]
 
 
+def test_artifact_fingerprint_canonicalizes_integral_visualization_weights():
+    visualization = replace(
+        _visualization(),
+        nodes=(
+            AuditVisualizationNode("a1", 0, "A", "NON_CONNECTOR"),
+            AuditVisualizationNode("a3", 0, "B", "CONNECTOR"),
+        ),
+        edges=(
+            AuditVisualizationEdge("a1", "a3", 0, ("entity", "temporal"), True),
+        ),
+    )
+    artifact = build_review_audit_artifact(
+        snapshot_id="S1",
+        snapshot_version="v2",
+        chain_id="C1",
+        members=("a1", "a2", "a3", "a4"),
+        structural_audit=_audit(),
+        visualization=visualization,
+        analysis_version="tier2-audit-v1",
+        analysis_config_version="thresholds-v1",
+        artifact_id="audit-integral-weights",
+        created_at="2026-09-02T10:00:00+00:00",
+    )
+
+    payload = audit_artifact_to_dict(artifact)
+    assert payload["visualization"]["nodes"][0]["weighted_degree"] == 0.0
+    assert payload["visualization"]["edges"][0]["weight"] == 0.0
+    assert audit_artifact_from_dict(payload) == artifact
+
+
 def test_artifact_fingerprint_is_deterministic_and_detects_tampering():
     first = _artifact()
     second = _artifact()

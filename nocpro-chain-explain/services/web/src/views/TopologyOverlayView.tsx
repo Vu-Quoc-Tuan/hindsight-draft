@@ -1,4 +1,7 @@
+import { useState } from 'react'
+
 import { api } from '../api'
+import type { TopologyNavigationResolution } from '../api'
 import { TopologyTree, type TopologyTreePayload } from '../TopologyTree'
 import type { ChainAnalysis } from '../types'
 
@@ -9,6 +12,14 @@ interface TopologyOverlayViewProps {
 }
 
 export function TopologyOverlayView({ analysis, topologyPayload, onRootChange }: TopologyOverlayViewProps) {
+  const [sourceResolutionState, setSourceResolutionState] = useState<{
+    profile: TopologyTreePayload['profile']
+    value: TopologyNavigationResolution
+  } | null>(null)
+  const sourceResolution = topologyPayload && sourceResolutionState?.profile === topologyPayload.profile
+    ? sourceResolutionState.value
+    : null
+
   return (
     <div className="flex w-full flex-col gap-space-md pb-12 animate-fadeIn">
       <section className="rounded-lg bg-surface-container-lowest p-space-md shadow-sm">
@@ -28,7 +39,12 @@ export function TopologyOverlayView({ analysis, topologyPayload, onRootChange }:
           key={`${topologyPayload.profile}:${topologyPayload.status === 'AVAILABLE' ? topologyPayload.tree.resource_id : topologyPayload.reason}`}
           payload={topologyPayload}
           onSearchSource={query => api.topologySearch(topologyPayload.profile, query)}
-          onResolveSource={identifier => api.topologyResolve(topologyPayload.profile, identifier)}
+          onResolveSource={async identifier => {
+            const resolution = await api.topologyResolve(topologyPayload.profile, identifier)
+            setSourceResolutionState({ profile: topologyPayload.profile, value: resolution })
+            return resolution
+          }}
+          sourceResolution={sourceResolution}
           onRootChange={onRootChange}
         />
       )}

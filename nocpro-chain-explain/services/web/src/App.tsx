@@ -65,6 +65,7 @@ export default function App() {
   const [comparePair, setComparePair] = useState<[string, string]>(['', ''])
   const [isDrawerOpen, setDrawerOpen] = useState(false)
   const [assistantPair, setAssistantPair] = useState<[string, string] | null>(null)
+  const [reviewReadOnly, setReviewReadOnly] = useState(false)
 
   const snapshotKey = chainList ? `${chainList.snapshot_id}:${chainList.snapshot_version}` : null
   const currentAnalysisKey = snapshotKey && chainId
@@ -236,6 +237,7 @@ export default function App() {
   // Chain selection handler
   const handleSelectChain = (id: string) => {
     setAssistantPair(null)
+    setReviewReadOnly(false)
     setChainId(id)
     setCurrentTab('chain-overview')
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -244,6 +246,7 @@ export default function App() {
   // Clear selected chain (back to snapshot overview)
   const handleClearSelectedChain = () => {
     setAssistantPair(null)
+    setReviewReadOnly(false)
     setChainId('')
     setCurrentTab('snapshot-overview')
   }
@@ -251,6 +254,7 @@ export default function App() {
   // Compare 2 chains
   const handleCompareChains = (chainA: string, chainB: string) => {
     setAssistantPair(null)
+    setReviewReadOnly(false)
     setComparePair([chainA, chainB])
     setChainId('')
     setCurrentTab('compare-chains')
@@ -288,6 +292,7 @@ export default function App() {
       setAssistantPair([action.target.pair_alarm_id_a, action.target.pair_alarm_id_b])
     }
     if (targetTab) {
+      setReviewReadOnly(targetTab === 'review')
       setCurrentTab(targetTab)
     }
     setDrawerOpen(false)
@@ -351,7 +356,10 @@ export default function App() {
       {/* 2. Sub Navigation Bar (Chain-level IA: 05 Overview, 06-09 WHY, 10 Members, 11-13 Audit, 14 Recommendations, 15-16 Evolution, 17 Topology, 18 Validation) */}
       <SubNavBar
         currentTab={currentTab}
-        onSelectTab={setCurrentTab}
+        onSelectTab={tab => {
+          if (tab === 'review') setReviewReadOnly(false)
+          setCurrentTab(tab)
+        }}
         selectedChainId={chainId || null}
         onClearSelectedChain={handleClearSelectedChain}
       />
@@ -460,7 +468,7 @@ export default function App() {
         )}
 
         {analysis && currentTab === 'review' && (
-          <RecommendationsView analysis={analysis} />
+          <RecommendationsView analysis={analysis} readOnly={reviewReadOnly} />
         )}
 
         {analysis && currentTab === 'evolution' && (
