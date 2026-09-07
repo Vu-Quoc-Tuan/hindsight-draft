@@ -107,6 +107,7 @@ export function AuditGraphVisualization({ value }: { value: AuditVisualization }
         {hasCut && <><span>● Cut A</span><span>● Cut B</span><span className="text-error">━ crosses best cut</span></>}
         <span>Node size = weighted degree</span>
         {value.truncated && <strong>{value.hidden_node_count} nodes and {value.hidden_edge_count} edges hidden by display bounds</strong>}
+        <span className="basis-full">Visualization only; exact Audit uses the full eligible graph.</span>
       </div>
     </section>
   )

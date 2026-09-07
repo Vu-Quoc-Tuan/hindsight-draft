@@ -69,8 +69,8 @@ async function installApi(page: Page, delayedB?: Promise<void>, assistantContext
       visualization: {
         status: 'AVAILABLE', reason: null, projection_version: 'audit-visualization-v1',
         selection_strategy: 'BEST_CUT_BALANCED_WEIGHTED_DEGREE_V1', max_nodes: 80, max_edges: 160,
-        total_node_count: 3, shown_node_count: 3, hidden_node_count: 0,
-        total_edge_count: 2, shown_edge_count: 2, hidden_edge_count: 0, truncated: false,
+        total_node_count: 5, shown_node_count: 3, hidden_node_count: 2,
+        total_edge_count: 4, shown_edge_count: 2, hidden_edge_count: 2, truncated: true,
         nodes: [
           { alarm_id: 'A-1', weighted_degree: 1.2, cut_side: 'A', structural_role: 'NON_CONNECTOR' },
           { alarm_id: 'A-2', weighted_degree: 1.8, cut_side: 'A', structural_role: 'CONNECTOR' },
@@ -152,12 +152,30 @@ test('Structure reads and renders the persisted bounded Audit graph without subm
 
   const graph = page.getByRole('img', { name: 'Audit graph with 3 nodes and 2 edges' })
   await expect(graph).toBeVisible()
-  await expect(page.getByText('3 / 3 nodes')).toBeVisible()
+  await expect(page.getByText('3 / 5 nodes')).toBeVisible()
+  await expect(page.getByText('2 nodes and 2 edges hidden by display bounds')).toBeVisible()
   await expect(graph.locator('circle')).toHaveCount(3)
   await expect(graph.locator('line')).toHaveCount(2)
   expect(mutations).toEqual([])
   const dimensions = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }))
   expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.client)
+})
+
+test('switching chains cannot retain a persisted Audit graph from the previous context', async ({ page }) => {
+  await installApi(page)
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Chains Explorer' }).click()
+  await page.getByText('C-A', { exact: true }).click()
+  await page.getByRole('button', { name: 'Audit & Structure' }).click()
+  await expect(page.getByRole('img', { name: 'Audit graph with 3 nodes and 2 edges' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'arrow_back Chains', exact: true }).click()
+  await page.getByText('C-B', { exact: true }).click()
+  await expect(page.getByText('Observed singleton')).toBeVisible()
+  await page.getByRole('button', { name: 'Audit & Structure' }).click()
+
+  await expect(page.getByRole('img', { name: 'Audit graph with 3 nodes and 2 edges' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Structural Audit unavailable' })).toBeVisible()
 })
 
 test('Assistant history is discarded when the selected chain context changes', async ({ page }) => {
