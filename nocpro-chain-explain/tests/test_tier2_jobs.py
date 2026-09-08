@@ -89,6 +89,37 @@ def test_submit_is_non_blocking_and_reports_progress(analysis_config):
         manager.shutdown()
 
 
+def test_state_listener_observes_durable_lifecycle_transitions(analysis_config):
+    started = Event()
+    release = Event()
+    observed = []
+
+    def blocking_analyzer(*args, **kwargs):
+        started.set()
+        assert release.wait(timeout=2)
+        return "deep-result"
+
+    manager = Tier2JobManager(
+        analyzer=blocking_analyzer,
+        max_workers=1,
+        state_listener=observed.append,
+    )
+    try:
+        submission = manager.submit(_package(), "C1", analysis_config=analysis_config)
+        assert started.wait(timeout=1)
+        release.set()
+        manager.wait(submission.job_id, timeout=2)
+    finally:
+        release.set()
+        manager.shutdown()
+
+    statuses = [view.status for view in observed]
+    assert statuses[0] is JobStatus.QUEUED
+    assert JobStatus.RUNNING in statuses
+    assert statuses[-1] is JobStatus.SUCCEEDED
+    assert observed[-1].result == "deep-result"
+
+
 def test_success_is_cached_by_tier2_fingerprint_snapshot_and_config(analysis_config):
     calls = 0
 

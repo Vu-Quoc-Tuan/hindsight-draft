@@ -188,6 +188,7 @@ class Tier2JobManager:
         analyzer: Callable[..., Any] = analyze_structural_audit,
         max_workers: int = 2,
         artifact_listener: Callable[[ReviewAuditArtifact], None] | None = None,
+        state_listener: Callable[[Tier2JobView], None] | None = None,
     ) -> None:
         if max_workers <= 0:
             raise ValueError("max_workers must be positive")
@@ -201,6 +202,18 @@ class Tier2JobManager:
         self._futures: dict[str, Future[Any]] = {}
         self._inflight_by_key: dict[tuple[str, str, str, str, str], str] = {}
         self._artifact_listener = artifact_listener
+        self._state_listener = state_listener
+
+    def set_state_listener(
+        self, listener: Callable[[Tier2JobView], None] | None
+    ) -> None:
+        with self._lock:
+            self._state_listener = listener
+
+    def _notify(self, view: Tier2JobView) -> None:
+        listener = self._state_listener
+        if listener is not None:
+            listener(view)
 
     def set_artifact_listener(
         self, listener: Callable[[ReviewAuditArtifact], None] | None
@@ -255,26 +268,11 @@ class Tier2JobManager:
     ) -> Tier2Submission:
         if chain_id not in package.chains:
             raise KeyError(f"unknown chain_id {chain_id!r}")
-        members = set(package.members_of(chain_id))
-        run_config_version = analysis_config.config_version
-        if similarity_context is not None:
-            run_config_version = (
-                f"{run_config_version}|similarity:"
-                f"{similarity_context.model.model_version}"
-            )
-        p2_stamp = _p2_cache_stamp(analysis_config)
-        if p2_stamp is not None:
-            run_config_version = f"{run_config_version}|p2:{p2_stamp}"
-        run_config_version = (
-            f"{run_config_version}|attribution-evaluation:"
-            f"{_attribution_evaluation_cache_stamp(analysis_config)}"
-        )
-        key = self.cache.key_for(
-            CacheTier.TIER_2,
-            member_ids=members,
-            snapshot_id=package.snapshot.snapshot_id,
-            snapshot_version=package.snapshot.snapshot_version,
-            config_version=run_config_version,
+        key = self.cache_key_for(
+            package,
+            chain_id,
+            analysis_config=analysis_config,
+            similarity_context=similarity_context,
         )
         cached = self.cache.get(key)
         if cached is not None:
@@ -291,6 +289,8 @@ class Tier2JobManager:
                     result=cached,
                     audit_artifact=artifact,
                 )
+                succeeded_view = self._jobs[job_id].view()
+                self._notify(succeeded_view)
             if artifact is not None:
                 self._emit_artifact(artifact)
             return Tier2Submission(job_id, cache_hit=True, deduplicated=False)
@@ -313,6 +313,8 @@ class Tier2JobManager:
                 cache_key=key,
             )
             self._inflight_by_key[key_tuple] = job_id
+            queued_view = self._jobs[job_id].view()
+            self._notify(queued_view)
             future = self._executor.submit(
                 self._run,
                 job_id,
@@ -327,6 +329,39 @@ class Tier2JobManager:
             )
             self._futures[job_id] = future
         return Tier2Submission(job_id, cache_hit=False, deduplicated=False)
+
+    def cache_key_for(
+        self,
+        package: IngestedPackage,
+        chain_id: str,
+        *,
+        analysis_config,
+        similarity_context: SimilarityQueryContext | None = None,
+    ) -> CacheKey:
+        """Return the exact versioned identity used by a Deep Dive run."""
+        if chain_id not in package.chains:
+            raise KeyError(f"unknown chain_id {chain_id!r}")
+        members = set(package.members_of(chain_id))
+        run_config_version = analysis_config.config_version
+        if similarity_context is not None:
+            run_config_version = (
+                f"{run_config_version}|similarity:"
+                f"{similarity_context.model.model_version}"
+            )
+        p2_stamp = _p2_cache_stamp(analysis_config)
+        if p2_stamp is not None:
+            run_config_version = f"{run_config_version}|p2:{p2_stamp}"
+        run_config_version = (
+            f"{run_config_version}|attribution-evaluation:"
+            f"{_attribution_evaluation_cache_stamp(analysis_config)}"
+        )
+        return self.cache.key_for(
+            CacheTier.TIER_2,
+            member_ids=members,
+            snapshot_id=package.snapshot.snapshot_id,
+            snapshot_version=package.snapshot.snapshot_version,
+            config_version=run_config_version,
+        )
 
     def _run(
         self,
@@ -344,6 +379,8 @@ class Tier2JobManager:
             job = self._jobs[job_id]
             job.status = JobStatus.RUNNING
             job.progress_percent = 20
+            running_view = job.view()
+            self._notify(running_view)
         try:
             result = self._analyzer(
                 package,
@@ -395,6 +432,8 @@ class Tier2JobManager:
                 job.progress_percent = 100
                 job.error = f"{type(exc).__name__}: {exc}"
                 self._inflight_by_key.pop(job.cache_key.as_tuple(), None)
+                failed_view = job.view()
+                self._notify(failed_view)
             return
 
         if hasattr(result, "parameter_provenance"):
@@ -415,6 +454,8 @@ class Tier2JobManager:
             job.status = JobStatus.SUCCEEDED
             job.progress_percent = 100
             self._inflight_by_key.pop(job.cache_key.as_tuple(), None)
+            succeeded_view = job.view()
+            self._notify(succeeded_view)
         if artifact is not None:
             self._emit_artifact(artifact)
 
@@ -437,6 +478,16 @@ class Tier2JobManager:
                 and job.cache_key.snapshot_id == snapshot_id
                 and job.cache_key.snapshot_version == snapshot_version
                 and job.status is JobStatus.SUCCEEDED
+            ]
+        return matches[-1] if matches else None
+
+    def latest_compatible(self, cache_key: CacheKey) -> Tier2JobView | None:
+        """Return the newest in-process run for one exact cache identity."""
+        with self._lock:
+            matches = [
+                job.view()
+                for job in self._jobs.values()
+                if job.cache_key.as_tuple() == cache_key.as_tuple()
             ]
         return matches[-1] if matches else None
 

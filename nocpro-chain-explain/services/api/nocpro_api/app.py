@@ -131,6 +131,8 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
                 await consumer.stop()
             service.close()
             await service.flush_review_persistence()
+            await service.flush_deep_dive_persistence()
+            await service.flush_audit_persistence()
             if database is not None:
                 await database.close()
 

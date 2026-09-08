@@ -663,15 +663,31 @@ def topology_hypotheses_view(
 
 
 def job_view(view: Tier2JobView) -> JobView:
-    return JobView(
-        job_id=view.job_id,
-        chain_id=view.chain_id,
-        status=view.status.value,
-        progress_percent=view.progress_percent,
-        cache_hit=view.cache_hit,
-        result=deep_dive_view(view.result) if view.result is not None else None,
-        error=view.error,
-    )
+    if isinstance(view, Tier2JobView):
+        payload = {
+            "job_id": view.job_id,
+            "chain_id": view.chain_id,
+            "status": view.status.value,
+            "progress_percent": view.progress_percent,
+            "cache_hit": view.cache_hit,
+            "result": (
+                deep_dive_view(view.result).model_dump(mode="json")
+                if view.result is not None
+                else None
+            ),
+            "error": view.error,
+        }
+    else:
+        payload = {
+            "job_id": view.job_id,
+            "chain_id": view.chain_id,
+            "status": view.status,
+            "progress_percent": view.progress_percent,
+            "cache_hit": view.cache_hit,
+            "result": view.result,
+            "error": view.error,
+        }
+    return JobView.model_validate(payload)
 
 
 def operator_feedback_view(feedback: Any) -> OperatorFeedbackView:

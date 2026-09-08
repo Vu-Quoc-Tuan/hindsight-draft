@@ -260,8 +260,25 @@ async def get_audit_visualization(
 @router.get("/jobs/{job_id}", response_model=JobView)
 async def get_job(job_id: str, request: Request) -> JobView:
     try:
-        await workspace(request).flush_audit_persistence()
-        return job_view(workspace(request).jobs.get(job_id))
+        service = workspace(request)
+        job = await service.deep_dive_job(job_id)
+        await service.flush_deep_dive_persistence()
+        await service.flush_audit_persistence()
+        return job_view(job)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.get("/chains/{chain_id}/deep-dive", response_model=JobView | None)
+async def get_latest_deep_dive(
+    chain_id: str, request: Request
+) -> JobView | None:
+    try:
+        service = workspace(request)
+        result = await service.latest_deep_dive(chain_id)
+        await service.flush_deep_dive_persistence()
+        await service.flush_audit_persistence()
+        return job_view(result) if result is not None else None
     except Exception as exc:
         raise translate_error(exc) from exc
 

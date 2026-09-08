@@ -443,6 +443,38 @@ def test_deep_dive_is_submitted_and_polled_as_a_job():
     assert topology["dependency_scope"]["resource_details"]["extra_resources"] is None
 
 
+def test_latest_deep_dive_rehydrates_the_full_in_memory_result():
+    async def exercise(client: httpx2.AsyncClient):
+        await client.post("/api/v1/snapshots", json=_payload())
+        submission = await client.post("/api/v1/chains/C1/deep-dive")
+        job_id = submission.json()["job_id"]
+        for _ in range(40):
+            polled = await client.get(f"/api/v1/jobs/{job_id}")
+            if polled.json()["status"] in {"SUCCEEDED", "FAILED"}:
+                break
+            await asyncio.sleep(0.01)
+        latest = await client.get("/api/v1/chains/C1/deep-dive")
+        return polled, latest
+
+    polled, latest = run_api_test(exercise)
+
+    assert polled.json()["status"] == "SUCCEEDED"
+    assert latest.status_code == 200
+    assert latest.json() == polled.json()
+    assert latest.json()["result"]["evidence_attribution"]["status"] == "AVAILABLE"
+
+
+def test_latest_deep_dive_returns_empty_without_submitting_work():
+    async def exercise(client: httpx2.AsyncClient):
+        await client.post("/api/v1/snapshots", json=_payload())
+        return await client.get("/api/v1/chains/C1/deep-dive")
+
+    response = run_api_test(exercise)
+
+    assert response.status_code == 200
+    assert response.json() is None
+
+
 def test_audit_visualization_read_is_unavailable_without_submitting_deep_dive():
     async def run():
         service = Workspace()
