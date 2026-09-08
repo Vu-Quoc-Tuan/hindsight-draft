@@ -205,15 +205,25 @@ def slice_alarm_sequence(
         snapshot_files.append(filename)
 
     # Write sequence.yaml
+    expected_transitions = [
+        {
+            "from": snapshot_files[i],
+            "to": snapshot_files[i + 1],
+            "expected_event": "CONTINUE",
+        }
+        for i in range(len(snapshot_files) - 1)
+    ]
     manifest = {
         "scenario_id": scenario_id,
         "sequence_type": "EVOLUTION",
+        "seed": 42,
         "derivation_kind": "DERIVED_REPLAY",
         "production_validation": "NOT_ESTABLISHED",
         "step_minutes": step_minutes,
         "window_minutes": window_minutes,
         "start_time": t_base.isoformat(),
         "snapshots": snapshot_files,
+        "expected_transitions": expected_transitions,
     }
     with (out_p / "sequence.yaml").open("w", encoding="utf-8") as f:
         yaml.safe_dump(manifest, f, sort_keys=False)

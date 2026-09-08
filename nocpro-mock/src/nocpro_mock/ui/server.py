@@ -31,6 +31,7 @@ from ..contract import (
 from ..fixtures.golden import load_golden_fixture
 from ..loaders.topology_ip_csv import TopoIPLoader
 from ..producer.kafka_snapshot import KafkaSnapshotConfig, publish_snapshot
+from ..replay.sequence_slicer import slice_alarm_sequence
 from ..replay.snapshot import build_golden_snapshot, build_real_replay_snapshot
 from ..scenarios.sequence import load_sequence_manifest
 
@@ -560,6 +561,137 @@ class MockUIRequestHandler(SimpleHTTPRequestHandler):
                     HTTPStatus.INTERNAL_SERVER_ERROR,
                     {"ok": False, "error": f"Kafka publish failed: {exc}"},
                 )
+            return
+
+        if path == "/api/publish-sequence":
+            start_t = time.perf_counter()
+            bootstrap = getattr(self.server, "default_kafka", "localhost:9092")
+            topic = DEFAULT_KAFKA_TOPIC
+            requested_bootstrap = body.get("kafka_bootstrap")
+            requested_topic = body.get("kafka_topic")
+            if requested_bootstrap not in (None, "", bootstrap) or requested_topic not in (None, "", topic):
+                self._send_json(
+                    HTTPStatus.BAD_REQUEST,
+                    {"ok": False, "error": "Kafka destination is configured by the Mock server"},
+                )
+                return
+
+            try:
+                seq_path = _resolve_path(body.get("sequence_path", ""))
+                if not seq_path.is_dir():
+                    self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": f"Sequence directory not found: {seq_path}"})
+                    return
+
+                manifest = load_sequence_manifest(seq_path / "sequence.yaml")
+                chunk_bytes = _chunk_target_bytes(body.get("chunk_target_bytes", 2 * 1024 * 1024))
+                delay_sec = max(0.0, float(body.get("delay_seconds", 0.3)))
+                config = KafkaSnapshotConfig(topic=topic, chunk_target_bytes=chunk_bytes)
+
+                published_results = []
+                for idx, snap_file in enumerate(manifest.snapshots):
+                    snap_path = seq_path / snap_file
+                    if not snap_path.is_file():
+                        continue
+                    raw_pkg = json.loads(snap_path.read_text(encoding="utf-8"))
+                    package = parse_package(raw_pkg)
+
+                    batch = asyncio.run(
+                        publish_snapshot(
+                            package,
+                            bootstrap_servers=bootstrap,
+                            config=config,
+                        )
+                    )
+                    published_results.append({
+                        "snapshot_id": package.snapshot.snapshot_id,
+                        "snapshot_version": package.snapshot.snapshot_version,
+                        "chunks_count": len(batch.chunks),
+                        "total_bytes": len(batch.canonical_bytes),
+                        "checksum": batch.complete["snapshot_checksum"][:12] + "...",
+                    })
+                    if idx < len(manifest.snapshots) - 1 and delay_sec > 0:
+                        time.sleep(delay_sec)
+
+                duration_ms = round((time.perf_counter() - start_t) * 1000, 2)
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "ok": True,
+                        "sequence_id": manifest.scenario_id,
+                        "total_snapshots": len(manifest.snapshots),
+                        "published_count": len(published_results),
+                        "snapshots": published_results,
+                        "duration_ms": duration_ms,
+                        "topic": topic,
+                    },
+                )
+            except Exception as exc:
+                logger.exception("Failed to publish sequence to Kafka: %s", exc)
+                self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": f"Kafka publish failed: {exc}"})
+                return
+
+        if path == "/api/slice-sequence":
+            try:
+                raw_scenario_id = str(body.get("scenario_id") or "real_alarm_evolution_v1").strip()
+                import re
+                if not re.match(r"^[a-zA-Z0-9_.-]+$", raw_scenario_id):
+                    self._send_json(
+                        HTTPStatus.BAD_REQUEST,
+                        {"ok": False, "error": "scenario_id must contain only alphanumeric, dash, underscore, or period characters"},
+                    )
+                    return
+
+                alarm_csv = body.get("alarm_csv", DEFAULT_ALARM_CSV)
+                alarm_path = _resolve_path(alarm_csv)
+                if not alarm_path.is_file():
+                    self._send_json(
+                        HTTPStatus.BAD_REQUEST,
+                        {"ok": False, "error": f"Alarm CSV export file not found: {alarm_csv}"},
+                    )
+                    return
+
+                num_snapshots = _integer(str(body.get("num_snapshots", 5)), 5, minimum=1, maximum=20)
+                step_minutes = _integer(str(body.get("step_minutes", 5)), 5, minimum=1, maximum=120)
+                window_minutes = _integer(str(body.get("window_minutes", 15)), 15, minimum=1, maximum=240)
+
+                max_chains_raw = body.get("max_chains")
+                max_chains = None
+                if max_chains_raw not in (None, "", "null"):
+                    max_chains = _integer(str(max_chains_raw), 50, minimum=1, maximum=10000)
+
+                output_dir = _resolve_path(DEFAULT_SYNTHETIC_DIR) / raw_scenario_id
+                summary = slice_alarm_sequence(
+                    alarm_csv_path=alarm_path,
+                    output_dir=output_dir,
+                    scenario_id=raw_scenario_id,
+                    num_snapshots=num_snapshots,
+                    step_minutes=step_minutes,
+                    window_minutes=window_minutes,
+                    max_chains_per_snapshot=max_chains,
+                )
+
+                sequences = _discover_sequences()
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "ok": True,
+                        "summary": {
+                            "scenario_id": summary.scenario_id,
+                            "output_dir": str(summary.output_dir.relative_to(MOCK_ROOT) if summary.output_dir.is_relative_to(MOCK_ROOT) else summary.output_dir),
+                            "snapshot_count": summary.snapshot_count,
+                            "total_distinct_alarms": summary.total_distinct_alarms,
+                            "total_distinct_chains": summary.total_distinct_chains,
+                            "start_time": summary.start_time,
+                            "end_time": summary.end_time,
+                            "step_minutes": summary.step_minutes,
+                            "window_minutes": summary.window_minutes,
+                        },
+                        "sequences": sequences,
+                    },
+                )
+            except Exception as exc:
+                logger.exception("Failed to slice sequence: %s", exc)
+                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
             return
 
         self.send_error(HTTPStatus.NOT_FOUND, f"Endpoint not found: {path}")

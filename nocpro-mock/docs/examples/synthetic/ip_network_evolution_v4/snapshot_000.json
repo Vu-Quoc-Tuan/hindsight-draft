@@ -1,0 +1,169 @@
+{
+  "snapshot": {
+    "snapshot_id": "ip_network_evolution_v4_snap_000",
+    "snapshot_version": "1",
+    "snapshot_time": "2026-07-28T08:36:55+00:00",
+    "status": "COMPLETE",
+    "source": "nocpro-mock-derived-replay-slicer",
+    "source_kind": "REAL_EXPORT_REPLAY",
+    "produced_at": "2026-07-28T08:36:55+00:00",
+    "schema_version": "v1"
+  },
+  "alarms": [
+    {
+      "alarm_id": "3728188958",
+      "snapshot_id": "ip_network_evolution_v4_snap_000",
+      "source_kind": "REAL_EXPORT_REPLAY",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "chaining_id": "6331493",
+        "chaining_name": "CBS.LOWER 30% THAN PREVIOUS - BTE0448AGG01 - Eth-Trunk11, Eth-Trunk10",
+        "cah.id": "3728188958",
+        "cah.monitor_segment": "IP_CORE",
+        "fault_id": "47933081",
+        "alarm_name": "CBS.UNDER THRESSHOLD - BW",
+        "group_id": "154",
+        "group_name": "Cảnh báo CBS Core",
+        "alarm_type_id": "",
+        "alarm_type_name": "",
+        "severity_id": "1",
+        "severity_name": "Critical",
+        "cah.start_time": "2026-07-28 08:36:55.000",
+        "end_time": "2026-07-28 08:58:15.000",
+        "content": "GROUP_NAME_ALARM:FOIPKV_METRO_AGG_DOWNLINK_SRT_PHY, RULE_NAME_ALARM: Alarm dưới ngưỡng 0.01Mbps \nRULE_NAME_REFERENCE: Check các link MAX traffic  trong vòng 1h OVER 50Mbps, KPI: traffic_out, VALUE: 137.4474, VALUE_HISTORY: null, THRESHOLD: 50, COMPARISON_TYPE: OVER, SPEED: 1000000000.0000, SEQUENCE: null, RESULT:  TRUE, TIME: 28/07/2026 08:36:55 \n- \nRULE_NAME_REFERENCE: Dưới ngưỡng 0.01Mbps, KPI: traffic_out, VALUE: 0.0000, VALUE_HISTORY: null, THRESHOLD: 0.01, COMPARISON_TYPE: UNDER, SPEED: 1000000000.0000, SEQUENCE: null, RESULT:  TRUE, TIME: 28/07/2026 08:36:55",
+        "addition_info": "Description: AGGSRT_RDKV3SRTBTE004901023202_BTE0049SRT01_GigabitEthernet0/0/1  |  AI Status: ABNORMAL",
+        "alarm_sequence": "3111820480",
+        "kedb_code": "",
+        "auto_analyzed": "",
+        "device_id": "49766",
+        "device_code": "BTE0005AGG01",
+        "device_name": "BTE0005AGG01",
+        "device_ip": "10.249.189.138",
+        "component": "GigabitEthernet1/1/0",
+        "link_name": "BTE0049SRT01:GigabitEthernet0/0/1-BTE0005AGG01:GigabitEthernet1/1/0",
+        "vendor_id": "1",
+        "vendor_name": "Huawei",
+        "device_type_id": "332",
+        "device_type_name": "CX600-X8A",
+        "network_class_id": "31",
+        "network_class_name": "AGG_DISTRICT",
+        "network_type_id": "8",
+        "network_type_name": "METRO",
+        "reason_id": "2669",
+        "cah.reason": "17.8 Cảnh báo không ảnh hưởng dịch vụ",
+        "cah.comment": "",
+        "cah.resolve": "",
+        "analysis_info": "",
+        "location_id": "[281,284,6000100,6010009]",
+        "location_code": "['VN','KV3','VLG','VLG106']",
+        "location_name": "['Việt Nam','Khu vực 3','Tỉnh Vĩnh Long','Xã Ba Tri']",
+        "alarm_status": "1",
+        "cah.insert_time": "2026-07-28 08:40:16.000",
+        "cah.update_time": "2026-07-28 08:40:10.000",
+        "cah.create_time": "2026-07-28 08:39:17.000",
+        "monitor_type_id": "5",
+        "cah.ack_time": "",
+        "cah.trouble_code": "",
+        "wo_code": "",
+        "cr_number": "",
+        "is_collected": "0",
+        "parent_id": "[]",
+        "child_id": "[]",
+        "auto_handled": "",
+        "ranking_default": "0.70",
+        "ranking_custom": "",
+        "label_alarm": "",
+        "flash_threshold": "",
+        "country_code": "VNM",
+        "cah.chaining_id": "6331493",
+        "chaining_static_id": "3119349",
+        "process_code": "IPMS_ALARM_IP_CBS_CORE_CURRENT",
+        "process_exe_id": "178520275418721",
+        "process_node": "IPMS4.0_10.205.68.222",
+        "source_alarm_id": "136028896",
+        "monitoring_unit": "",
+        "cah.is_deleted": "0",
+        "cah.sys_time": "1785203895585",
+        "monitor_type_name": "Màn hình cảnh báo VCC giám sát",
+        "noc4_update_time": "2026-07-28 08:40:10.000",
+        "nims_device_code": "BTE0005AGG01",
+        "cah.ranking_reason": "Xác suất cặp device_name và fault_name xuất hiện tại thời điểm sự cố xảy ra là 98.33%.",
+        "system_code": "",
+        "user_send_trouble": "",
+        "processing_result": "",
+        "processing_detail": "",
+        "link_id": "5121436",
+        "port": "GigabitEthernet1/1/0",
+        "cah.chaining_explain": "",
+        "receive_unit_rule_id": "",
+        "processing_unit_code": "",
+        "is_root_alarm": "",
+        "is_root_alarm_staging": "",
+        "remote_node": "",
+        "device_component": "",
+        "node_type": "",
+        "node_service": "",
+        "device_owner": "minhphuong",
+        "cable_segment": "",
+        "backbone_connect": ""
+      },
+      "raw_start_time": "2026-07-28 08:36:55.000",
+      "raw_end_time": "2026-07-28 08:58:15.000",
+      "canonical_start_time": "2026-07-28T08:36:55",
+      "canonical_end_time": "2026-07-28T08:58:15",
+      "alarm_name": "CBS.UNDER THRESSHOLD - BW",
+      "device_code": "BTE0005AGG01",
+      "severity_name": "Critical",
+      "quality_flags": [
+        "MISSING_NODE_REFERENCE",
+        "MULTILINE_CONTENT"
+      ]
+    }
+  ],
+  "chains": [
+    {
+      "chain_id": "6331493",
+      "snapshot_id": "ip_network_evolution_v4_snap_000",
+      "member_count": 1,
+      "source_kind": "REAL_EXPORT_REPLAY",
+      "provenance_class": "SYSTEM_FACT",
+      "chain_name": "CBS.LOWER 30% THAN PREVIOUS - BTE0448AGG01 - Eth-Trunk11, Eth-Trunk10",
+      "event_span_seconds": 0
+    }
+  ],
+  "memberships": [
+    {
+      "chain_id": "6331493",
+      "alarm_id": "3728188958",
+      "snapshot_id": "ip_network_evolution_v4_snap_000",
+      "source_kind": "REAL_EXPORT_REPLAY"
+    }
+  ],
+  "system_metadata": {
+    "chain_rules": [],
+    "chain_characteristics": [],
+    "attribute_configs": [],
+    "pair_metadata": [],
+    "pair_metadata_batches": []
+  },
+  "operational_context": [],
+  "provenance_manifest": {
+    "sources": [
+      {
+        "source_id": "alarm_data_csv",
+        "source_kind": "REAL_EXPORT_REPLAY",
+        "file_path": "/home/vqt/UET/Project/hindsight/nocpro-mock/datasets/raw/alarm/alarmIP.csv",
+        "record_count": 1,
+        "notes": []
+      }
+    ],
+    "unavailable_capabilities": [
+      "TOPOLOGY_NOT_LOADED"
+    ],
+    "notes": [
+      "DERIVED_REPLAY: time windows were generated from a single real export and are not verified upstream snapshots.",
+      "PRODUCTION_EVOLUTION_VALIDATION_NOT_ESTABLISHED"
+    ]
+  },
+  "schema_version": "v1"
+}
