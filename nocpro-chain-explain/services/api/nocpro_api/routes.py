@@ -450,12 +450,17 @@ async def get_chain_cohesion_narrative(
     try:
         service = workspace(request)
         audit_artifact = None
+        audit_error_reason: str | None = None
         try:
             audit_lookup = await service.latest_audit_visualization(chain_id)
             if audit_lookup and audit_lookup.audit_artifact:
                 audit_artifact = audit_lookup.audit_artifact
+        except KeyError:
+            # Chain unknown or not found
+            raise
         except Exception:
-            pass
+            logger.exception("Failed to retrieve latest audit visualization for chain %s", chain_id)
+            audit_error_reason = "AUDIT_LOOKUP_FAILED"
 
         review_result = None
         try:
@@ -467,8 +472,10 @@ async def get_chain_cohesion_narrative(
                     if hasattr(latest_rev.result, "recommendations")
                     else latest_rev.result
                 )
+        except KeyError:
+            raise
         except Exception:
-            pass
+            logger.exception("Failed to retrieve latest review for chain %s", chain_id)
 
         from .cohesion_advisor import generate_cohesion_narrative
         result = await _run_grounded_provider(
@@ -477,6 +484,7 @@ async def get_chain_cohesion_narrative(
             chain_id=chain_id,
             audit_artifact=audit_artifact,
             review_result=review_result,
+            audit_error_reason=audit_error_reason,
         )
         return CohesionNarrativeView(
             chain_id=result.chain_id,

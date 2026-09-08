@@ -15,6 +15,7 @@ from collections import Counter
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from audit import AuditVerdict
 from .grounded_llm import render_grounded
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ def extract_cohesion_context(
     analysis: Any | None = None,
     audit_artifact: Any | None = None,
     review_result: dict[str, Any] | None = None,
+    audit_error_reason: str | None = None,
 ) -> dict[str, Any]:
     """Extract structured facts across the 5 authoritative data sources."""
     package = service.require_package()
@@ -80,7 +82,7 @@ def extract_cohesion_context(
     top_alarm_types = [[name, count] for name, count in name_counts.most_common(3)]
 
     # Duration calculation
-    duration_seconds: int = 0
+    duration_seconds: int | None = None
     if hasattr(analysis, "duration_seconds") and analysis.duration_seconds is not None:
         duration_seconds = int(analysis.duration_seconds)
     elif start_times:
@@ -92,9 +94,9 @@ def extract_cohesion_context(
                 if t
             ]
             if len(parsed_times) >= 2:
-                duration_seconds = int((max(parsed_times) - min(parsed_times)).total_seconds())
+                duration_seconds = max(0, int((max(parsed_times) - min(parsed_times)).total_seconds()))
         except Exception:
-            duration_seconds = 0
+            duration_seconds = None
 
     # -------------------------------------------------------------------------
     # 2. Chain WHY / Descriptors
@@ -102,11 +104,12 @@ def extract_cohesion_context(
     strong_views: list[str] = []
     partial_views: list[str] = []
 
-    # Check temporal burst: duration <= 60s
-    if duration_seconds <= 60 and alarm_count > 1:
-        strong_views.append("TEMPORAL_BURST")
-    elif alarm_count > 1:
-        partial_views.append("T_DELAY")
+    # Check temporal burst: only valid when duration_seconds is known and <= 60s
+    if duration_seconds is not None:
+        if duration_seconds <= 60 and alarm_count > 1:
+            strong_views.append("TEMPORAL_BURST")
+        elif alarm_count > 1:
+            partial_views.append("T_DELAY")
 
     # Check device concentration
     dev_counts = Counter(devices)
@@ -138,19 +141,20 @@ def extract_cohesion_context(
     mapped_count = 0
     resource_types: set[str] = set()
 
-    for raw_mapping in package.topology.get("mappings") or ():
-        if not isinstance(raw_mapping, dict):
-            continue
-        alarm_id = raw_mapping.get("alarm_id")
+    topo = getattr(package, "topology", {})
+    raw_mappings = topo.get("mappings") if isinstance(topo, dict) else getattr(topo, "mappings", ())
+
+    for raw_mapping in raw_mappings or ():
+        if isinstance(raw_mapping, dict):
+            alarm_id = raw_mapping.get("alarm_id")
+            res_type = raw_mapping.get("resource_type") or raw_mapping.get("type")
+        else:
+            alarm_id = getattr(raw_mapping, "alarm_id", None)
+            res_type = getattr(raw_mapping, "topology_layer", None) or getattr(raw_mapping, "resource_id", None)
         if alarm_id in member_ids:
             mapped_count += 1
-            res_type = raw_mapping.get("resource_type") or raw_mapping.get("type")
             if res_type:
                 resource_types.add(str(res_type))
-
-    # If no explicit mapping rows, derive resource types from device_types
-    if not resource_types and device_types:
-        resource_types.update(Counter(device_types).keys())
 
     if mapped_count > 0:
         strong_views.append("TOPOLOGY")
@@ -162,19 +166,46 @@ def extract_cohesion_context(
     # -------------------------------------------------------------------------
     candidate_cut = False
     conductance: float | None = None
-    audit_status = "SOLID"
+    audit_status = "NOT_EVALUATED"
+    audit_verdict: str | None = None
+    audit_reason: str | None = None
 
-    if audit_artifact is not None:
-        scored_cuts = getattr(audit_artifact, "scored_cuts", ())
+    if audit_error_reason:
+        audit_status = "UNAVAILABLE"
+        audit_reason = audit_error_reason
+    elif audit_artifact is not None:
+        artifact_status = getattr(audit_artifact, "status", "")
+        raw_verdict = getattr(audit_artifact, "verdict", None)
+        audit_verdict = getattr(raw_verdict, "value", str(raw_verdict)) if raw_verdict is not None else None
+        audit_reason = getattr(audit_artifact, "reason", None)
         best_cut_index = getattr(audit_artifact, "best_cut_index", None)
-        if scored_cuts and len(scored_cuts) > 0:
-            candidate_cut = True
-            audit_status = "NEEDS_ATTENTION"
-            if best_cut_index is not None and 0 <= best_cut_index < len(scored_cuts):
-                best_cut = scored_cuts[best_cut_index]
-                conductance = getattr(best_cut, "conductance", None)
-            elif hasattr(scored_cuts[0], "conductance"):
-                conductance = getattr(scored_cuts[0], "conductance", None)
+        scored_cuts = getattr(audit_artifact, "scored_cuts", ())
+
+        # Artifact status for valid computed review audit artifacts is "AVAILABLE"
+        if artifact_status in ("AVAILABLE", "SUCCEEDED", "COMPLETE", "VALID"):
+            if audit_verdict == AuditVerdict.CANDIDATE_SPLIT.value:
+                audit_status = "EVALUATED"
+                candidate_cut = True
+                if scored_cuts and best_cut_index is not None and 0 <= best_cut_index < len(scored_cuts):
+                    best_cut = scored_cuts[best_cut_index]
+                    conductance = getattr(best_cut, "conductance", getattr(best_cut, "phi", None))
+                elif scored_cuts:
+                    conductance = getattr(scored_cuts[0], "conductance", getattr(scored_cuts[0], "phi", None))
+            elif audit_verdict == AuditVerdict.NO_LOW_CONDUCTANCE_CUT.value:
+                audit_status = "EVALUATED"
+                candidate_cut = False
+            elif audit_verdict == AuditVerdict.SKIPPED_SMALL_CHAIN.value:
+                audit_status = "NOT_APPLICABLE"
+                candidate_cut = False
+            elif audit_verdict == AuditVerdict.UNAVAILABLE.value:
+                audit_status = "UNAVAILABLE"
+                candidate_cut = False
+            else:
+                audit_status = "EVALUATED"
+        elif artifact_status in ("FAILED", "UNAVAILABLE"):
+            audit_status = "UNAVAILABLE"
+        else:
+            audit_status = "UNAVAILABLE"
 
     # -------------------------------------------------------------------------
     # 5. Counterfactual Recommendations
@@ -212,6 +243,8 @@ def extract_cohesion_context(
         },
         "audit": {
             "status": audit_status,
+            "verdict": audit_verdict,
+            "reason": audit_reason,
             "candidate_cut": candidate_cut,
             "conductance": round(conductance, 3) if conductance is not None else None,
         },
@@ -238,16 +271,16 @@ def build_deterministic_cohesion_narrative(context: dict[str, Any]) -> str:
     res_types = topology.get("resource_types", [])
     candidate_cut = audit.get("candidate_cut", False)
     conductance = audit.get("conductance")
+    audit_status = audit.get("status", "NOT_EVALUATED")
+    audit_verdict = audit.get("verdict")
+    audit_reason = audit.get("reason")
     split_recommended = recs.get("split_recommended", False)
 
-    # 1. Singleton narrative
+    # 1. Singleton narrative (Strict adherence to data truth: no speculative isolation or propagation claims)
     if is_singleton:
-        alarm_name = top_alarms[0][0] if top_alarms else "alarm event"
-        dev = devices[0] if devices else "target device"
-        net = f" on {network_classes[0]}" if network_classes else ""
         return (
-            f"This is an isolated single-alarm event for '{alarm_name}' on {dev}{net}. "
-            "Evidence indicates a localized symptom with no cross-device temporal propagation."
+            "This chain contains one observed alarm. "
+            "Multi-member cohesion and propagation analysis are not applicable."
         )
 
     # 2. Multi-alarm composition sentence
@@ -280,14 +313,22 @@ def build_deterministic_cohesion_narrative(context: dict[str, Any]) -> str:
             "A structural partition boundary was identified, and a split alternative "
             "has been recommended for review."
         )
-    elif candidate_cut:
+    elif candidate_cut or audit_verdict == AuditVerdict.CANDIDATE_SPLIT.value:
         cond_str = f" (conductance {conductance:.2f})" if conductance is not None else ""
         sentence_2 = (
-            f"Structural audit detected a weak separation boundary between member groups{cond_str}, "
+            f"Structural audit detected a low-conductance separation boundary between member groups{cond_str}, "
             "though no split alternative is currently recommended."
         )
+    elif audit_status == "EVALUATED" and audit_verdict == AuditVerdict.NO_LOW_CONDUCTANCE_CUT.value:
+        sentence_2 = "Structural audit evaluated candidate partitions and detected no low-conductance partition boundaries."
+    elif audit_status == "NOT_APPLICABLE" or audit_verdict == AuditVerdict.SKIPPED_SMALL_CHAIN.value:
+        sentence_2 = "Structural audit balance constraints are not applicable for this small chain structure."
+    elif audit_status == "UNAVAILABLE" or audit_verdict == AuditVerdict.UNAVAILABLE.value:
+        reason_clause = f" ({audit_reason})" if audit_reason else ""
+        sentence_2 = f"Structural audit is currently unavailable for this chain{reason_clause}."
     else:
-        sentence_2 = "Structural audit confirms high cohesion with no partition boundaries detected."
+        # NOT_EVALUATED
+        sentence_2 = "Tier-2 structural audit has not been performed for this chain."
 
     return f"{sentence_1} {sentence_2}"
 
@@ -297,6 +338,7 @@ def generate_cohesion_narrative(
     chain_id: str,
     audit_artifact: Any | None = None,
     review_result: dict[str, Any] | None = None,
+    audit_error_reason: str | None = None,
 ) -> CohesionNarrativeResult:
     """Generate a grounded narrative, optionally polished by an LLM."""
     package = service.require_package()
@@ -309,6 +351,7 @@ def generate_cohesion_narrative(
         analysis=analysis,
         audit_artifact=audit_artifact,
         review_result=review_result,
+        audit_error_reason=audit_error_reason,
     )
 
     deterministic_draft = build_deterministic_cohesion_narrative(context)
