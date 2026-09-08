@@ -81,6 +81,11 @@ dev = [
     { name = "pytest" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "aiokafka", specifier = "==0.14.0" },
@@ -89,6 +94,9 @@ requires-dist = [
     { name = "zstandard", specifier = "==0.25.0" },
 ]
 provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.0" }]
 
 [[package]]
 name = "packaging"

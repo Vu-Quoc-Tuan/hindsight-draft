@@ -220,9 +220,9 @@ lint:
 install:
 	@echo -e "$(BOLD)$(CYAN)Installing all dependencies...$(RESET)"
 	@echo -e "$(BLUE)1. Syncing nocpro-mock (uv)...$(RESET)"
-	@cd nocpro-mock && uv sync
+	@cd nocpro-mock && uv sync --all-extras
 	@echo -e "$(BLUE)2. Syncing nocpro-chain-explain (uv)...$(RESET)"
-	@cd nocpro-chain-explain && uv sync
+	@cd nocpro-chain-explain && uv sync --all-extras
 	@echo -e "$(BLUE)3. Installing web packages (pnpm)...$(RESET)"
 	@cd nocpro-chain-explain/services/web && pnpm install
 	@echo -e "$(BOLD)$(GREEN)✓ All dependencies installed successfully!$(RESET)"
