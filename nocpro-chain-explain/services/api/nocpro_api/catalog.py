@@ -4,13 +4,9 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
-
-from nocpro_mock.config import MockConfig
-from nocpro_mock.contract import package_to_dict
-from nocpro_mock.replay.snapshot import build_real_replay_snapshot
 
 ProfileKind = Literal["IP_NETWORK", "IT_SERVICES", "ALARM_ONLY"]
 
@@ -129,7 +125,7 @@ _CATALOG: list[CatalogItem] = [
         snapshot_id="synthetic_counterfactual_move_v1:snapshot_000",
         name="Counterfactual Move Reference",
         profile="ALARM_ONLY",
-        alarm_count=18,
+        alarm_count=17,
         chain_count=2,
         description="Controlled scenario evaluating cross-chain member reassignment (MOVE_MEMBER).",
         badge="Synthetic",
@@ -158,9 +154,25 @@ _CATALOG: list[CatalogItem] = [
 ]
 
 
+def check_item_availability(item: CatalogItem) -> tuple[bool, str | None]:
+    if item.file_path:
+        full_path = _MOCK_ROOT / item.file_path
+        if not full_path.exists():
+            return False, f"Preset file not found: {item.file_path}"
+        return True, None
+    if item.replay_csv:
+        csv_path = _MOCK_ROOT / item.replay_csv
+        if not csv_path.exists():
+            return False, f"Replay CSV not found: {item.replay_csv}"
+        return True, None
+    return False, "No backing file or replay CSV configured"
+
+
 def list_catalog_presets() -> list[dict[str, Any]]:
-    return [
-        {
+    presets = []
+    for item in _CATALOG:
+        avail, reason = check_item_availability(item)
+        presets.append({
             "snapshot_id": item.snapshot_id,
             "name": item.name,
             "profile": item.profile,
@@ -168,9 +180,10 @@ def list_catalog_presets() -> list[dict[str, Any]]:
             "chain_count": item.chain_count,
             "description": item.description,
             "badge": item.badge,
-        }
-        for item in _CATALOG
-    ]
+            "available": avail,
+            "unavailable_reason": reason,
+        })
+    return presets
 
 
 def load_preset_payload(snapshot_id: str) -> tuple[dict[str, Any], ProfileKind]:
@@ -188,6 +201,14 @@ def load_preset_payload(snapshot_id: str) -> tuple[dict[str, Any], ProfileKind]:
         csv_path = _MOCK_ROOT / item.replay_csv
         if not csv_path.exists():
             raise FileNotFoundError(f"Replay CSV not found: {csv_path}")
+        try:
+            from nocpro_mock.config import MockConfig
+            from nocpro_mock.contract import package_to_dict
+            from nocpro_mock.replay.snapshot import build_real_replay_snapshot
+        except ImportError as exc:
+            raise RuntimeError(
+                f"Preset {snapshot_id} requires nocpro_mock on PYTHONPATH to parse CSV replay: {exc}"
+            ) from exc
         pkg = build_real_replay_snapshot(
             config=MockConfig(),
             alarm_csv_path=str(csv_path),

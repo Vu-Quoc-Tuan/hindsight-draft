@@ -32,6 +32,8 @@ class SnapshotCatalogItemView(ApiModel):
     chain_count: int
     description: str
     badge: str
+    available: bool = True
+    unavailable_reason: str | None = None
 
 
 class SnapshotCatalogListView(ApiModel):
@@ -691,3 +693,6 @@ class CalibrationReportView(ApiModel):
     calibrated_parameters: list[ParameterCalibrationView]
     output_config_path: str
     status: str
+    chains_loaded: int | None = None
+    chains_skipped_large: int = 0
+    chains_failed: int = 0
