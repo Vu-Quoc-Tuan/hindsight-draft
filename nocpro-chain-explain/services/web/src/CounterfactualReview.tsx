@@ -232,6 +232,7 @@ const REASON_EXPLANATIONS: Record<string, string> = {
   COUNTERFACTUAL_POLICY_NOT_CALIBRATED: 'Chính sách Counterfactual đang ở chế độ an toàn mặc định (SYNTHETIC_ONLY) do chưa có nhãn hiệu chuẩn từ kỹ sư vận hành (Operator Ground Truth)',
   NO_CLEAR_ALTERNATIVE: 'Không có phương án phân hoạch nào vượt trội rõ rệt trên biên Pareto',
   STRUCTURAL_AUDIT_SKIPPED_SMALL_CHAIN: 'Chuỗi nhỏ (<10 cảnh báo) không áp dụng phân hoạch cấu trúc',
+  COUNTERFACTUAL_CONFIG_INCOMPLETE: 'Cấu hình Counterfactual chưa hoàn tất trên baseline v1.yaml. Cần khởi động lại backend để nạp calibrated.yaml',
 }
 
 function OperationSection({
@@ -291,12 +292,14 @@ export function CounterfactualReview({
   initialJob = null,
   initialFeedbacks = {},
   readOnly = false,
+  onNavigateToValidation,
 }: {
   chainId: string
   initialJob?: CounterfactualJob | null
   initialFeedbacks?: Record<string, OperatorFeedback>
   /** Assistant navigation may only display persisted results; it never starts Review. */
   readOnly?: boolean
+  onNavigateToValidation?: () => void
 }) {
   const [job, setJob] = useState<CounterfactualJob | null>(initialJob)
   const [feedbacks, setFeedbacks] = useState<Record<string, OperatorFeedback>>(initialFeedbacks)
@@ -430,7 +433,7 @@ export function CounterfactualReview({
           ) : null}
         </p>
       ) : null}
-      {result.recommendation_status === 'UNAVAILABLE' && result.reason === 'COUNTERFACTUAL_POLICY_NOT_CALIBRATED' ? (
+      {result.recommendation_status === 'UNAVAILABLE' && (result.reason === 'COUNTERFACTUAL_POLICY_NOT_CALIBRATED' || result.reason === 'COUNTERFACTUAL_CONFIG_INCOMPLETE') ? (
         <div
           className="review-calibration-hint"
           style={{
@@ -448,8 +451,35 @@ export function CounterfactualReview({
           }}
         >
           <div>
-            <strong>💡 Chế độ an toàn mặc định:</strong> Chính sách Counterfactual hiện đang chạy cấu hình mặc định (SYNTHETIC_ONLY). Do chưa có bộ nhãn phản hồi thực tế từ kỹ sư vận hành (Operator Ground Truth), hệ thống tự động khóa an toàn các đề xuất phân hoạch trên dữ liệu mạng thực tế để tránh can thiệp ngoài kiểm chứng.
+            <strong>💡 Chế độ an toàn mặc định ({result.reason}):</strong>{' '}
+            {result.reason === 'COUNTERFACTUAL_CONFIG_INCOMPLETE'
+              ? 'Tệp cấu hình đang chạy (v1.yaml) chưa bật bộ thông số Counterfactual. Hãy tắt và bật lại dev server (`make dev`) để nạp cấu hình `calibrated.yaml` đã được hiệu chuẩn.'
+              : 'Chính sách Counterfactual hiện đang chạy cấu hình mặc định (SYNTHETIC_ONLY). Do chưa có bộ nhãn phản hồi thực tế từ kỹ sư vận hành (Operator Ground Truth), hệ thống tự động khóa an toàn các đề xuất phân hoạch trên dữ liệu mạng thực tế để tránh can thiệp ngoài kiểm chứng.'}
           </div>
+          {onNavigateToValidation && (
+            <button
+              type="button"
+              onClick={onNavigateToValidation}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.375rem',
+                padding: '0.375rem 0.75rem',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                color: '#070e1d',
+                backgroundColor: '#38bdf8',
+                borderRadius: '0.375rem',
+                border: 'none',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>verified</span>
+              <span>Đi đến Ký duyệt</span>
+            </button>
+          )}
         </div>
       ) : null}
       <div className="review-operation-grid">

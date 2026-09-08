@@ -31,13 +31,13 @@ function layoutCluster(
   }
 
   // Multi-tier organic orbits (Inner Core Ring + Outer Satellite Ring)
-  const innerCount = Math.max(3, Math.min(8, Math.round(count * 0.35)))
+  const innerCount = Math.max(2, Math.min(6, Math.round(count * 0.3)))
   const outerCount = count - innerCount
 
-  const innerRx = maxRx * 0.44
-  const innerRy = maxRy * 0.44
-  const outerRx = maxRx * 0.9
-  const outerRy = maxRy * 0.9
+  const innerRx = maxRx * 0.42
+  const innerRy = maxRy * 0.42
+  const outerRx = maxRx * 0.88
+  const outerRy = maxRy * 0.88
 
   return clusterNodes.map((node, i) => {
     if (i < innerCount) {
@@ -66,20 +66,28 @@ function layoutAuditGraph(nodes: AuditVisualization['nodes']): PositionedNode[] 
   const countB = sideB.length
 
   if (countA > 0 && countB > 0) {
-    // Cut A: Core Cluster on left (cx: 260, cy: 300)
-    // Cut B: Anomalous Leaf / Spillover on right (cx: 810, cy: 300)
-    const posA = layoutCluster(sideA, 260, 300, 180, 200)
-    const posB = layoutCluster(sideB, 810, 300, 160, 200)
+    // Cut A: Core Cluster on left (cx: 240, cy: 310)
+    // Cut B: Spillover Cluster on right (cx: 740, cy: 310)
+    const rxA = Math.min(160, Math.max(100, countA * 22))
+    const ryA = Math.min(190, Math.max(120, countA * 24))
+    const rxB = Math.min(190, Math.max(120, countB * 20))
+    const ryB = Math.min(200, Math.max(130, countB * 22))
+
+    const posA = layoutCluster(sideA, 240, 310, rxA, ryA)
+    const posB = layoutCluster(sideB, 740, 310, rxB, ryB)
     return [...posA, ...posB]
   }
 
   // Single cluster without cut (e.g. test base or unpartitioned)
-  return layoutCluster(nodes, 500, 300, 360, 200)
+  return layoutCluster(nodes, 500, 310, 340, 200)
 }
 
 interface AuditGraphVisualizationProps {
   value: AuditVisualization
   analysis?: ChainAnalysis
+  verdict?: string
+  phi?: number | null
+  epsilon?: number | null
   onRunDeepDive?: () => void
 }
 
@@ -112,8 +120,12 @@ export function AuditGraphVisualization(props: AuditGraphVisualizationProps) {
 function AuditGraphVisualizationContent({
   value,
   analysis,
+  verdict,
+  phi: _phi,
+  epsilon,
   onRunDeepDive,
 }: AuditGraphVisualizationProps) {
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [zoomScale, setZoomScale] = useState(1)
   const [showNodeLabels, setShowNodeLabels] = useState(true)
@@ -164,18 +176,55 @@ function AuditGraphVisualizationContent({
     return Math.max(0.012, Math.min(0.048, val)).toFixed(3)
   }, [minCrossCutWeight])
 
-  // Focused Anomaly Node (for pinned inspection card)
-  const focusedNode = useMemo(() => {
-    if (hoveredNodeId) return byId.get(hoveredNodeId)
-    // Fallback: Pick a leaf / weak node on cut side B or last node
-    const weakB = nodes.find(n => n.cut_side === 'B' && n.structural_role !== 'CONNECTOR')
-    return weakB || nodes[nodes.length - 1] || null
-  }, [hoveredNodeId, byId, nodes])
+  // Active node to inspect (only populated if user explicitly clicks or hovers a node)
+  const activeNodeId = selectedNodeId || hoveredNodeId
+  const activeNode = activeNodeId ? byId.get(activeNodeId) || null : null
+
+  const memberInfo = useMemo(() => {
+    if (!activeNode || !analysis?.members) return null
+    return analysis.members.find(m => m.alarm_id === activeNode.alarm_id)
+  }, [activeNode, analysis])
+
+  const incidentEdges = useMemo(() => {
+    if (!activeNode) return []
+    return value.edges.filter(
+      e => e.source_alarm_id === activeNode.alarm_id || e.target_alarm_id === activeNode.alarm_id
+    )
+  }, [activeNode, value.edges])
+
+  const crossCutIncidentCount = useMemo(() => {
+    return incidentEdges.filter(e => e.crosses_best_cut).length
+  }, [incidentEdges])
 
   const rootAnchorNode = useMemo(() => {
     const coreA = nodes.find(n => n.cut_side === 'A')
-    return coreA?.alarm_id || nodes[0]?.alarm_id || 'DEHL01-CR01'
+    const displayId = coreA?.alarm_id || nodes[0]?.alarm_id || 'DEHL01-CR01'
+    return displayId.length > 10 ? `..${displayId.slice(-6)}` : displayId
   }, [nodes])
+
+  // Breakdown statistics for right panel
+  const internalAEdges = useMemo(() => {
+    const sideASet = new Set(nodes.filter(n => n.cut_side === 'A').map(n => n.alarm_id))
+    return value.edges.filter(e => sideASet.has(e.source_alarm_id) && sideASet.has(e.target_alarm_id))
+  }, [nodes, value.edges])
+
+  const internalBEdges = useMemo(() => {
+    const sideBSet = new Set(nodes.filter(n => n.cut_side === 'B').map(n => n.alarm_id))
+    return value.edges.filter(e => sideBSet.has(e.source_alarm_id) && sideBSet.has(e.target_alarm_id))
+  }, [nodes, value.edges])
+
+  const weakEdges = useMemo(() => {
+    return value.edges.filter(e => e.weight < 0.2)
+  }, [value.edges])
+
+  const internalAPercent = value.edges.length > 0 ? Math.round((internalAEdges.length / value.edges.length) * 100) : 0
+  const internalBPercent = value.edges.length > 0 ? Math.round((internalBEdges.length / value.edges.length) * 100) : 0
+  const crossCutPercent = value.edges.length > 0 ? Math.round((crossCutEdges.length / value.edges.length) * 100) : 0
+  const weakPercent = value.edges.length > 0 ? Math.round((weakEdges.length / value.edges.length) * 100) : 0
+
+  const isBottleneck = verdict
+    ? verdict.toUpperCase().includes('SPLIT') || verdict.toUpperCase().includes('CANDIDATE')
+    : Number(phiConductance) <= 0.30
 
   return (
     <section
@@ -208,10 +257,17 @@ function AuditGraphVisualizationContent({
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 text-rose-400 bg-rose-500/10 border border-rose-500/30 px-2.5 py-1 rounded font-bold">
-            <span className="material-symbols-outlined text-[15px]">warning</span>
-            <span>BOTTLENECK DETECTED (Φ = {phiConductance})</span>
-          </div>
+          {isBottleneck ? (
+            <div className="flex items-center gap-1.5 text-rose-400 bg-rose-500/10 border border-rose-500/30 px-2.5 py-1 rounded font-bold">
+              <span className="material-symbols-outlined text-[15px]">warning</span>
+              <span>BOTTLENECK DETECTED (Φ = {phiConductance})</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded font-bold">
+              <span className="material-symbols-outlined text-[15px]">verified</span>
+              <span>COHESIVE STRUCTURE (Φ = {phiConductance})</span>
+            </div>
+          )}
           <span className="rounded bg-secondary-container/30 px-2 py-0.5 font-code-sm text-[10px] font-bold text-secondary border border-secondary/30">
             {value.projection_version}
           </span>
@@ -263,7 +319,7 @@ function AuditGraphVisualizationContent({
               type="checkbox"
               checked={showNodeLabels}
               onChange={e => setShowNodeLabels(e.target.checked)}
-              className="accent-secondary w-3.5 h-3.5"
+              className="accent-secondary w-3.5 h-3.5 cursor-pointer"
             />
             <span className="font-code-sm text-[11px] text-on-surface">Node Labels</span>
           </label>
@@ -273,7 +329,7 @@ function AuditGraphVisualizationContent({
               type="checkbox"
               checked={showWeakEdges}
               onChange={e => setShowWeakEdges(e.target.checked)}
-              className="accent-secondary w-3.5 h-3.5"
+              className="accent-secondary w-3.5 h-3.5 cursor-pointer"
             />
             <span className="font-code-sm text-[11px] text-on-surface">Weak Edges (&lt;0.2)</span>
           </label>
@@ -283,7 +339,7 @@ function AuditGraphVisualizationContent({
               type="checkbox"
               checked={showHeatmap}
               onChange={e => setShowHeatmap(e.target.checked)}
-              className="accent-rose-500 w-3.5 h-3.5"
+              className="accent-rose-500 w-3.5 h-3.5 cursor-pointer"
             />
             <span className="font-code-sm text-[11px] text-rose-300">Conductance Heatmap</span>
           </label>
@@ -296,20 +352,20 @@ function AuditGraphVisualizationContent({
             <span className="text-on-surface">Core Cluster</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rotate-45 bg-rose-400 shadow-[0_0_6px_rgba(255,179,173,0.6)]" />
-            <span className="text-on-surface">Bridge Router</span>
+            <span className="w-2.5 h-2.5 rotate-45 bg-amber-400 shadow-[0_0_6px_rgba(255,185,95,0.6)]" />
+            <span className="text-on-surface">Spillover Leaf</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(255,185,95,0.7)] animate-pulse" />
-            <span className="text-amber-400 font-bold">Isolated Leak (Weak)</span>
+            <span className="w-2.5 h-2.5 rotate-45 bg-rose-400 shadow-[0_0_6px_rgba(255,84,81,0.6)]" />
+            <span className="text-rose-300 font-bold">Connector</span>
           </div>
           <div className="h-3 w-px bg-[#1b273e]" />
           <div className="flex items-center gap-1.5">
             <span className="w-3.5 h-0.5 bg-secondary" />
-            <span>Physical L2/L3</span>
+            <span>Intra-cluster Link</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-3.5 h-0.5 border-b border-dotted border-rose-400" />
+            <span className="w-3.5 h-0.5 border-b border-dashed border-rose-400" />
             <span className="text-rose-400 font-semibold">━ crosses best cut</span>
           </div>
         </div>
@@ -322,7 +378,7 @@ function AuditGraphVisualizationContent({
         {/* Left Column: G*_audit Structural Representation Canvas */}
         <div className="xl:col-span-8 2xl:col-span-9 flex flex-col bg-[#070c17] rounded-xl border border-[#1b273e] overflow-hidden shadow-xl relative min-h-[580px] lg:min-h-[640px]">
           {/* Viewport Header Overlay Badge (Pinned Top-Left) */}
-          <div className="absolute top-3 left-3 z-20 flex items-center gap-2 bg-[#080d17]/90 backdrop-blur-md px-3 py-1.5 rounded-lg border border-[#1b273e] shadow-md">
+          <div className="absolute top-3 left-3 z-20 flex items-center gap-2 bg-[#080d17]/90 backdrop-blur-md px-3 py-1.5 rounded-lg border border-[#1b273e] shadow-md pointer-events-none">
             <span className="material-symbols-outlined text-secondary text-[16px]">device_hub</span>
             <div className="flex flex-col">
               <span className="font-headline-md text-xs text-on-surface font-bold">
@@ -335,7 +391,7 @@ function AuditGraphVisualizationContent({
           </div>
 
           {/* Quick Metrics Overlay (Pinned Top-Right) */}
-          <div className="absolute top-3 right-3 z-20 flex items-center gap-2 bg-[#080d17]/90 backdrop-blur-md px-3 py-1.5 rounded-lg border border-[#1b273e] shadow-md font-code-sm text-xs">
+          <div className="absolute top-3 right-3 z-20 flex items-center gap-2 bg-[#080d17]/90 backdrop-blur-md px-3 py-1.5 rounded-lg border border-[#1b273e] shadow-md font-code-sm text-xs pointer-events-none">
             <span className="text-on-surface-variant">Fiedler Cut Vector:</span>
             <span className="text-rose-400 font-bold">λ2 = {fiedlerLambda2}</span>
             <span className="text-on-surface-variant ml-2">Conductance:</span>
@@ -355,14 +411,15 @@ function AuditGraphVisualizationContent({
             >
               <svg
                 viewBox="0 0 1000 620"
-                className="w-full h-full"
+                className="w-full h-full cursor-default"
                 role="img"
                 aria-label={`Audit graph with ${value.shown_node_count} nodes and ${value.shown_edge_count} edges`}
+                onClick={() => setSelectedNodeId(null)}
               >
                 <defs>
                   {/* Glow Filters */}
                   <filter id="glow-danger" x="-30%" y="-30%" width="160%" height="160%">
-                    <feGaussianBlur stdDeviation="5" result="blur" />
+                    <feGaussianBlur stdDeviation="4" result="blur" />
                     <feComposite in="SourceGraphic" in2="blur" operator="over" />
                   </filter>
                   <filter id="nodeGlow" x="-30%" y="-30%" width="160%" height="160%">
@@ -372,12 +429,8 @@ function AuditGraphVisualizationContent({
 
                   {/* Cut Field Gradient Underlay */}
                   <linearGradient id="cut-field-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="rgba(147, 0, 10, 0.25)" />
-                    <stop offset="100%" stopColor="rgba(202, 129, 0, 0.05)" />
-                  </linearGradient>
-                  <linearGradient id="bridge-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#00a6e0" />
-                    <stop offset="100%" stopColor="#ffb3ad" />
+                    <stop offset="0%" stopColor="rgba(147, 0, 10, 0.18)" />
+                    <stop offset="100%" stopColor="rgba(202, 129, 0, 0.03)" />
                   </linearGradient>
                 </defs>
 
@@ -385,58 +438,74 @@ function AuditGraphVisualizationContent({
                 {hasCut && showHeatmap && (
                   <g id="cut-boundary-zone">
                     <path
-                      d="M 640 30 C 680 180, 670 440, 650 600"
+                      d="M 485 30 C 495 180, 475 440, 485 590"
                       fill="none"
-                      opacity="0.8"
+                      opacity="0.75"
                       stroke="#ff5451"
-                      strokeDasharray="6,4"
-                      strokeWidth="2.5"
+                      strokeDasharray="6 4"
+                      strokeWidth="2"
                     />
                     <rect
-                      x="650"
-                      y="30"
-                      width="330"
-                      height="560"
+                      x="500"
+                      y="40"
+                      width="480"
+                      height="540"
                       rx="16"
                       fill="url(#cut-field-grad)"
                     />
                     <text
-                      x="665"
-                      y="60"
-                      className="font-code-sm text-[11px] font-bold tracking-wider uppercase"
+                      x="485"
+                      y="38"
+                      textAnchor="middle"
+                      className="font-code-sm text-[10px] font-bold tracking-wider uppercase"
                       fill="#ffb4ab"
                     >
-                      Cheeger Cut Boundary (Min Cut Φ = {phiConductance}) · CUT B ({countB} nodes)
+                      Cheeger Cut Boundary (Min Cut Φ = {phiConductance})
                     </text>
                   </g>
                 )}
 
-                {/* CLUSTER BOUNDING BACKGROUNDS */}
+                {/* CLUSTER BOUNDING BACKGROUNDS (Adaptive rounded enclosures) */}
                 {hasCut && (
-                  <g id="cluster-groups" opacity="0.5">
-                    {/* Cluster 01: Core Backbone Domain (AS-45819) */}
-                    <polygon
-                      fill="#141b2b"
-                      points="80,90 450,70 490,380 230,510 70,360"
+                  <g id="cluster-groups" opacity="0.6">
+                    {/* Cluster 01: Core Backbone Domain */}
+                    <rect
+                      x="60"
+                      y="70"
+                      width="360"
+                      height="480"
+                      rx="16"
+                      fill="#0b1220"
                       stroke="#00a6e0"
                       strokeWidth="1"
-                      strokeDasharray="3 3"
+                      strokeDasharray="4 4"
                     />
                     <text
-                      x="100"
-                      y="115"
+                      x="80"
+                      y="98"
                       fontFamily="JetBrains Mono"
                       fontSize="11"
                       fontWeight="700"
                       fill="#7bd0ff"
                     >
-                      Backbone Core Domain (AS-45819) · CUT A ({countA} nodes)
+                      Backbone Core Domain · CUT A ({countA} nodes)
                     </text>
 
                     {/* Cluster 02: Anomalous Leaf / Spillover Zone */}
+                    <rect
+                      x="530"
+                      y="70"
+                      width="420"
+                      height="480"
+                      rx="16"
+                      fill="#170f14"
+                      stroke="#ffb95f"
+                      strokeWidth="1"
+                      strokeDasharray="4 4"
+                    />
                     <text
-                      x="680"
-                      y="115"
+                      x="550"
+                      y="98"
                       fontFamily="JetBrains Mono"
                       fontSize="11"
                       fontWeight="700"
@@ -456,38 +525,64 @@ function AuditGraphVisualizationContent({
                     const isCross = edge.crosses_best_cut
                     const isWeak = edge.weight < 0.2
 
-                    if (!isCross && isWeak && !showWeakEdges) return null
+                    // Filter weak edges when toggle is off
+                    if (isWeak && !showWeakEdges) return null
 
                     const isInc =
-                      hoveredNodeId &&
-                      (hoveredNodeId === edge.source_alarm_id ||
-                        hoveredNodeId === edge.target_alarm_id)
-                    const isDim = hoveredNodeId && !isInc
+                      activeNodeId &&
+                      (activeNodeId === edge.source_alarm_id ||
+                        activeNodeId === edge.target_alarm_id)
+                    const isDim = activeNodeId && !isInc
 
                     const strokeColor = isCross ? '#ff5451' : '#00a6e0'
                     const strokeWidth = isCross
                       ? isInc
-                        ? 3.5
-                        : 2.5
+                        ? 3.2
+                        : Math.max(1.0, Math.min(2.4, 0.6 + edge.weight * 1.8))
                       : isInc
                       ? 2.8
-                      : Math.max(1.2, Math.min(3.5, 0.8 + edge.weight * 2.8))
+                      : Math.max(1.0, Math.min(2.5, 0.6 + edge.weight * 2.0))
 
                     const opacity = isDim
-                      ? 0.08
+                      ? 0.04
                       : isInc
                       ? 1
                       : isCross
-                      ? 0.88
+                      ? Math.max(0.12, Math.min(0.60, 0.1 + edge.weight * 0.8))
                       : isWeak
-                      ? 0.15
-                      : Math.max(0.25, edge.weight * 0.6)
+                      ? 0.12
+                      : Math.max(0.2, Math.min(0.65, edge.weight * 0.7))
+
+                    const edgeTitle = `${edge.source_alarm_id} ↔ ${edge.target_alarm_id}; weight ${edge.weight.toFixed(
+                      3
+                    )}; ${edge.supporting_groups.join(', ') || 'no groups'}${
+                      isCross ? '; crosses best cut' : ''
+                    }`
+
+                    if (isCross) {
+                      const dy = target.y - source.y
+                      const curvature = Math.max(-50, Math.min(50, dy * 0.22))
+                      const midX = (source.x + target.x) / 2
+                      const midY = (source.y + target.y) / 2 + curvature
+
+                      return (
+                        <g key={`${edge.source_alarm_id}:${edge.target_alarm_id}`} opacity={opacity}>
+                          <path
+                            d={`M ${source.x} ${source.y} Q ${midX} ${midY} ${target.x} ${target.y}`}
+                            fill="none"
+                            stroke={strokeColor}
+                            strokeWidth={strokeWidth}
+                            strokeDasharray="5 4"
+                            filter={isCross && isInc ? 'url(#glow-danger)' : undefined}
+                          >
+                            <title>{edgeTitle}</title>
+                          </path>
+                        </g>
+                      )
+                    }
 
                     return (
-                      <g
-                        key={`${edge.source_alarm_id}:${edge.target_alarm_id}`}
-                        opacity={opacity}
-                      >
+                      <g key={`${edge.source_alarm_id}:${edge.target_alarm_id}`} opacity={opacity}>
                         <line
                           x1={source.x}
                           y1={source.y}
@@ -495,36 +590,32 @@ function AuditGraphVisualizationContent({
                           y2={target.y}
                           stroke={strokeColor}
                           strokeWidth={strokeWidth}
-                          strokeDasharray={isCross ? '6 4' : undefined}
-                          filter={isCross && isInc ? 'url(#glow-danger)' : undefined}
+                          filter={isInc ? 'url(#glow-danger)' : undefined}
                         >
-                          <title>{`${edge.source_alarm_id} ↔ ${edge.target_alarm_id}; weight ${edge.weight.toFixed(
-                            3
-                          )}; ${edge.supporting_groups.join(', ') || 'no groups'}${
-                            isCross ? '; crosses best cut' : ''
-                          }`}</title>
+                          <title>{edgeTitle}</title>
                         </line>
                       </g>
                     )
                   })}
                 </g>
 
-                {/* Weak Link Callout Tag on Canvas */}
+                {/* Non-overlapping Weak Link Callout Tag on Cut Divider */}
                 {hasCut && (
-                  <g transform="translate(615, 290)">
+                  <g transform="translate(435, 52)">
                     <rect
                       fill="#ca8100"
                       height="20"
-                      rx="3"
-                      width="92"
+                      rx="4"
+                      width="100"
                       stroke="#ffb95f"
                       strokeWidth="1"
                     />
                     <text
                       className="font-code-sm text-[10px] font-bold"
                       fill="#070c17"
-                      x="7"
+                      x="50"
                       y="14"
+                      textAnchor="middle"
                     >
                       w={minCrossCutWeight} (LEAK)
                     </text>
@@ -535,7 +626,9 @@ function AuditGraphVisualizationContent({
                 <g id="graph-nodes">
                   {nodes.map(node => {
                     const radius = 9 + 8 * (node.weighted_degree / maxDegree)
+                    const isSelected = selectedNodeId === node.alarm_id
                     const isHovered = hoveredNodeId === node.alarm_id
+                    const isActive = isSelected || isHovered
                     const isConnector = node.structural_role === 'CONNECTOR'
                     const isCutA = node.cut_side === 'A'
 
@@ -557,19 +650,24 @@ function AuditGraphVisualizationContent({
                       <g
                         key={node.alarm_id}
                         transform={`translate(${node.x}, ${node.y})`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setSelectedNodeId(prev => (prev === node.alarm_id ? null : node.alarm_id))
+                        }}
                         onMouseEnter={() => setHoveredNodeId(node.alarm_id)}
                         onMouseLeave={() => setHoveredNodeId(null)}
                         className="cursor-pointer group"
                       >
-                        {/* Hover Halo */}
-                        {isHovered && (
+                        {/* Active Selection / Hover Halo */}
+                        {isActive && (
                           <circle
-                            r={radius + 6}
+                            r={radius + 8}
                             fill={stroke}
-                            fillOpacity="0.25"
+                            fillOpacity={isSelected ? '0.35' : '0.2'}
                             stroke={stroke}
-                            strokeWidth="1.5"
-                            strokeDasharray="3 3"
+                            strokeWidth={isSelected ? 2 : 1.5}
+                            strokeDasharray={isSelected ? undefined : '3 3'}
+                            className={isSelected ? 'animate-pulse' : undefined}
                           />
                         )}
 
@@ -583,17 +681,17 @@ function AuditGraphVisualizationContent({
                             rx="4"
                             fill="#232a3a"
                             stroke="#ff5451"
-                            strokeWidth={isHovered ? 3 : 2.5}
+                            strokeWidth={isActive ? 3 : 2.5}
                             transform="rotate(45)"
-                            filter={isHovered ? 'url(#glow-danger)' : undefined}
+                            filter={isActive ? 'url(#glow-danger)' : undefined}
                           />
                         ) : (
                           <circle
                             r={radius}
                             fill={fill}
                             stroke={stroke}
-                            strokeWidth={isHovered ? 3 : 2}
-                            filter={isHovered ? 'url(#nodeGlow)' : undefined}
+                            strokeWidth={isActive ? 3 : 2}
+                            filter={isActive ? 'url(#nodeGlow)' : undefined}
                           />
                         )}
 
@@ -608,10 +706,10 @@ function AuditGraphVisualizationContent({
                           <g transform={`translate(0, ${radius + 14})`}>
                             <text
                               textAnchor="middle"
-                              fill={isHovered ? '#ffffff' : '#dce2f7'}
+                              fill={isActive ? '#ffffff' : '#dce2f7'}
                               fontFamily="JetBrains Mono"
                               fontSize="10"
-                              fontWeight={isHovered ? '700' : '600'}
+                              fontWeight={isActive ? '700' : '600'}
                             >
                               {displayText}
                             </text>
@@ -643,33 +741,79 @@ function AuditGraphVisualizationContent({
               </svg>
             </div>
 
-            {/* Pinned Focused Anomaly Inspector Card matching ui/11 */}
-            {focusedNode && (
-              <div className="absolute bottom-3 right-3 bg-[#0f1728]/95 backdrop-blur-md p-3 rounded-lg border border-[#1b273e] shadow-2xl max-w-xs font-code-sm text-xs pointer-events-none z-20">
-                <div className="flex items-center justify-between gap-2 pb-1 border-b border-[#1b273e]">
-                  <span className="font-label-caps text-[9px] uppercase text-amber-400 font-bold">
-                    FOCUSED ANOMALY
-                  </span>
-                  <span className="text-[9px] px-1.5 py-0.5 bg-amber-500/20 text-amber-300 rounded font-bold">
-                    WEAK SPUR
-                  </span>
+            {/* Interactive Focused Node Inspector Card - ONLY rendered when user clicks or hovers a node */}
+            {activeNode && (
+              <div
+                className="absolute bottom-4 left-4 bg-[#0c1424]/95 backdrop-blur-md p-3.5 rounded-xl border border-[#1b273e] shadow-2xl max-w-sm font-code-sm text-xs z-30 animate-fadeIn"
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between gap-3 pb-1.5 border-b border-[#1b273e]">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`w-2.5 h-2.5 rounded-full ${
+                        activeNode.cut_side === 'A'
+                          ? 'bg-secondary shadow-[0_0_6px_rgba(0,166,224,0.8)]'
+                          : 'bg-amber-400 shadow-[0_0_6px_rgba(255,185,95,0.8)]'
+                      }`}
+                    />
+                    <span className="font-label-caps text-[10px] uppercase font-bold text-on-surface tracking-wider">
+                      {activeNode.cut_side === 'A'
+                        ? `CUT A · CORE (${countA} nodes)`
+                        : activeNode.cut_side === 'B'
+                        ? `CUT B · SPILLOVER (${countB} nodes)`
+                        : 'UNASSIGNED'}
+                    </span>
+                    <span className="text-[9px] px-1.5 py-0.5 bg-[#17233a] text-secondary rounded font-bold">
+                      {selectedNodeId === activeNode.alarm_id ? 'PINNED' : 'HOVER'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedNodeId(null)
+                      setHoveredNodeId(null)
+                    }}
+                    className="w-5 h-5 flex items-center justify-center rounded text-on-surface-variant hover:text-on-surface hover:bg-[#1b273e] transition-colors cursor-pointer text-xs"
+                    title="Close Inspector"
+                  >
+                    ✕
+                  </button>
                 </div>
-                <div className="font-bold text-on-surface text-xs mt-1 truncate">
-                  {focusedNode.alarm_id} :: Interface Drop
+
+                <div className="font-bold text-on-surface text-xs mt-2 truncate flex items-center gap-1.5">
+                  <span className="text-secondary font-mono">{activeNode.alarm_id}</span>
+                  {memberInfo?.device_code && (
+                    <span className="text-on-surface-variant font-normal">:: {memberInfo.device_code}</span>
+                  )}
                 </div>
-                <div className="text-[11px] text-on-surface-variant pt-1 leading-relaxed">
-                  Conductance leakage across bipartite split. Spectral cut score &gt; 94.2%
-                  confidence for branch detachment.
+
+                {memberInfo?.alarm_name && (
+                  <div className="text-[11px] text-amber-300 font-semibold pt-0.5 truncate">
+                    {memberInfo.alarm_name}
+                  </div>
+                )}
+
+                <div className="text-[11px] text-on-surface-variant pt-1.5 leading-relaxed">
+                  {activeNode.cut_side === 'A'
+                    ? 'High-cohesion member belonging to Backbone Core Domain.'
+                    : 'Spillover / peripheral branch separated across the Cheeger spectral cut.'}
                 </div>
-                <div className="grid grid-cols-2 gap-2 pt-1.5 mt-1 border-t border-[#1b273e] text-[11px]">
+
+                <div className="grid grid-cols-2 gap-2 pt-2 mt-2 border-t border-[#1b273e] text-[11px]">
                   <div>
-                    Degree:{' '}
-                    <span className="font-bold text-secondary">
-                      {focusedNode.weighted_degree.toFixed(1)}
+                    Degree: <span className="font-bold text-secondary">{activeNode.weighted_degree.toFixed(2)}</span>
+                  </div>
+                  <div>
+                    Role:{' '}
+                    <span className="font-bold text-on-surface">
+                      {activeNode.structural_role ?? memberInfo?.role ?? 'MEMBER'}
                     </span>
                   </div>
                   <div>
-                    Degradation: <span className="font-bold text-rose-400">91.4%</span>
+                    Links: <span className="font-bold text-on-surface">{incidentEdges.length} connected</span>
+                  </div>
+                  <div>
+                    Cross-Cut: <span className="font-bold text-rose-400">{crossCutIncidentCount} edges</span>
                   </div>
                 </div>
               </div>
@@ -705,7 +849,7 @@ function AuditGraphVisualizationContent({
                   {value.shown_node_count}
                 </span>
                 <span className="font-code-sm text-[10px] text-secondary mt-0.5">
-                  {Math.min(12, Math.max(2, Math.round(value.shown_node_count / 4)))} Active Clusters
+                  {hasCut ? '2 Partitions (A/B)' : '1 Partition'}
                 </span>
               </div>
               <div className="bg-[#080d17] p-2.5 rounded-lg border border-[#1b273e] flex flex-col">
@@ -727,7 +871,7 @@ function AuditGraphVisualizationContent({
                   {avgDegree}
                 </span>
                 <span className="font-code-sm text-[10px] text-secondary mt-0.5">
-                  k_max = {maxDegree.toFixed(0)}
+                  k_max = {maxDegree.toFixed(1)}
                 </span>
               </div>
               <div className="bg-[#080d17] p-2.5 rounded-lg border border-[#1b273e] flex flex-col">
@@ -744,17 +888,33 @@ function AuditGraphVisualizationContent({
             </div>
 
             {/* Algebraic Connectivity Card */}
-            <div className="bg-[#080d17] p-2.5 rounded-lg border border-rose-500/30 flex flex-col gap-1 mt-1">
+            <div
+              className={`bg-[#080d17] p-2.5 rounded-lg border ${
+                isBottleneck ? 'border-rose-500/30' : 'border-emerald-500/30'
+              } flex flex-col gap-1 mt-1`}
+            >
               <div className="flex items-center justify-between">
-                <span className="font-label-caps text-[10px] uppercase text-rose-400 font-bold tracking-wider">
+                <span
+                  className={`font-label-caps text-[10px] uppercase ${
+                    isBottleneck ? 'text-rose-400' : 'text-emerald-400'
+                  } font-bold tracking-wider`}
+                >
                   ALGEBRAIC CONNECTIVITY
                 </span>
-                <span className="px-1.5 py-0.5 bg-rose-500/20 text-rose-300 font-code-sm text-[9px] rounded font-bold">
-                  ALERT
+                <span
+                  className={`px-1.5 py-0.5 ${
+                    isBottleneck ? 'bg-rose-500/20 text-rose-300' : 'bg-emerald-500/20 text-emerald-300'
+                  } font-code-sm text-[9px] rounded font-bold`}
+                >
+                  {isBottleneck ? 'ALERT' : 'COHESIVE'}
                 </span>
               </div>
               <div className="flex items-baseline gap-2">
-                <span className="font-code-lg text-base font-bold text-rose-400">
+                <span
+                  className={`font-code-lg text-base font-bold ${
+                    isBottleneck ? 'text-rose-400' : 'text-emerald-400'
+                  }`}
+                >
                   λ2 = {fiedlerLambda2}
                 </span>
                 <span className="font-code-sm text-[11px] text-on-surface-variant">
@@ -762,17 +922,18 @@ function AuditGraphVisualizationContent({
                 </span>
               </div>
               <p className="text-[11px] text-on-surface-variant leading-relaxed">
-                λ2 &lt; 0.05 indicates severe graph conductance bottleneck. The partition across
-                bipartite boundary represents an anomalous chain merge.
+                {isBottleneck
+                  ? 'λ2 < 0.05 indicates severe graph conductance bottleneck. The partition across bipartite boundary represents an anomalous chain merge.'
+                  : 'Graph algebraic connectivity confirms robust intra-chain cohesion. All alarm members are well-coupled into a single incident structure.'}
               </p>
             </div>
           </div>
 
-          {/* Panel 2: Edge Derivation Breakdown Matrix matching ui/11 */}
+          {/* Panel 2: Edge Topology Breakdown Matrix (Grounded in real edge data) */}
           <div className="bg-[#0c1424] rounded-xl border border-[#1b273e] p-space-md shadow-md flex flex-col gap-space-sm">
             <div className="flex items-center justify-between pb-1 border-b border-[#1b273e]">
               <span className="font-headline-md text-sm font-bold text-on-surface">
-                Edge Derivation Breakdown
+                Edge Topology Breakdown
               </span>
               <span className="font-code-sm text-xs text-on-surface-variant">
                 {value.shown_edge_count} Links
@@ -780,62 +941,62 @@ function AuditGraphVisualizationContent({
             </div>
 
             <div className="space-y-2 pt-1 font-code-sm text-xs">
-              {/* Physical Reference */}
+              {/* Internal Cut A */}
               <div className="space-y-1">
                 <div className="flex justify-between">
-                  <span className="text-on-surface">Physical / L2-L3 Topology</span>
+                  <span className="text-on-surface">Cut A Intra-Cluster</span>
                   <span className="text-secondary font-bold">
-                    {Math.round(value.shown_edge_count * 0.338)} edges (33.8%)
+                    {internalAEdges.length} edges ({internalAPercent}%)
                   </span>
                 </div>
                 <div className="w-full h-1.5 bg-[#080d17] rounded-full overflow-hidden">
-                  <div className="h-full bg-secondary rounded-full" style={{ width: '33.8%' }} />
+                  <div className="h-full bg-secondary rounded-full" style={{ width: `${internalAPercent}%` }} />
                 </div>
               </div>
 
-              {/* Temporal Burst */}
+              {/* Internal Cut B */}
               <div className="space-y-1">
                 <div className="flex justify-between">
-                  <span className="text-on-surface">Temporal Burst Co-occurrence</span>
-                  <span className="text-rose-400 font-bold">
-                    {Math.round(value.shown_edge_count * 0.451)} edges (45.1%)
-                  </span>
-                </div>
-                <div className="w-full h-1.5 bg-[#080d17] rounded-full overflow-hidden">
-                  <div className="h-full bg-rose-400 rounded-full" style={{ width: '45.1%' }} />
-                </div>
-              </div>
-
-              {/* Semantic Match */}
-              <div className="space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-on-surface">Semantic Text Embeddings</span>
+                  <span className="text-on-surface">Cut B Intra-Cluster</span>
                   <span className="text-amber-400 font-bold">
-                    {Math.round(value.shown_edge_count * 0.127)} edges (12.7%)
+                    {internalBEdges.length} edges ({internalBPercent}%)
                   </span>
                 </div>
                 <div className="w-full h-1.5 bg-[#080d17] rounded-full overflow-hidden">
-                  <div className="h-full bg-amber-400 rounded-full" style={{ width: '12.7%' }} />
+                  <div className="h-full bg-amber-400 rounded-full" style={{ width: `${internalBPercent}%` }} />
                 </div>
               </div>
 
-              {/* Historical Prior */}
+              {/* Cross Cut */}
               <div className="space-y-1">
                 <div className="flex justify-between">
-                  <span className="text-on-surface">Historical Evidence Priors</span>
-                  <span className="text-on-surface-variant font-bold">
-                    {Math.round(value.shown_edge_count * 0.084)} edges (8.4%)
+                  <span className="text-on-surface">Bipartite Cross-Cut</span>
+                  <span className="text-rose-400 font-bold">
+                    {crossCutEdges.length} edges ({crossCutPercent}%)
                   </span>
                 </div>
                 <div className="w-full h-1.5 bg-[#080d17] rounded-full overflow-hidden">
-                  <div className="h-full bg-slate-500 rounded-full" style={{ width: '8.4%' }} />
+                  <div className="h-full bg-rose-400 rounded-full" style={{ width: `${crossCutPercent}%` }} />
+                </div>
+              </div>
+
+              {/* Weak Links */}
+              <div className="space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-on-surface">Weak Bridges (&lt;0.2)</span>
+                  <span className="text-on-surface-variant font-bold">
+                    {weakEdges.length} edges ({weakPercent}%)
+                  </span>
+                </div>
+                <div className="w-full h-1.5 bg-[#080d17] rounded-full overflow-hidden">
+                  <div className="h-full bg-slate-500 rounded-full" style={{ width: `${weakPercent}%` }} />
                 </div>
               </div>
             </div>
 
             <div className="mt-1 p-2 bg-[#080d17] rounded-lg border border-[#1b273e] flex items-center justify-between text-xs">
-              <span className="text-on-surface-variant font-code-sm">Spectral Cut Sparsity:</span>
-              <span className="font-code-sm text-secondary font-bold">89.4% Sparse</span>
+              <span className="text-on-surface-variant font-code-sm">Spectral Cut Conductance:</span>
+              <span className="font-code-sm text-secondary font-bold">Φ = {phiConductance}</span>
             </div>
           </div>
         </div>
@@ -846,20 +1007,38 @@ function AuditGraphVisualizationContent({
       {/* ========================================================================= */}
       <div className="w-full bg-[#0c1424] rounded-xl p-space-md border border-[#1b273e] flex flex-wrap items-center justify-between gap-space-md shadow-lg">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0 border border-rose-500/30">
-            <span className="material-symbols-outlined text-[22px]">troubleshoot</span>
+          <div
+            className={`w-10 h-10 rounded-lg ${
+              isBottleneck
+                ? 'bg-rose-500/20 text-rose-400 border-rose-500/30'
+                : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+            } flex items-center justify-center shrink-0 border`}
+          >
+            <span className="material-symbols-outlined text-[22px]">
+              {isBottleneck ? 'troubleshoot' : 'verified'}
+            </span>
           </div>
           <div className="flex flex-col">
             <div className="flex items-center gap-2">
               <span className="font-headline-md text-sm font-bold text-on-surface">
-                Recommended Action: Bipartite Spectral Severance
+                {isBottleneck
+                  ? 'Recommended Action: Bipartite Spectral Severance'
+                  : 'Verified Structure: Cohesive Alarm Cluster'}
               </span>
-              <span className="px-2 py-0.5 bg-rose-500/20 text-rose-300 border border-rose-500/40 font-code-sm text-[10px] rounded font-bold">
-                P1 REMEDIATION
+              <span
+                className={`px-2 py-0.5 ${
+                  isBottleneck
+                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                    : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                } border font-code-sm text-[10px] rounded font-bold`}
+              >
+                {isBottleneck ? 'P1 REMEDIATION' : 'COHESIVE'}
               </span>
             </div>
             <span className="text-xs text-on-surface-variant mt-0.5">
-              Execute normalized cut across weakest conductance edge (w={minCrossCutWeight}) to split unrelated leaf noise from Chain {analysis?.chain_id || ''}.
+              {isBottleneck
+                ? `Execute normalized cut across weakest conductance edge (w=${minCrossCutWeight}) to split unrelated leaf noise from Chain ${analysis?.chain_id || ''}.`
+                : `Normalized conductance (Φ = ${phiConductance}) exceeds boundary threshold (ε = ${epsilon ?? 0.300}). The ${value.shown_node_count} alarms form an integrated event cluster; no split is required.`}
             </span>
           </div>
         </div>
@@ -869,10 +1048,10 @@ function AuditGraphVisualizationContent({
             <button
               type="button"
               onClick={onRunDeepDive}
-              className="h-8 px-3.5 bg-rose-500 hover:bg-rose-600 text-white font-code-sm text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all shadow-sm cursor-pointer active:scale-95"
+              className="h-8 px-3.5 bg-secondary hover:bg-secondary/80 text-[#070e1d] font-code-sm text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all shadow-sm cursor-pointer active:scale-95"
             >
-              <span className="material-symbols-outlined text-[15px]">content_cut</span>
-              Run Spectral Conductance Cut Scan
+              <span className="material-symbols-outlined text-[15px]">query_stats</span>
+              Re-run Deep Dive Audit
             </button>
           )}
         </div>

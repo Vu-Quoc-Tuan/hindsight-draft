@@ -1,6 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { api } from '../api'
-import { CounterfactualReview } from '../CounterfactualReview'
 import type { ChainAnalysis, CounterfactualJob, CounterfactualCandidate, OperatorFeedback } from '../types'
 
 export function ValidationView({ analysis }: { analysis: ChainAnalysis }) {
@@ -13,48 +12,45 @@ export function ValidationView({ analysis }: { analysis: ChainAnalysis }) {
   const [operatorNote, setOperatorNote] = useState<string>('')
   const [submitting, setSubmitting] = useState<boolean>(false)
   const [submitFeedbackMsg, setSubmitFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
-  const [showMatrix, setShowMatrix] = useState<boolean>(true)
-
-  const loadData = useCallback(async (signal?: AbortSignal) => {
-    try {
-      setLoading(true)
-      setError(null)
-      const [reviewRes, feedbackRes] = await Promise.allSettled([
-        api.latestReview(analysis.chain_id, signal),
-        api.chainFeedback(analysis.chain_id, signal),
-      ])
-
-      if (reviewRes.status === 'fulfilled') {
-        setJob(reviewRes.value)
-        const recs = reviewRes.value?.result?.recommendations ?? []
-        const evaluated = reviewRes.value?.result?.evaluated_candidates ?? []
-        const defaultCandidate = recs[0] ?? evaluated[0]
-        if (defaultCandidate) {
-          setSelectedCandidateId((prev) => prev ?? defaultCandidate.candidate_id)
-        }
-      } else {
-        // If no latest review exists, that's not fatal
-        setJob(null)
-      }
-
-      if (feedbackRes.status === 'fulfilled') {
-        setFeedbacks(feedbackRes.value)
-      }
-    } catch (err: unknown) {
-      if (signal?.aborted) return
-      setError(err instanceof Error ? err.message : 'Failed to load validation context')
-    } finally {
-      if (!signal?.aborted) {
-        setLoading(false)
-      }
-    }
-  }, [analysis.chain_id])
 
   useEffect(() => {
     const controller = new AbortController()
-    void loadData(controller.signal)
-    return () => controller.abort()
-  }, [loadData])
+    let cancelled = false
+
+    Promise.allSettled([
+      api.latestReview(analysis.chain_id, controller.signal),
+      api.chainFeedback(analysis.chain_id, controller.signal),
+    ])
+      .then(([reviewRes, feedbackRes]) => {
+        if (cancelled) return
+        if (reviewRes.status === 'fulfilled') {
+          setJob(reviewRes.value)
+          const recs = reviewRes.value?.result?.recommendations ?? []
+          const evaluated = reviewRes.value?.result?.evaluated_candidates ?? []
+          const defaultCandidate = recs[0] ?? evaluated[0]
+          if (defaultCandidate) {
+            setSelectedCandidateId((prev) => prev ?? defaultCandidate.candidate_id)
+          }
+        } else {
+          setJob(null)
+        }
+
+        if (feedbackRes.status === 'fulfilled') {
+          setFeedbacks(feedbackRes.value)
+        }
+        setLoading(false)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setError(err instanceof Error ? err.message : 'Failed to load validation context')
+        setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [analysis.chain_id])
 
   // Poll if review is actively computing
   useEffect(() => {
@@ -635,34 +631,6 @@ export function ValidationView({ analysis }: { analysis: ChainAnalysis }) {
           </div>
         </div>
       </div>
-
-      {/* 5. Complete Counterfactual Matrix Section */}
-      <section className="overflow-hidden rounded-xl border border-surface-container-high bg-surface-container shadow-xl mt-space-sm">
-        <div className="flex items-center justify-between p-space-md bg-surface-container-low border-b border-surface-container-high">
-          <div className="flex items-center gap-space-sm">
-            <span className="material-symbols-outlined text-secondary text-[20px]">table_chart</span>
-            <span className="font-headline-md text-headline-md font-semibold text-on-surface">
-              Chi tiết Phân hoạch &amp; Ma trận Đối chứng Toàn diện
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowMatrix((prev) => !prev)}
-            className="px-space-sm py-1 bg-surface-container hover:bg-surface-container-high rounded text-on-surface-variant hover:text-on-surface font-code-sm text-code-sm flex items-center gap-1 cursor-pointer transition-colors"
-          >
-            <span>{showMatrix ? 'Thu gọn ma trận' : 'Mở rộng ma trận'}</span>
-            <span className="material-symbols-outlined text-[16px]">
-              {showMatrix ? 'expand_less' : 'expand_more'}
-            </span>
-          </button>
-        </div>
-
-        {showMatrix && (
-          <div className="p-space-md">
-            <CounterfactualReview key={analysis.chain_id} chainId={analysis.chain_id} readOnly={false} />
-          </div>
-        )}
-      </section>
     </div>
   )
 }

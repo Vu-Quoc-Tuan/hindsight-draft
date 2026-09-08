@@ -1,14 +1,17 @@
 import { useState, useMemo } from 'react'
 import type { ChainAnalysis, Member } from '../types'
 import { EvolutionPanel } from '../EvolutionPanel'
+import { InfoTip } from '../components/InfoTip'
 
 interface EvolutionViewProps {
   analysis: ChainAnalysis
+  initialTab?: 'timeline' | 'cross_snapshot'
 }
 
-export function EvolutionView({ analysis }: EvolutionViewProps) {
-  const [activeTab, setActiveTab] = useState<'timeline' | 'cross_snapshot'>('timeline')
+export function EvolutionView({ analysis, initialTab = 'timeline' }: EvolutionViewProps) {
+  const [activeTab, setActiveTab] = useState<'timeline' | 'cross_snapshot'>(initialTab)
   const [selectedAlarmId, setSelectedAlarmId] = useState<string | null>(null)
+  const [hoveredAlarmId, setHoveredAlarmId] = useState<string | null>(null)
 
   const members: Member[] = useMemo(() => analysis.members || [], [analysis.members])
   const totalAlarms = members.length || analysis.member_count || 1
@@ -25,7 +28,7 @@ export function EvolutionView({ analysis }: EvolutionViewProps) {
   // Genesis Alarm (T0) and propagation metrics
   const { genesisAlarm, timeSpanSecs, alarmDeltas, dominantDevice, dominantCount } = useMemo(() => {
     const genesis = sortedAlarms[0] || null
-    const t0 = genesis?.canonical_start_time ? Date.parse(genesis.canonical_start_time) : Date.now()
+    const t0 = genesis?.canonical_start_time ? Date.parse(genesis.canonical_start_time) : 0
     const last = sortedAlarms[sortedAlarms.length - 1] || null
     const tEnd = last?.canonical_start_time ? Date.parse(last.canonical_start_time) : t0
 
@@ -33,7 +36,7 @@ export function EvolutionView({ analysis }: EvolutionViewProps) {
 
     const deltas = sortedAlarms.map((m, idx) => {
       const t = m.canonical_start_time ? Date.parse(m.canonical_start_time) : t0
-      const deltaSec = isNaN(t) ? idx * 2.5 : Math.max(0, (t - t0) / 1000)
+      const deltaSec = isNaN(t) ? 0 : Math.max(0, (t - t0) / 1000)
       return {
         member: m,
         stepIndex: idx + 1,
@@ -41,7 +44,7 @@ export function EvolutionView({ analysis }: EvolutionViewProps) {
         formattedDelta: deltaSec === 0 ? '+0.00s' : `+${deltaSec.toFixed(2)}s`,
         timestamp: m.canonical_start_time
           ? new Date(m.canonical_start_time).toISOString().slice(11, 19)
-          : '10:00:00',
+          : 'N/A',
       }
     })
 
@@ -62,7 +65,7 @@ export function EvolutionView({ analysis }: EvolutionViewProps) {
 
     return {
       genesisAlarm: genesis,
-      timeSpanSecs: diffSec || 22.4,
+      timeSpanSecs: diffSec,
       alarmDeltas: deltas,
       dominantDevice: maxDev,
       dominantCount: maxC,
@@ -71,10 +74,10 @@ export function EvolutionView({ analysis }: EvolutionViewProps) {
 
   // Sparkline / SVG Growth Curve calculation
   const svgCurveData = useMemo(() => {
-    const width = 700
-    const height = 140
-    const paddingX = 50
-    const paddingY = 20
+    const width = 840
+    const height = 180
+    const paddingX = 55
+    const paddingY = 30
 
     if (alarmDeltas.length === 0) return { points: '', area: '', markers: [] }
 
@@ -96,7 +99,26 @@ export function EvolutionView({ analysis }: EvolutionViewProps) {
     return { points: polyline, area: polygon, markers }
   }, [alarmDeltas, timeSpanSecs])
 
-  const arrivalRate = (totalAlarms / Math.max(1, timeSpanSecs)).toFixed(2)
+  const arrivalRate = timeSpanSecs > 0 ? (totalAlarms / timeSpanSecs).toFixed(2) : totalAlarms.toFixed(2)
+
+  const activeAlarmId = selectedAlarmId ?? genesisAlarm?.alarm_id ?? alarmDeltas[0]?.member.alarm_id ?? null
+  const activeIndex = alarmDeltas.findIndex(d => d.member.alarm_id === activeAlarmId)
+  const activeItem = (activeIndex >= 0 ? alarmDeltas[activeIndex] : null) ?? alarmDeltas[0] ?? null
+  const prevItem = activeIndex > 0 ? alarmDeltas[activeIndex - 1] : null
+  const intervalFromPrevSec = prevItem ? Math.max(0, activeItem.deltaSec - prevItem.deltaSec) : 0
+  const selectedMarker = svgCurveData.markers.find(m => m.member.alarm_id === activeAlarmId) ?? null
+
+  const handlePrevStep = () => {
+    if (activeIndex > 0) {
+      setSelectedAlarmId(alarmDeltas[activeIndex - 1].member.alarm_id)
+    }
+  }
+
+  const handleNextStep = () => {
+    if (activeIndex >= 0 && activeIndex < alarmDeltas.length - 1) {
+      setSelectedAlarmId(alarmDeltas[activeIndex + 1].member.alarm_id)
+    }
+  }
 
   return (
     <div className="flex w-full flex-col gap-space-md pb-12 select-none animate-fadeIn">
@@ -104,22 +126,18 @@ export function EvolutionView({ analysis }: EvolutionViewProps) {
       {/* 1. Header & Context Strip */}
       {/* ========================================================================= */}
       <section className="overflow-hidden rounded-xl border border-[#1b273e] bg-[#080d17] shadow-md">
-        <div className="flex flex-col gap-space-md p-space-lg lg:flex-row lg:items-end lg:justify-between border-b border-[#1b273e]">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="bg-secondary/20 text-secondary border border-secondary/30 px-2 py-0.5 rounded font-label-caps text-[10px] uppercase font-bold tracking-wider">
-                INTRA-CHAIN PROPAGATION TIMELINE
-              </span>
-              <span className="text-on-surface-variant font-code-sm text-xs">
-                Incident Chain {analysis.chain_id}
-              </span>
-            </div>
-            <h1 className="mt-1 font-headline-lg text-2xl font-bold text-on-surface">
-              Evolution & Incident Lineage · {analysis.chain_id}
+        <div className="flex flex-col gap-space-sm p-space-md lg:flex-row lg:items-center lg:justify-between border-b border-[#1b273e]">
+          <div className="flex items-center gap-space-xs">
+            <span className="material-symbols-outlined text-secondary text-[20px]">
+              {activeTab === 'timeline' ? 'timeline' : 'history'}
+            </span>
+            <h1 className="font-headline-md text-base font-semibold text-on-surface flex items-center gap-2">
+              <span>{activeTab === 'timeline' ? 'Propagation Timeline' : 'Cross-Snapshot Lineage'}</span>
+              <InfoTip text={activeTab === 'timeline'
+                ? 'Trình tự nổ cảnh báo theo thời gian thực. Theo dõi cảnh báo khởi nguồn T₀, tốc độ bùng nổ cascade và tích lũy số lượng.'
+                : 'Theo dõi vòng đời và tính liên tục cấu trúc qua các khung giờ quan sát kế tiếp (Duy trì, Tăng trưởng, Tách, Hợp nhất).'}
+              />
             </h1>
-            <p className="mt-1 max-w-2xl text-xs text-on-surface-variant leading-relaxed">
-              Chronological alarm arrival sequence observed within active snapshot window. Tracks genesis alarm onset, cascade velocity, and cumulative accumulation.
-            </p>
           </div>
 
           {/* View Mode Toggle Pill */}
@@ -158,7 +176,7 @@ export function EvolutionView({ analysis }: EvolutionViewProps) {
               Genesis Alarm (T₀)
             </small>
             <strong className="font-code-sm text-xs text-secondary font-bold truncate">
-              {genesisAlarm?.alarm_id || 'T0_ALARM'} ({genesisAlarm?.device_code || dominantDevice})
+              {genesisAlarm?.alarm_id || 'N/A'} ({genesisAlarm?.device_code || dominantDevice})
             </strong>
           </div>
           <div className="px-space-md py-space-sm flex flex-col">
@@ -166,281 +184,365 @@ export function EvolutionView({ analysis }: EvolutionViewProps) {
               Cascade Velocity
             </small>
             <strong className="font-code-sm text-xs text-on-surface font-bold">
-              {totalAlarms} Alarms in {typeof timeSpanSecs === 'number' ? `${timeSpanSecs.toFixed(1)}s` : '22s'} ({arrivalRate}/s)
+              {totalAlarms} Alarms in {timeSpanSecs > 0 ? `${timeSpanSecs.toFixed(1)}s` : '0.0s'} ({arrivalRate}/s)
             </strong>
           </div>
           <div className="px-space-md py-space-sm flex flex-col">
             <small className="block uppercase text-[10px] font-label-caps tracking-wider text-on-surface-variant">
               Dominant Host Share
             </small>
-            <strong className="font-code-sm text-xs text-tertiary font-bold truncate">
+            <strong className="font-code-sm text-tertiary font-bold truncate">
               {dominantDevice} ({dominantCount}/{totalAlarms}, {((dominantCount / totalAlarms) * 100).toFixed(0)}%)
             </strong>
           </div>
           <div className="px-space-md py-space-sm flex flex-col">
             <small className="block uppercase text-[10px] font-label-caps tracking-wider text-on-surface-variant">
-              Lineage Mode
+              View Focus
             </small>
             <strong className="font-code-sm text-xs text-sky-400 font-bold">
-              Verified Single-Snapshot Epoch
+              {activeTab === 'timeline' ? 'Intra-Chain Sequence' : 'Cross-Snapshot Lineage DAG'}
             </strong>
           </div>
         </div>
       </section>
 
       {/* 2. Persisted Cross-Snapshot Lineage Panel */}
-      <div className="overflow-hidden rounded-xl border border-[#1b273e] bg-[#0c1424] p-space-md shadow-md">
-        <EvolutionPanel key={analysis.chain_id} chainId={analysis.chain_id} />
-      </div>
+      {activeTab === 'cross_snapshot' && (
+        <div className="overflow-hidden rounded-xl border border-[#1b273e] bg-[#0c1424] p-space-md shadow-md animate-fadeIn">
+          <EvolutionPanel key={analysis.chain_id} chainId={analysis.chain_id} />
+        </div>
+      )}
 
-      <div className="flex flex-col gap-space-md">
-        {/* ========================================================================= */}
-        {/* 3. Chronological Chain Lineage Cascade Stepper matching ui/15 */}
-        {/* ========================================================================= */}
-          <div className="w-full bg-[#0c1424] rounded-xl p-space-md border border-[#1b273e] shadow-md flex flex-col gap-space-sm">
-            <div className="flex items-center justify-between flex-wrap gap-2 pb-space-xs border-b border-[#1b273e]">
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-secondary text-[20px]">timeline</span>
-                  <h2 className="font-headline-md text-sm font-bold text-on-surface">
-                    Chronological Alarm Cascade & Arrival Progression
-                  </h2>
-                </div>
-                <p className="font-body-sm text-[11px] text-on-surface-variant mt-0.5">
-                  Sequential event timeline showing arrival offset from genesis trigger T₀ across member nodes.
-                </p>
-              </div>
-              <div className="flex items-center gap-2 font-code-sm text-[11px] text-on-surface-variant">
-                <span className="flex items-center gap-1 text-secondary">
-                  <span className="w-2 h-2 rounded-full bg-secondary"></span> Genesis T₀
-                </span>
-                <span className="flex items-center gap-1 text-amber-400 ml-2">
-                  <span className="w-2 h-2 rounded-full bg-amber-400"></span> Cascade Propagation
-                </span>
-              </div>
+      {/* 3. Chronological Alarm Cascade: Interactive Cumulative Onset Trajectory */}
+      {activeTab === 'timeline' && (
+        <div className="flex flex-col gap-space-md animate-fadeIn">
+          {alarmDeltas.length === 0 ? (
+            <div className="w-full bg-[#0c1424] rounded-xl p-space-xl border border-[#1b273e] text-center text-on-surface-variant font-code-sm">
+              <span className="material-symbols-outlined text-[32px] mb-2 text-on-surface-variant">hourglass_empty</span>
+              <h2 className="font-headline-md text-sm font-bold text-on-surface">
+                Chronological Alarm Cascade
+              </h2>
+              <p className="text-xs text-on-surface-variant mt-1">
+                Không có cảnh báo hoặc chuỗi không chứa mốc thời gian sự cố.
+              </p>
             </div>
+          ) : (
+            <>
+              {/* Main Interactive Trajectory Curve Container */}
+              <div className="w-full bg-[#0c1424] rounded-xl p-space-md border border-[#1b273e] shadow-md flex flex-col gap-space-sm">
+                <div className="flex items-center justify-between flex-wrap gap-2 pb-space-xs border-b border-[#1b273e]">
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-secondary text-[20px]">
+                        stacked_line_chart
+                      </span>
+                      <h2 className="font-headline-md text-sm font-bold text-on-surface">
+                        Chronological Alarm Cascade &amp; Onset Trajectory Curve
+                      </h2>
+                    </div>
+                    <p className="font-body-sm text-[11px] text-on-surface-variant mt-0.5">
+                      Quỹ đạo lan truyền sự cố theo thời gian thực. Nhấp hoặc rê chuột vào các node trên đồ thị để kiểm tra chi tiết.
+                    </p>
+                  </div>
 
-            {/* Stepper Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-space-sm mt-1">
-              {alarmDeltas.map((d, idx) => {
-                const isGenesis = idx === 0
-                const isSelected = selectedAlarmId === d.member.alarm_id
-                return (
-                  <div
-                    key={d.member.alarm_id}
-                    onClick={() =>
-                      setSelectedAlarmId(isSelected ? null : d.member.alarm_id)
-                    }
-                    className={`rounded-lg p-3 flex flex-col justify-between transition-all cursor-pointer border ${
-                      isSelected
-                        ? 'bg-[#15233c] border-secondary shadow-sm'
-                        : isGenesis
-                        ? 'bg-[#0e1b2f] border-secondary/50 shadow-xs'
-                        : 'bg-[#080d17] border-[#1b273e] hover:border-secondary/40 hover:bg-[#0c1424]'
-                    }`}
+                  <div className="flex items-center gap-3 font-code-sm text-[11px] text-on-surface-variant">
+                    <span className="flex items-center gap-1.5 text-emerald-400">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span> Genesis T₀
+                    </span>
+                    <span className="flex items-center gap-1.5 text-secondary">
+                      <span className="w-2.5 h-2.5 rounded-full bg-secondary"></span> Cascade Step
+                    </span>
+                    <span className="text-xs text-on-surface-variant border-l border-[#1b273e] pl-3">
+                      Window: 0.00s → {timeSpanSecs > 0 ? `${timeSpanSecs.toFixed(1)}s` : '0.0s'} • {totalAlarms} Alarms
+                    </span>
+                  </div>
+                </div>
+
+                {/* SVG Graph Canvas */}
+                <div className="w-full h-52 bg-[#070e1d] rounded-lg p-2 flex flex-col justify-end relative overflow-hidden border border-[#1b273e]">
+                  <svg
+                    className="w-full h-44 overflow-visible"
+                    preserveAspectRatio="none"
+                    viewBox="0 0 840 180"
                   >
-                    <div className="flex items-center justify-between pb-1.5 border-b border-[#1b273e]">
-                      <div className="flex items-center gap-1.5">
-                        <span
-                          className={`px-1.5 py-0.5 font-label-caps text-[9px] uppercase rounded font-bold ${
-                            isGenesis
-                              ? 'bg-secondary text-[#070e1d]'
-                              : 'bg-[#1b273e] text-on-surface-variant'
-                          }`}
-                        >
-                          {isGenesis ? 'GENESIS T₀' : `STEP #${d.stepIndex}`}
-                        </span>
-                        <span className="font-code-sm text-[11px] text-on-surface font-bold">
-                          {d.formattedDelta}
-                        </span>
-                      </div>
-                      <span className="font-code-sm text-[10px] text-on-surface-variant">
-                        {d.timestamp}
+                    <defs>
+                      <linearGradient id="growthGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#7bd0ff" stopOpacity="0.35" />
+                        <stop offset="100%" stopColor="#ff5451" stopOpacity="0.02" />
+                      </linearGradient>
+                    </defs>
+
+                    {/* Horizontal Grid lines */}
+                    <line x1="40" y1="35" x2="800" y2="35" stroke="#1b273e" strokeDasharray="3 3" />
+                    <line x1="40" y1="80" x2="800" y2="80" stroke="#1b273e" strokeDasharray="3 3" />
+                    <line x1="40" y1="125" x2="800" y2="125" stroke="#1b273e" strokeDasharray="3 3" />
+
+                    {/* Selected Node Guideline to Axis */}
+                    {selectedMarker && (
+                      <>
+                        <line
+                          x1={selectedMarker.x}
+                          y1={selectedMarker.y}
+                          x2={selectedMarker.x}
+                          y2={180 - 30}
+                          stroke="#7bd0ff"
+                          strokeWidth="1.5"
+                          strokeDasharray="2 2"
+                          strokeOpacity="0.8"
+                        />
+                        <line
+                          x1={55}
+                          y1={selectedMarker.y}
+                          x2={selectedMarker.x}
+                          y2={selectedMarker.y}
+                          stroke="#7bd0ff"
+                          strokeWidth="1"
+                          strokeDasharray="2 2"
+                          strokeOpacity="0.5"
+                        />
+                      </>
+                    )}
+
+                    {/* Area Polygon */}
+                    {svgCurveData.area && (
+                      <polygon fill="url(#growthGrad)" points={svgCurveData.area} />
+                    )}
+
+                    {/* Trajectory Polyline */}
+                    {svgCurveData.points && (
+                      <polyline
+                        fill="none"
+                        stroke="#7bd0ff"
+                        strokeWidth="2.5"
+                        strokeLinejoin="round"
+                        points={svgCurveData.points}
+                      />
+                    )}
+
+                    {/* Data Points */}
+                    {svgCurveData.markers.map(m => {
+                      const isGenesis = m.stepIndex === 1
+                      const isSelected = m.member.alarm_id === activeAlarmId
+                      const isHovered = m.member.alarm_id === hoveredAlarmId
+
+                      return (
+                        <g key={`marker-${m.member.alarm_id}`} className="transition-all duration-150">
+                          {/* Active/Hover Outer Pulse Ring */}
+                          {(isSelected || isHovered) && (
+                            <circle
+                              cx={m.x}
+                              cy={m.y}
+                              r="11"
+                              fill="none"
+                              stroke={isGenesis ? '#34d399' : '#7bd0ff'}
+                              strokeWidth="2"
+                              strokeDasharray={isSelected ? 'none' : '2 2'}
+                              opacity={isSelected ? 1 : 0.75}
+                            />
+                          )}
+
+                          {/* Center Node Circle */}
+                          <circle
+                            cx={m.x}
+                            cy={m.y}
+                            r={isSelected ? 5.5 : 4}
+                            fill={isGenesis ? '#10b981' : isSelected ? '#38bdf8' : '#7bd0ff'}
+                            stroke="#070e1d"
+                            strokeWidth="2"
+                          />
+
+                          {/* Top Labels on Genesis & Climax */}
+                          {(m.stepIndex === 1 || m.stepIndex === svgCurveData.markers.length) && (
+                            <text
+                              x={m.x}
+                              y={m.y - 12}
+                              fill={isGenesis ? '#34d399' : '#7bd0ff'}
+                              fontFamily="JetBrains Mono"
+                              fontSize="10"
+                              fontWeight="700"
+                              textAnchor={m.stepIndex === 1 ? 'start' : 'end'}
+                            >
+                              #{m.stepIndex} ({m.formattedDelta})
+                            </text>
+                          )}
+
+                          {/* Click & Hover Hitbox for easy interaction */}
+                          <circle
+                            cx={m.x}
+                            cy={m.y}
+                            r="15"
+                            fill="transparent"
+                            className="cursor-pointer"
+                            onClick={() => setSelectedAlarmId(m.member.alarm_id)}
+                            onMouseEnter={() => setHoveredAlarmId(m.member.alarm_id)}
+                            onMouseLeave={() => setHoveredAlarmId(null)}
+                          >
+                            <title>{`Step #${m.stepIndex}: ${m.formattedDelta} • ${m.member.alarm_id} (${m.member.device_code || dominantDevice})`}</title>
+                          </circle>
+                        </g>
+                      )
+                    })}
+                  </svg>
+
+                  {/* Time Axis Labels */}
+                  <div className="flex justify-between items-center text-on-surface-variant font-code-sm text-[11px] pt-1 px-4 border-t border-[#1b273e]">
+                    <span className="text-emerald-400 font-semibold">T₀: 0.00s (Genesis trigger)</span>
+                    <span className="text-on-surface-variant">T+{((timeSpanSecs * 0.5)).toFixed(1)}s (Midpoint)</span>
+                    <span className="text-tertiary font-semibold">T+{timeSpanSecs.toFixed(1)}s (Climax: {totalAlarms} Alarms)</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Interactive Alarm Node Inspector */}
+              {activeItem && (
+                <div className="w-full bg-[#0c1424] rounded-xl p-space-md border border-[#1b273e] shadow-xl flex flex-col gap-space-md animate-fadeIn">
+                  {/* Inspector Header with Step Navigation Controls */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-space-sm border-b border-[#1b273e]">
+                    <div className="flex items-center gap-space-xs flex-wrap">
+                      <span
+                        className={`px-2.5 py-1 font-label-caps text-xs uppercase rounded font-bold ${
+                          activeItem.stepIndex === 1
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : 'bg-secondary/20 text-secondary border border-secondary/40'
+                        }`}
+                      >
+                        {activeItem.stepIndex === 1 ? '★ GENESIS T₀ TRIGGER' : `CASCADE STEP #${activeItem.stepIndex}`}
+                      </span>
+                      <span className="font-code-md text-sm text-on-surface font-bold">
+                        Độ lệch: {activeItem.formattedDelta}
+                      </span>
+                      <span className="text-on-surface-variant font-code-sm text-xs">
+                        (Khởi phát lúc {activeItem.timestamp})
                       </span>
                     </div>
 
-                    <div className="py-2 flex flex-col gap-1">
-                      <span className="font-code-sm text-xs font-bold text-secondary truncate">
-                        {d.member.alarm_id}
+                    <div className="flex items-center gap-space-xs shrink-0">
+                      <button
+                        type="button"
+                        disabled={activeIndex <= 0}
+                        onClick={handlePrevStep}
+                        className="px-2.5 py-1 bg-[#15233c] hover:bg-secondary/20 hover:text-secondary disabled:opacity-30 disabled:cursor-not-allowed rounded border border-[#1b273e] text-xs font-code-sm flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-[15px]">arrow_back</span>
+                        <span>Step trước</span>
+                      </button>
+
+                      <span className="font-code-sm text-xs text-on-surface-variant px-1 font-bold">
+                        {activeItem.stepIndex} / {totalAlarms}
                       </span>
-                      <p className="text-[11px] text-on-surface-variant line-clamp-2">
-                        {d.member.alarm_name || d.member.redundancy_role || 'Alarm Incident Event'}
-                      </p>
-                      <div className="flex items-center justify-between text-[11px] font-code-sm mt-1 text-on-surface-variant">
-                        <span>Host: <strong className="text-on-surface">{d.member.device_code || dominantDevice}</strong></span>
-                        <span
-                          className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
-                            d.member.role?.toUpperCase().includes('CORE')
-                              ? 'bg-rose-500/20 text-rose-300'
-                              : 'bg-sky-500/20 text-sky-300'
-                          }`}
-                        >
-                          {d.member.role || 'LEAF'}
-                        </span>
-                      </div>
+
+                      <button
+                        type="button"
+                        disabled={activeIndex >= alarmDeltas.length - 1}
+                        onClick={handleNextStep}
+                        className="px-2.5 py-1 bg-[#15233c] hover:bg-secondary/20 hover:text-secondary disabled:opacity-30 disabled:cursor-not-allowed rounded border border-[#1b273e] text-xs font-code-sm flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        <span>Step tiếp theo</span>
+                        <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
+                      </button>
                     </div>
                   </div>
-                )
-              })}
-            </div>
-          </div>
 
-          {/* ========================================================================= */}
-          {/* 3. Chain Growth & Arrival Trajectory Curve (SVG Graph) matching ui/15 */}
-          {/* ========================================================================= */}
-          <div className="w-full bg-[#0c1424] rounded-xl p-space-md border border-[#1b273e] shadow-md flex flex-col gap-space-sm">
-            <div className="flex items-center justify-between pb-space-xs border-b border-[#1b273e]">
-              <div className="flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-secondary text-[18px]">
-                  stacked_line_chart
-                </span>
-                <span className="font-headline-md text-sm font-bold text-on-surface">
-                  Cumulative Alarm Trajectory & Onset Curve
-                </span>
-              </div>
-              <span className="font-code-sm text-xs text-on-surface-variant">
-                Window: 0.00s → {typeof timeSpanSecs === 'number' ? `${timeSpanSecs.toFixed(1)}s` : '22s'} • Total {totalAlarms} Alarms
-              </span>
-            </div>
+                  {/* 4 Detail Metric Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-sm">
+                    <div className="p-3 bg-[#080d17] rounded-lg border border-[#1b273e] flex flex-col justify-between">
+                      <span className="font-label-caps text-[10px] text-on-surface-variant uppercase font-bold">
+                        Mã Cảnh Báo (Alarm ID)
+                      </span>
+                      <strong className="font-code-sm text-sm text-secondary truncate mt-1">
+                        {activeItem.member.alarm_id}
+                      </strong>
+                      <span className="text-[11px] text-on-surface-variant line-clamp-1 mt-0.5">
+                        {activeItem.member.alarm_name || activeItem.member.redundancy_role || 'Alarm Incident Event'}
+                      </span>
+                    </div>
 
-            {/* SVG Graph Canvas */}
-            <div className="w-full h-44 bg-[#070e1d] rounded-lg p-2 flex flex-col justify-end relative overflow-hidden border border-[#1b273e]">
-              <svg
-                className="w-full h-36 overflow-visible"
-                preserveAspectRatio="none"
-                viewBox="0 0 700 140"
-              >
-                <defs>
-                  <linearGradient id="growthGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#7bd0ff" stopOpacity="0.4" />
-                    <stop offset="100%" stopColor="#ff5451" stopOpacity="0.03" />
-                  </linearGradient>
-                </defs>
-
-                {/* Horizontal Grid lines */}
-                <line x1="40" y1="30" x2="660" y2="30" stroke="#1b273e" strokeDasharray="3 3" />
-                <line x1="40" y1="70" x2="660" y2="70" stroke="#1b273e" strokeDasharray="3 3" />
-                <line x1="40" y1="110" x2="660" y2="110" stroke="#1b273e" strokeDasharray="3 3" />
-
-                {/* Area Polygon */}
-                {svgCurveData.area && (
-                  <polygon fill="url(#growthGrad)" points={svgCurveData.area} />
-                )}
-
-                {/* Trajectory Polyline */}
-                {svgCurveData.points && (
-                  <polyline
-                    fill="none"
-                    stroke="#7bd0ff"
-                    strokeWidth="2.5"
-                    strokeLinejoin="round"
-                    points={svgCurveData.points}
-                  />
-                )}
-
-                {/* Data Points */}
-                {svgCurveData.markers.map(m => (
-                  <g key={`marker-${m.member.alarm_id}`}>
-                    <circle
-                      cx={m.x}
-                      cy={m.y}
-                      r="4.5"
-                      fill="#7bd0ff"
-                      stroke="#070e1d"
-                      strokeWidth="2"
-                    />
-                    {/* Label at top of last node or genesis */}
-                    {(m.stepIndex === 1 || m.stepIndex === svgCurveData.markers.length) && (
-                      <text
-                        x={m.x}
-                        y={m.y - 8}
-                        fill="#7bd0ff"
-                        fontFamily="JetBrains Mono"
-                        fontSize="9"
-                        fontWeight="700"
-                        textAnchor="middle"
-                      >
-                        #{m.stepIndex} ({m.formattedDelta})
-                      </text>
-                    )}
-                  </g>
-                ))}
-              </svg>
-
-              {/* Time Axis Labels */}
-              <div className="flex justify-between items-center text-on-surface-variant font-code-sm text-[11px] pt-1 px-4 border-t border-[#1b273e]">
-                <span className="text-secondary font-semibold">T₀: 0.00s (Genesis)</span>
-                <span className="text-on-surface-variant">T+{((timeSpanSecs * 0.5)).toFixed(1)}s (Midpoint)</span>
-                <span className="text-tertiary font-semibold">T+{timeSpanSecs.toFixed(1)}s (Chain Climax: {totalAlarms} Alarms)</span>
-              </div>
-            </div>
-          </div>
-
-          {/* ========================================================================= */}
-          {/* 4. Detailed Lineage Transition Ledger Table matching ui/15 */}
-          {/* ========================================================================= */}
-          <div className="bg-[#0c1424] rounded-xl p-space-md border border-[#1b273e] shadow-md flex flex-col gap-space-sm">
-            <div className="flex items-center justify-between pb-space-xs border-b border-[#1b273e]">
-              <div className="flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-secondary text-[18px]">table_chart</span>
-                <h3 className="font-headline-md text-sm font-bold text-on-surface">
-                  Lineage State Transition & Member Arrival Ledger
-                </h3>
-              </div>
-              <span className="font-code-sm text-xs text-on-surface-variant">
-                Sequence Length: {totalAlarms} Events
-              </span>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left font-code-sm text-xs">
-                <thead className="bg-[#080d17] text-on-surface-variant uppercase font-label-caps text-[10px] border-b border-[#1b273e]">
-                  <tr>
-                    <th className="py-2 px-3">Step</th>
-                    <th className="py-2 px-3">Timestamp</th>
-                    <th className="py-2 px-3">Offset (ΔT)</th>
-                    <th className="py-2 px-3">Alarm ID</th>
-                    <th className="py-2 px-3">Host Device</th>
-                    <th className="py-2 px-3">Role</th>
-                    <th className="py-2 px-3">Description</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#151f33]">
-                  {alarmDeltas.map(d => (
-                    <tr
-                      key={`row-${d.member.alarm_id}`}
-                      className={`transition-colors ${
-                        d.stepIndex === 1
-                          ? 'bg-secondary/10 hover:bg-secondary/15'
-                          : 'hover:bg-[#121f36]'
-                      }`}
-                    >
-                      <td className="py-2.5 px-3 font-bold text-secondary">#{d.stepIndex}</td>
-                      <td className="py-2.5 px-3 text-on-surface-variant">{d.timestamp}</td>
-                      <td className="py-2.5 px-3 font-semibold text-on-surface">{d.formattedDelta}</td>
-                      <td className="py-2.5 px-3 font-semibold text-secondary">{d.member.alarm_id}</td>
-                      <td className="py-2.5 px-3 text-on-surface">{d.member.device_code || dominantDevice}</td>
-                      <td className="py-2.5 px-3">
+                    <div className="p-3 bg-[#080d17] rounded-lg border border-[#1b273e] flex flex-col justify-between">
+                      <span className="font-label-caps text-[10px] text-on-surface-variant uppercase font-bold">
+                        Thiết Bị Host &amp; Vai Trò
+                      </span>
+                      <strong className="font-code-sm text-sm text-on-surface truncate mt-1">
+                        {activeItem.member.device_code || dominantDevice}
+                      </strong>
+                      <div className="flex items-center gap-1 mt-0.5">
                         <span
                           className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
-                            d.member.role?.toUpperCase().includes('CORE')
+                            activeItem.member.role?.toUpperCase().includes('CORE')
                               ? 'bg-rose-500/20 text-rose-300'
                               : 'bg-sky-500/20 text-sky-300'
                           }`}
                         >
-                          {d.member.role || 'LEAF'}
+                          {activeItem.member.role || 'LEAF'}
                         </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-on-surface-variant">
-                        {d.member.alarm_name || d.member.redundancy_role || 'Incident Event'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                        <span className="text-[11px] text-on-surface-variant">Network Node</span>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-[#080d17] rounded-lg border border-[#1b273e] flex flex-col justify-between">
+                      <span className="font-label-caps text-[10px] text-on-surface-variant uppercase font-bold">
+                        Độ Trễ Lan Truyền (Propagation)
+                      </span>
+                      <strong className="font-code-sm text-sm text-amber-300 mt-1">
+                        +{activeItem.deltaSec.toFixed(2)}s từ T₀
+                      </strong>
+                      <span className="text-[11px] text-on-surface-variant mt-0.5">
+                        {activeItem.stepIndex === 1
+                          ? 'Điểm xuất phát ban đầu (Genesis trigger)'
+                          : intervalFromPrevSec === 0
+                          ? 'Nổ đồng thời cùng step trước'
+                          : `+${intervalFromPrevSec.toFixed(2)}s sau step #${prevItem?.stepIndex}`}
+                      </span>
+                    </div>
+
+                    <div className="p-3 bg-[#080d17] rounded-lg border border-[#1b273e] flex flex-col justify-between">
+                      <span className="font-label-caps text-[10px] text-on-surface-variant uppercase font-bold">
+                        Cấu Trúc Gom Cụm
+                      </span>
+                      <strong className="font-code-sm text-sm text-tertiary mt-1">
+                        {activeItem.member.redundancy_role || 'MEMBER_EVENT'}
+                      </strong>
+                      <span className="text-[11px] text-on-surface-variant mt-0.5">
+                        {activeItem.member.membership_support != null
+                          ? `Độ tương quan support: ${(activeItem.member.membership_support * 100).toFixed(0)}%`
+                          : 'Liên kết thời gian & topo'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Quick Stepper Bar - Clickable step numbers 1..N */}
+                  {totalAlarms > 1 && (
+                    <div className="flex items-center gap-1 overflow-x-auto pt-1 border-t border-[#1b273e] pb-1">
+                      <span className="font-label-caps text-[10px] uppercase text-on-surface-variant font-bold mr-1 shrink-0">
+                        Nhảy nhanh đến Step:
+                      </span>
+                      {alarmDeltas.map(d => {
+                        const isSelected = d.member.alarm_id === activeItem.member.alarm_id
+                        const isGenesis = d.stepIndex === 1
+                        return (
+                          <button
+                            key={`pill-${d.member.alarm_id}`}
+                            onClick={() => setSelectedAlarmId(d.member.alarm_id)}
+                            className={`px-2 py-0.5 rounded font-code-sm text-xs transition-all cursor-pointer shrink-0 border ${
+                              isSelected
+                                ? isGenesis
+                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 font-bold'
+                                  : 'bg-secondary/20 text-secondary border-secondary font-bold'
+                                : 'bg-[#080d17] text-on-surface-variant hover:text-on-surface border-[#1b273e]'
+                            }`}
+                            title={`Step #${d.stepIndex} (${d.formattedDelta}): ${d.member.alarm_id}`}
+                          >
+                            #{d.stepIndex}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
         </div>
-      </div>
+      )}
+    </div>
   )
 }

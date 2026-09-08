@@ -1,21 +1,21 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react'
 
 import { api, ApiError } from './api'
 import type { TopologyTreePayload } from './TopologyTree'
 import { NocHeader, type HeaderSnapshotItem } from './components/NocHeader'
 import { SubNavBar, type SubNavTab } from './components/SubNavBar'
-import { SnapshotOverviewView } from './views/SnapshotOverviewView'
-import { ChainsExplorerView } from './views/ChainsExplorerView'
-import { MultiChainTimelineView } from './views/MultiChainTimelineView'
-import { CompareChainsView } from './views/CompareChainsView'
-import { ChainDetailView } from './views/ChainDetailView'
-import { AuditStructureView } from './views/AuditStructureView'
-import { RecommendationsView } from './views/RecommendationsView'
-import { EvolutionView } from './views/EvolutionView'
-import { TopologyOverlayView } from './views/TopologyOverlayView'
-import { ValidationView } from './views/ValidationView'
-import { AIAnalystDrawer } from './components/AIAnalystDrawer'
-import { AnalysisSettingsModal } from './AnalysisSettingsModal'
+
+const SnapshotOverviewView = lazy(() => import('./views/SnapshotOverviewView').then(m => ({ default: m.SnapshotOverviewView })))
+const ChainsExplorerView = lazy(() => import('./views/ChainsExplorerView').then(m => ({ default: m.ChainsExplorerView })))
+const MultiChainTimelineView = lazy(() => import('./views/MultiChainTimelineView').then(m => ({ default: m.MultiChainTimelineView })))
+const CompareChainsView = lazy(() => import('./views/CompareChainsView').then(m => ({ default: m.CompareChainsView })))
+const ChainDetailView = lazy(() => import('./views/ChainDetailView').then(m => ({ default: m.ChainDetailView })))
+const AuditStructureView = lazy(() => import('./views/AuditStructureView').then(m => ({ default: m.AuditStructureView })))
+const RecommendationsView = lazy(() => import('./views/RecommendationsView').then(m => ({ default: m.RecommendationsView })))
+const EvolutionView = lazy(() => import('./views/EvolutionView').then(m => ({ default: m.EvolutionView })))
+const TopologyOverlayView = lazy(() => import('./views/TopologyOverlayView').then(m => ({ default: m.TopologyOverlayView })))
+const AIAnalystDrawer = lazy(() => import('./components/AIAnalystDrawer').then(m => ({ default: m.AIAnalystDrawer })))
+const AnalysisSettingsModal = lazy(() => import('./AnalysisSettingsModal').then(m => ({ default: m.AnalysisSettingsModal })))
 import {
   analysisContextKey,
   analysisMatchesContext,
@@ -41,6 +41,7 @@ export default function App() {
   const [analysisError, setAnalysisError] = useState<{ requestKey: string; message: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [job, setJob] = useState<Job | null>(null)
+  const deepDiveSubmissionGeneration = useRef(0)
   const [auditVisualizationState, setAuditVisualizationState] = useState<{
     requestKey: string
     payload: AuditVisualizationArtifact
@@ -153,6 +154,30 @@ export default function App() {
       window.clearTimeout(timer)
     }
   }, [job])
+
+  // Reattach to the latest compatible Deep Dive after a browser reload. This
+  // is read-only: opening the tab never submits new Tier-2 work.
+  useEffect(() => {
+    if (currentTab !== 'structure' || !chainId || !currentAnalysisKey) return
+    const controller = new AbortController()
+    const requestedChainId = chainId
+    const requestedGeneration = deepDiveSubmissionGeneration.current
+    api.latestDeepDive(chainId, controller.signal).then(payload => {
+      if (
+        !controller.signal.aborted
+        && payload !== null
+        && payload.chain_id === requestedChainId
+        && deepDiveSubmissionGeneration.current === requestedGeneration
+      ) {
+        setJob(payload)
+      }
+    }).catch((cause: unknown) => {
+      if (!controller.signal.aborted) {
+        setError(cause instanceof Error ? cause.message : 'Deep Dive hydration failed')
+      }
+    })
+    return () => controller.abort()
+  }, [chainId, currentAnalysisKey, currentTab])
 
   // Read an already-persisted bounded Audit graph. This endpoint never starts
   // Deep Dive; running analysis remains an explicit operator action.
@@ -292,6 +317,7 @@ export default function App() {
 
   async function runDeepDive() {
     if (!chainId) return
+    deepDiveSubmissionGeneration.current += 1
     setError(null)
     try {
       const submission = await api.submitDeepDive(chainId)
@@ -415,138 +441,143 @@ export default function App() {
 
       {/* 5. Main Workspace Views Router */}
       <main className="flex-1 w-full px-space-lg py-space-md">
-        {chainViewNeedsAnalysis && !analysis && (
-          <section
-            className="mx-auto max-w-3xl rounded-lg border border-surface-container-highest bg-surface-container p-space-xl text-center shadow-sm"
-            role={selectedAnalysisError ? 'alert' : 'status'}
-            aria-live="polite"
-          >
-            <span className="material-symbols-outlined text-3xl text-on-surface-variant">
-              {analysisIsLoading ? 'progress_activity' : 'database_off'}
-            </span>
-            <h2 className="mt-space-sm font-headline-md text-headline-md font-bold text-on-surface">
-              {analysisIsLoading ? `Loading analysis for ${chainId}…` : 'Chain analysis unavailable'}
-            </h2>
-            <p className="mt-space-xs font-code-sm text-code-sm text-on-surface-variant">
-              {selectedAnalysisError ?? 'No compatible analysis artifact is available for the selected snapshot and chain.'}
-            </p>
-          </section>
-        )}
-        {/* SNAPSHOT LEVEL VIEWS */}
-        {currentTab === 'snapshot-overview' && (
-          <SnapshotOverviewView
-            chainList={chainList}
-            onSelectChain={handleSelectChain}
-            onNavigate={view => {
-              if (view === 'CHAINS' || view === 'chains-explorer') setCurrentTab('chains-explorer')
-              else if (view === 'TIMELINE' || view === 'multi-chain-timeline') setCurrentTab('multi-chain-timeline')
-              else if (view === 'COMPARE' || view === 'compare-chains') setCurrentTab('compare-chains')
-              else setCurrentTab(view as SubNavTab)
-            }}
-          />
-        )}
+        <Suspense
+          fallback={
+            <div className="flex h-64 items-center justify-center gap-space-sm text-on-surface-variant font-code-sm">
+              <span className="material-symbols-outlined animate-spin text-xl text-primary">progress_activity</span>
+              <span>Loading view module…</span>
+            </div>
+          }
+        >
+          {chainViewNeedsAnalysis && !analysis && (
+            <section
+              className="mx-auto max-w-3xl rounded-lg border border-surface-container-highest bg-surface-container p-space-xl text-center shadow-sm"
+              role={selectedAnalysisError ? 'alert' : 'status'}
+              aria-live="polite"
+            >
+              <span className="material-symbols-outlined text-3xl text-on-surface-variant">
+                {analysisIsLoading ? 'progress_activity' : 'database_off'}
+              </span>
+              <h2 className="mt-space-sm font-headline-md text-headline-md font-bold text-on-surface">
+                {analysisIsLoading ? `Loading analysis for ${chainId}…` : 'Chain analysis unavailable'}
+              </h2>
+              <p className="mt-space-xs font-code-sm text-code-sm text-on-surface-variant">
+                {selectedAnalysisError ?? 'No compatible analysis artifact is available for the selected snapshot and chain.'}
+              </p>
+            </section>
+          )}
+          {/* SNAPSHOT LEVEL VIEWS */}
+          {currentTab === 'snapshot-overview' && (
+            <SnapshotOverviewView
+              chainList={chainList}
+              onSelectChain={handleSelectChain}
+              onNavigate={view => {
+                if (view === 'CHAINS' || view === 'chains-explorer') setCurrentTab('chains-explorer')
+                else if (view === 'TIMELINE' || view === 'multi-chain-timeline') setCurrentTab('multi-chain-timeline')
+                else if (view === 'COMPARE' || view === 'compare-chains') setCurrentTab('compare-chains')
+                else setCurrentTab(view as SubNavTab)
+              }}
+            />
+          )}
 
-        {currentTab === 'chains-explorer' && (
-          <ChainsExplorerView
-            chainList={chainList}
-            onSelectChain={handleSelectChain}
-            onCompareChains={ids => {
-              if (ids.length >= 2) handleCompareChains(ids[0], ids[1])
-            }}
-          />
-        )}
+          {currentTab === 'chains-explorer' && (
+            <ChainsExplorerView
+              chainList={chainList}
+              onSelectChain={handleSelectChain}
+              onCompareChains={ids => {
+                if (ids.length >= 2) handleCompareChains(ids[0], ids[1])
+              }}
+            />
+          )}
 
-        {currentTab === 'multi-chain-timeline' && (
-          <MultiChainTimelineView
-            chains={chainList?.chains ?? []}
-            onSelectChain={handleSelectChain}
-            onCompareChains={handleCompareChains}
-            selectedChainId={chainId}
-          />
-        )}
+          {currentTab === 'multi-chain-timeline' && (
+            <MultiChainTimelineView
+              chains={chainList?.chains ?? []}
+              onSelectChain={handleSelectChain}
+              onCompareChains={handleCompareChains}
+              selectedChainId={chainId}
+            />
+          )}
 
-        {currentTab === 'compare-chains' && (
-          <CompareChainsView
-            chainAId={resolvedComparePair[0]}
-            chainBId={resolvedComparePair[1]}
-            chains={chainList?.chains ?? []}
-            onSelectChain={handleSelectChain}
-            onChangeSelection={() => setCurrentTab('chains-explorer')}
-          />
-        )}
+          {currentTab === 'compare-chains' && (
+            <CompareChainsView
+              chainAId={resolvedComparePair[0]}
+              chainBId={resolvedComparePair[1]}
+              chains={chainList?.chains ?? []}
+              onSelectChain={handleSelectChain}
+              onChangeSelection={() => setCurrentTab('chains-explorer')}
+            />
+          )}
 
-        {/* CHAIN LEVEL VIEWS */}
-        {analysis && (currentTab === 'chain-overview' || currentTab === 'why' || currentTab === 'members') && (
-          <ChainDetailView
-            key={analysis.chain_id}
-            analysis={analysis}
-            activeSubTab={
-              currentTab === 'chain-overview'
-                ? 'OVERVIEW'
-                : currentTab === 'why'
-                ? 'WHY'
-                : 'MEMBERS'
-            }
-            onSubTabChange={tab => {
-              if (tab === 'OVERVIEW') setCurrentTab('chain-overview')
-              else if (tab === 'WHY') setCurrentTab('why')
-              else if (tab === 'MEMBERS') setCurrentTab('members')
-            }}
-            onPairContextChange={setAssistantPair}
-          />
-        )}
+          {/* CHAIN LEVEL VIEWS */}
+          {analysis && (currentTab === 'chain-overview' || currentTab === 'why' || currentTab === 'members') && (
+            <ChainDetailView
+              key={analysis.chain_id}
+              analysis={analysis}
+              activeSubTab={
+                currentTab === 'chain-overview'
+                  ? 'OVERVIEW'
+                  : currentTab === 'why'
+                  ? 'WHY'
+                  : 'MEMBERS'
+              }
+              onSubTabChange={tab => {
+                if (tab === 'OVERVIEW') setCurrentTab('chain-overview')
+                else if (tab === 'WHY') setCurrentTab('why')
+                else if (tab === 'MEMBERS') setCurrentTab('members')
+              }}
+              onPairContextChange={setAssistantPair}
+            />
+          )}
 
-        {analysis && currentTab === 'structure' && (
-          <AuditStructureView
-            analysis={analysis}
-            job={job}
-            auditVisualization={auditVisualization}
-            onRunDeepDive={() => void runDeepDive()}
-          />
-        )}
+          {analysis && currentTab === 'structure' && (
+            <AuditStructureView
+              analysis={analysis}
+              job={job}
+              auditVisualization={auditVisualization}
+              onRunDeepDive={() => void runDeepDive()}
+            />
+          )}
 
-        {analysis && currentTab === 'review' && (
-          <RecommendationsView analysis={analysis} readOnly={reviewReadOnly} />
-        )}
+          {analysis && (currentTab === 'review' || currentTab === 'validation') && (
+            <RecommendationsView analysis={analysis} readOnly={reviewReadOnly} />
+          )}
 
-        {analysis && currentTab === 'evolution' && (
-          <EvolutionView analysis={analysis} />
-        )}
+          {analysis && currentTab === 'evolution' && (
+            <EvolutionView analysis={analysis} />
+          )}
 
-        {analysis && currentTab === 'topology' && (
-          <TopologyOverlayView
-            analysis={analysis}
-            topologyPayload={topologyPayload}
-            onRootChange={setTopologyRootId}
-          />
-        )}
-
-        {analysis && currentTab === 'validation' && (
-          <ValidationView
-            analysis={analysis}
-          />
-        )}
+          {analysis && currentTab === 'topology' && (
+            <TopologyOverlayView
+              analysis={analysis}
+              topologyPayload={topologyPayload}
+              onRootChange={setTopologyRootId}
+            />
+          )}
+        </Suspense>
       </main>
 
       {/* 6. Modals & Drawers */}
-      <AIAnalystDrawer
-        isOpen={isDrawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        onOpen={() => setDrawerOpen(true)}
-        context={assistantContext}
-        onNavigate={handleAssistantNavigation}
-      />
-
-      {settingsOpen && (
-        <AnalysisSettingsModal
-          isOpen
-          onClose={() => setSettingsOpen(false)}
-          onConfigChanged={cfg => {
-            setActiveConfigVersion(cfg.config_version)
-            setConfigEpoch(e => e + 1)
-          }}
+      <Suspense fallback={null}>
+        <AIAnalystDrawer
+          isOpen={isDrawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          onOpen={() => setDrawerOpen(true)}
+          context={assistantContext}
+          onNavigate={handleAssistantNavigation}
         />
-      )}
+
+        {settingsOpen && (
+          <AnalysisSettingsModal
+            isOpen
+            onClose={() => setSettingsOpen(false)}
+            onConfigChanged={cfg => {
+              setActiveConfigVersion(cfg.config_version)
+              setConfigEpoch(e => e + 1)
+            }}
+          />
+        )}
+      </Suspense>
 
       {/* 7. Footer Status Bar - clean, without redundant snapshot info or mock gateway */}
       <footer className="w-full h-8 bg-surface-container-lowest border-t border-surface-container-highest px-space-lg flex items-center justify-between text-[11px] font-code-sm text-on-surface-variant select-none">

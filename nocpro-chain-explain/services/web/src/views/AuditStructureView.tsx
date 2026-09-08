@@ -1,6 +1,7 @@
 import { EvidenceAttribution } from '../EvidenceAttribution'
 import { AuditGraphVisualization } from '../components/AuditGraphVisualization'
 import type { AuditVisualizationArtifact, ChainAnalysis, DeepDive, Job } from '../types'
+import { InfoTip } from '../components/InfoTip'
 
 interface AuditStructureViewProps {
   analysis: ChainAnalysis
@@ -56,6 +57,9 @@ function AuditResult({
       <AuditGraphVisualization
         value={result.audit_visualization}
         analysis={analysis}
+        verdict={audit.verdict}
+        phi={audit.best_cut_phi}
+        epsilon={audit.epsilon}
         onRunDeepDive={onRunDeepDive}
       />
 
@@ -74,12 +78,14 @@ export function AuditStructureView({ analysis, job = null, auditVisualization = 
   return (
     <div className="flex w-full flex-col gap-space-md pb-12 animate-fadeIn">
       <header className="overflow-hidden rounded-xl border border-surface-container-high bg-surface-container-lowest shadow-md">
-        <div className="flex flex-wrap items-center justify-between gap-space-md p-space-lg">
-        <div>
-          <p className="font-label-caps text-label-caps uppercase tracking-[0.16em] text-secondary">Tier 2 · explicit operator action</p>
-          <h1 className="mt-1 font-headline-lg text-headline-lg font-bold">Structural Audit · {analysis.chain_id}</h1>
-          <p className="mt-space-xs max-w-2xl text-body-sm text-on-surface-variant">Exact structural findings are loaded from the matching persisted Deep Dive. The bounded graph below is visualization-only.</p>
-        </div>
+        <div className="flex flex-wrap items-center justify-between gap-space-sm p-space-md">
+          <div className="flex items-center gap-space-xs">
+            <span className="material-symbols-outlined text-secondary text-[20px]">account_tree</span>
+            <h1 className="font-headline-md text-base font-semibold text-on-surface flex items-center gap-2">
+              <span>Structural Audit</span>
+              <InfoTip text="Kết quả kiểm toán cấu trúc tải từ Deep Dive. Đồ thị trực quan hoá tính gắn kết và vết cắt conductance." />
+            </h1>
+          </div>
         <button
           type="button"
           onClick={onRunDeepDive}
@@ -95,17 +101,17 @@ export function AuditStructureView({ analysis, job = null, auditVisualization = 
         </div>
         <div className="grid grid-cols-1 border-t border-surface-container-high sm:grid-cols-3">
           <div className="border-b border-surface-container-high px-space-md py-space-sm sm:border-b-0 sm:border-r"><small className="block uppercase tracking-wider text-on-surface-variant">Members</small><strong className="font-code-lg text-lg">{analysis.member_count}</strong></div>
-          <div className="border-b border-surface-container-high px-space-md py-space-sm sm:border-b-0 sm:border-r"><small className="block uppercase tracking-wider text-on-surface-variant">Audit graph mode</small><strong className="font-code-sm text-secondary">{analysis.audit_graph_mode}</strong></div>
+          <div className="border-b border-surface-container-high px-space-md py-space-sm sm:border-b-0 sm:border-r"><small className="block uppercase tracking-wider text-on-surface-variant">Audit graph mode</small><strong className="font-code-sm text-secondary">{result?.audit_graph_mode ?? analysis.audit_graph_mode}</strong></div>
           <div className="px-space-md py-space-sm"><small className="block uppercase tracking-wider text-on-surface-variant">Analysis config</small><strong className="font-code-sm text-on-surface">{analysis.config_version}</strong></div>
         </div>
       </header>
 
-      {matchingJob?.status === 'FAILED' && (
+      {(matchingJob?.status === 'FAILED' || matchingJob?.status === 'INTERRUPTED') && (
         <section role="alert" className="rounded-lg border border-error bg-error-container p-space-md text-error">
-          Deep Dive failed · {matchingJob.error ?? 'UNKNOWN_ERROR'}
+          Deep Dive {matchingJob.status === 'INTERRUPTED' ? 'interrupted' : 'failed'} · {matchingJob.error ?? 'UNKNOWN_ERROR'}
         </section>
       )}
-      {!result && matchingJob?.status !== 'FAILED' && (
+      {!result && matchingJob?.status !== 'FAILED' && matchingJob?.status !== 'INTERRUPTED' && (
         <section
           role="status"
           className="rounded-xl border border-[#1e2b44] bg-[#0c1424] p-space-md shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-space-md"
@@ -123,25 +129,10 @@ export function AuditStructureView({ analysis, job = null, auditVisualization = 
               <p className="mt-0.5 text-xs text-on-surface-variant">
                 {matchingJob
                   ? 'The explicit Deep Dive job has not completed.'
-                  : 'No compatible Deep Dive result is loaded for this chain. Run Deep Dive to compute exact Cheeger conductance.'}
+                  : 'No compatible Deep Dive result is loaded for this chain. Click "Run Deep Dive" above to compute exact Cheeger conductance.'}
               </p>
             </div>
           </div>
-          {onRunDeepDive && (
-            <button
-              type="button"
-              onClick={onRunDeepDive}
-              disabled={matchingJob?.status === 'QUEUED' || matchingJob?.status === 'RUNNING'}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-secondary px-3.5 py-1.5 font-code-sm text-xs font-bold text-[#070e1d] shadow-sm transition-all hover:bg-secondary/80 disabled:opacity-50 shrink-0 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[16px]">query_stats</span>
-              <span>
-                {matchingJob?.status === 'QUEUED' || matchingJob?.status === 'RUNNING'
-                  ? `Running ${matchingJob.progress_percent}%`
-                  : 'Run Deep Dive'}
-              </span>
-            </button>
-          )}
         </section>
       )}
       {!result && auditVisualization?.chain_id === analysis.chain_id && (

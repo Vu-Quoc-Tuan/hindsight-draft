@@ -1,12 +1,13 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, lazy, Suspense } from 'react'
 import { api } from '../api'
 import type { ChainAnalysis, Member, PairWhy } from '../types'
 import { ChainTree } from '../ChainTree'
 import { InfoTip } from '../components/InfoTip'
-import { ChainScopeView } from './why/ChainScopeView'
-import { MemberScopeView } from './why/MemberScopeView'
-import { PairScopeView } from './why/PairScopeView'
-import { GroupScopeView } from './why/GroupScopeView'
+
+const ChainScopeView = lazy(() => import('./why/ChainScopeView').then(m => ({ default: m.ChainScopeView })))
+const MemberScopeView = lazy(() => import('./why/MemberScopeView').then(m => ({ default: m.MemberScopeView })))
+const PairScopeView = lazy(() => import('./why/PairScopeView').then(m => ({ default: m.PairScopeView })))
+const GroupScopeView = lazy(() => import('./why/GroupScopeView').then(m => ({ default: m.GroupScopeView })))
 
 interface ChainDetailViewProps {
   analysis: ChainAnalysis
@@ -290,52 +291,61 @@ export function ChainDetailView({
           </div>
 
           {/* Render Scope View */}
-          {whyScope === 'Chain' && (
-            <ChainScopeView
-              analysis={analysis}
-              distinctDevices={distinctDevices}
-              observedStart={observedStart}
-              observedEnd={observedEnd}
-              onSwitchScope={setWhyScope}
-              onSelectMember={m => {
-                setInspectedMember(m)
-                setWhyScope('Member')
-              }}
-            />
-          )}
+          <Suspense
+            fallback={
+              <div className="flex h-48 items-center justify-center gap-space-sm text-on-surface-variant font-code-sm">
+                <span className="material-symbols-outlined animate-spin text-lg text-primary">progress_activity</span>
+                <span>Loading scope analysis…</span>
+              </div>
+            }
+          >
+            {whyScope === 'Chain' && (
+              <ChainScopeView
+                analysis={analysis}
+                distinctDevices={distinctDevices}
+                observedStart={observedStart}
+                observedEnd={observedEnd}
+                onSwitchScope={setWhyScope}
+                onSelectMember={m => {
+                  setInspectedMember(m)
+                  setWhyScope('Member')
+                }}
+              />
+            )}
 
-          {whyScope === 'Member' && (
-            <MemberScopeView
-              analysis={analysis}
-              members={members}
-              inspectedMember={inspectedMember}
-              setInspectedMember={setInspectedMember}
-              onComparePair={(idA, idB) => {
-                setSelectedMemberIds([idA, idB])
-                setWhyScope('Pair')
-              }}
-              onSwitchScope={setWhyScope}
-            />
-          )}
+            {whyScope === 'Member' && (
+              <MemberScopeView
+                analysis={analysis}
+                members={members}
+                inspectedMember={inspectedMember}
+                setInspectedMember={setInspectedMember}
+                onComparePair={(idA, idB) => {
+                  setSelectedMemberIds([idA, idB])
+                  setWhyScope('Pair')
+                }}
+                onSwitchScope={setWhyScope}
+              />
+            )}
 
-          {whyScope === 'Pair' && (
-            <PairScopeView
-              members={members}
-              selectedMemberIds={selectedMemberIds}
-              setSelectedMemberIds={setSelectedMemberIds}
-              pairWhy={pairWhy}
-              pairWhyState={pairWhyState}
-              pairWhyReason={pairWhyReason}
-              onSwitchScope={setWhyScope}
-            />
-          )}
+            {whyScope === 'Pair' && (
+              <PairScopeView
+                members={members}
+                selectedMemberIds={selectedMemberIds}
+                setSelectedMemberIds={setSelectedMemberIds}
+                pairWhy={pairWhy}
+                pairWhyState={pairWhyState}
+                pairWhyReason={pairWhyReason}
+                onSwitchScope={setWhyScope}
+              />
+            )}
 
-          {whyScope === 'Group' && (
-            <GroupScopeView
-              analysis={analysis}
-              onSwitchScope={setWhyScope}
-            />
-          )}
+            {whyScope === 'Group' && (
+              <GroupScopeView
+                analysis={analysis}
+                onSwitchScope={setWhyScope}
+              />
+            )}
+          </Suspense>
         </div>
       )}
 

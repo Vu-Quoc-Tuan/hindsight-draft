@@ -75,7 +75,35 @@ export function SubNavBar({
           <span>Overview</span>
         </button>
 
-        {/* 06/07/08/09 WHY */}
+        {/* 06 Timeline & Evolution (Moved up to observation group with clearer name) */}
+        <button
+          className={`px-3 py-1.5 font-body-sm text-xs rounded-md flex items-center gap-1.5 transition-all cursor-pointer font-medium ${
+            currentTab === 'evolution'
+              ? 'bg-secondary text-surface-container-lowest font-bold shadow-xs'
+              : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
+          }`}
+          onClick={() => onSelectTab('evolution')}
+          title="Dòng thời gian lan truyền cảnh báo (T0, Cascade Velocity) & Vòng đời sự cố"
+        >
+          <span className="material-symbols-outlined text-[15px]">timeline</span>
+          <span>Timeline &amp; Evolution</span>
+        </button>
+
+        {/* 07 Topology (Moved up to network observation group) */}
+        <button
+          className={`px-3 py-1.5 font-body-sm text-xs rounded-md flex items-center gap-1.5 transition-all cursor-pointer font-medium ${
+            currentTab === 'topology'
+              ? 'bg-secondary text-surface-container-lowest font-bold shadow-xs'
+              : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
+          }`}
+          onClick={() => onSelectTab('topology')}
+          title="Sơ đồ chiếu mạng và tương quan topo"
+        >
+          <span className="material-symbols-outlined text-[15px]">lan</span>
+          <span>Topology</span>
+        </button>
+
+        {/* 08 WHY */}
         <button
           className={`px-3 py-1.5 font-body-sm text-xs rounded-md flex items-center gap-1.5 transition-all cursor-pointer font-medium ${
             currentTab === 'why'
@@ -88,7 +116,7 @@ export function SubNavBar({
           <span>WHY</span>
         </button>
 
-        {/* 10 Member Diagnostics */}
+        {/* 09 Member Diagnostics */}
         <button
           className={`px-3 py-1.5 font-body-sm text-xs rounded-md flex items-center gap-1.5 transition-all cursor-pointer font-medium ${
             currentTab === 'members'
@@ -101,7 +129,7 @@ export function SubNavBar({
           <span>Members</span>
         </button>
 
-        {/* 11/12/13 Audit & Structure */}
+        {/* 10 Audit & Structure */}
         <button
           className={`px-3 py-1.5 font-body-sm text-xs rounded-md flex items-center gap-1.5 transition-all cursor-pointer font-medium ${
             currentTab === 'structure'
@@ -114,57 +142,18 @@ export function SubNavBar({
           <span>Audit &amp; Structure</span>
         </button>
 
-        {/* 14 Recommendations */}
+        {/* 11 Recommendations & Validation (Final Action: Counterfactual Review + Sign-off) */}
         <button
           className={`px-3 py-1.5 font-body-sm text-xs rounded-md flex items-center gap-1.5 transition-all cursor-pointer font-medium ${
-            currentTab === 'review'
+            currentTab === 'review' || currentTab === 'validation'
               ? 'bg-secondary text-surface-container-lowest font-bold shadow-xs'
               : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
           }`}
           onClick={() => onSelectTab('review')}
-        >
-          <span className="material-symbols-outlined text-[15px]">recommend</span>
-          <span>Recommendations</span>
-        </button>
-
-        {/* 15/16 Evolution */}
-        <button
-          className={`px-3 py-1.5 font-body-sm text-xs rounded-md flex items-center gap-1.5 transition-all cursor-pointer font-medium ${
-            currentTab === 'evolution'
-              ? 'bg-secondary text-surface-container-lowest font-bold shadow-xs'
-              : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
-          }`}
-          onClick={() => onSelectTab('evolution')}
-        >
-          <span className="material-symbols-outlined text-[15px]">history</span>
-          <span>Evolution</span>
-        </button>
-
-        {/* 17 Topology */}
-        <button
-          className={`px-3 py-1.5 font-body-sm text-xs rounded-md flex items-center gap-1.5 transition-all cursor-pointer font-medium ${
-            currentTab === 'topology'
-              ? 'bg-secondary text-surface-container-lowest font-bold shadow-xs'
-              : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
-          }`}
-          onClick={() => onSelectTab('topology')}
-        >
-          <span className="material-symbols-outlined text-[15px]">lan</span>
-          <span>Topology</span>
-        </button>
-
-        {/* Persisted operator feedback */}
-        <button
-          className={`px-3 py-1.5 font-body-sm text-xs rounded-md flex items-center gap-1.5 transition-all cursor-pointer font-medium ${
-            currentTab === 'validation'
-              ? 'bg-secondary text-surface-container-lowest font-bold shadow-xs'
-              : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
-          }`}
-          onClick={() => onSelectTab('validation')}
-          title="Persisted operator feedback for evaluated counterfactual candidates"
+          title="Đề xuất đối chứng Counterfactual & Phê duyệt vận hành (Operator Sign-off)"
         >
           <span className="material-symbols-outlined text-[15px]">verified_user</span>
-          <span>Validation</span>
+          <span>Recommendations &amp; Validation</span>
         </button>
       </div>
     </div>

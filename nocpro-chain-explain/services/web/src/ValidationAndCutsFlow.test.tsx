@@ -33,11 +33,21 @@ describe('persisted Review, Evolution, topology and feedback surfaces', () => {
   })
 
   it('uses one persisted Evolution panel without a static S100/S102 story', () => {
-    const html = renderToStaticMarkup(<EvolutionView analysis={analysis} />)
+    const html = renderToStaticMarkup(<EvolutionView analysis={analysis} initialTab="cross_snapshot" />)
     expect(html).toContain('Loading persisted lineage artifact')
+    expect(html).not.toContain('Chronological Alarm Cascade')
     expect(html).not.toContain('Snapshot S100')
     expect(html).not.toContain('42 Alarms Base')
     expect(html).not.toContain('S103 Fission')
+  })
+
+  it('renders propagation timeline exclusively when timeline tab is active without fabricated fallbacks', () => {
+    const html = renderToStaticMarkup(<EvolutionView analysis={analysis} initialTab="timeline" />)
+    expect(html).toContain('Chronological Alarm Cascade')
+    expect(html).not.toContain('Loading persisted lineage artifact')
+    expect(html).not.toContain('10:00:00')
+    expect(html).not.toContain('22.4s')
+    expect(html).not.toContain('T0_ALARM')
   })
 
   it('shows topology loading without constructing an AVAILABLE payload', () => {

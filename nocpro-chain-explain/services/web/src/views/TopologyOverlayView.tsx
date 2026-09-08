@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import type { ChainAnalysis, Member } from '../types'
 import type { TopologyTreePayload } from '../TopologyTree'
+import { InfoTip } from '../components/InfoTip'
 
 interface TopologyOverlayViewProps {
   analysis: ChainAnalysis
@@ -99,22 +100,13 @@ export function TopologyOverlayView({ analysis, topologyPayload, onRootChange: _
       {/* 1. Header Section */}
       {/* ========================================================================= */}
       <section className="overflow-hidden rounded-xl border border-[#1b273e] bg-[#080d17] shadow-md">
-        <div className="flex flex-col gap-space-md p-space-lg lg:flex-row lg:items-end lg:justify-between border-b border-[#1b273e]">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="bg-secondary/20 text-secondary border border-secondary/30 px-2 py-0.5 rounded font-label-caps text-[10px] uppercase font-bold tracking-wider">
-                ALARM-CENTRIC TOPOLOGY SUBGRAPH
-              </span>
-              <span className="text-on-surface-variant font-code-sm text-xs">
-                Restricted to Chain {analysis.chain_id}
-              </span>
-            </div>
-            <h1 className="mt-1 font-headline-lg text-2xl font-bold text-on-surface">
-              Topology · {analysis.chain_id}
+        <div className="flex flex-col gap-space-sm p-space-md lg:flex-row lg:items-center lg:justify-between border-b border-[#1b273e]">
+          <div className="flex items-center gap-space-xs">
+            <span className="material-symbols-outlined text-secondary text-[20px]">lan</span>
+            <h1 className="font-headline-md text-base font-semibold text-on-surface flex items-center gap-2">
+              <span>Topology Overlay</span>
+              <InfoTip text="Chiếu đồ thị topo mạng lọc theo các thiết bị chứa cảnh báo trong chuỗi sự cố này. Hiển thị quan hệ thực tế và liên kết kề." />
             </h1>
-            <p className="mt-1 max-w-3xl text-xs text-on-surface-variant leading-relaxed">
-              Filtered strictly to devices and entities hosting alarms in this chain. Source relations and adjacency edges display verified co-location without asserting unverified causal propagation.
-            </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-secondary/30 bg-secondary/10 px-3 py-1 font-code-sm text-xs text-secondary font-semibold">

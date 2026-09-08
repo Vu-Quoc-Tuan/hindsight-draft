@@ -309,7 +309,6 @@ export function MultiChainTimelineView({
                 // Minimum visual bar width so it's always an interactive, readable pill
                 const visualWidth = available ? Math.max(3.5, rawWidth) : 0
                 const isSelected = selected.includes(chain.chain_id)
-                const isInstant = available && Math.abs(endMs - startMs) < 2000
                 const isOutlier = outlierIds.has(chain.chain_id)
 
                 return (
@@ -381,16 +380,12 @@ export function MultiChainTimelineView({
                         >
                           {/* The Gantt Bar */}
                           <div
-                            className={`h-6 w-full rounded-md border flex items-center justify-between px-2 cursor-pointer shadow-md transition-all hover:brightness-125 ${
-                              isInstant
-                                ? 'bg-amber-500/20 border-amber-400 text-amber-300'
-                                : 'bg-gradient-to-r from-secondary/40 via-sky-500/30 to-secondary/50 border-secondary/80 text-white shadow-[0_0_12px_rgba(34,211,238,0.2)]'
-                            }`}
+                            className="h-6 w-full rounded-md border flex items-center justify-between px-2 cursor-pointer shadow-md transition-all hover:brightness-125 bg-gradient-to-r from-secondary/40 via-sky-500/30 to-secondary/50 border-secondary/80 text-white shadow-[0_0_12px_rgba(34,211,238,0.2)]"
                             onClick={() => onSelectChain(chain.chain_id)}
                             title={`${chain.chain_id}: ${formatClock(chain.start_time!)} – ${formatClock(chain.end_time!, range.min)} (${formatDuration(chain.duration_seconds)})`}
                           >
                             <span className="font-code-sm text-[11px] font-bold truncate">
-                              {isInstant ? 'instant' : formatDuration(chain.duration_seconds)}
+                              {formatDuration(chain.duration_seconds)}
                             </span>
                             {visualWidth >= 8 && (
                               <span className="font-code-sm text-[10px] text-on-surface-variant hidden md:inline truncate ml-1 opacity-80">

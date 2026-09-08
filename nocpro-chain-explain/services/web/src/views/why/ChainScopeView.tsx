@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
-import type { ChainAnalysis, Member, WhyScope } from '../../types'
+import { useEffect, useMemo, useState } from 'react'
+import { api } from '../../api'
+import type { ChainAnalysis, CohesionNarrativeView, Member, WhyScope } from '../../types'
 import { InfoTip } from '../../components/InfoTip'
 
 interface ChainScopeViewProps {
@@ -16,10 +17,35 @@ export function ChainScopeView({
   distinctDevices,
   observedStart,
   observedEnd,
-  onSwitchScope,
 }: ChainScopeViewProps) {
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null)
   const [showDescriptors, setShowDescriptors] = useState(false)
+  const [narrativeData, setNarrativeData] = useState<CohesionNarrativeView | null>(null)
+  const [loadedChainId, setLoadedChainId] = useState<string | null>(null)
+  const loadingNarrative = loadedChainId !== analysis.chain_id
+
+  useEffect(() => {
+    let cancelled = false
+    const controller = new AbortController()
+
+    api.cohesionNarrative(analysis.chain_id, controller.signal)
+      .then(res => {
+        if (!cancelled) {
+          setNarrativeData(res)
+          setLoadedChainId(analysis.chain_id)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLoadedChainId(analysis.chain_id)
+        }
+      })
+
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [analysis.chain_id])
 
   const members = useMemo(() => analysis.members || [], [analysis.members])
   const totalAlarms = members.length || analysis.member_count || 1
@@ -84,7 +110,7 @@ export function ChainScopeView({
   }, [members, observedStart, observedEnd])
 
   // Derived dimensional metrics
-  const descriptors = analysis.descriptors || []
+  const descriptors = useMemo(() => analysis.descriptors || [], [analysis.descriptors])
   const unavailableCaps = analysis.graybox?.unavailable_capabilities || []
 
   // DIM 02: Burst arrivals
@@ -201,16 +227,31 @@ export function ChainScopeView({
             <span className="bg-secondary/20 text-secondary border border-secondary/30 px-2 py-0.5 rounded font-label-caps text-[10px] uppercase font-bold tracking-wider">
               EVIDENCE COHESION
             </span>
-            <span className="font-code-sm text-xs text-on-surface-variant">
-              Observed Cluster: {analysis.chain_id} • {dominantDevice}
-            </span>
           </div>
-          <h1 className="font-headline-lg text-xl font-bold text-on-surface tracking-tight mt-1">
-            Chain-level Cohesion Analysis: {analysis.chain_id} ({totalAlarms} Alarms)
-          </h1>
-          <p className="font-body-md text-xs text-on-surface-variant leading-relaxed mt-0.5">
-            Multi-evidence synthesis evaluating alarm co-location, temporal window proximity, and device correlation without asserting unverified causal ground truth.
-          </p>
+          <div className="flex items-center gap-2 mt-1">
+            <h1 className="font-headline-lg text-xl font-bold text-on-surface tracking-tight">
+              Chain-level Cohesion Analysis: {analysis.chain_id} ({totalAlarms} Alarms)
+            </h1>
+            <div className="relative inline-flex items-center group">
+              <button
+                type="button"
+                className="w-5 h-5 rounded-full bg-[#172338] border border-[#263756] text-on-surface-variant hover:text-secondary hover:border-secondary/50 flex items-center justify-center font-bold text-xs cursor-help transition-colors"
+                aria-label="Cohesion methodology description"
+                title="Multi-evidence synthesis evaluating alarm co-location, temporal window proximity, and device correlation without asserting unverified causal ground truth."
+              >
+                ?
+              </button>
+              <div className="absolute left-0 top-full mt-2 hidden group-hover:flex flex-col z-30 w-80 p-3 rounded-lg bg-[#0b1220] border border-secondary/40 shadow-2xl text-xs text-on-surface-variant leading-relaxed backdrop-blur-md pointer-events-none">
+                <div className="font-semibold text-secondary text-[11px] uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[14px]">info</span>
+                  <span>Cohesion Methodology</span>
+                </div>
+                <span>
+                  Multi-evidence synthesis evaluating alarm co-location, temporal window proximity, and device correlation without asserting unverified causal ground truth.
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* High Level Aggregated Stats Pill Array */}
@@ -224,10 +265,6 @@ export function ChainScopeView({
             <span className="font-code-lg text-base text-on-surface font-bold">
               {typeof timeSpanSecs === 'number' ? `${timeSpanSecs.toFixed(2)}s` : timeSpanLabel}
             </span>
-          </div>
-          <div className="bg-[#131c2e] px-3.5 py-2.5 rounded-lg flex flex-col items-start min-w-[110px] border border-[#1e2b44]">
-            <span className="font-label-caps text-[10px] uppercase text-on-surface-variant font-medium">DOMINANT NODE</span>
-            <span className="font-code-lg text-base text-primary font-bold">{dominantDevice}</span>
           </div>
         </div>
       </div>
@@ -672,45 +709,34 @@ export function ChainScopeView({
       {/* ========================================================================= */}
       {/* 5. Bottom Section: Limitations & Evidence Cohesion Callout Box */}
       {/* ========================================================================= */}
-      <div className="w-full bg-[#0c1424] rounded-xl p-space-md flex flex-col md:flex-row justify-between items-start md:items-center gap-space-md shadow-md border border-[#1b273e]">
+      <div className="w-full bg-[#0c1424] rounded-xl p-space-md flex items-center gap-space-md shadow-md border border-[#1b273e]">
         {/* Limitations & Cohesion Statement */}
-        <div className="flex items-start gap-3 max-w-3xl">
+        <div className="flex items-start gap-3 w-full">
           <div className="p-2 bg-tertiary/20 text-tertiary rounded-lg flex items-center justify-center mt-0.5 shrink-0">
-            <span className="material-symbols-outlined text-[20px]">info</span>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="font-headline-md text-sm font-bold text-on-surface">
-              Evidence Cohesion: 4 of 6 dimensions strongly agree on cluster unity.
+            <span className="material-symbols-outlined text-[20px]">
+              {narrativeData?.model && narrativeData.model !== 'DETERMINISTIC_EVIDENCE' ? 'auto_awesome' : 'info'}
             </span>
-            <p className="font-body-sm text-xs text-on-surface-variant leading-relaxed">
-              Noticeable drop on optical power sub-domain ({opticalDrops} DWDM link down events). Cluster boundary {analysis.chain_id} is solid for IP Layer 3 operations, but may require branch partitioning if resolving passive fiber breaks.
-            </p>
           </div>
-        </div>
-
-        {/* Quick Action Shortcuts */}
-        <div className="flex items-center gap-2 flex-wrap shrink-0">
-          <button
-            onClick={() => onSwitchScope('Member')}
-            className="bg-[#131c2e] hover:bg-[#1a273f] text-on-surface px-3 py-2 rounded-lg font-body-sm text-xs flex items-center gap-1.5 shadow transition-colors cursor-pointer border border-[#1e2b44]"
-          >
-            <span className="material-symbols-outlined text-[15px] text-secondary">person_search</span>
-            <span>Drilldown to Member WHY</span>
-          </button>
-          <button
-            onClick={() => onSwitchScope('Pair')}
-            className="bg-[#131c2e] hover:bg-[#1a273f] text-on-surface px-3 py-2 rounded-lg font-body-sm text-xs flex items-center gap-1.5 shadow transition-colors cursor-pointer border border-[#1e2b44]"
-          >
-            <span className="material-symbols-outlined text-[15px] text-secondary">grid_view</span>
-            <span>Open Pair Evidence Matrix</span>
-          </button>
-          <button
-            onClick={() => onSwitchScope('Group')}
-            className="bg-secondary text-[#070e1d] px-3.5 py-2 rounded-lg font-body-sm text-xs font-bold flex items-center gap-1.5 shadow transition-colors hover:brightness-110 cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[15px]">call_split</span>
-            <span>Analyze Subclusters</span>
-          </button>
+          <div className="flex flex-col gap-1.5 w-full">
+            <div className="flex items-center gap-2 flex-wrap justify-between">
+              <span className="font-headline-md text-sm font-bold text-on-surface">
+                Evidence Cohesion: 4 of 6 dimensions strongly agree on cluster unity.
+              </span>
+              {narrativeData?.model && (
+                <span className="text-[10px] font-code-sm px-2 py-0.5 rounded bg-[#16233b] border border-[#223352] text-secondary">
+                  {narrativeData.model === 'DETERMINISTIC_EVIDENCE' ? 'Deterministic Evidence' : `AI: ${narrativeData.model}`}
+                </span>
+              )}
+            </div>
+            {loadingNarrative ? (
+              <div className="h-4 w-3/4 bg-surface-container-high/40 animate-pulse rounded my-1" />
+            ) : (
+              <p className="font-body-sm text-xs text-on-surface-variant leading-relaxed">
+                {narrativeData?.narrative ||
+                  `Chain ${analysis.chain_id} exhibits consistent evidence cohesion across observed members. Structural audit indicates solid cluster boundaries.`}
+              </p>
+            )}
+          </div>
         </div>
       </div>
 
