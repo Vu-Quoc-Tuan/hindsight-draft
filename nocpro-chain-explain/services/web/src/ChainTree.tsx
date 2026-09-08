@@ -340,18 +340,6 @@ export function ChainTree({
               </strong>
               <div className="node-sub-info">
                 <span className="node-id-code">{member.alarm_id}</span>
-                {member.device_code && (
-                  <>
-                    <span className="node-dot">•</span>
-                    <span className="node-device">{member.device_code}</span>
-                  </>
-                )}
-                {member.node_reference && (
-                  <>
-                    <span className="node-dot">•</span>
-                    <span className="node-ref">{member.node_reference}</span>
-                  </>
-                )}
               </div>
             </div>
           </div>

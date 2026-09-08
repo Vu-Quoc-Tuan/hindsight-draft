@@ -397,21 +397,24 @@ export function CounterfactualReview({
   const result = job.result
   const recommendationIds = new Set(result.recommendations.map((item) => item.candidate_id))
   const operations: CounterfactualOperation[] = result.operation_status
-    ? ['REMOVE_MEMBER', 'SPLIT_CHAIN', 'MOVE_MEMBER', 'MERGE_CHAINS', 'ADD_MEMBER'].map((operation) => {
-        const summary = result.operation_status![operation]
-        return {
-          operation: operation as CounterfactualOperation['operation'],
-          status: summary.status as CounterfactualOperation['status'],
-          reason: summary.reason,
-          search_mode: summary.search_mode as CounterfactualOperation['search_mode'],
-          discovered_candidate_count: summary.candidate_count,
-          evaluated_candidate_count: summary.evaluated_count,
-          rejected_candidate_count: 0,
-          candidate_limit: summary.ceiling,
-          candidates: (result.evaluated_candidates ?? []).filter((item) => item.operation === operation),
-        }
-      })
-    : [result.remove, result.split, result.move, result.merge]
+    ? ['REMOVE_MEMBER', 'SPLIT_CHAIN', 'MOVE_MEMBER', 'MERGE_CHAINS', 'ADD_MEMBER']
+        .map((operation) => {
+          const summary = result.operation_status?.[operation]
+          if (!summary) return null
+          return {
+            operation: operation as CounterfactualOperation['operation'],
+            status: summary.status as CounterfactualOperation['status'],
+            reason: summary.reason,
+            search_mode: summary.search_mode as CounterfactualOperation['search_mode'],
+            discovered_candidate_count: summary.candidate_count,
+            evaluated_candidate_count: summary.evaluated_count,
+            rejected_candidate_count: 0,
+            candidate_limit: summary.ceiling,
+            candidates: (result.evaluated_candidates ?? []).filter((item) => item.operation === operation),
+          }
+        })
+        .filter((item): item is CounterfactualOperation => item !== null)
+    : [result.remove, result.split, result.move, result.merge].filter(Boolean) as CounterfactualOperation[]
   return (
     <section className="review-shell">
       <header className="review-heading">

@@ -92,7 +92,6 @@ export function ChainDetailView({
   const coreCount = members.filter(m => m.role?.toUpperCase().includes('CORE') || m.role?.toUpperCase().includes('ROOT')).length
   const weakCount = members.filter(m => m.role?.toUpperCase().includes('WEAK') || m.role?.toUpperCase().includes('LEAF')).length
   const connectorCount = members.filter(m => m.role?.toUpperCase().includes('CONNECT')).length
-  const spofCount = members.filter(m => m.redundancy_role?.toUpperCase().includes('SPOF')).length
   const peripheralCount = Math.max(0, totalMembers - coreCount - weakCount - connectorCount)
   const observedTimes = members
     .map(member => member.canonical_start_time)
@@ -241,35 +240,28 @@ export function ChainDetailView({
       {/* ========================================================================= */}
       {activeSubTab === 'WHY' && (
         <div className="flex flex-col gap-space-md">
-          {/* Scope Header Card with Prominent Scope Switcher */}
-          <div className="p-space-md bg-surface-container rounded-lg shadow-sm border border-secondary/20 flex flex-col md:flex-row items-start md:items-center justify-between gap-space-md">
-            <div className="flex items-center gap-space-md">
-              <div className="w-10 h-10 rounded-lg bg-secondary-container/20 flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-secondary text-[24px]">psychology</span>
-              </div>
-              <div className="flex items-center gap-space-sm flex-wrap">
-                <span className="font-headline-md text-headline-md font-bold text-on-surface">
-                  WHY Scope: {whyScope}
-                </span>
-                <span className="px-space-xs py-0.5 rounded bg-secondary-container/30 text-secondary font-code-sm text-code-sm font-semibold">
-                  Multi-Evidence Attribution
-                </span>
-                <InfoTip
-                  text={
-                    whyScope === 'Chain'
-                      ? 'Chain-level: Tổng hợp 6 chiều bằng chứng toàn diện chứng minh tính gắn kết của toàn bộ chuỗi.'
-                      : whyScope === 'Member'
-                      ? 'Member-level: Hồ sơ chi tiết giải thích vai trò (Core, Connector, Leaf) của từng cảnh báo trong chuỗi.'
-                      : whyScope === 'Pair'
-                      ? 'Pair-level: Đối sánh trực tiếp giữa 2 cảnh báo được chọn trên từng kênh trễ thời gian, topology và thuộc tính.'
-                      : 'Group-level: Phân tích các phân cụm con (Subclusters A, B, C) và các đường cắt ranh giới phân hoạch.'
-                  }
-                />
-              </div>
+          {/* WHY Scope Selector Bar (Clean, no redundant breadcrumb) */}
+          <div className="w-full bg-[#080d17] px-space-md py-1.5 rounded-lg flex flex-wrap items-center justify-between gap-space-sm border border-[#1b273e] shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="font-label-caps text-xs uppercase text-secondary font-bold tracking-wider flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[16px]">psychology</span>
+                WHY Scope: <span className="text-on-surface">{whyScope}</span>
+              </span>
+              <InfoTip
+                text={
+                  whyScope === 'Chain'
+                    ? 'Chain-level: Tổng hợp 6 chiều bằng chứng toàn diện chứng minh tính gắn kết của toàn bộ chuỗi.'
+                    : whyScope === 'Member'
+                    ? 'Member-level: Hồ sơ chi tiết giải thích vai trò (Core, Connector, Leaf) của từng cảnh báo trong chuỗi.'
+                    : whyScope === 'Pair'
+                    ? 'Pair-level: Đối sánh trực tiếp giữa 2 cảnh báo được chọn trên từng kênh trễ thời gian, topology và thuộc tính.'
+                    : 'Group-level: Phân tích các phân cụm con (Subclusters A, B, C) và các đường cắt ranh giới phân hoạch.'
+                }
+              />
             </div>
 
-            {/* Scope Switcher Pill Tabs */}
-            <div className="flex items-center gap-1 bg-[#080d17] p-1 rounded-lg border border-[#1b273e]">
+            {/* Scope Switcher Buttons */}
+            <div className="flex items-center gap-1 bg-[#0c1424] p-1 rounded-md border border-[#1e2b44]">
               {(['Chain', 'Member', 'Pair', 'Group'] as WhyScope[]).map(sc => {
                 const isActive = whyScope === sc
                 const icon =
@@ -283,14 +275,14 @@ export function ChainDetailView({
                     key={sc}
                     type="button"
                     onClick={() => setWhyScope(sc)}
-                    className={`px-3 py-1.5 rounded-md font-code-sm text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    className={`px-3 py-1 rounded font-code-sm text-xs transition-all flex items-center gap-1.5 cursor-pointer ${
                       isActive
-                        ? 'bg-secondary text-on-secondary shadow-md'
-                        : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
+                        ? 'bg-secondary text-[#070e1d] font-bold shadow-xs'
+                        : 'text-on-surface-variant hover:text-on-surface hover:bg-[#14233a]'
                     }`}
                   >
-                    <span className="material-symbols-outlined text-[15px]">{icon}</span>
-                    {sc} Scope
+                    <span className="material-symbols-outlined text-[14px]">{icon}</span>
+                    <span>{sc}</span>
                   </button>
                 )
               })}
@@ -352,51 +344,6 @@ export function ChainDetailView({
       {/* ========================================================================= */}
       {activeSubTab === 'MEMBERS' && (
         <div className="flex flex-col gap-space-md">
-          {/* Top 6 KPI Cards for Members */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-space-sm">
-            <div className="p-space-sm rounded bg-surface-container flex flex-col justify-between shadow-sm">
-              <span className="font-label-caps text-label-caps uppercase text-on-surface-variant">Total Members</span>
-              <span className="font-headline-md text-headline-md font-bold text-on-surface mt-1">{totalMembers}</span>
-              <div className="w-full h-1 bg-surface-container-highest rounded-full mt-2">
-                <div className="h-full bg-secondary w-full"></div>
-              </div>
-            </div>
-            <div className="p-space-sm rounded bg-surface-container flex flex-col justify-between shadow-sm">
-              <span className="font-label-caps text-label-caps uppercase text-on-surface-variant">Core Cluster</span>
-              <span className="font-headline-md text-headline-md font-bold text-secondary mt-1">{coreCount}</span>
-              <div className="w-full h-1 bg-surface-container-highest rounded-full mt-2">
-                <div className="h-full bg-secondary" style={{ width: `${Math.round((coreCount / Math.max(1, totalMembers)) * 100)}%` }}></div>
-              </div>
-            </div>
-            <div className="p-space-sm rounded bg-surface-container flex flex-col justify-between shadow-sm">
-              <span className="font-label-caps text-label-caps uppercase text-on-surface-variant">Peripheral</span>
-              <span className="font-headline-md text-headline-md font-bold text-on-surface mt-1">{peripheralCount}</span>
-              <div className="w-full h-1 bg-surface-container-highest rounded-full mt-2">
-                <div className="h-full bg-secondary-fixed" style={{ width: `${Math.round((peripheralCount / Math.max(1, totalMembers)) * 100)}%` }}></div>
-              </div>
-            </div>
-            <div className="p-space-sm rounded bg-surface-container flex flex-col justify-between shadow-sm">
-              <span className="font-label-caps text-label-caps uppercase text-error font-bold">Weak / Low Fit</span>
-              <span className="font-headline-md text-headline-md font-bold text-error mt-1">{weakCount}</span>
-              <div className="w-full h-1 bg-surface-container-highest rounded-full mt-2">
-                <div className="h-full bg-error" style={{ width: `${Math.round((weakCount / Math.max(1, totalMembers)) * 100)}%` }}></div>
-              </div>
-            </div>
-            <div className="p-space-sm rounded bg-surface-container flex flex-col justify-between shadow-sm">
-              <span className="font-label-caps text-label-caps uppercase text-tertiary font-bold">Connectors</span>
-              <span className="font-headline-md text-headline-md font-bold text-tertiary mt-1">{connectorCount}</span>
-              <div className="w-full h-1 bg-surface-container-highest rounded-full mt-2">
-                <div className="h-full bg-tertiary" style={{ width: `${Math.round((connectorCount / Math.max(1, totalMembers)) * 100)}%` }}></div>
-              </div>
-            </div>
-            <div className="p-space-sm rounded bg-surface-container flex flex-col justify-between shadow-sm">
-              <span className="font-label-caps text-label-caps uppercase text-primary font-bold">Redundancy</span>
-              <span className="font-headline-md text-headline-md font-bold text-primary mt-1">{spofCount}</span>
-              <div className="w-full h-1 bg-surface-container-highest rounded-full mt-2">
-                <div className="h-full bg-primary" style={{ width: `${Math.round((spofCount / Math.max(1, totalMembers)) * 100)}%` }}></div>
-              </div>
-            </div>
-          </div>
 
           {/* Filter Pills and Search */}
           <div className="w-full px-space-md py-space-sm bg-surface-container rounded-lg flex flex-wrap items-center justify-between gap-space-md shadow-sm">

@@ -580,7 +580,21 @@ export type AssistantResponse = {
   actions: AssistantAction[]
   model: string
   provider_status: string
+  response_mode: 'LLM_PRIMARY' | 'DETERMINISTIC_FALLBACK'
+  tools_used: string[]
+  chart_data?: Record<string, unknown> | null
 }
+
+export type AssistantHistoryMessage = {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export type AssistantSelection =
+  | { kind: 'metric'; metric_id: string }
+  | { kind: 'alarm'; alarm_id: string }
+  | { kind: 'pair'; alarm_id_a: string; alarm_id_b: string }
+  | { kind: 'topology-resource'; resource_id: string }
 
 export type AssistantContext = {
   snapshot_id: string
@@ -592,6 +606,7 @@ export type AssistantContext = {
   pair_alarm_id_b?: string
   selected_metric?: string
   topology_resource_id?: string
+  selection?: AssistantSelection
   filters: Record<string, string>
 }
 

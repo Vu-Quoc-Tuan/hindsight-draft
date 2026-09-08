@@ -6,6 +6,7 @@ const chains = {
   chains: [
     { chain_id: 'C-A', member_count: 3, is_singleton: false, title: 'Observed A', start_time: '2026-09-06T10:00:00Z', end_time: '2026-09-06T10:02:00Z', duration_seconds: 120 },
     { chain_id: 'C-B', member_count: 1, is_singleton: true, title: 'Observed B', start_time: null, end_time: null, duration_seconds: null },
+    { chain_id: 'C-C', member_count: 2, is_singleton: false, title: 'Observed C', start_time: '2026-09-06T11:00:00Z', end_time: '2026-09-06T11:01:00Z', duration_seconds: 60 },
   ],
 }
 
@@ -60,7 +61,8 @@ async function installApi(page: Page, delayedB?: Promise<void>, assistantContext
       return fulfillJson(route, {
         contract_version: 'nocpro-assistant-v1', status: 'AVAILABLE',
         message: 'ASSISTANT_CONTEXT_RESPONSE', fact_refs: ['analysis:C-A'], actions: [],
-        model: 'DETERMINISTIC_EVIDENCE', provider_status: 'OK',
+        model: 'DETERMINISTIC_EVIDENCE', provider_status: 'NOT_CONFIGURED',
+        response_mode: 'DETERMINISTIC_FALLBACK', tools_used: [],
       })
     }
     if (url.pathname === '/api/v1/chains/C-A/audit-visualization') return fulfillJson(route, {
@@ -99,10 +101,32 @@ test('overview uses observed values and remains within a mobile viewport', async
   await expect(page.getByRole('main').getByText('S-BROWSER@v1')).toBeVisible()
   await expect(page.getByText('Largest observed chains')).toBeVisible()
   await expect(page.getByRole('cell', { name: 'Observed A', exact: true })).toBeVisible()
+  await expect(page.getByText('CHAIN:', { exact: true })).toHaveCount(0)
   await expect(page.getByText('8,714')).toHaveCount(0)
   await expect(page.getByText('37 Structural Findings')).toHaveCount(0)
   const dimensions = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }))
   expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.client)
+})
+
+test('Explorer comparison remains a visible two-chain selection', async ({ page }) => {
+  await installApi(page)
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Chains Explorer' }).click()
+
+  await page.getByLabel('Select C-A').click()
+  await page.getByLabel('Select C-B').click()
+  await page.getByLabel('Select C-C').click()
+
+  await expect(page.getByLabel('Select C-A')).not.toBeChecked()
+  await expect(page.getByLabel('Select C-B')).toBeChecked()
+  await expect(page.getByLabel('Select C-C')).toBeChecked()
+  await expect(page.getByText('2 selected')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Compare pair' })).toBeEnabled()
+
+  await page.getByRole('button', { name: 'Singleton', exact: true }).click()
+  await expect(page.getByLabel('Select C-B')).not.toBeChecked()
+  await expect(page.getByText('1 selected')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Compare pair' })).toBeDisabled()
 })
 
 test('switching chains never renders the previous analysis under the new chain', async ({ page }) => {

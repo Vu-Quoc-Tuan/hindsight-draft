@@ -25,8 +25,14 @@ export function SubNavBar({
   selectedChainId,
   onClearSelectedChain,
 }: SubNavBarProps) {
-  // If no chain is selected, top-level navigation is handled by NocHeader
-  if (!selectedChainId) {
+  // If no chain is selected OR if on a snapshot-level view, top-level navigation is active in NocHeader
+  const isSnapshotLevel = (
+    currentTab === 'snapshot-overview' ||
+    currentTab === 'chains-explorer' ||
+    currentTab === 'multi-chain-timeline' ||
+    currentTab === 'compare-chains'
+  )
+  if (!selectedChainId || isSnapshotLevel) {
     return null
   }
 
@@ -69,7 +75,7 @@ export function SubNavBar({
           <span>Overview</span>
         </button>
 
-        {/* 06/07/08/09 WHY Grouped */}
+        {/* 06/07/08/09 WHY */}
         <button
           className={`px-3 py-1.5 font-body-sm text-xs rounded-md flex items-center gap-1.5 transition-all cursor-pointer font-medium ${
             currentTab === 'why'
@@ -79,7 +85,7 @@ export function SubNavBar({
           onClick={() => onSelectTab('why')}
         >
           <span className="material-symbols-outlined text-[15px]">psychology</span>
-          <span>WHY Grouped</span>
+          <span>WHY</span>
         </button>
 
         {/* 10 Member Diagnostics */}

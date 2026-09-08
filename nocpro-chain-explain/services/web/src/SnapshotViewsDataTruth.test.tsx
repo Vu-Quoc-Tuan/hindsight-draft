@@ -117,4 +117,30 @@ describe('snapshot views use only factual chain summary fields', () => {
     expect(html).not.toContain('+1.82s')
     expect(html).not.toContain('CONDUCTANCE')
   })
+
+  it('renders snapshot catalog items in header without mock contamination', () => {
+    const snapshots = [
+      {
+        snapshot_id: 'real_alarm_ip_demo',
+        name: 'IP Network Replay (500 Alarms)',
+        profile: 'IP_NETWORK' as const,
+        alarm_count: 500,
+        chain_count: 258,
+        description: 'Observed IP alarms mapped to topoIP.csv router/switch adjacency graph.',
+        badge: 'Real Replay',
+      },
+    ]
+    const html = renderToStaticMarkup(
+      <NocHeader
+        datasetName="IP_NETWORK"
+        snapshotId="real_alarm_ip_demo@1"
+        currentView="snapshot-overview"
+        snapshots={snapshots}
+        onNavigate={() => {}}
+        onOpenSettings={() => {}}
+      />,
+    )
+    expect(html).toContain('real_alarm_ip_demo@1')
+    expect(html).toContain('IP Network')
+  })
 })
