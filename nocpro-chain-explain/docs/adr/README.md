@@ -1,5 +1,8 @@
 # ADR Index — NocPro Alarm Chain Explanation & Validation
 
+Xem [Active Methodology](../METHODOLOGY.md) cho bản phương pháp ngắn gọn và
+[Current Status](../CURRENT_STATUS.md) cho trạng thái implementation hiện tại.
+
 **Camera-ready pass (28/08/2026):** no new ADR numbers. `source_kind`, contextual `chaining_usage`, fail-closed `quality_status`, SYSTEM_FACT typing, singleton behavior and MVP metadata-adapter requirements are now explicit.
 
 **Data/Integration patch D1 (28/08/2026):** ADR-0002, 0006, 0007, 0008, 0010, 0012, 0013, 0026, 0027, 0029 and 0032 were tightened after checking real Attribute/Louvain metadata, chain 2214039 and topology export. No new methodology ADR was added; V2.3.1 mathematical core remains frozen.

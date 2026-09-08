@@ -155,7 +155,7 @@
       "formula": {"plain": "grouping evidence != causal proof", "latex": "evidence_{grouping}\\not\\Rightarrow causality"},
       "availability": "Luôn áp dụng cho Assistant và AI advisor.",
       "must_not_claim": "Assistant không được tuyên bố root cause, causal dependency hoặc remediation chắc chắn từ chain evidence.",
-      "sources": ["docs/adr/0024-use-llms-only-for-grounded-narrative-rendering-never-as-the-reasoning-source.md", "docs/FULL_ADR_V2_2_CAMERA_READY.md"]
+      "sources": ["docs/adr/0024-use-llms-only-for-grounded-narrative-rendering-never-as-the-reasoning-source.md", "docs/METHODOLOGY.md"]
     },
     {
       "id": "view.pair_why",
@@ -167,7 +167,7 @@
       "formula": {"plain": "evaluate channels for (alarm_a, alarm_b) inside active chain", "latex": "WHY(a,b|C)=\\{e_k(a,b)\\}"},
       "availability": "Hai alarm phải khác nhau, cùng thuộc active chain và snapshot identity phải còn hiện hành.",
       "must_not_claim": "Không phải edge gốc của Louvain và không tự chứng minh causal link.",
-      "sources": ["docs/FULL_ADR_V2_2_CAMERA_READY.md", "services/api/nocpro_api/routes.py"]
+      "sources": ["docs/METHODOLOGY.md", "services/api/nocpro_api/routes.py"]
     }
   ]
 }

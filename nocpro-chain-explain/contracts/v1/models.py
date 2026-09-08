@@ -4,8 +4,8 @@ Owned by ``nocpro-chain-explain`` per ADR-0002; ``nocpro-mock`` validates its
 output against this artifact. Plain dataclasses are used so the contract has no
 third-party dependency and can be vendored read-only for CI.
 
-Structure follows ``MockSnapshotPackage`` in nocpro-mock docs
-``04-canonical-output-model.md``.
+Structure follows the canonical package boundary summarized in
+``docs/METHODOLOGY.md`` and ``docs/DATA_SOURCES.md``.
 """
 
 from __future__ import annotations
