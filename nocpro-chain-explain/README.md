@@ -51,7 +51,7 @@ Scope follows ADR-0029: MVP and P0-complete must stand on their own before P1.
 | Kafka chunk/barrier ingest (`nocpro-mock` -> Explain) | infra | done |
 | Docker Compose: PostgreSQL, Kafka, API, Web, replay producer | infra | done |
 | Docker + Chromium operator-flow and recovery acceptance | infra | done |
-| NocPro Assistant deterministic registry/navigation | infra | done; exact snapshot-bound read-only targets only; full-stack Chromium flow and current-component stale-context browser harness passed |
+| NocPro Assistant LLM-primary tool loop | infra | done in unit/API/UI contract: 6 read-only tools, versioned methodology catalog, bounded history/current-view context, and explicit deterministic fallback; new live-provider browser acceptance not run |
 
 Per ADR-0029, MVP + P0-complete must stand as a usable project **before** P1.
 The P1-Core feature set above is implemented, but the **P1 milestone is not
@@ -336,6 +336,24 @@ PYTHONPATH=.:services/analysis-worker:services/api \
   --host 127.0.0.1 \
   --port 8000
 ```
+
+For local development, the API automatically loads the project-root `.env`
+without overriding variables already exported by the shell. The same file can
+also be passed explicitly to Uvicorn:
+
+```bash
+PYTHONPATH=.:services/analysis-worker:services/api \
+  .venv/bin/uvicorn nocpro_api.app:app \
+  --app-dir services/api \
+  --env-file .env \
+  --host 127.0.0.1 \
+  --port 8000
+```
+
+Docker Compose reads the project-root `.env` for interpolation and passes
+`AI_PROVIDER_PROTOCOL`, `AI_BASE_URL`, `AI_API_KEY`, and `AI_MODEL` only to the
+API container. Deployment-provided environment values take precedence over
+local `.env` values. Never expose these values through `VITE_*` variables.
 
 Load one canonical Input Contract v1 package with `POST /api/v1/snapshots`,
 then use `/api/v1/chains`, `/api/v1/chains/{chain_id}`, pair WHY, and the
