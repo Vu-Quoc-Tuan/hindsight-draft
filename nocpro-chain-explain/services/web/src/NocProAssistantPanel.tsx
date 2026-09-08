@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { api } from './api'
+import { buildAssistantHistory } from './assistantHistory'
 import { GroundedProviderBadge } from './GroundedProviderBadge'
 import type { AssistantAction, AssistantContext, AssistantResponse } from './types'
 
@@ -34,6 +35,11 @@ export function NocProAssistantPanel({
     context.chain_id ?? '',
     context.pair_alarm_id_a ?? '',
     context.pair_alarm_id_b ?? '',
+    context.page,
+    context.selected_metric ?? '',
+    context.alarm_id ?? '',
+    context.topology_resource_id ?? '',
+    JSON.stringify(context.selection ?? null),
   ].join('\u0000')
 
   const [messages, setMessages] = useState<MessageItem[]>(() => {
@@ -89,7 +95,8 @@ export function NocProAssistantPanel({
     setError(null)
 
     try {
-      const response = await api.assistantQuery(trimmed, context, request.controller.signal)
+      const history = buildAssistantHistory(messages)
+      const response = await api.assistantQuery(trimmed, context, history, request.controller.signal)
       if (requestRef.current?.id === request.id) {
         setLoading(false)
 
@@ -174,6 +181,7 @@ export function NocProAssistantPanel({
                     <GroundedProviderBadge
                       model={res.model ?? 'mistral-large'}
                       providerStatus={res.provider_status ?? 'OK'}
+                      responseMode={res.response_mode}
                     />
                   </div>
                 )}

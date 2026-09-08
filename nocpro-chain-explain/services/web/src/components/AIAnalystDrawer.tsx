@@ -22,6 +22,11 @@ export function AIAnalystDrawer({
     context.chain_id ?? '',
     context.pair_alarm_id_a ?? '',
     context.pair_alarm_id_b ?? '',
+    context.page,
+    context.selected_metric ?? '',
+    context.alarm_id ?? '',
+    context.topology_resource_id ?? '',
+    JSON.stringify(context.selection ?? null),
   ].join('\u0000')
 
   if (!isOpen) {

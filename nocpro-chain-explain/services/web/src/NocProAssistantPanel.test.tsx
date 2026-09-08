@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
+import { buildAssistantHistory } from './assistantHistory'
 import { NocProAssistantPanel } from './NocProAssistantPanel'
 import type { AssistantResponse } from './types'
 
@@ -12,9 +13,28 @@ const renderedResponse: AssistantResponse = {
   actions: [],
   model: 'mistral-large',
   provider_status: 'OK',
+  response_mode: 'LLM_PRIMARY',
+  tools_used: ['search_project_knowledge'],
 }
 
 describe('NocProAssistantPanel', () => {
+  it('builds bounded history without welcome or error messages', () => {
+    const history = buildAssistantHistory([
+      { id: 'welcome', role: 'assistant', text: 'welcome' },
+      { id: '1', role: 'user', text: 'first' },
+      { id: '2', role: 'assistant', text: 'failed', error: 'network' },
+      ...Array.from({ length: 9 }, (_, index) => ({
+        id: `m-${index}`,
+        role: (index % 2 ? 'assistant' : 'user') as 'assistant' | 'user',
+        text: `message-${index}`,
+      })),
+    ])
+
+    expect(history).toHaveLength(8)
+    expect(history[0].content).toBe('message-1')
+    expect(history.some(item => item.content === 'welcome' || item.content === 'failed')).toBe(false)
+  })
+
   it('states the read-only boundary and renders deterministic quick actions', () => {
     const html = renderToStaticMarkup(
       <NocProAssistantPanel

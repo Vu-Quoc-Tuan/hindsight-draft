@@ -4,9 +4,8 @@ type ChainSummary = { chain_id: string; member_count: number }
 
 async function openChain(page: import('@playwright/test').Page, chainId: string) {
   await page.getByRole('button', { name: 'Chains Explorer' }).click()
-  const row = page.getByRole('row').filter({
-    has: page.getByRole('cell', { name: chainId, exact: true }),
-  })
+  await page.getByPlaceholder('Search chain ID or observed title…').fill(chainId)
+  const row = page.getByRole('row').filter({ hasText: chainId })
   await row.getByRole('button', { name: 'Inspect →' }).click()
 }
 
@@ -19,9 +18,8 @@ async function selectPairContext(page: import('@playwright/test').Page) {
 
   await page.goto('/')
   await openChain(page, chain!.chain_id)
-  await page.getByRole('button', { name: 'WHY Grouped' }).click()
-  await page.getByText('Scope:', { exact: true }).click()
-  await page.getByText('Pair', { exact: true }).last().click()
+  await page.getByRole('button', { name: /WHY$/ }).click()
+  await page.getByRole('button', { name: /Pair$/ }).click()
   const members = await page.getByLabel('Pair endpoint A').locator('option').evaluateAll(options =>
     options.map(option => (option as HTMLOptionElement).value).filter(Boolean),
   )
@@ -52,7 +50,9 @@ async function changePairEndpoint(page: import('@playwright/test').Page) {
 test('NocPro Assistant is snapshot-bound, read-only, and navigates with typed actions', async ({ page }) => {
   const inventoryResponse = await page.request.get('/api/v1/chains')
   expect(inventoryResponse.ok()).toBeTruthy()
-  const inventory = await inventoryResponse.json() as { snapshot_id: string; snapshot_version: string }
+  const inventory = await inventoryResponse.json() as { snapshot_id: string; snapshot_version: string; chains: ChainSummary[] }
+  const targetChain = inventory.chains.find(item => item.member_count > 1) ?? inventory.chains[0]
+  expect(targetChain, 'active snapshot needs at least one chain').toBeDefined()
   const consoleErrors: string[] = []
   const reviewReadResponses: string[] = []
   const missingReviewResponses: string[] = []
@@ -88,12 +88,16 @@ test('NocPro Assistant is snapshot-bound, read-only, and navigates with typed ac
     page.waitForResponse((response) => response.url().includes('/assistant/query') && response.ok()),
     page.getByRole('button', { name: 'Hỏi' }).click(),
   ])
-  await expect(page.getByText(/semantic-registry:conductance/i)).toBeVisible()
+  await expect(page.getByText(/knowledge:metric\.conductance/i)).toBeVisible()
   await expect(
     page.locator('[aria-label^="AI-assisted narrative"], [aria-label^="Deterministic fallback"]').first(),
   ).toBeVisible()
 
-  await query.fill('Open audit')
+  await page.getByRole('button', { name: 'Đóng chat' }).click()
+  await openChain(page, targetChain.chain_id)
+  await page.getByRole('button', { name: 'NocPro Assistant' }).click()
+  const chainQuery = page.getByLabel('Hỏi về snapshot hiện tại')
+  await chainQuery.fill('Open audit')
   await Promise.all([
     page.waitForResponse((response) => response.url().includes('/assistant/query') && response.ok()),
     page.getByRole('button', { name: 'Hỏi' }).click(),
@@ -162,6 +166,10 @@ test('Assistant hides completed and delayed responses when pair context changes'
         message: 'STALE_PAIR_RESPONSE_MUST_NOT_RENDER',
         actions: [],
         fact_refs: [],
+        model: 'mock-model',
+        provider_status: 'OK',
+        response_mode: 'LLM_PRIMARY',
+        tools_used: ['inspect_current_view'],
       }),
     }).catch(() => undefined).finally(requestFinished)
   })
