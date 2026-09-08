@@ -86,11 +86,17 @@ jobs:
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Configure production environment secrets (if provided)
-        if: "${{ secrets.PROD_ENV != '' }}"
+      - name: Configure production environment secrets
+        env:
+          PROD_ENV: ${{ secrets.PROD_ENV }}
         run: |
-          echo "${{ secrets.PROD_ENV }}" > nocpro-chain-explain/.env
-          chmod 600 nocpro-chain-explain/.env
+          if [ -n "$PROD_ENV" ]; then
+            echo "$PROD_ENV" > nocpro-chain-explain/.env
+            chmod 600 nocpro-chain-explain/.env
+            echo "Successfully wrote production .env file."
+          else
+            echo "No PROD_ENV secret provided; using compose defaults."
+          fi
 
       - name: Pull pre-built images & Restart stack
         run: |
