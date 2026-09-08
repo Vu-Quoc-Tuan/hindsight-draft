@@ -133,6 +133,8 @@ export const api = {
         chain_count: number
         description: string
         badge: string
+        available?: boolean
+        unavailable_reason?: string | null
       }>
     }>('/api/v1/snapshots', { signal }),
   selectSnapshot: (snapshotId: string, signal?: AbortSignal) =>

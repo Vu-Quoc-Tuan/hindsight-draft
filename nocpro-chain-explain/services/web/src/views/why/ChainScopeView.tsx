@@ -50,17 +50,22 @@ export function ChainScopeView({
   const members = useMemo(() => analysis.members || [], [analysis.members])
   const totalAlarms = members.length || analysis.member_count || 1
 
-  // Dynamic Device Dominance Analysis
-  const { dominantDevice, dominantCount, dominantPct } = useMemo(() => {
+  // Dynamic Device Dominance Analysis - honestly handling missing devices
+  const { dominantDevice, dominantCount, dominantPct, unassignedCount } = useMemo(() => {
     if (members.length === 0) {
-      return { dominantDevice: distinctDevices[0] || 'DEHL01', dominantCount: 0, dominantPct: '0.0' }
+      return { dominantDevice: distinctDevices[0] || null, dominantCount: 0, dominantPct: '0.0', unassignedCount: 0 }
     }
     const counts = new Map<string, number>()
+    let unassigned = 0
     members.forEach(m => {
-      const dev = m.device_code || m.node_reference || 'DEHL01'
-      counts.set(dev, (counts.get(dev) || 0) + 1)
+      const dev = m.device_code || m.node_reference
+      if (!dev) {
+        unassigned += 1
+      } else {
+        counts.set(dev, (counts.get(dev) || 0) + 1)
+      }
     })
-    let maxDev = 'DEHL01'
+    let maxDev: string | null = null
     let maxCount = 0
     counts.forEach((c, dev) => {
       if (c > maxCount) {
@@ -68,10 +73,14 @@ export function ChainScopeView({
         maxDev = dev
       }
     })
+    if (!maxDev && distinctDevices.length > 0) {
+      maxDev = distinctDevices[0]
+    }
     return {
       dominantDevice: maxDev,
       dominantCount: maxCount,
-      dominantPct: ((maxCount / totalAlarms) * 100).toFixed(1),
+      dominantPct: totalAlarms > 0 && maxCount > 0 ? ((maxCount / totalAlarms) * 100).toFixed(1) : '0.0',
+      unassignedCount: unassigned,
     }
   }, [members, totalAlarms, distinctDevices])
 
@@ -86,24 +95,25 @@ export function ChainScopeView({
 
     if (times.length < 2) {
       return {
-        timeSpanLabel: '22.42s',
-        timeSpanSecs: 22.42,
-        startLabel: observedStart ? observedStart.slice(11, 19) : '10:14:00',
-        endLabel: observedEnd ? observedEnd.slice(11, 19) : '10:14:22',
+        timeSpanLabel: 'N/A',
+        timeSpanSecs: null,
+        startLabel: observedStart ? observedStart.slice(11, 19) : (times.length === 1 ? new Date(times[0]).toISOString().slice(11, 19) : 'N/A'),
+        endLabel: observedEnd ? observedEnd.slice(11, 19) : (times.length === 1 ? new Date(times[0]).toISOString().slice(11, 19) : 'N/A'),
       }
     }
 
-    const diffSec = Math.max(0, Math.round((times[times.length - 1] - times[0]) / 1000))
+    const diffSec = Math.max(0, (times[times.length - 1] - times[0]) / 1000)
+    const diffSecRound = Math.round(diffSec)
     const formatted =
-      diffSec === 0
+      diffSecRound === 0
         ? '0.00s'
-        : diffSec < 60
-        ? `${diffSec}s`
-        : `${Math.floor(diffSec / 60)}m ${diffSec % 60}s`
+        : diffSecRound < 60
+        ? `${diffSecRound}s`
+        : `${Math.floor(diffSecRound / 60)}m ${diffSecRound % 60}s`
 
     return {
       timeSpanLabel: formatted,
-      timeSpanSecs: diffSec || 22.42,
+      timeSpanSecs: diffSec,
       startLabel: new Date(times[0]).toISOString().slice(11, 19),
       endLabel: new Date(times[times.length - 1]).toISOString().slice(11, 19),
     }
@@ -111,52 +121,61 @@ export function ChainScopeView({
 
   // Derived dimensional metrics
   const descriptors = useMemo(() => analysis.descriptors || [], [analysis.descriptors])
-  const unavailableCaps = analysis.graybox?.unavailable_capabilities || []
+  const unavailableCaps = useMemo(() => (analysis.graybox?.unavailable_capabilities || []).map(c => c.toUpperCase()), [analysis.graybox])
 
-  // DIM 02: Burst arrivals
-  const burstCount = useMemo(() => {
-    return timeSpanSecs <= 60
-      ? Math.min(totalAlarms, Math.max(1, Math.round(totalAlarms * 0.931)))
-      : Math.round(totalAlarms * 0.7)
-  }, [totalAlarms, timeSpanSecs])
-  const burstPct = ((burstCount / totalAlarms) * 100).toFixed(1)
-  const arrivalRate = (totalAlarms / Math.max(1, timeSpanSecs)).toFixed(2)
+  // Fail-closed capabilities
+  const isHistAvailable = descriptors.length > 0 && !unavailableCaps.some(c => c.includes('HISTORICAL'))
+  const isDelayUnavailable = unavailableCaps.some(c => c.includes('DELAY') || c.includes('TEMPORAL'))
+  const isTopoUnavailable = unavailableCaps.some(c => c.includes('TOPOLOGY'))
+  const isDepUnavailable = unavailableCaps.some(c => c.includes('DEPENDENCY'))
 
-  // DIM 03: Chassis hardware pairs
-  const chassisPairs = useMemo(() => {
-    return Math.max(1, Math.round(totalAlarms * (Math.max(40, Number(dominantPct)) / 100) * 0.9))
-  }, [totalAlarms, dominantPct])
-  const chassisPct = ((chassisPairs / totalAlarms) * 100).toFixed(1)
+  // DIM 02: Burst arrivals (computed from real timestamps)
+  const { burstCount, burstPct, arrivalRate } = useMemo(() => {
+    if (timeSpanSecs === null) {
+      return { burstCount: null, burstPct: null, arrivalRate: null }
+    }
+    const times = members
+      .map(m => m.canonical_start_time)
+      .filter((t): t is string => Boolean(t))
+      .map(t => Date.parse(t))
+      .filter(t => !isNaN(t))
+      .sort((a, b) => a - b)
+    if (times.length === 0) {
+      return { burstCount: null, burstPct: null, arrivalRate: null }
+    }
+    const windowStart = times[0]
+    const inBurst = times.filter(t => t - windowStart <= 60000).length
+    const pct = ((inBurst / totalAlarms) * 100).toFixed(1)
+    const rate = (totalAlarms / Math.max(1, timeSpanSecs)).toFixed(2)
+    return {
+      burstCount: inBurst,
+      burstPct: pct,
+      arrivalRate: rate,
+    }
+  }, [members, timeSpanSecs, totalAlarms])
 
   // DIM 04: Historical Lift
-  const histLift = useMemo(() => {
+  const { histLift, histConfidence } = useMemo(() => {
     if (descriptors.length > 0) {
       const maxL = Math.max(...descriptors.map(d => d.lift || 0))
-      if (maxL > 0) return maxL.toFixed(2)
+      const conf = descriptors[0].precision_global ? (descriptors[0].precision_global * 100).toFixed(1) : null
+      return {
+        histLift: maxL > 0 ? maxL.toFixed(2) : null,
+        histConfidence: conf,
+      }
     }
-    return '3.42'
-  }, [descriptors])
-  const histConfidence = useMemo(() => {
-    if (descriptors.length > 0 && descriptors[0].precision_global) {
-      return (descriptors[0].precision_global * 100).toFixed(1)
-    }
-    return '78.4'
+    return { histLift: null, histConfidence: null }
   }, [descriptors])
 
-  // DIM 05: Temporal Delay pairs
-  const delayResolved = useMemo(() => {
-    return Math.max(1, Math.round(totalAlarms * 0.586))
-  }, [totalAlarms])
-  const delayPct = ((delayResolved / totalAlarms) * 100).toFixed(1)
-  const delayUnindexed = Math.max(0, totalAlarms - delayResolved)
-
-  // DIM 06: Topology mapping
-  const isTopoPartial = unavailableCaps.some(c => c.includes('TOPOLOGY')) || true
-  const topoMapped = useMemo(() => {
-    return Math.max(1, Math.round(totalAlarms * 0.706))
-  }, [totalAlarms])
-  const topoPct = ((topoMapped / totalAlarms) * 100).toFixed(1)
-  const opticalDrops = Math.max(0, totalAlarms - topoMapped)
+  // Evaluated dimensions count (truthful telemetry channels with observations)
+  const evaluatedCount = [
+    dominantCount > 0,
+    timeSpanSecs !== null,
+    dominantCount > 0,
+    descriptors.length > 0,
+    false, // delay unindexed
+    !isTopoUnavailable,
+  ].filter(Boolean).length
 
   return (
     <div className="flex flex-col gap-space-md select-none animate-fadeIn">
@@ -171,8 +190,10 @@ export function ChainScopeView({
               Historical Pattern:
             </span>
             <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-secondary"></span>
-              <span className="font-semibold text-secondary">Available</span>
+              <span className={`w-2 h-2 rounded-full ${isHistAvailable ? 'bg-secondary' : 'bg-surface-container-high'}`}></span>
+              <span className={`font-semibold ${isHistAvailable ? 'text-secondary' : 'text-on-surface-variant'}`}>
+                {isHistAvailable ? 'Available' : 'Unavailable'}
+              </span>
             </div>
           </div>
 
@@ -182,8 +203,10 @@ export function ChainScopeView({
               Temporal Delay:
             </span>
             <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-secondary"></span>
-              <span className="font-semibold text-secondary">Available</span>
+              <span className={`w-2 h-2 rounded-full ${!isDelayUnavailable ? 'bg-secondary' : 'bg-tertiary'}`}></span>
+              <span className={`font-semibold ${!isDelayUnavailable ? 'text-secondary' : 'text-tertiary'}`}>
+                {!isDelayUnavailable ? 'Available' : 'Unavailable'}
+              </span>
             </div>
           </div>
 
@@ -193,9 +216,9 @@ export function ChainScopeView({
               Topology Mapping:
             </span>
             <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-tertiary"></span>
-              <span className="font-semibold text-tertiary">
-                {isTopoPartial ? 'Partial' : 'Available'}
+              <span className={`w-2 h-2 rounded-full ${!isTopoUnavailable ? 'bg-secondary' : 'bg-tertiary'}`}></span>
+              <span className={`font-semibold ${!isTopoUnavailable ? 'text-secondary' : 'text-tertiary'}`}>
+                {!isTopoUnavailable ? 'Available' : 'Unavailable'}
               </span>
             </div>
           </div>
@@ -206,15 +229,17 @@ export function ChainScopeView({
               Dependency:
             </span>
             <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-              <span className="font-semibold text-rose-400">Unverified</span>
+              <span className={`w-2 h-2 rounded-full ${!isDepUnavailable ? 'bg-secondary' : 'bg-rose-500'}`}></span>
+              <span className={`font-semibold ${!isDepUnavailable ? 'text-secondary' : 'text-rose-400'}`}>
+                {!isDepUnavailable ? 'Available' : 'Unverified'}
+              </span>
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-1.5 text-on-surface-variant">
           <span className="material-symbols-outlined text-[15px] text-secondary">verified</span>
-          <span>Correlation & Adjacency Calibration</span>
+          <span>Correlation &amp; Adjacency Calibration</span>
         </div>
       </div>
 
@@ -257,8 +282,8 @@ export function ChainScopeView({
         {/* High Level Aggregated Stats Pill Array */}
         <div className="flex items-center gap-2 flex-wrap lg:justify-end shrink-0">
           <div className="bg-[#131c2e] px-3.5 py-2.5 rounded-lg flex flex-col items-start min-w-[110px] border border-[#1e2b44]">
-            <span className="font-label-caps text-[10px] uppercase text-on-surface-variant font-medium">Cohesion State</span>
-            <span className="font-code-lg text-base text-secondary font-bold">HIGH (4/6)</span>
+            <span className="font-label-caps text-[10px] uppercase text-on-surface-variant font-medium">Evidence Channels</span>
+            <span className="font-code-lg text-base text-secondary font-bold">{evaluatedCount}/6 Evaluated</span>
           </div>
           <div className="bg-[#131c2e] px-3.5 py-2.5 rounded-lg flex flex-col items-start min-w-[110px] border border-[#1e2b44]">
             <span className="font-label-caps text-[10px] uppercase text-on-surface-variant font-medium">Span Delta</span>
@@ -288,19 +313,23 @@ export function ChainScopeView({
                 <span className="material-symbols-outlined text-secondary text-[18px]">dns</span>
                 <span className="font-code-md text-sm text-on-surface font-bold">DIM 01: Entity Reference</span>
               </div>
-              <span className="bg-secondary/15 text-secondary px-2 py-0.5 rounded font-label-caps text-[10px] uppercase font-bold">
-                Strong Support
+              <span className={`px-2 py-0.5 rounded font-label-caps text-[10px] uppercase font-bold ${
+                dominantCount > 0 ? 'bg-secondary/15 text-secondary' : 'bg-surface-container-high/40 text-on-surface-variant'
+              }`}>
+                {dominantCount > 0 ? 'Observed' : 'Unassigned'}
               </span>
             </div>
             <p className="text-xs text-on-surface-variant leading-relaxed">
-              Dominant topological anchor observed. High concentration of alarm dispatch targets a centralized host.
+              {dominantCount > 0
+                ? `Dominant topological anchor observed. Alarm dispatch concentrates on ${dominantDevice}.`
+                : 'No topological anchor assigned across alarms in this chain.'}
             </p>
 
             {/* Metric Breakdown Visual */}
             <div className="flex flex-col gap-1.5 bg-[#080d17] p-space-sm rounded-lg border border-[#1b273e]/60 font-code-sm text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-on-surface-variant">
-                  Target Host: <span className="text-on-surface font-semibold">{dominantDevice}</span>
+                  Target Host: <span className="text-on-surface font-semibold">{dominantDevice || 'Unassigned'}</span>
                 </span>
                 <span className="text-secondary font-bold">{dominantPct}% Coverage</span>
               </div>
@@ -310,16 +339,17 @@ export function ChainScopeView({
               </div>
               <div className="flex justify-between items-center font-label-caps text-[10px] text-on-surface-variant">
                 <span>{dominantCount} of {totalAlarms} Alarms</span>
-                <span>{Math.max(0, totalAlarms - dominantCount)} Peripheral Alarms</span>
+                <span>{Math.max(0, totalAlarms - dominantCount)} Other Alarms{unassignedCount > 0 ? ` (${unassignedCount} unassigned)` : ''}</span>
               </div>
             </div>
           </div>
 
           <div className="mt-3 pt-2 border-t border-[#1b273e] flex items-center justify-between text-on-surface-variant font-code-sm text-xs">
-            <span className="flex items-center gap-1 text-secondary">
-              <span className="material-symbols-outlined text-[14px]">check_circle</span> Validated
+            <span className={`flex items-center gap-1 ${dominantCount > 0 ? 'text-secondary' : 'text-on-surface-variant'}`}>
+              <span className="material-symbols-outlined text-[14px]">{dominantCount > 0 ? 'check_circle' : 'help'}</span>
+              {dominantCount > 0 ? 'Observed' : 'Unassigned'}
             </span>
-            <span className="text-on-surface font-semibold">Chi-Sq: p &lt; 0.0001</span>
+            <span className="text-on-surface font-semibold">Anchor: {dominantDevice || 'Unassigned'}</span>
           </div>
         </div>
 
@@ -338,45 +368,64 @@ export function ChainScopeView({
                 <span className="material-symbols-outlined text-secondary text-[18px]">timer</span>
                 <span className="font-code-md text-sm text-on-surface font-bold">DIM 02: Temporal Synch</span>
               </div>
-              <span className="bg-secondary/15 text-secondary px-2 py-0.5 rounded font-label-caps text-[10px] uppercase font-bold">
-                Strong Support
+              <span className={`px-2 py-0.5 rounded font-label-caps text-[10px] uppercase font-bold ${
+                timeSpanSecs === null
+                  ? 'bg-surface-container-high/40 text-on-surface-variant'
+                  : 'bg-secondary/15 text-secondary'
+              }`}>
+                {timeSpanSecs === null ? 'Indeterminate' : 'Observed'}
               </span>
             </div>
             <p className="text-xs text-on-surface-variant leading-relaxed">
-              Dominant synchronized burst. {burstCount} of {totalAlarms} alarms fired within a narrow {timeSpanSecs}s window with steep arrival concentration.
+              {timeSpanSecs === null
+                ? 'Insufficient timestamp telemetry to evaluate temporal burst clustering.'
+                : `Observed arrival span. ${burstCount} of ${totalAlarms} alarms fired within a ${typeof timeSpanSecs === 'number' ? timeSpanSecs.toFixed(1) : timeSpanLabel}s window.`}
             </p>
 
             {/* SVG Sparkline & Window Details */}
             <div className="flex flex-col gap-1.5 bg-[#080d17] p-space-sm rounded-lg border border-[#1b273e]/60 font-code-sm text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-on-surface-variant">
-                  Peak Onset: <span className="text-on-surface font-semibold">T+1.12s</span>
+                  Onset: <span className="text-on-surface font-semibold">{timeSpanSecs !== null ? 'T+0.00s' : 'N/A'}</span>
                 </span>
-                <span className="text-secondary font-bold">{burstPct}% Burst Cohesion</span>
+                <span className="text-secondary font-bold">
+                  {burstPct !== null ? `${burstPct}% Window Cluster` : 'N/A'}
+                </span>
               </div>
               {/* Sparkline Visual of Alarms Arrival */}
               <div className="w-full h-8 flex items-end gap-1 pt-1">
-                <div className="flex-1 bg-[#1a2942] h-1 rounded-sm"></div>
-                <div className="flex-1 bg-[#1a2942] h-2.5 rounded-sm"></div>
-                <div className="flex-1 bg-secondary h-7 rounded-sm"></div>
-                <div className="flex-1 bg-secondary h-6 rounded-sm"></div>
-                <div className="flex-1 bg-secondary h-4.5 rounded-sm"></div>
-                <div className="flex-1 bg-[#1a2942] h-2 rounded-sm"></div>
-                <div className="flex-1 bg-[#1a2942] h-1 rounded-sm"></div>
-                <div className="flex-1 bg-[#1a2942] h-1 rounded-sm"></div>
+                {timeSpanSecs !== null ? (
+                  <>
+                    <div className="flex-1 bg-[#1a2942] h-1 rounded-sm"></div>
+                    <div className="flex-1 bg-[#1a2942] h-2.5 rounded-sm"></div>
+                    <div className="flex-1 bg-secondary h-7 rounded-sm"></div>
+                    <div className="flex-1 bg-secondary h-6 rounded-sm"></div>
+                    <div className="flex-1 bg-secondary h-4.5 rounded-sm"></div>
+                    <div className="flex-1 bg-[#1a2942] h-2 rounded-sm"></div>
+                    <div className="flex-1 bg-[#1a2942] h-1 rounded-sm"></div>
+                    <div className="flex-1 bg-[#1a2942] h-1 rounded-sm"></div>
+                  </>
+                ) : (
+                  <div className="w-full h-1 bg-[#1a2942] rounded-sm"></div>
+                )}
               </div>
               <div className="flex justify-between items-center font-label-caps text-[10px] text-on-surface-variant">
-                <span>Window: {typeof timeSpanSecs === 'number' ? `${timeSpanSecs.toFixed(1)}s` : timeSpanLabel} ({startLabel} → {endLabel})</span>
-                <span>Poisson Rate: {arrivalRate}/s</span>
+                <span>
+                  Window: {typeof timeSpanSecs === 'number' ? `${timeSpanSecs.toFixed(1)}s` : timeSpanLabel} ({startLabel} → {endLabel})
+                </span>
+                <span>Arrival Rate: {arrivalRate !== null ? `${arrivalRate}/s` : 'N/A'}</span>
               </div>
             </div>
           </div>
 
           <div className="mt-3 pt-2 border-t border-[#1b273e] flex items-center justify-between text-on-surface-variant font-code-sm text-xs">
             <span className="flex items-center gap-1 text-secondary">
-              <span className="material-symbols-outlined text-[14px]">bolt</span> Micro-Burst Confirmed
+              <span className="material-symbols-outlined text-[14px]">bolt</span>
+              {timeSpanSecs !== null ? (timeSpanSecs <= 60 ? 'Micro-Burst Observed' : 'Extended Span') : 'No Timing Data'}
             </span>
-            <span className="text-on-surface font-semibold">ΔT Mean = 0.38s</span>
+            <span className="text-on-surface font-semibold">
+              {typeof timeSpanSecs === 'number' ? `ΔT Max = ${timeSpanSecs.toFixed(2)}s` : 'ΔT = N/A'}
+            </span>
           </div>
         </div>
 
@@ -395,35 +444,39 @@ export function ChainScopeView({
                 <span className="material-symbols-outlined text-secondary text-[18px]">developer_board</span>
                 <span className="font-code-md text-sm text-on-surface font-bold">DIM 03: Device Hardware</span>
               </div>
-              <span className="bg-secondary/15 text-secondary px-2 py-0.5 rounded font-label-caps text-[10px] uppercase font-bold">
-                Strong Support
+              <span className={`px-2 py-0.5 rounded font-label-caps text-[10px] uppercase font-bold ${
+                dominantCount > 0 ? 'bg-secondary/15 text-secondary' : 'bg-surface-container-high/40 text-on-surface-variant'
+              }`}>
+                {dominantCount > 0 ? 'Observed' : 'Unassigned'}
               </span>
             </div>
             <p className="text-xs text-on-surface-variant leading-relaxed">
-              Direct internal chassis relation. Interconnects and optical linecards share backplane bus pathways.
+              {dominantCount > 0
+                ? `Direct host co-location. Alarms share common physical network element hosting on ${dominantDevice}.`
+                : 'No common physical network element hosting identified.'}
             </p>
 
             {/* Linecard Slot Breakdown */}
             <div className="flex flex-col gap-1.5 bg-[#080d17] p-space-sm rounded-lg border border-[#1b273e]/60 font-code-sm text-xs">
               <div className="flex items-center justify-between">
-                <span className="text-on-surface-variant">Same-Chassis Pairs</span>
-                <span className="text-secondary font-bold">{chassisPairs} / {totalAlarms} Links</span>
+                <span className="text-on-surface-variant">Same-Host Alarms</span>
+                <span className="text-secondary font-bold">{dominantCount} / {totalAlarms} Alarms</span>
               </div>
               <div className="w-full bg-[#151f33] h-2 rounded-full overflow-hidden flex">
-                <div className="bg-secondary h-full rounded-full transition-all" style={{ width: `${chassisPct}%` }}></div>
+                <div className="bg-secondary h-full rounded-full transition-all" style={{ width: `${dominantPct}%` }}></div>
               </div>
               <div className="flex justify-between items-center font-label-caps text-[10px] text-on-surface-variant">
-                <span>Card: Slot 3 &amp; 4 (LC_100GE)</span>
-                <span>Chassis: {dominantDevice}</span>
+                <span>Sub-slot: Not Indexed</span>
+                <span>Host: {dominantDevice || 'Unassigned'}</span>
               </div>
             </div>
           </div>
 
           <div className="mt-3 pt-2 border-t border-[#1b273e] flex items-center justify-between text-on-surface-variant font-code-sm text-xs">
             <span className="flex items-center gap-1 text-secondary">
-              <span className="material-symbols-outlined text-[14px]">view_in_ar</span> Shared Fabric Bus
+              <span className="material-symbols-outlined text-[14px]">view_in_ar</span> Host Co-location
             </span>
-            <span className="text-on-surface font-semibold">Chassis Affinity: {chassisPct}%</span>
+            <span className="text-on-surface font-semibold">Host Affinity: {dominantPct}%</span>
           </div>
         </div>
 
@@ -442,37 +495,55 @@ export function ChainScopeView({
                 <span className="material-symbols-outlined text-tertiary text-[18px]">history_edu</span>
                 <span className="font-code-md text-sm text-on-surface font-bold">DIM 04: Historical Co-occ.</span>
               </div>
-              <span className="bg-tertiary/15 text-tertiary px-2 py-0.5 rounded font-label-caps text-[10px] uppercase font-bold">
-                Moderate Support
+              <span className={`px-2 py-0.5 rounded font-label-caps text-[10px] uppercase font-bold ${
+                descriptors.length > 0
+                  ? 'bg-secondary/15 text-secondary'
+                  : unavailableCaps.some(c => c.includes('HISTORICAL'))
+                  ? 'bg-surface-container-high/40 text-on-surface-variant'
+                  : 'bg-tertiary/15 text-tertiary'
+              }`}>
+                {descriptors.length > 0
+                  ? 'Grounded'
+                  : unavailableCaps.some(c => c.includes('HISTORICAL'))
+                  ? 'Unavailable'
+                  : 'Not Evaluated'}
               </span>
             </div>
             <p className="text-xs text-on-surface-variant leading-relaxed">
-              Recurrent pattern across past 30 days. Demonstrates empirical coupling with statistically notable lift.
+              {descriptors.length > 0
+                ? `Recurrent pattern across historical mining. Demonstrates empirical coupling with ${descriptors.length} mined contrastive rule(s).`
+                : 'Historical co-occurrence rules not evaluated or unavailable for this alarm combination.'}
             </p>
 
             {/* Historical Matrix Card */}
             <div className="flex flex-col gap-1.5 bg-[#080d17] p-space-sm rounded-lg border border-[#1b273e]/60 font-code-sm text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-on-surface-variant">
-                  30-Day Cluster Count: <span className="text-on-surface font-semibold">142x</span>
+                  Mined Rules: <span className="text-on-surface font-semibold">{descriptors.length} Rules</span>
                 </span>
-                <span className="text-tertiary font-bold">Lift H: {histLift}</span>
+                <span className="text-tertiary font-bold">Lift: {histLift ? `${histLift}x` : 'N/A'}</span>
               </div>
               <div className="w-full bg-[#151f33] h-2 rounded-full overflow-hidden flex">
-                <div className="bg-tertiary h-full rounded-full transition-all" style={{ width: '58%' }}></div>
+                <div
+                  className="bg-tertiary h-full rounded-full transition-all"
+                  style={{ width: descriptors.length > 0 ? `${Math.min(100, Math.round((descriptors[0]?.coverage || 0) * 100))}%` : '0%' }}
+                ></div>
               </div>
               <div className="flex justify-between items-center font-label-caps text-[10px] text-on-surface-variant">
-                <span>Baseline Randomness: 1.0</span>
-                <span>Confidence: {histConfidence}%</span>
+                <span>Baseline: 1.0</span>
+                <span>Confidence: {histConfidence ? `${histConfidence}%` : 'N/A'}</span>
               </div>
             </div>
           </div>
 
           <div className="mt-3 pt-2 border-t border-[#1b273e] flex items-center justify-between text-on-surface-variant font-code-sm text-xs">
             <span className="flex items-center gap-1 text-tertiary">
-              <span className="material-symbols-outlined text-[14px]">auto_graph</span> Recurrent Flap
+              <span className="material-symbols-outlined text-[14px]">auto_graph</span>
+              {descriptors.length > 0 ? 'Grounded Rules' : 'No Grounded Rules'}
             </span>
-            <span className="text-on-surface font-semibold">FDR Adjusted: 0.008</span>
+            <span className="text-on-surface font-semibold">
+              {descriptors.length > 0 ? `Rules: ${descriptors.length}` : 'FDR: Not Evaluated'}
+            </span>
           </div>
         </div>
 
@@ -491,37 +562,41 @@ export function ChainScopeView({
                 <span className="material-symbols-outlined text-tertiary text-[18px]">timelapse</span>
                 <span className="font-code-md text-sm text-on-surface font-bold">DIM 05: Temporal Delay</span>
               </div>
-              <span className="bg-tertiary/15 text-tertiary px-2 py-0.5 rounded font-label-caps text-[10px] uppercase font-bold">
-                Partial Availability
+              <span className={`px-2 py-0.5 rounded font-label-caps text-[10px] uppercase font-bold ${
+                isDelayUnavailable ? 'bg-surface-container-high/40 text-on-surface-variant' : 'bg-tertiary/15 text-tertiary'
+              }`}>
+                {isDelayUnavailable ? 'Unavailable' : 'Not Evaluated'}
               </span>
             </div>
             <p className="text-xs text-on-surface-variant leading-relaxed">
-              Post-hoc evidence available for {delayResolved}/{totalAlarms} pairs; full-chain indexed path not fully resolved due to collector gaps.
+              {isDelayUnavailable
+                ? 'Pairwise delay propagation telemetry is unavailable in current configuration.'
+                : 'Pairwise temporal delay telemetry not indexed for full chain path.'}
             </p>
 
             {/* Delay Metric Box */}
             <div className="flex flex-col gap-1.5 bg-[#080d17] p-space-sm rounded-lg border border-[#1b273e]/60 font-code-sm text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-on-surface-variant">
-                  Resolved Pairs: <span className="text-on-surface font-semibold">{delayResolved} / {totalAlarms}</span>
+                  Resolved Pairs: <span className="text-on-surface font-semibold">{isDelayUnavailable ? 'Unavailable' : 'Not Indexed'}</span>
                 </span>
-                <span className="text-tertiary font-bold">{delayPct}% Indexing</span>
+                <span className="text-tertiary font-bold">Indexing: N/A</span>
               </div>
               <div className="w-full bg-[#151f33] h-2 rounded-full overflow-hidden flex">
-                <div className="bg-tertiary h-full rounded-full transition-all" style={{ width: `${delayPct}%` }}></div>
+                <div className="bg-tertiary h-full rounded-full transition-all" style={{ width: '0%' }}></div>
               </div>
               <div className="flex justify-between items-center font-label-caps text-[10px] text-on-surface-variant">
-                <span>Known Delay: 120ms - 450ms</span>
-                <span>{delayUnindexed} Pairs Unindexed</span>
+                <span>Known Delay: Not Indexed</span>
+                <span>Telemetry GAP: Unindexed</span>
               </div>
             </div>
           </div>
 
           <div className="mt-3 pt-2 border-t border-[#1b273e] flex items-center justify-between text-on-surface-variant font-code-sm text-xs">
             <span className="flex items-center gap-1 text-tertiary">
-              <span className="material-symbols-outlined text-[14px]">warning</span> Partial Evidence Path
+              <span className="material-symbols-outlined text-[14px]">warning</span> Telemetry Gap
             </span>
-            <span className="text-on-surface font-semibold">Telemetry GAP: #{delayUnindexed}</span>
+            <span className="text-on-surface font-semibold">Propagation: Not Evaluated</span>
           </div>
         </div>
 
@@ -540,35 +615,39 @@ export function ChainScopeView({
                 <span className="material-symbols-outlined text-tertiary text-[18px]">hub</span>
                 <span className="font-code-md text-sm text-on-surface font-bold">DIM 06: Topology Mapping</span>
               </div>
-              <span className="bg-tertiary/15 text-tertiary px-2 py-0.5 rounded font-label-caps text-[10px] uppercase font-bold">
-                Partial ({topoPct}%)
+              <span className={`px-2 py-0.5 rounded font-label-caps text-[10px] uppercase font-bold ${
+                isTopoUnavailable ? 'bg-surface-container-high/40 text-on-surface-variant' : 'bg-secondary/15 text-secondary'
+              }`}>
+                {isTopoUnavailable ? 'Unavailable' : 'Available'}
               </span>
             </div>
             <p className="text-xs text-on-surface-variant leading-relaxed">
-              {topoMapped} of {totalAlarms} alarms mapped to IP Core physical topology. {opticalDrops} alarms belong to external optical passive rings.
+              {isTopoUnavailable
+                ? 'Physical topology graph traversal is unavailable in current configuration.'
+                : 'Physical IP Core and optical topology mapping.'}
             </p>
 
             {/* Topology Ring Representation */}
             <div className="flex flex-col gap-1.5 bg-[#080d17] p-space-sm rounded-lg border border-[#1b273e]/60 font-code-sm text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-on-surface-variant">Core Graph Map</span>
-                <span className="text-tertiary font-bold">{topoMapped} / {totalAlarms} Mapped</span>
+                <span className="text-tertiary font-bold">{isTopoUnavailable ? 'Unavailable' : 'Available'}</span>
               </div>
               <div className="w-full bg-[#151f33] h-2 rounded-full overflow-hidden flex">
-                <div className="bg-secondary h-full rounded-full transition-all" style={{ width: `${topoPct}%` }}></div>
+                <div className="bg-secondary h-full rounded-full transition-all" style={{ width: isTopoUnavailable ? '0%' : '100%' }}></div>
               </div>
               <div className="flex justify-between items-center font-label-caps text-[10px] text-on-surface-variant">
-                <span>IP Backbone: Layer 3</span>
-                <span>{opticalDrops} DWDM Optical Drops</span>
+                <span>Adjacency: {isTopoUnavailable ? 'Not Evaluated' : 'Mapped'}</span>
+                <span>Layer 1/3: {isTopoUnavailable ? 'Unverified' : 'Verified'}</span>
               </div>
             </div>
           </div>
 
           <div className="mt-3 pt-2 border-t border-[#1b273e] flex items-center justify-between text-on-surface-variant font-code-sm text-xs">
             <span className="flex items-center gap-1 text-on-surface-variant">
-              <span className="material-symbols-outlined text-[14px]">link_off</span> Optical Unmapped
+              <span className="material-symbols-outlined text-[14px]">link_off</span> Topology Capability
             </span>
-            <span className="text-on-surface font-semibold">Layer 1 Audit Req.</span>
+            <span className="text-on-surface font-semibold">Capability: {isTopoUnavailable ? 'Unavailable' : 'Available'}</span>
           </div>
         </div>
       </div>
@@ -587,9 +666,9 @@ export function ChainScopeView({
           </div>
           <div className="flex items-center gap-2 font-code-sm text-xs text-on-surface-variant">
             <span className="w-2 h-2 rounded-full bg-secondary"></span>
-            <span>4 Verified High</span>
+            <span>{evaluatedCount} Evaluated / Observed</span>
             <span className="w-2 h-2 rounded-full bg-tertiary ml-2"></span>
-            <span>2 Partial / Unverified</span>
+            <span>{6 - evaluatedCount} Unindexed / Unavailable</span>
           </div>
         </div>
 
@@ -618,8 +697,8 @@ export function ChainScopeView({
                 <td className="p-3 text-center text-on-surface font-semibold">
                   {dominantCount} / {totalAlarms} ({dominantPct}%)
                 </td>
-                <td className="p-3 text-right text-secondary font-bold">STRONG</td>
-                <td className="p-3 text-right text-secondary font-bold">+0.320</td>
+                <td className="p-3 text-right text-secondary font-bold">{dominantCount > 0 ? 'OBSERVED' : 'UNASSIGNED'}</td>
+                <td className="p-3 text-right text-secondary font-bold">{dominantCount > 0 ? 'Primary Anchor' : '—'}</td>
               </tr>
 
               {/* Row 2: Temporal Synchronization */}
@@ -629,13 +708,17 @@ export function ChainScopeView({
                   Temporal Synchronization
                 </td>
                 <td className="p-3 text-on-surface-variant">
-                  Synchronous cluster ≤ {typeof timeSpanSecs === 'number' ? timeSpanSecs.toFixed(1) : '22.0'}s window
+                  Synchronous cluster within observed time window
                 </td>
                 <td className="p-3 text-center text-on-surface font-semibold">
-                  {burstCount} / {totalAlarms} ({burstPct}%)
+                  {burstCount !== null ? `${burstCount} / ${totalAlarms} (${burstPct}%)` : 'N/A'}
                 </td>
-                <td className="p-3 text-right text-secondary font-bold">STRONG</td>
-                <td className="p-3 text-right text-secondary font-bold">+0.415</td>
+                <td className="p-3 text-right text-secondary font-bold">
+                  {timeSpanSecs !== null ? 'OBSERVED' : 'INDETERMINATE'}
+                </td>
+                <td className="p-3 text-right text-secondary font-bold">
+                  {timeSpanSecs !== null ? 'Temporal Cluster' : '—'}
+                </td>
               </tr>
 
               {/* Row 3: Device Evidence */}
@@ -645,13 +728,13 @@ export function ChainScopeView({
                   Device Evidence
                 </td>
                 <td className="p-3 text-on-surface-variant">
-                  Hardware co-location on dominant device chassis
+                  Hardware co-location on dominant device host
                 </td>
                 <td className="p-3 text-center text-on-surface font-semibold">
-                  {chassisPairs} / {totalAlarms} ({chassisPct}%)
+                  {dominantCount} / {totalAlarms} ({dominantPct}%)
                 </td>
-                <td className="p-3 text-right text-secondary font-bold">STRONG</td>
-                <td className="p-3 text-right text-secondary font-bold">+0.224</td>
+                <td className="p-3 text-right text-secondary font-bold">{dominantCount > 0 ? 'OBSERVED' : 'UNASSIGNED'}</td>
+                <td className="p-3 text-right text-secondary font-bold">{dominantCount > 0 ? 'Host Co-location' : '—'}</td>
               </tr>
 
               {/* Row 4: Historical Co-occurrence */}
@@ -661,13 +744,17 @@ export function ChainScopeView({
                   Historical Co-occurrence
                 </td>
                 <td className="p-3 text-on-surface-variant">
-                  Significant co-firing above background noise baseline
+                  Significant co-firing above background baseline
                 </td>
                 <td className="p-3 text-center text-on-surface font-semibold">
-                  Lift = {histLift}
+                  {histLift ? `Lift = ${histLift}x` : 'N/A'}
                 </td>
-                <td className="p-3 text-right text-tertiary font-bold">MODERATE</td>
-                <td className="p-3 text-right text-tertiary font-bold">+0.140</td>
+                <td className="p-3 text-right text-tertiary font-bold">
+                  {descriptors.length > 0 ? 'GROUNDED' : unavailableCaps.some(c => c.includes('HISTORICAL')) ? 'UNAVAILABLE' : 'NOT_EVALUATED'}
+                </td>
+                <td className="p-3 text-right text-tertiary font-bold">
+                  {descriptors.length > 0 ? 'Rule Grounded' : '—'}
+                </td>
               </tr>
 
               {/* Row 5: Temporal Delay */}
@@ -680,10 +767,12 @@ export function ChainScopeView({
                   Observed temporal sequence matched against empirical baseline
                 </td>
                 <td className="p-3 text-center text-on-surface font-semibold">
-                  {delayResolved} / {totalAlarms} ({delayPct}%)
+                  Not Indexed
                 </td>
-                <td className="p-3 text-right text-tertiary font-bold">PARTIAL</td>
-                <td className="p-3 text-right text-tertiary font-bold">+0.065</td>
+                <td className="p-3 text-right text-tertiary font-bold">
+                  {isDelayUnavailable ? 'UNAVAILABLE' : 'NOT_INDEXED'}
+                </td>
+                <td className="p-3 text-right text-tertiary font-bold">—</td>
               </tr>
 
               {/* Row 6: Topology Mapping */}
@@ -696,10 +785,14 @@ export function ChainScopeView({
                   Physical IP Core Adjacency graph traversal verification
                 </td>
                 <td className="p-3 text-center text-on-surface font-semibold">
-                  {topoMapped} / {totalAlarms} ({topoPct}%)
+                  {isTopoUnavailable ? 'Unavailable' : 'Available'}
                 </td>
-                <td className="p-3 text-right text-tertiary font-bold">PARTIAL</td>
-                <td className="p-3 text-right text-tertiary font-bold">+0.092</td>
+                <td className="p-3 text-right text-tertiary font-bold">
+                  {isTopoUnavailable ? 'UNAVAILABLE' : 'AVAILABLE'}
+                </td>
+                <td className="p-3 text-right text-tertiary font-bold">
+                  {isTopoUnavailable ? '—' : 'Graph Adjacency'}
+                </td>
               </tr>
             </tbody>
           </table>
@@ -720,7 +813,7 @@ export function ChainScopeView({
           <div className="flex flex-col gap-1.5 w-full">
             <div className="flex items-center gap-2 flex-wrap justify-between">
               <span className="font-headline-md text-sm font-bold text-on-surface">
-                Evidence Cohesion: 4 of 6 dimensions strongly agree on cluster unity.
+                Evidence Synthesis: {evaluatedCount} of 6 dimensions evaluated.
               </span>
               {narrativeData?.model && (
                 <span className="text-[10px] font-code-sm px-2 py-0.5 rounded bg-[#16233b] border border-[#223352] text-secondary">
@@ -732,8 +825,11 @@ export function ChainScopeView({
               <div className="h-4 w-3/4 bg-surface-container-high/40 animate-pulse rounded my-1" />
             ) : (
               <p className="font-body-sm text-xs text-on-surface-variant leading-relaxed">
-                {narrativeData?.narrative ||
-                  `Chain ${analysis.chain_id} exhibits consistent evidence cohesion across observed members. Structural audit indicates solid cluster boundaries.`}
+                {narrativeData?.narrative || (
+                  analysis.singleton
+                    ? 'This chain contains one observed alarm. Multi-member cohesion and propagation analysis are not applicable.'
+                    : `Chain ${analysis.chain_id} contains ${totalAlarms} observed alarm(s). Tier-2 structural audit has not been performed.`
+                )}
               </p>
             )}
           </div>

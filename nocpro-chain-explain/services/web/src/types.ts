@@ -682,9 +682,12 @@ export type CalibrationReport = {
   timestamp: string
   database_url_masked: string
   snapshots_loaded: number
+  chains_loaded?: number
   chains_evaluated: number
   alarms_evaluated: number
   calibrated_parameters: ParameterCalibration[]
   output_config_path: string
   status: string
+  chains_skipped_large?: number
+  chains_failed?: number
 }

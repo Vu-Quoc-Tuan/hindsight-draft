@@ -312,9 +312,15 @@ export function AnalysisSettingsModal({
               <h4 style={{ margin: '0 0 0.5rem 0', color: '#38bdf8', fontSize: '0.85rem' }}>
                 Latest Database Calibration Report
               </h4>
-              <div style={{ display: 'flex', gap: '1.5rem', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', gap: '1.5rem', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
                 <span>Snapshots: <strong>{calibrationReport.snapshots_loaded}</strong></span>
-                <span>Chains: <strong>{calibrationReport.chains_evaluated}</strong></span>
+                <span>Chains: <strong>{calibrationReport.chains_evaluated}</strong> evaluated {calibrationReport.chains_loaded !== undefined ? `(of ${calibrationReport.chains_loaded} loaded)` : ''}</span>
+                {Boolean(calibrationReport.chains_skipped_large) && (
+                  <span>Skipped large: <strong>{calibrationReport.chains_skipped_large}</strong></span>
+                )}
+                {Boolean(calibrationReport.chains_failed) && (
+                  <span>Failed: <strong>{calibrationReport.chains_failed}</strong></span>
+                )}
                 <span>Alarms: <strong>{calibrationReport.alarms_evaluated}</strong></span>
               </div>
               <table style={{ width: '100%', fontSize: '0.75rem', borderCollapse: 'collapse', color: '#cbd5e1' }}>
