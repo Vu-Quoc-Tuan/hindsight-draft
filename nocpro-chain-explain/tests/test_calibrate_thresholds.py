@@ -55,3 +55,9 @@ def test_calibration_generates_valid_yaml_and_report(tmp_path: Path) -> None:
     assert report_data["output_config_path"] == str(out_yaml)
     assert len(report_data["calibrated_parameters"]) > 0
     assert "postgresql+asyncpg://nocpro:****@localhost:5432/nocpro" in report_data["database_url_masked"]
+    assert "chains_loaded" in report_data
+    assert "chains_evaluated" in report_data
+    assert "chains_skipped_large" in report_data
+    assert "chains_failed" in report_data
+    assert report.chains_loaded >= report.chains_evaluated
+

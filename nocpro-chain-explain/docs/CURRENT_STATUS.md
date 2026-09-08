@@ -96,16 +96,16 @@ Vì vậy Pair WHY phải trả unavailable khi model/taxonomy/relation không t
 Đồng thời Chain WHY chưa consume Pair/model statistics, nên train thành công
 cũng chưa tự sửa các số hardcode trên card.
 
-## Calibration contradiction
+## Calibration Status & Prerequisites
 
-`config/thresholds/calibrated.yaml` hiện có metadata nói đã đánh giá `0`
-snapshots, `0` chains và `0` alarms, đồng thời giữ nhiều
-`DOCUMENTED_DEFAULT`/`SYNTHETIC_ONLY` threshold nhưng đặt
-`counterfactual.calibration_status: PRODUCTION_CALIBRATED`.
+`config/thresholds/calibrated.yaml` đã được chuẩn hoá với `counterfactual.calibration_status: SYNTHETIC_ONLY`.
+Pipeline hiệu chuẩn (`calibrate_thresholds.py`) bảo đảm rằng khi chỉ có `0` snapshots, `0` chains hoặc
+dữ liệu hoàn toàn là synthetic, trạng thái hệ thống không thể tự nhận là `PRODUCTION_CALIBRATED`.
 
-Đây là mâu thuẫn cấu hình, không phải production calibration evidence. Cho đến
-khi có operator correction ground truth và artifact hợp lệ, Counterfactual phải
-được mô tả là `NOT_CALIBRATED`/proposal-only.
+Để đạt được `PRODUCTION_CALIBRATED`:
+- Cần tối thiểu chuỗi production snapshots liên tục với $\ge 10$ chains và $\ge 10$ samples cho mỗi core parameter;
+- Các chain $\ge 10$ và $\le 200$ members được tính conductance thực tế (`MAX_AUDIT_CALIBRATION_MEMBERS = 200`);
+- Counterfactual recommendations yêu cầu tập nhãn hiệu chỉnh từ operator (ground truth split/merge/move/remove) trước khi tháo bỏ nhãn `SYNTHETIC_ONLY`.
 
 ## Data/topology blockers
 

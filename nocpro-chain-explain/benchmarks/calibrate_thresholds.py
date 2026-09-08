@@ -69,6 +69,9 @@ class CalibrationReport:
     calibrated_parameters: list[ParameterCalibration]
     output_config_path: str
     status: str
+    chains_loaded: int = 0
+    chains_skipped_large: int = 0
+    chains_failed: int = 0
 
 
 def _mask_url(url: str) -> str:
@@ -262,13 +265,30 @@ def calculate_support_scores(packages: list[IngestedPackage]) -> list[float]:
     return scores
 
 
-def calculate_conductance_values(packages: list[IngestedPackage]) -> list[float]:
-    """Compute conductance across chains with >= 10 members using multi-cut approximation."""
+MAX_AUDIT_CALIBRATION_MEMBERS = 200
+
+
+def calculate_conductance_values(
+    packages: list[IngestedPackage],
+    *,
+    max_members: int = MAX_AUDIT_CALIBRATION_MEMBERS,
+    skipped_large_chains: list[dict[str, Any]] | None = None,
+    failed_chains: list[dict[str, Any]] | None = None,
+) -> list[float]:
+    """Compute conductance across chains with 10 <= members <= max_members using multi-cut approximation."""
     conductances: list[float] = []
     for package in packages:
         for chain in package.chains.values():
             members = package.members_of(chain.chain_id)
             if is_chain_too_small_for_audit(len(members), small_chain_threshold=10):
+                continue
+            if len(members) > max_members:
+                if skipped_large_chains is not None:
+                    skipped_large_chains.append({
+                        "chain_id": chain.chain_id,
+                        "member_count": len(members),
+                        "reason": f"EXCEEDS_MAX_AUDIT_CALIBRATION_MEMBERS ({max_members})",
+                    })
                 continue
             try:
                 # Build audit graph
@@ -310,7 +330,12 @@ def calculate_conductance_values(packages: list[IngestedPackage]) -> list[float]
                             best_phi = phi
                 if best_phi is not None:
                     conductances.append(best_phi)
-            except Exception:
+            except Exception as exc:
+                if failed_chains is not None:
+                    failed_chains.append({
+                        "chain_id": chain.chain_id,
+                        "error": str(exc),
+                    })
                 continue
     return conductances
 
@@ -416,7 +441,13 @@ def run_calibration(
     )
 
     # 3. Conductance & epsilon calibration (audit.global_weak_baseline, audit.rho)
-    phis = calculate_conductance_values(packages)
+    skipped_large_chains: list[dict[str, Any]] = []
+    failed_chains: list[dict[str, Any]] = []
+    phis = calculate_conductance_values(
+        packages,
+        skipped_large_chains=skipped_large_chains,
+        failed_chains=failed_chains,
+    )
     prev_baseline = base_raw.get("audit", {}).get("global_weak_baseline", {}).get("value", 0.30)
     prev_rho = base_raw.get("audit", {}).get("rho", {}).get("value", 0.20)
     if len(phis) >= 5:
@@ -433,7 +464,12 @@ def run_calibration(
     else:
         chosen_baseline = prev_baseline
         source_phi = "DOCUMENTED_DEFAULT"
-        p_details_phi = {"reason": "insufficient_conductance_samples", "fallback": prev_baseline}
+        p_details_phi = {"reason": "insufficient_conductance_samples", "fallback": prev_baseline, "sample_count": len(phis)}
+
+    if skipped_large_chains:
+        p_details_phi["skipped_large_chains"] = skipped_large_chains
+    if failed_chains:
+        p_details_phi["failed_chains"] = failed_chains
 
     base_raw.setdefault("audit", {})["global_weak_baseline"] = {
         "value": chosen_baseline,
@@ -526,9 +562,21 @@ def run_calibration(
     elif isinstance(base_raw["counterfactual"], dict):
         base_raw["counterfactual"]["calibration_status"] = base_raw["counterfactual"].get("calibration_status", "SYNTHETIC_ONLY")
 
+    chains_loaded = sum(len(p.chains) for p in packages)
+    evaluated_chain_ids = set()
+    for package in packages:
+        for chain in package.chains.values():
+            members = package.members_of(chain.chain_id)
+            if len(members) >= 2:
+                evaluated_chain_ids.add((getattr(package.snapshot, "snapshot_id", ""), chain.chain_id))
+    chains_evaluated_count = len(evaluated_chain_ids)
+    chains_skipped_large_count = len(skipped_large_chains)
+    chains_failed_count = len(failed_chains)
+
     base_raw["notes"] = [
         f"Calibrated at {datetime.now(timezone.utc).isoformat()} from PostgreSQL system of record.",
-        f"Evaluated {len(packages)} snapshots, {total_chains} chains, {total_alarms} alarms.",
+        f"Loaded {len(packages)} snapshots containing {chains_loaded} chains ({total_alarms} alarms).",
+        f"Evaluated {chains_evaluated_count} multi-alarm chains ({chains_skipped_large_count} skipped due to member bounds, {chains_failed_count} calculation errors).",
         "Calibrated DATA_DRIVEN values preserve empirical distribution evidence; DOCUMENTED_DEFAULT indicates fallback.",
         "audit.rho and counterfactual thresholds remain heuristic DOCUMENTED_DEFAULT / SYNTHETIC_ONLY until operator correction ground-truth is available.",
     ]
@@ -542,11 +590,14 @@ def run_calibration(
         timestamp=datetime.now(timezone.utc).isoformat(),
         database_url_masked=_mask_url(database_url),
         snapshots_loaded=len(packages),
-        chains_evaluated=total_chains,
+        chains_loaded=chains_loaded,
+        chains_evaluated=chains_evaluated_count,
         alarms_evaluated=total_alarms,
         calibrated_parameters=calibrated_params,
         output_config_path=str(output_yaml),
         status=base_raw["status"],
+        chains_skipped_large=chains_skipped_large_count,
+        chains_failed=chains_failed_count,
     )
 
     # Save report JSON
