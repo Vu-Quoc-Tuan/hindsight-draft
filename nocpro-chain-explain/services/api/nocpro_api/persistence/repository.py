@@ -55,6 +55,7 @@ from .models import (
     AuditArtifactRecord,
     Chain,
     CounterfactualJobRecord,
+    DeepDiveJobRecord,
     KafkaInbox,
     LineageComponent,
     LineageEdge,
@@ -121,6 +122,22 @@ class StoredCounterfactualJob:
     progress_percent: int
     cache_hit: bool
     identity: dict[str, Any]
+    result: dict[str, Any] | None
+    error: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
+class StoredDeepDiveJob:
+    job_id: str
+    snapshot_id: str
+    snapshot_version: str
+    chain_id: str
+    cache_fingerprint: str
+    status: str
+    progress_percent: int
+    cache_hit: bool
     result: dict[str, Any] | None
     error: str | None
     created_at: datetime
@@ -568,6 +585,155 @@ class SnapshotRepository:
             raise RuntimeError("persisted counterfactual job is unavailable")
         return stored
 
+    async def persist_deep_dive_job(
+        self, payload: dict[str, Any]
+    ) -> StoredDeepDiveJob:
+        """Upsert one immutable-identity Deep Dive lifecycle snapshot."""
+        status_rank = {
+            "QUEUED": 0,
+            "RUNNING": 1,
+            "SUCCEEDED": 2,
+            "FAILED": 2,
+            "INTERRUPTED": 2,
+        }
+        if payload["status"] not in status_rank:
+            raise ValueError("unknown Deep Dive job status")
+        progress = int(payload["progress_percent"])
+        if not 0 <= progress <= 100:
+            raise ValueError("Deep Dive progress must be between 0 and 100")
+        if payload["status"] == "SUCCEEDED" and payload.get("result") is None:
+            raise ValueError("successful Deep Dive must persist a result")
+        values = {
+            "job_id": payload["job_id"],
+            "snapshot_id": payload["snapshot_id"],
+            "snapshot_version": payload["snapshot_version"],
+            "chain_id": payload["chain_id"],
+            "cache_fingerprint": payload["cache_fingerprint"],
+            "status": payload["status"],
+            "progress_percent": progress,
+            "cache_hit": payload["cache_hit"],
+            "result_payload": payload.get("result"),
+            "error": payload.get("error"),
+        }
+        async with self.sessions.begin() as session:
+            existing = await session.get(
+                DeepDiveJobRecord, payload["job_id"], with_for_update=True
+            )
+            if existing is not None:
+                immutable = (
+                    existing.snapshot_id,
+                    existing.snapshot_version,
+                    existing.chain_id,
+                    existing.cache_fingerprint,
+                )
+                proposed = (
+                    values["snapshot_id"],
+                    values["snapshot_version"],
+                    values["chain_id"],
+                    values["cache_fingerprint"],
+                )
+                if immutable != proposed:
+                    raise ValueError("Deep Dive job identity is immutable")
+                if status_rank[existing.status] > status_rank[values["status"]]:
+                    return self._stored_deep_dive(existing)
+                if (
+                    status_rank[existing.status] == 2
+                    and existing.status != values["status"]
+                ):
+                    raise ValueError("Deep Dive terminal status is immutable")
+            statement = pg_insert(DeepDiveJobRecord).values(**values)
+            existing_rank = case(
+                (DeepDiveJobRecord.status == "QUEUED", 0),
+                (DeepDiveJobRecord.status == "RUNNING", 1),
+                (
+                    DeepDiveJobRecord.status.in_(
+                        ("SUCCEEDED", "FAILED", "INTERRUPTED")
+                    ),
+                    2,
+                ),
+                else_=-1,
+            )
+            incoming_rank = case(
+                (statement.excluded.status == "QUEUED", 0),
+                (statement.excluded.status == "RUNNING", 1),
+                (
+                    statement.excluded.status.in_(
+                        ("SUCCEEDED", "FAILED", "INTERRUPTED")
+                    ),
+                    2,
+                ),
+                else_=-1,
+            )
+            statement = statement.on_conflict_do_update(
+                index_elements=[DeepDiveJobRecord.job_id],
+                set_={
+                    "status": statement.excluded.status,
+                    "progress_percent": statement.excluded.progress_percent,
+                    "cache_hit": statement.excluded.cache_hit,
+                    "result_payload": statement.excluded.result_payload,
+                    "error": statement.excluded.error,
+                    "updated_at": func.now(),
+                },
+                where=or_(
+                    incoming_rank > existing_rank,
+                    and_(
+                        incoming_rank == existing_rank,
+                        DeepDiveJobRecord.status == statement.excluded.status,
+                    ),
+                ),
+            )
+            await session.execute(statement)
+        stored = await self.deep_dive_job(payload["job_id"])
+        if stored is None:
+            raise RuntimeError("persisted Deep Dive job is unavailable")
+        return stored
+
+    async def deep_dive_job(
+        self, job_id: str, *, interrupt_active: bool = False
+    ) -> StoredDeepDiveJob | None:
+        async with self.sessions.begin() as session:
+            row = await session.get(DeepDiveJobRecord, job_id)
+            if row is None:
+                return None
+            if interrupt_active and row.status in {"QUEUED", "RUNNING"}:
+                row.status = "INTERRUPTED"
+                row.progress_percent = 100
+                row.error = "API_RESTART_INTERRUPTED"
+                await session.flush()
+                await session.refresh(row)
+            return self._stored_deep_dive(row)
+
+    async def latest_compatible_deep_dive_job(
+        self,
+        *,
+        snapshot_id: str,
+        snapshot_version: str,
+        chain_id: str,
+        cache_fingerprint: str,
+        interrupt_active: bool = False,
+    ) -> StoredDeepDiveJob | None:
+        async with self.sessions.begin() as session:
+            row = await session.scalar(
+                select(DeepDiveJobRecord)
+                .where(
+                    DeepDiveJobRecord.snapshot_id == snapshot_id,
+                    DeepDiveJobRecord.snapshot_version == snapshot_version,
+                    DeepDiveJobRecord.chain_id == chain_id,
+                    DeepDiveJobRecord.cache_fingerprint == cache_fingerprint,
+                )
+                .order_by(DeepDiveJobRecord.updated_at.desc())
+                .limit(1)
+            )
+            if row is None:
+                return None
+            if interrupt_active and row.status in {"QUEUED", "RUNNING"}:
+                row.status = "INTERRUPTED"
+                row.progress_percent = 100
+                row.error = "API_RESTART_INTERRUPTED"
+                await session.flush()
+                await session.refresh(row)
+            return self._stored_deep_dive(row)
+
     async def counterfactual_job(
         self, job_id: str
     ) -> StoredCounterfactualJob | None:
@@ -701,6 +867,23 @@ class SnapshotRepository:
             progress_percent=row.progress_percent,
             cache_hit=row.cache_hit,
             identity=row.identity_payload,
+            result=row.result_payload,
+            error=row.error,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
+
+    @staticmethod
+    def _stored_deep_dive(row: DeepDiveJobRecord) -> StoredDeepDiveJob:
+        return StoredDeepDiveJob(
+            job_id=row.job_id,
+            snapshot_id=row.snapshot_id,
+            snapshot_version=row.snapshot_version,
+            chain_id=row.chain_id,
+            cache_fingerprint=row.cache_fingerprint,
+            status=row.status,
+            progress_percent=row.progress_percent,
+            cache_hit=row.cache_hit,
             result=row.result_payload,
             error=row.error,
             created_at=row.created_at,
