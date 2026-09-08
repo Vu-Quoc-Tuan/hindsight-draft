@@ -11,6 +11,7 @@ from libs.provenance import ProvenanceClass, ProvenanceSubtype
 
 from groups.indexed_statistics import (
     ChannelFitFromIndex,
+    EXCEEDS_EXACT_INDEXED_BOUND,
     IndexedChainStatistics,
     NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH,
     StatisticsMode,
@@ -154,9 +155,9 @@ def _add_temporal_delay_statistics(
             statistics.support_peer_bitmaps[(alarm_id, delay_channel)] = 0
         return
 
-    # Small chains (N <= 200): direct pairwise comparison O(N^2)
-    # Large chains (N > 200): sorted sliding window with bisect O(N log N) bounded
-    max_window_peers = 100
+    # Small chains (N <= 200): direct pairwise comparison O(N^2) without artificial capping
+    # Large chains (N > 200): sorted sliding window with bisect O(N log N)
+    max_exact_peers = 1000
     if valid_count <= 200:
         for i, (alarm_id_i, ts_i) in enumerate(alarm_ts):
             peer_bitmap = 0
@@ -167,8 +168,6 @@ def _add_temporal_delay_statistics(
                 if abs(ts_j - ts_i) <= delay_window_seconds:
                     supporting += 1
                     peer_bitmap |= (1 << positions[alarm_id_j])
-                    if supporting >= max_window_peers:
-                        break
 
             statistics.fits[(alarm_id_i, delay_channel)] = _entry(
                 channel_id=delay_channel,
@@ -186,10 +185,23 @@ def _add_temporal_delay_statistics(
             left_idx = bisect.bisect_left(timestamps, ts_i - delay_window_seconds)
             right_idx = bisect.bisect_right(timestamps, ts_i + delay_window_seconds)
 
+            window_peer_count = max(0, right_idx - left_idx - 1)
+            if window_peer_count > max_exact_peers:
+                statistics.fits[(alarm_id_i, delay_channel)] = ChannelFitFromIndex(
+                    channel_id=delay_channel,
+                    derivation_tag=delay_tag,
+                    provenance_class=ProvenanceClass.POST_HOC,
+                    fit=None,
+                    domain_size=domain_size,
+                    supporting=0,
+                    unavailable_reason=EXCEEDS_EXACT_INDEXED_BOUND,
+                )
+                statistics.support_peer_bitmaps[(alarm_id_i, delay_channel)] = 0
+                continue
+
             peer_bitmap = 0
             supporting = 0
-            scan_end = min(right_idx, left_idx + max_window_peers)
-            for k in range(left_idx, scan_end):
+            for k in range(left_idx, right_idx):
                 other_id, _ = sorted_items[k]
                 if other_id != alarm_id_i:
                     supporting += 1
