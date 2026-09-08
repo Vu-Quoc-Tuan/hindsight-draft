@@ -587,6 +587,14 @@ class AISuggestionView(ApiModel):
     review_reason: str | None = None
 
 
+class CohesionNarrativeView(ApiModel):
+    chain_id: str
+    narrative: str
+    model: str
+    provider_status: str | None = None
+    context: dict[str, Any]
+
+
 class AssistantContextInput(ApiModel):
     snapshot_id: str = Field(min_length=1)
     snapshot_version: str = Field(min_length=1)

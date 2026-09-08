@@ -20,6 +20,7 @@ from .schemas import (
     OperatorFeedbackSubmission,
     OperatorFeedbackView,
     AISuggestionView,
+    CohesionNarrativeView,
     AssistantQueryInput,
     AssistantResponseView,
     AuditVisualizationArtifactView,
@@ -431,6 +432,59 @@ async def get_chain_ai_suggestion(
             review_reason=review_reason,
         )
         return ai_suggestion_view(suggestion)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.get(
+    "/chains/{chain_id}/cohesion-narrative",
+    response_model=CohesionNarrativeView,
+)
+@router.post(
+    "/chains/{chain_id}/cohesion-narrative",
+    response_model=CohesionNarrativeView,
+)
+async def get_chain_cohesion_narrative(
+    chain_id: str, request: Request
+) -> CohesionNarrativeView:
+    try:
+        service = workspace(request)
+        audit_artifact = None
+        try:
+            audit_lookup = await service.latest_audit_visualization(chain_id)
+            if audit_lookup and audit_lookup.audit_artifact:
+                audit_artifact = audit_lookup.audit_artifact
+        except Exception:
+            pass
+
+        review_result = None
+        try:
+            latest_rev = await service.latest_review(chain_id)
+            if latest_rev and latest_rev.result:
+                from tier2.counterfactual.public_contract import public_review_result
+                review_result = (
+                    public_review_result(latest_rev.result)
+                    if hasattr(latest_rev.result, "recommendations")
+                    else latest_rev.result
+                )
+        except Exception:
+            pass
+
+        from .cohesion_advisor import generate_cohesion_narrative
+        result = await _run_grounded_provider(
+            generate_cohesion_narrative,
+            service=service,
+            chain_id=chain_id,
+            audit_artifact=audit_artifact,
+            review_result=review_result,
+        )
+        return CohesionNarrativeView(
+            chain_id=result.chain_id,
+            narrative=result.narrative,
+            model=result.model,
+            provider_status=result.provider_status,
+            context=result.context,
+        )
     except Exception as exc:
         raise translate_error(exc) from exc
 
