@@ -126,6 +126,16 @@ _CATALOG: list[CatalogItem] = [
         replay_csv="datasets/raw/alarm/alarm_data.csv",
     ),
     CatalogItem(
+        snapshot_id="synthetic_counterfactual_move_v1:snapshot_000",
+        name="Counterfactual Move Reference",
+        profile="ALARM_ONLY",
+        alarm_count=18,
+        chain_count=2,
+        description="Controlled scenario evaluating cross-chain member reassignment (MOVE_MEMBER).",
+        badge="Synthetic",
+        file_path="docs/examples/synthetic/counterfactual_move/snapshot_000.json",
+    ),
+    CatalogItem(
         snapshot_id="synthetic_counterfactual_split_v1:snapshot_000",
         name="Counterfactual Split Reference",
         profile="ALARM_ONLY",

@@ -498,7 +498,7 @@ def run_calibration(
     if "counterfactual" not in base_raw:
         base_raw["counterfactual"] = {
             "config_version": "v1-calibrated-counterfactual",
-            "calibration_status": "PRODUCTION_CALIBRATED",
+            "calibration_status": "SYNTHETIC_ONLY",
             "limits": {
                 "max_chain_members": 200,
                 "max_remove_candidates": 10,
@@ -524,7 +524,7 @@ def run_calibration(
             },
         }
     elif isinstance(base_raw["counterfactual"], dict):
-        base_raw["counterfactual"]["calibration_status"] = base_raw["counterfactual"].get("calibration_status", "PRODUCTION_CALIBRATED")
+        base_raw["counterfactual"]["calibration_status"] = base_raw["counterfactual"].get("calibration_status", "SYNTHETIC_ONLY")
 
     base_raw["notes"] = [
         f"Calibrated at {datetime.now(timezone.utc).isoformat()} from PostgreSQL system of record.",

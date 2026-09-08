@@ -257,7 +257,7 @@
       "tier": "Tier-1B",
       "status": "UNAVAILABLE",
       "reason": "ALARM_TAXONOMY_NOT_USED_BY_SOURCE",
-      "provenance": "docs/adr/0024-deterministic-evidence-synthesis.md",
+      "provenance": "docs/DATA_SOURCES.md",
       "notes": "Production export does not supply operational alarm_type_name or alarm_family; synthetic fixture verified separately",
       "exact_only": false,
       "requires_runtime": false
@@ -267,7 +267,7 @@
       "tier": "Tier-1B",
       "status": "UNAVAILABLE",
       "reason": "PRODUCTION_DELAY_THRESHOLD_NOT_ESTABLISHED",
-      "provenance": "IMPLEMENTATION_STATUS.md",
+      "provenance": "docs/CURRENT_STATUS.md",
       "notes": "Frozen model and synthetic distribution verified; empirical production threshold blocked by data availability",
       "exact_only": false,
       "requires_runtime": false
