@@ -275,7 +275,7 @@ export type AttributionDeletionEvaluationResult = {
 export type Job = {
   job_id: string
   chain_id: string
-  status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED'
+  status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'INTERRUPTED'
   progress_percent: number
   cache_hit: boolean
   result: DeepDive | null
@@ -557,6 +557,46 @@ export type AISuggestion = {
   provider_status?: string | null
   review_status: 'AVAILABLE' | 'NOT_AVAILABLE' | 'UNAVAILABLE'
   review_reason?: string | null
+}
+
+export type CohesionNarrativeView = {
+  chain_id: string
+  narrative: string
+  model: string
+  provider_status?: string | null
+  context: {
+    chain: {
+      chain_id: string
+      alarm_count: number
+      duration_seconds: number
+      is_singleton: boolean
+    }
+    alarm_summary: {
+      top_alarm_types: [string, number][]
+      network_classes: string[]
+      device_types: string[]
+      devices: string[]
+    }
+    why: {
+      strong_views: string[]
+      partial_views: string[]
+      top_descriptors: string[]
+    }
+    topology: {
+      mapped: number
+      total: number
+      resource_types: string[]
+      dependency_verified: boolean
+    }
+    audit: {
+      status: string
+      candidate_cut: boolean
+      conductance: number | null
+    }
+    recommendations: {
+      split_recommended: boolean
+    }
+  }
 }
 
 export type AssistantAction = {

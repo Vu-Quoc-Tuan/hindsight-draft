@@ -1,5 +1,6 @@
 import type {
   AISuggestion,
+  CohesionNarrativeView,
   AnalysisConfigView,
   AssistantContext,
   AssistantHistoryMessage,
@@ -182,6 +183,11 @@ export const api = {
       `/api/v1/chains/${encodeURIComponent(chainId)}/deep-dive`,
       { method: 'POST' },
     ),
+  latestDeepDive: (chainId: string, signal?: AbortSignal) =>
+    request<Job | null>(
+      `/api/v1/chains/${encodeURIComponent(chainId)}/deep-dive`,
+      { signal },
+    ),
   job: (jobId: string, signal?: AbortSignal) =>
     request<Job>(`/api/v1/jobs/${encodeURIComponent(jobId)}`, { signal }),
   auditVisualization: (chainId: string, signal?: AbortSignal) =>
@@ -234,6 +240,11 @@ export const api = {
   aiSuggestion: (chainId: string, signal?: AbortSignal) =>
     request<AISuggestion>(
       `/api/v1/chains/${encodeURIComponent(chainId)}/ai-suggestion`,
+      { signal },
+    ),
+  cohesionNarrative: (chainId: string, signal?: AbortSignal) =>
+    request<CohesionNarrativeView>(
+      `/api/v1/chains/${encodeURIComponent(chainId)}/cohesion-narrative`,
       { signal },
     ),
   assistantQuery: (query: string, context: AssistantContext, history: AssistantHistoryMessage[] = [], signal?: AbortSignal) =>
