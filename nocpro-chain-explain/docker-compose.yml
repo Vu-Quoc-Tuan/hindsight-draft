@@ -112,7 +112,7 @@ services:
       dockerfile: nocpro-mock/Dockerfile
     working_dir: /workspace/nocpro-mock
     volumes:
-      - ../nocpro-mock/datasets/raw:/workspace/nocpro-mock/datasets/raw:ro
+      - ${HINDSIGHT_DATA_DIR:-../nocpro-mock/datasets/raw}:/workspace/nocpro-mock/datasets/raw:ro
     command:
       - .venv/bin/python
       - -m
@@ -141,7 +141,7 @@ services:
       dockerfile: nocpro-mock/Dockerfile
     working_dir: /workspace/nocpro-mock
     volumes:
-      - ../nocpro-mock/datasets/raw:/workspace/nocpro-mock/datasets/raw:ro
+      - ${HINDSIGHT_DATA_DIR:-../nocpro-mock/datasets/raw}:/workspace/nocpro-mock/datasets/raw:ro
     command:
       - .venv/bin/python
       - -m
@@ -174,7 +174,7 @@ services:
     working_dir: /workspace/nocpro-mock
     ports: ["${MOCK_UI_HOST_PORT:-8085}:8085"]
     volumes:
-      - ../nocpro-mock/datasets/raw:/workspace/nocpro-mock/datasets/raw:ro
+      - ${HINDSIGHT_DATA_DIR:-../nocpro-mock/datasets/raw}:/workspace/nocpro-mock/datasets/raw:ro
       # Synthetic scenarios are test fixtures. They are mounted read-only for
       # explicit local acceptance/replay and are never production source data.
       - ../nocpro-mock/docs/examples/synthetic:/workspace/nocpro-mock/docs/examples/synthetic:ro
