@@ -24,11 +24,36 @@ class SnapshotLoadedView(ApiModel):
     incremental_snapshot: IncrementalPolicyView
 
 
+class SnapshotCatalogItemView(ApiModel):
+    snapshot_id: str
+    name: str
+    profile: Literal["IP_NETWORK", "IT_SERVICES", "ALARM_ONLY"]
+    alarm_count: int
+    chain_count: int
+    description: str
+    badge: str
+    available: bool = True
+    unavailable_reason: str | None = None
+
+
+class SnapshotCatalogListView(ApiModel):
+    active_snapshot_id: str | None = None
+    active_snapshot_version: str | None = None
+    snapshots: list[SnapshotCatalogItemView]
+
+
+class SelectSnapshotRequest(ApiModel):
+    snapshot_id: str
+
+
 class ChainSummaryView(ApiModel):
     chain_id: str
     member_count: int
     is_singleton: bool
     title: str
+    start_time: str | None
+    end_time: str | None
+    duration_seconds: float | None
 
 
 class ChainListView(ApiModel):
@@ -188,6 +213,48 @@ class StructuralAuditView(ApiModel):
     epsilon: float | None
     best_cut_label: str | None
     best_cut_phi: float | None
+
+
+class AuditVisualizationNodeView(ApiModel):
+    alarm_id: str
+    weighted_degree: float
+    cut_side: Literal["A", "B", "NONE"]
+    structural_role: str | None
+
+
+class AuditVisualizationEdgeView(ApiModel):
+    source_alarm_id: str
+    target_alarm_id: str
+    weight: float
+    supporting_groups: list[str]
+    crosses_best_cut: bool
+
+
+class AuditVisualizationView(ApiModel):
+    status: Literal["AVAILABLE", "UNAVAILABLE"]
+    reason: str | None
+    projection_version: str
+    selection_strategy: str
+    max_nodes: int
+    max_edges: int
+    total_node_count: int
+    shown_node_count: int
+    hidden_node_count: int
+    total_edge_count: int
+    shown_edge_count: int
+    hidden_edge_count: int
+    truncated: bool
+    nodes: list[AuditVisualizationNodeView]
+    edges: list[AuditVisualizationEdgeView]
+
+
+class AuditVisualizationArtifactView(ApiModel):
+    snapshot_id: str
+    snapshot_version: str
+    chain_id: str
+    audit_artifact_id: str | None
+    audit_artifact_fingerprint: str | None
+    visualization: AuditVisualizationView
 
 
 class DominatorView(ApiModel):
@@ -353,6 +420,7 @@ class DeepDiveView(ApiModel):
     chain_id: str
     audit_graph_mode: str
     structural_audit: StructuralAuditView
+    audit_visualization: AuditVisualizationView
     over_merge_strength: str
     over_merge_narrative: str
     similar_chains: list[dict[str, Any]]
@@ -521,6 +589,14 @@ class AISuggestionView(ApiModel):
     review_reason: str | None = None
 
 
+class CohesionNarrativeView(ApiModel):
+    chain_id: str
+    narrative: str
+    model: str
+    provider_status: str | None = None
+    context: dict[str, Any]
+
+
 class AssistantContextInput(ApiModel):
     snapshot_id: str = Field(min_length=1)
     snapshot_version: str = Field(min_length=1)
@@ -531,12 +607,19 @@ class AssistantContextInput(ApiModel):
     pair_alarm_id_b: str | None = None
     selected_metric: str | None = None
     topology_resource_id: str | None = None
+    selection: dict[str, str] | None = None
     filters: dict[str, str] = Field(default_factory=dict)
+
+
+class AssistantHistoryMessageInput(ApiModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=2_000)
 
 
 class AssistantQueryInput(ApiModel):
     query: str = Field(max_length=500)
     context: AssistantContextInput
+    history: list[AssistantHistoryMessageInput] = Field(default_factory=list, max_length=8)
 
 
 class AssistantNavigationTargetView(ApiModel):
@@ -564,3 +647,52 @@ class AssistantResponseView(ApiModel):
     actions: list[AssistantActionView]
     model: str
     provider_status: str
+    response_mode: Literal["LLM_PRIMARY", "DETERMINISTIC_FALLBACK"] = "DETERMINISTIC_FALLBACK"
+    tools_used: list[str] = Field(default_factory=list)
+    chart_data: dict[str, Any] | None = None
+
+
+class ParameterItemView(ApiModel):
+    path: str
+    key: str
+    label: str
+    value: float | int
+    source: str
+    min: float | None = None
+    max: float | None = None
+    step: float | None = None
+    description: str | None = None
+
+
+class ConfigView(ApiModel):
+    config_version: str
+    status: str
+    editable_parameters: dict[str, float | int]
+    parameters_detail: list[ParameterItemView]
+
+
+class ConfigUpdateInput(ApiModel):
+    parameters: dict[str, float | int]
+
+
+class ParameterCalibrationView(ApiModel):
+    path: str
+    previous_value: float | int
+    calibrated_value: float | int
+    source: str
+    sample_count: int
+    metric_details: dict[str, Any]
+
+
+class CalibrationReportView(ApiModel):
+    timestamp: str
+    database_url_masked: str
+    snapshots_loaded: int
+    chains_evaluated: int
+    alarms_evaluated: int
+    calibrated_parameters: list[ParameterCalibrationView]
+    output_config_path: str
+    status: str
+    chains_loaded: int | None = None
+    chains_skipped_large: int = 0
+    chains_failed: int = 0

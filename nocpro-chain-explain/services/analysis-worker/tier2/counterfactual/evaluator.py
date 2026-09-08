@@ -54,6 +54,7 @@ _METRIC_NAMES = tuple(sorted(_LOWER_IS_BETTER | _HIGHER_IS_BETTER))
 _AUDIT_SEVERITY = {
     AuditVerdict.NO_LOW_CONDUCTANCE_CUT: 0,
     AuditVerdict.CANDIDATE_SPLIT: 1,
+    AuditVerdict.SKIPPED_SMALL_CHAIN: 0,
 }
 
 
@@ -202,22 +203,28 @@ def compute_exact_partition_metrics(
             structural_roles_by_chain[chain_id] = dict(tier2.structural_roles)
         component_counts.append(len(connected_components(tier2.graph)))
         audit = tier2.structural_audit
-        severity = _AUDIT_SEVERITY.get(audit.verdict)
-        if severity is None or audit.best_cut is None:
-            return _unavailable_vector("REQUIRED_METRIC_UNAVAILABLE")
-        phi = audit.best_cut.conductance.phi
-        if phi is None or not audit.best_cut.conductance.feasible:
-            return _unavailable_vector("REQUIRED_METRIC_UNAVAILABLE")
-        severities.append(severity)
-        conductances.append(float(phi))
+        if audit.verdict is AuditVerdict.SKIPPED_SMALL_CHAIN:
+            severities.append(0)
+            conductances.append(1.0)
+        else:
+            severity = _AUDIT_SEVERITY.get(audit.verdict)
+            if severity is None or audit.best_cut is None:
+                return _unavailable_vector("REQUIRED_METRIC_UNAVAILABLE")
+            phi = audit.best_cut.conductance.phi
+            if phi is None or not audit.best_cut.conductance.feasible:
+                return _unavailable_vector("REQUIRED_METRIC_UNAVAILABLE")
+            severities.append(severity)
+            conductances.append(float(phi))
 
-    if not supports or total_pairs <= 0:
+    if not supports:
         return _unavailable_vector("REQUIRED_METRIC_UNAVAILABLE")
+
+    coverage = (covered_pairs / total_pairs) if total_pairs > 0 else 1.0
 
     return MetricVector(
         weak_member_count=MetricValue.available(weak_count),
         minimum_membership_support=MetricValue.available(min(supports)),
-        evidence_union_coverage=MetricValue.available(covered_pairs / total_pairs),
+        evidence_union_coverage=MetricValue.available(coverage),
         component_count=MetricValue.available(max(component_counts)),
         audit_conductance=MetricValue.available(min(conductances)),
         audit_verdict_severity=MetricValue.available(max(severities)),

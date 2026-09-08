@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from hashlib import sha256
+import json
 
 import pytest
 
@@ -18,6 +20,15 @@ from tier2.audit_artifact import (
     audit_artifact_from_dict,
     audit_artifact_to_dict,
     build_review_audit_artifact,
+)
+from tier2.audit_visualization import (
+    AUDIT_VISUALIZATION_MAX_EDGES,
+    AUDIT_VISUALIZATION_MAX_NODES,
+    AUDIT_VISUALIZATION_SELECTION_STRATEGY,
+    AUDIT_VISUALIZATION_VERSION,
+    AuditVisualization,
+    AuditVisualizationEdge,
+    AuditVisualizationNode,
 )
 
 
@@ -54,6 +65,7 @@ def _artifact() -> ReviewAuditArtifact:
         chain_id="C1",
         members=("a4", "a2", "a1", "a3"),
         structural_audit=_audit(),
+        visualization=_visualization(),
         analysis_version="tier2-audit-v1",
         analysis_config_version="thresholds-v1",
         artifact_id="audit-run-1",
@@ -61,7 +73,32 @@ def _artifact() -> ReviewAuditArtifact:
     )
 
 
-def test_exact_audit_artifact_round_trips_without_dense_graph():
+def _visualization() -> AuditVisualization:
+    return AuditVisualization(
+        status="AVAILABLE",
+        reason=None,
+        projection_version=AUDIT_VISUALIZATION_VERSION,
+        selection_strategy=AUDIT_VISUALIZATION_SELECTION_STRATEGY,
+        max_nodes=AUDIT_VISUALIZATION_MAX_NODES,
+        max_edges=AUDIT_VISUALIZATION_MAX_EDGES,
+        total_node_count=4,
+        shown_node_count=2,
+        hidden_node_count=2,
+        total_edge_count=1,
+        shown_edge_count=1,
+        hidden_edge_count=0,
+        truncated=True,
+        nodes=(
+            AuditVisualizationNode("a1", 0.8, "A", "NON_CONNECTOR"),
+            AuditVisualizationNode("a3", 0.8, "B", "CONNECTOR"),
+        ),
+        edges=(
+            AuditVisualizationEdge("a1", "a3", 0.8, ("entity", "temporal"), True),
+        ),
+    )
+
+
+def test_exact_audit_artifact_v2_round_trips_with_bounded_visualization():
     artifact = _artifact()
     payload = audit_artifact_to_dict(artifact)
     restored = audit_artifact_from_dict(payload)
@@ -71,7 +108,39 @@ def test_exact_audit_artifact_round_trips_without_dense_graph():
     assert restored.structural_audit == _audit()
     assert "graph" not in payload
     assert "pair_evidence" not in payload
+    assert restored.visualization == _visualization()
+    assert payload["visualization"]["shown_node_count"] == 2
     assert payload["scored_cuts"][0]["members"] == ["a1", "a2"]
+
+
+def test_artifact_fingerprint_canonicalizes_integral_visualization_weights():
+    visualization = replace(
+        _visualization(),
+        nodes=(
+            AuditVisualizationNode("a1", 0, "A", "NON_CONNECTOR"),
+            AuditVisualizationNode("a3", 0, "B", "CONNECTOR"),
+        ),
+        edges=(
+            AuditVisualizationEdge("a1", "a3", 0, ("entity", "temporal"), True),
+        ),
+    )
+    artifact = build_review_audit_artifact(
+        snapshot_id="S1",
+        snapshot_version="v2",
+        chain_id="C1",
+        members=("a1", "a2", "a3", "a4"),
+        structural_audit=_audit(),
+        visualization=visualization,
+        analysis_version="tier2-audit-v1",
+        analysis_config_version="thresholds-v1",
+        artifact_id="audit-integral-weights",
+        created_at="2026-09-02T10:00:00+00:00",
+    )
+
+    payload = audit_artifact_to_dict(artifact)
+    assert payload["visualization"]["nodes"][0]["weighted_degree"] == 0.0
+    assert payload["visualization"]["edges"][0]["weight"] == 0.0
+    assert audit_artifact_from_dict(payload) == artifact
 
 
 def test_artifact_fingerprint_is_deterministic_and_detects_tampering():
@@ -80,9 +149,36 @@ def test_artifact_fingerprint_is_deterministic_and_detects_tampering():
     assert first.artifact_fingerprint == second.artifact_fingerprint
 
     payload = audit_artifact_to_dict(first)
-    payload["scored_cuts"][0]["conductance"]["phi"] = 0.5
+    payload["visualization"]["edges"][0]["weight"] = 0.5
     with pytest.raises(ValueError, match="fingerprint"):
         audit_artifact_from_dict(payload)
+
+
+def test_legacy_v1_artifact_hydrates_without_mutation_or_visualization():
+    payload = audit_artifact_to_dict(_artifact())
+    payload["artifact_version"] = "review-audit-v1"
+    payload.pop("visualization")
+    payload.pop("artifact_fingerprint")
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    payload["artifact_fingerprint"] = sha256(encoded.encode("utf-8")).hexdigest()
+
+    restored = audit_artifact_from_dict(payload)
+
+    assert restored.artifact_version == "review-audit-v1"
+    assert restored.visualization is None
+    assert audit_artifact_to_dict(restored) == payload
+
+
+def test_v2_artifact_rejects_invalid_bounded_visualization_structure():
+    payload = audit_artifact_to_dict(_artifact())
+    payload["visualization"]["edges"][0]["target_alarm_id"] = "missing-node"
+    with pytest.raises(ValueError, match="edge is not canonical"):
+        audit_artifact_from_dict(payload, verify_fingerprint=False)
+
+    payload = audit_artifact_to_dict(_artifact())
+    payload["visualization"]["max_nodes"] = 81
+    with pytest.raises(ValueError, match="policy mismatch"):
+        audit_artifact_from_dict(payload, verify_fingerprint=False)
 
 
 def test_deserialization_rejects_non_exact_artifact():

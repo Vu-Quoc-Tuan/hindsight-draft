@@ -13,6 +13,7 @@ from libs.provenance import ProvenanceClass, ProvenanceSubtype
 NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH = (
     "NO_EXACT_INDEXED_SUFFICIENT_STATISTICS_PATH"
 )
+EXCEEDS_EXACT_INDEXED_BOUND = "EXCEEDS_EXACT_INDEXED_BOUND"
 
 
 class StatisticsMode(str, Enum):

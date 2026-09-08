@@ -224,6 +224,17 @@ function CandidateCard({
   )
 }
 
+const REASON_EXPLANATIONS: Record<string, string> = {
+  MOVE_POLICY_NOT_CALIBRATED: 'Chưa cấu hình chính sách di chuyển thành viên (MOVE) · Sử dụng Cài đặt để hiệu chuẩn',
+  MERGE_POLICY_NOT_CALIBRATED: 'Chưa cấu hình chính sách gộp chuỗi (MERGE) · Sử dụng Cài đặt để hiệu chuẩn',
+  STRUCTURAL_AUDIT_UNAVAILABLE: 'Chưa có kết quả phân tích đồ thị cấu trúc (Audit Graph) cho chuỗi này',
+  NO_NONTRIVIAL_SPLIT: 'Chuỗi không có điểm cắt tự nhiên đạt ngưỡng phân tách',
+  COUNTERFACTUAL_POLICY_NOT_CALIBRATED: 'Chính sách Counterfactual đang ở chế độ an toàn mặc định (SYNTHETIC_ONLY) do chưa có nhãn hiệu chuẩn từ kỹ sư vận hành (Operator Ground Truth)',
+  NO_CLEAR_ALTERNATIVE: 'Không có phương án phân hoạch nào vượt trội rõ rệt trên biên Pareto',
+  STRUCTURAL_AUDIT_SKIPPED_SMALL_CHAIN: 'Chuỗi nhỏ (<10 cảnh báo) không áp dụng phân hoạch cấu trúc',
+  COUNTERFACTUAL_CONFIG_INCOMPLETE: 'Cấu hình Counterfactual chưa hoàn tất trên baseline v1.yaml. Cần khởi động lại backend để nạp calibrated.yaml',
+}
+
 function OperationSection({
   operation,
   recommendationIds,
@@ -252,7 +263,14 @@ function OperationSection({
         <div><dt>rejected</dt><dd>{operation.rejected_candidate_count}</dd></div>
         <div><dt>limit</dt><dd>{operation.candidate_limit ?? '⊥'}</dd></div>
       </dl>
-      {operation.reason && <p className="review-reason">{operation.reason}</p>}
+      {operation.reason && (
+        <p className="review-reason" title={REASON_EXPLANATIONS[operation.reason] ?? operation.reason}>
+          <span className="review-reason-code">{operation.reason}</span>
+          {REASON_EXPLANATIONS[operation.reason] ? (
+            <span className="review-reason-desc"> — {REASON_EXPLANATIONS[operation.reason]}</span>
+          ) : null}
+        </p>
+      )}
       <div className="review-candidate-list">
         {operation.candidates.map((candidate) => (
           <CandidateCard
@@ -274,12 +292,14 @@ export function CounterfactualReview({
   initialJob = null,
   initialFeedbacks = {},
   readOnly = false,
+  onNavigateToValidation,
 }: {
   chainId: string
   initialJob?: CounterfactualJob | null
   initialFeedbacks?: Record<string, OperatorFeedback>
   /** Assistant navigation may only display persisted results; it never starts Review. */
   readOnly?: boolean
+  onNavigateToValidation?: () => void
 }) {
   const [job, setJob] = useState<CounterfactualJob | null>(initialJob)
   const [feedbacks, setFeedbacks] = useState<Record<string, OperatorFeedback>>(initialFeedbacks)
@@ -306,6 +326,10 @@ export function CounterfactualReview({
           current = await api.reviewJob(submission.job_id, controller.signal)
         }
         if (!controller.signal.aborted) {
+          if (current.chain_id !== chainId || current.identity.chain_id !== chainId) {
+            setError('REVIEW_CONTEXT_MISMATCH')
+            return
+          }
           setJob(current)
           // Also fetch existing feedbacks for this job
           if (current.job_id) {
@@ -376,21 +400,24 @@ export function CounterfactualReview({
   const result = job.result
   const recommendationIds = new Set(result.recommendations.map((item) => item.candidate_id))
   const operations: CounterfactualOperation[] = result.operation_status
-    ? ['REMOVE_MEMBER', 'SPLIT_CHAIN', 'MOVE_MEMBER', 'MERGE_CHAINS', 'ADD_MEMBER'].map((operation) => {
-        const summary = result.operation_status![operation]
-        return {
-          operation: operation as CounterfactualOperation['operation'],
-          status: summary.status as CounterfactualOperation['status'],
-          reason: summary.reason,
-          search_mode: summary.search_mode as CounterfactualOperation['search_mode'],
-          discovered_candidate_count: summary.candidate_count,
-          evaluated_candidate_count: summary.evaluated_count,
-          rejected_candidate_count: 0,
-          candidate_limit: summary.ceiling,
-          candidates: (result.evaluated_candidates ?? []).filter((item) => item.operation === operation),
-        }
-      })
-    : [result.remove, result.split, result.move, result.merge]
+    ? ['REMOVE_MEMBER', 'SPLIT_CHAIN', 'MOVE_MEMBER', 'MERGE_CHAINS', 'ADD_MEMBER']
+        .map((operation) => {
+          const summary = result.operation_status?.[operation]
+          if (!summary) return null
+          return {
+            operation: operation as CounterfactualOperation['operation'],
+            status: summary.status as CounterfactualOperation['status'],
+            reason: summary.reason,
+            search_mode: summary.search_mode as CounterfactualOperation['search_mode'],
+            discovered_candidate_count: summary.candidate_count,
+            evaluated_candidate_count: summary.evaluated_count,
+            rejected_candidate_count: 0,
+            candidate_limit: summary.ceiling,
+            candidates: (result.evaluated_candidates ?? []).filter((item) => item.operation === operation),
+          }
+        })
+        .filter((item): item is CounterfactualOperation => item !== null)
+    : [result.remove, result.split, result.move, result.merge].filter(Boolean) as CounterfactualOperation[]
   return (
     <section className="review-shell">
       <header className="review-heading">
@@ -398,7 +425,63 @@ export function CounterfactualReview({
         <div><span className={`review-state review-state--${result.recommendation_status.toLowerCase()}`}>{result.recommendation_status}</span><small>{result.identity.config_version}</small></div>
       </header>
       <div className="review-safety-notice"><strong>Proposal only</strong><span>NocPro was not changed. No candidate is applied automatically.</span></div>
-      {result.reason ? <p className="review-global-reason">{result.reason}</p> : null}
+      {result.reason ? (
+        <p className="review-global-reason" title={REASON_EXPLANATIONS[result.reason] ?? result.reason}>
+          <span className="review-reason-code">{result.reason}</span>
+          {REASON_EXPLANATIONS[result.reason] ? (
+            <span className="review-reason-desc"> — {REASON_EXPLANATIONS[result.reason]}</span>
+          ) : null}
+        </p>
+      ) : null}
+      {result.recommendation_status === 'UNAVAILABLE' && (result.reason === 'COUNTERFACTUAL_POLICY_NOT_CALIBRATED' || result.reason === 'COUNTERFACTUAL_CONFIG_INCOMPLETE') ? (
+        <div
+          className="review-calibration-hint"
+          style={{
+            margin: '0.75rem 1.25rem',
+            padding: '0.75rem 1rem',
+            borderRadius: 'var(--radius-sm, 6px)',
+            background: 'rgba(59, 130, 246, 0.12)',
+            border: '1px solid rgba(59, 130, 246, 0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+            fontSize: '0.8rem',
+            color: '#93c5fd',
+          }}
+        >
+          <div>
+            <strong>💡 Chế độ an toàn mặc định ({result.reason}):</strong>{' '}
+            {result.reason === 'COUNTERFACTUAL_CONFIG_INCOMPLETE'
+              ? 'Tệp cấu hình đang chạy (v1.yaml) chưa bật bộ thông số Counterfactual. Hãy tắt và bật lại dev server (`make dev`) để nạp cấu hình `calibrated.yaml` đã được hiệu chuẩn.'
+              : 'Chính sách Counterfactual hiện đang chạy cấu hình mặc định (SYNTHETIC_ONLY). Do chưa có bộ nhãn phản hồi thực tế từ kỹ sư vận hành (Operator Ground Truth), hệ thống tự động khóa an toàn các đề xuất phân hoạch trên dữ liệu mạng thực tế để tránh can thiệp ngoài kiểm chứng.'}
+          </div>
+          {onNavigateToValidation && (
+            <button
+              type="button"
+              onClick={onNavigateToValidation}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.375rem',
+                padding: '0.375rem 0.75rem',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                color: '#070e1d',
+                backgroundColor: '#38bdf8',
+                borderRadius: '0.375rem',
+                border: 'none',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>verified</span>
+              <span>Đi đến Ký duyệt</span>
+            </button>
+          )}
+        </div>
+      ) : null}
       <div className="review-operation-grid">
         {operations.map((operation) => (
           <OperationSection

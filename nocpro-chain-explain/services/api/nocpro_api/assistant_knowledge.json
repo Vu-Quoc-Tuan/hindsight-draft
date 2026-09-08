@@ -1,0 +1,173 @@
+{
+  "version": "nocpro-assistant-knowledge-v1",
+  "entries": [
+    {
+      "id": "metric.conductance",
+      "category": "metric",
+      "title": "Audit conductance (Phi)",
+      "aliases": ["conductance", "phi", "độ dẫn", "lát cắt", "best cut"],
+      "definition": "Điểm Audit của một lát cắt cân bằng trên đồ thị G*_audit, so sánh tổng trọng số cạnh băng qua lát cắt với thể tích nhỏ hơn của hai phía.",
+      "interpretation": "Phi thấp có thể cho thấy một ranh giới kết nối yếu đáng để review; kết luận over-merge vẫn cần nhiều kênh bằng chứng.",
+      "formula": {"plain": "Phi(S) = cut_weight(S,Sbar) / min(Vol(S), Vol(Sbar))", "latex": "\\Phi(S)=\\frac{w(S,\\bar S)}{\\min(\\mathrm{Vol}(S),\\mathrm{Vol}(\\bar S))}"},
+      "availability": "Chỉ tính cho candidate cân bằng hợp lệ trên G*_audit; chuỗi nhỏ không thể thỏa balance trả SKIPPED/NOT_APPLICABLE.",
+      "must_not_claim": "Không phải xác suất nguyên nhân gốc và một mình Phi không chứng minh chuỗi bị over-merge.",
+      "sources": ["docs/adr/0019-generate-structural-candidate-cuts-deterministically-and-score-them-on-g-audit.md", "services/analysis-worker/audit/conductance.py"]
+    },
+    {
+      "id": "metric.fit_channel",
+      "category": "metric",
+      "title": "Channel Fit",
+      "aliases": ["fit_k", "channel fit", "độ phù hợp kênh", "D_k"],
+      "definition": "Tỷ lệ hàng xóm có bằng chứng hỗ trợ trong số các hàng xóm mà kênh k thực sự khả dụng cho alarm x.",
+      "interpretation": "Fit_k tách bằng chứng không hỗ trợ khỏi dữ liệu không khả dụng.",
+      "formula": {"plain": "Fit_k(x,C) = supported_available_neighbors / |D_k(x,C)|", "latex": "Fit_k(x,C)=\\frac{|\\{y\\in D_k:s_k^+(x,y)\\ge\\theta_k\\}|}{|D_k|}"},
+      "availability": "Nếu |D_k| = 0 thì Fit_k = bottom/unavailable, không phải 0.",
+      "must_not_claim": "Không được đổi unavailable thành zero hoặc neutral.",
+      "sources": ["docs/adr/0028-freeze-membership-fit-three-axis-roles-and-weak-vs-insufficient-data-semantics.md", "services/analysis-worker/groups/fit.py"]
+    },
+    {
+      "id": "metric.fit_group",
+      "category": "metric",
+      "title": "Derivation-group Fit",
+      "aliases": ["fit_g", "group fit", "độ phù hợp nhóm", "derivation group"],
+      "definition": "Giá trị lớn nhất của các Fit_k khả dụng trong cùng một derivation group, tránh nhiều biến thể của cùng nguồn bằng chứng làm tăng support giả tạo.",
+      "interpretation": "Giữ vector theo nhóm giúp giải thích MembershipSupport và provenance.",
+      "formula": {"plain": "Fit_g(x,C) = max(Fit_k(x,C)) for computable k in g", "latex": "Fit_g(x,C)=\\max_{k\\in g,Fit_k\\ne\\bot} Fit_k(x,C)"},
+      "availability": "Unavailable nếu mọi kênh trong nhóm đều unavailable.",
+      "must_not_claim": "Không cộng hoặc đếm lặp các kênh cùng derivation như bằng chứng độc lập.",
+      "sources": ["docs/adr/0028-freeze-membership-fit-three-axis-roles-and-weak-vs-insufficient-data-semantics.md", "services/analysis-worker/groups/fit.py"]
+    },
+    {
+      "id": "metric.membership_support",
+      "category": "metric",
+      "title": "Membership Support",
+      "aliases": ["membership support", "membership_support", "độ hỗ trợ thành viên", "support"],
+      "definition": "Trung bình Fit_g trên các derivation group vừa role-eligible vừa có thể tính cho một alarm trong chain.",
+      "interpretation": "Tóm tắt mức hỗ trợ bằng chứng cho tư cách thành viên; vector Fit_g vẫn là chi tiết giải thích chính.",
+      "formula": {"plain": "MembershipSupport(x,C) = mean(Fit_g(x,C), g in G_role)", "latex": "MembershipSupport(x,C)=\\frac{1}{|G_{role}|}\\sum_{g\\in G_{role}} Fit_g(x,C)"},
+      "availability": "Role gate cần đủ coverage và ít nhất hai derivation group role-eligible có thể tính; thiếu thì INSUFFICIENT_DATA.",
+      "must_not_claim": "Không phải xác suất alarm đúng/sai, nguyên nhân gốc, hay chỉ dẫn tự động loại alarm.",
+      "sources": ["docs/adr/0028-freeze-membership-fit-three-axis-roles-and-weak-vs-insufficient-data-semantics.md", "services/analysis-worker/groups/fit.py"]
+    },
+    {
+      "id": "metric.margin_common",
+      "category": "metric",
+      "title": "Common contrastive margin",
+      "aliases": ["margin_common", "contrastive margin", "biên tương phản"],
+      "definition": "Biên tương phản của descriptor chung, dùng cùng support và representativeness trong điều kiện phân loại vai trò CORE/WEAK.",
+      "interpretation": "Biên dương hỗ trợ CORE trong các gate đã đóng băng; biên không dương chỉ là một điều kiện của WEAK.",
+      "formula": {"plain": "margin_common = in_chain_score - contrastive_outside_score", "latex": "margin_{common}=score_{in}-score_{contrast}"},
+      "availability": "Có thể unavailable khi không có descriptor/đối chứng phù hợp.",
+      "must_not_claim": "Không được dùng riêng margin để kết luận vai trò hoặc root cause.",
+      "sources": ["services/analysis-worker/descriptor/contrastive.py", "services/analysis-worker/groups/roles.py"]
+    },
+    {
+      "id": "audit.deletion_auc",
+      "category": "audit",
+      "title": "Attribution deletion curve AUC",
+      "aliases": ["deletion auc", "auc", "deletion curve", "đường cong xóa"],
+      "definition": "Diện tích hình thang dưới đường coverage khi lần lượt xóa các nhóm bằng chứng theo một ordering.",
+      "interpretation": "So sánh primary ordering với random và reverse giúp kiểm tra attribution ordering có ý nghĩa hơn baseline hay không.",
+      "formula": {"plain": "AUC = sum((coverage_i + coverage_(i+1))/2 * delta_x)", "latex": "AUC=\\sum_i \\frac{c_i+c_{i+1}}{2}\\Delta x_i"},
+      "availability": "Unavailable khi attribution hoặc deletion evaluation không tồn tại cho artifact hiện tại.",
+      "must_not_claim": "AUC không phải độ chính xác mô hình và không tự chứng minh quan hệ nhân quả.",
+      "sources": ["services/analysis-worker/tier2/attribution_evaluation.py", "docs/adr/0024-use-llms-only-for-grounded-narrative-rendering-never-as-the-reasoning-source.md"]
+    },
+    {
+      "id": "evolution.lineage",
+      "category": "evolution",
+      "title": "Incident lineage",
+      "aliases": ["lineage", "tiến hóa", "nhánh sự cố", "previous states"],
+      "definition": "Danh tính sự cố tiến hóa được nối qua snapshot bằng overlap/containment thành component và branch, tách khỏi chain ID cục bộ của từng snapshot.",
+      "interpretation": "Cho phép theo dõi split, merge và trạng thái trước đó mà không đồng nhất raw chain IDs.",
+      "formula": {"plain": "lineage edges = eligible intersection/containment links across adjacent snapshots", "latex": "E_{lineage}=\\{(C_t,C_{t+1}):overlap/containment\\ gates\\ pass\\}"},
+      "availability": "Cần sequence, snapshot order và lineage artifact tương thích.",
+      "must_not_claim": "Một lineage link không phải bằng chứng causal hay dependency topology.",
+      "sources": ["docs/adr/0020-track-evolving-incidents-with-lineage-rather-than-raw-chain-ids.md", "services/analysis-worker/evolution/lineage.py"]
+    },
+    {
+      "id": "similarity.cosine",
+      "category": "similarity",
+      "title": "Similar-chain cosine baseline",
+      "aliases": ["cosine", "cosine similarity", "similar chains", "chuỗi tương tự"],
+      "definition": "Cosine similarity trên fingerprint đã normalize gồm TF-IDF alarm family, device type, descriptor, size bin và duration bin.",
+      "interpretation": "Baseline xác định, dễ benchmark để tìm incident khác có fingerprint gần nhau.",
+      "formula": {"plain": "cos(a,b) = dot(a,b) / (norm(a) * norm(b))", "latex": "cos(a,b)=\\frac{a\\cdot b}{||a||_2||b||_2}"},
+      "availability": "Cần fingerprint/index; chế độ incident khác loại cùng lineage_component_id.",
+      "must_not_claim": "Độ tương tự không chứng minh cùng nguyên nhân hoặc cùng topology path.",
+      "sources": ["docs/adr/0022-use-normalized-fingerprint-cosine-similarity-as-the-similar-chains-baseline.md", "services/analysis-worker/similar_chains/similarity.py"]
+    },
+    {
+      "id": "topology.propagation_hypothesis",
+      "category": "topology",
+      "title": "Propagation hypothesis",
+      "aliases": ["propagation", "lan truyền", "active path", "topology hypothesis"],
+      "definition": "Giả thuyết P2 được capability-gate từ mapping tài nguyên, topology có hướng và thứ tự thời gian khả dụng.",
+      "interpretation": "Khi đủ capability, nó nêu giả thuyết có provenance để operator kiểm tra.",
+      "formula": {"plain": "AVAILABLE only if mapping AND directed topology AND temporal ordering gates pass", "latex": "available=mapping\\land directed\\_topology\\land temporal"},
+      "availability": "Thiếu bất kỳ capability bắt buộc nào phải trả UNAVAILABLE với reason cụ thể.",
+      "must_not_claim": "Không được biến source relations hoặc adjacency thành causal propagation đã xác nhận.",
+      "sources": ["docs/adr/0029-freeze-implementation-scope-mvp-p0-first-p1-core-minimum-bar-is-3-1.md", "services/analysis-worker/tier2/audit_analysis.py"]
+    },
+    {
+      "id": "review.pareto_frontier",
+      "category": "review",
+      "title": "Counterfactual Pareto frontier",
+      "aliases": ["pareto", "pareto frontier", "counterfactual review", "review candidate"],
+      "definition": "Tập candidate edit không bị candidate khác trội hơn trên toàn bộ metric đánh giá bắt buộc.",
+      "interpretation": "Giữ nhiều trade-off hợp lệ để operator review thay vì ép một score tổng hợp duy nhất.",
+      "formula": {"plain": "candidate p is Pareto-efficient iff no q is at least as good in all metrics and better in one", "latex": "p\\in P \\iff \\nexists q: q\\succeq p \\land q\\succ p"},
+      "availability": "Chỉ dùng candidate và metric mà Counterfactual Review engine đã tính; metric bắt buộc unavailable làm evaluation unavailable.",
+      "must_not_claim": "Candidate trên frontier không phải khuyến nghị tự động áp dụng và không thay đổi membership.",
+      "sources": ["services/analysis-worker/tier2/counterfactual/pareto.py", "docs/adr/0024-use-llms-only-for-grounded-narrative-rendering-never-as-the-reasoning-source.md"]
+    },
+    {
+      "id": "status.unavailable",
+      "category": "status",
+      "title": "UNAVAILABLE",
+      "aliases": ["unavailable", "không khả dụng", "bottom", "⊥"],
+      "definition": "Trạng thái cho biết metric/evidence không thể tính hoặc capability không tồn tại trong context hiện tại.",
+      "interpretation": "UNAVAILABLE được giữ riêng khỏi giá trị số, NEUTRAL, WEAK và lỗi hệ thống.",
+      "formula": {"plain": "UNAVAILABLE != 0 != NEUTRAL", "latex": "\\bot\\ne0\\ne neutral"},
+      "availability": "Reason code phải mô tả gate hoặc artifact bị thiếu khi contract cung cấp.",
+      "must_not_claim": "Không được render UNAVAILABLE thành zero, ổn định, yếu, hay bằng chứng phủ định.",
+      "sources": ["docs/adr/0028-freeze-membership-fit-three-axis-roles-and-weak-vs-insufficient-data-semantics.md", "services/analysis-worker/channels/contracts.py"]
+    },
+    {
+      "id": "status.insufficient_data",
+      "category": "status",
+      "title": "INSUFFICIENT_DATA",
+      "aliases": ["insufficient data", "thiếu dữ liệu", "không đủ dữ liệu"],
+      "definition": "Kết quả role gate khi coverage hoặc số derivation group độc lập có thể tính chưa đạt ngưỡng.",
+      "interpretation": "Nói rằng chưa đủ cơ sở phân loại membership role, không nói alarm yếu.",
+      "formula": {"plain": "coverage < c_min OR computable_role_groups < 2", "latex": "coverage<c_{min}\\lor |G_{role}|<2"},
+      "availability": "Được tính từ gate metadata của member evidence.",
+      "must_not_claim": "Không được đổi thành WEAK hoặc kết luận alarm không thuộc chain.",
+      "sources": ["docs/adr/0028-freeze-membership-fit-three-axis-roles-and-weak-vs-insufficient-data-semantics.md", "services/analysis-worker/groups/roles.py"]
+    },
+    {
+      "id": "boundary.root_cause",
+      "category": "boundary",
+      "title": "Root-cause boundary",
+      "aliases": ["root cause", "rca", "nguyên nhân gốc", "causal"],
+      "definition": "Explain/Audit trình bày bằng chứng gom nhóm và giả thuyết có điều kiện; không xác nhận nguyên nhân gốc vận hành.",
+      "interpretation": "Operator có thể dùng Pair WHY, Structural Audit, topology capability và validation để review thêm.",
+      "formula": {"plain": "grouping evidence != causal proof", "latex": "evidence_{grouping}\\not\\Rightarrow causality"},
+      "availability": "Luôn áp dụng cho Assistant và AI advisor.",
+      "must_not_claim": "Assistant không được tuyên bố root cause, causal dependency hoặc remediation chắc chắn từ chain evidence.",
+      "sources": ["docs/adr/0024-use-llms-only-for-grounded-narrative-rendering-never-as-the-reasoning-source.md", "docs/METHODOLOGY.md"]
+    },
+    {
+      "id": "view.pair_why",
+      "category": "view",
+      "title": "Pair WHY",
+      "aliases": ["pair why", "cặp cảnh báo", "pair evidence", "why"],
+      "definition": "Đánh giá lazy các kênh bằng chứng khả dụng cho đúng hai alarm thuộc chain đang chọn.",
+      "interpretation": "Cho thấy kênh nào hỗ trợ, trung tính hoặc unavailable với provenance.",
+      "formula": {"plain": "evaluate channels for (alarm_a, alarm_b) inside active chain", "latex": "WHY(a,b|C)=\\{e_k(a,b)\\}"},
+      "availability": "Hai alarm phải khác nhau, cùng thuộc active chain và snapshot identity phải còn hiện hành.",
+      "must_not_claim": "Không phải edge gốc của Louvain và không tự chứng minh causal link.",
+      "sources": ["docs/METHODOLOGY.md", "services/api/nocpro_api/routes.py"]
+    }
+  ]
+}

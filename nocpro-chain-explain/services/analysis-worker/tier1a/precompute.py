@@ -15,6 +15,7 @@ Two hard rules:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 from descriptor import (
     DescriptorKind,
@@ -46,6 +47,9 @@ class ChainSummary:
     descriptors: DescriptorSet
     auto_title: str
     fingerprint: str
+    start_time: str | None = None
+    end_time: str | None = None
+    duration_seconds: float | None = None
 
 
 @dataclass
@@ -66,6 +70,36 @@ class SnapshotPrecompute:
     def descriptors_of(self, chain_id: str) -> DescriptorSet | None:
         summary = self.chains.get(chain_id)
         return summary.descriptors if summary else None
+
+
+def _canonical_time(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _chain_time_summary(package: IngestedPackage, chain_id: str) -> tuple[str | None, str | None, float | None]:
+    starts: list[tuple[datetime, str]] = []
+    ends: list[tuple[datetime, str]] = []
+    for alarm in package.alarms_of(chain_id):
+        start = _canonical_time(alarm.canonical_start_time)
+        if start is not None and alarm.canonical_start_time is not None:
+            starts.append((start, alarm.canonical_start_time))
+            ends.append((start, alarm.canonical_start_time))
+        end = _canonical_time(alarm.canonical_end_time)
+        if end is not None and alarm.canonical_end_time is not None:
+            ends.append((end, alarm.canonical_end_time))
+    if not starts or not ends:
+        return None, None, None
+    start_dt, start_value = min(starts, key=lambda item: item[0])
+    end_dt, end_value = max(ends, key=lambda item: item[0])
+    return start_value, end_value, max(0.0, (end_dt - start_dt).total_seconds())
 
 
 def precompute_snapshot(
@@ -120,6 +154,8 @@ def precompute_snapshot(
 
         from .cache import chain_fingerprint
 
+        start_time, end_time, duration_seconds = _chain_time_summary(package, chain_id)
+
         summary = ChainSummary(
             chain_id=chain_id,
             member_count=chain.member_count,
@@ -127,6 +163,9 @@ def precompute_snapshot(
             descriptors=descriptors,
             auto_title=auto_chain_title(chain_id, descriptors, mining_config),
             fingerprint=chain_fingerprint(member_ids),
+            start_time=start_time,
+            end_time=end_time,
+            duration_seconds=duration_seconds,
         )
         result.chains[chain_id] = summary
         if chain.is_singleton:

@@ -32,8 +32,9 @@ test('real IT source identifier opens a read-only topology tree without P2 promo
     ) consoleErrors.push(message.text())
   })
   await page.goto('/')
+  await page.getByRole('button', { name: /IP Network \/ / }).click()
+  await page.getByRole('button', { name: /IT Services/ }).click()
   await page.getByRole('button', { name: 'Topology' }).click()
-  await expect(page.getByRole('heading', { name: 'Topology records' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Relation Tree Projection' })).toBeVisible()
 
   await page.getByPlaceholder('Open exact source key or IP…').fill(sourceIdentifier!)

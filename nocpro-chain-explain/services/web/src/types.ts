@@ -1,8 +1,13 @@
+export type WhyScope = 'Chain' | 'Member' | 'Pair' | 'Group'
+
 export type ChainSummary = {
   chain_id: string
   member_count: number
   is_singleton: boolean
   title: string
+  start_time: string | null
+  end_time: string | null
+  duration_seconds: number | null
 }
 
 export type ChainList = {
@@ -154,6 +159,7 @@ export type DeepDive = {
     best_cut_label: string | null
     best_cut_phi: number | null
   }
+  audit_visualization: AuditVisualization
   over_merge_strength: string
   over_merge_narrative: string
   similar_chains: Array<{
@@ -174,6 +180,44 @@ export type DeepDive = {
   topology_hypotheses: TopologyHypothesesResult
   evidence_attribution: EvidenceCoverageAttributionResult
   evidence_attribution_evaluation: AttributionDeletionEvaluationResult
+}
+
+export type AuditVisualization = {
+  status: 'AVAILABLE' | 'UNAVAILABLE'
+  reason: string | null
+  projection_version: string
+  selection_strategy: string
+  max_nodes: number
+  max_edges: number
+  total_node_count: number
+  shown_node_count: number
+  hidden_node_count: number
+  total_edge_count: number
+  shown_edge_count: number
+  hidden_edge_count: number
+  truncated: boolean
+  nodes: Array<{
+    alarm_id: string
+    weighted_degree: number
+    cut_side: 'A' | 'B' | 'NONE'
+    structural_role: string | null
+  }>
+  edges: Array<{
+    source_alarm_id: string
+    target_alarm_id: string
+    weight: number
+    supporting_groups: string[]
+    crosses_best_cut: boolean
+  }>
+}
+
+export type AuditVisualizationArtifact = {
+  snapshot_id: string
+  snapshot_version: string
+  chain_id: string
+  audit_artifact_id: string | null
+  audit_artifact_fingerprint: string | null
+  visualization: AuditVisualization
 }
 
 export type EvidenceCoverageAttributionResult = {
@@ -231,7 +275,7 @@ export type AttributionDeletionEvaluationResult = {
 export type Job = {
   job_id: string
   chain_id: string
-  status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED'
+  status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'INTERRUPTED'
   progress_percent: number
   cache_hit: boolean
   result: DeepDive | null
@@ -515,6 +559,46 @@ export type AISuggestion = {
   review_reason?: string | null
 }
 
+export type CohesionNarrativeView = {
+  chain_id: string
+  narrative: string
+  model: string
+  provider_status?: string | null
+  context: {
+    chain: {
+      chain_id: string
+      alarm_count: number
+      duration_seconds: number
+      is_singleton: boolean
+    }
+    alarm_summary: {
+      top_alarm_types: [string, number][]
+      network_classes: string[]
+      device_types: string[]
+      devices: string[]
+    }
+    why: {
+      strong_views: string[]
+      partial_views: string[]
+      top_descriptors: string[]
+    }
+    topology: {
+      mapped: number
+      total: number
+      resource_types: string[]
+      dependency_verified: boolean
+    }
+    audit: {
+      status: string
+      candidate_cut: boolean
+      conductance: number | null
+    }
+    recommendations: {
+      split_recommended: boolean
+    }
+  }
+}
+
 export type AssistantAction = {
   kind: 'NAVIGATE'
   label: string
@@ -536,7 +620,21 @@ export type AssistantResponse = {
   actions: AssistantAction[]
   model: string
   provider_status: string
+  response_mode: 'LLM_PRIMARY' | 'DETERMINISTIC_FALLBACK'
+  tools_used: string[]
+  chart_data?: Record<string, unknown> | null
 }
+
+export type AssistantHistoryMessage = {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export type AssistantSelection =
+  | { kind: 'metric'; metric_id: string }
+  | { kind: 'alarm'; alarm_id: string }
+  | { kind: 'pair'; alarm_id_a: string; alarm_id_b: string }
+  | { kind: 'topology-resource'; resource_id: string }
 
 export type AssistantContext = {
   snapshot_id: string
@@ -548,5 +646,48 @@ export type AssistantContext = {
   pair_alarm_id_b?: string
   selected_metric?: string
   topology_resource_id?: string
+  selection?: AssistantSelection
   filters: Record<string, string>
+}
+
+export type ParameterItem = {
+  path: string
+  key: string
+  label: string
+  value: number
+  source: string
+  min?: number
+  max?: number
+  step?: number
+  description?: string
+}
+
+export type AnalysisConfigView = {
+  config_version: string
+  status: string
+  editable_parameters: Record<string, number>
+  parameters_detail: ParameterItem[]
+}
+
+export type ParameterCalibration = {
+  path: string
+  previous_value: number
+  calibrated_value: number
+  source: string
+  sample_count: number
+  metric_details: Record<string, any>
+}
+
+export type CalibrationReport = {
+  timestamp: string
+  database_url_masked: string
+  snapshots_loaded: number
+  chains_loaded?: number
+  chains_evaluated: number
+  alarms_evaluated: number
+  calibrated_parameters: ParameterCalibration[]
+  output_config_path: string
+  status: string
+  chains_skipped_large?: number
+  chains_failed?: number
 }

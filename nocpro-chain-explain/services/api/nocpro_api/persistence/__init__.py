@@ -10,6 +10,7 @@ from .repository import (
     StoredEvolutionEdge,
     StoredEvolutionNode,
     StoredCounterfactualJob,
+    StoredDeepDiveJob,
     Tier1AClaim,
 )
 
@@ -23,5 +24,6 @@ __all__ = [
     "StoredEvolutionEdge",
     "StoredEvolutionNode",
     "StoredCounterfactualJob",
+    "StoredDeepDiveJob",
     "Tier1AClaim",
 ]

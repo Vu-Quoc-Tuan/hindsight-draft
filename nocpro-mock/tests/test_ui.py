@@ -100,7 +100,8 @@ def test_api_preview_golden(ui_server: str):
     assert len(preview["sample_chains"]) > 0
 
 
-def test_api_preview_real(ui_server: str):
+@pytest.mark.realdata
+def test_api_preview_real(ui_server: str, alarm_csv):
     status, data = _request_json(
         f"{ui_server}/api/preview",
         method="POST",
@@ -263,3 +264,97 @@ def test_api_topology_projection(ui_server: str):
     status, data = _request_json(f"{ui_server}/api/topology/projection")
     assert status == 400
     assert "required" in data["error"].lower()
+
+
+def test_ui_contains_topology_and_slicer_components(ui_server: str):
+    req = urllib.request.Request(f"{ui_server}/")
+    with urllib.request.urlopen(req, timeout=5) as response:
+        assert response.status == 200
+        html = response.read().decode("utf-8")
+        assert "nav-btn-topology" in html
+        assert "nav-btn-slicer" in html
+        assert "view-topology-section" in html
+        assert "view-slicer-section" in html
+        assert "btn-run-slicer" in html
+        assert "btn-stream-sequence" in html
+        assert "select-slicer-alarm-csv" in html
+        assert "Topology Explorer" in html
+        assert "Sequence Slicer" in html
+
+
+def test_api_slice_sequence_rejects_invalid_scenario_id(ui_server: str):
+    status, data = _request_json(
+        f"{ui_server}/api/slice-sequence",
+        method="POST",
+        data={"scenario_id": "../../../invalid_scenario"},
+    )
+    assert status == 400
+    assert "scenario_id" in data["error"]
+
+
+def test_api_slice_sequence_rejects_missing_alarm_file(ui_server: str):
+    status, data = _request_json(
+        f"{ui_server}/api/slice-sequence",
+        method="POST",
+        data={"scenario_id": "test_seq", "alarm_csv": "datasets/raw/alarm/missing.csv"},
+    )
+    assert status == 400
+    assert "not found" in data["error"].lower()
+
+
+@pytest.mark.realdata
+def test_api_slice_sequence_valid(ui_server: str, alarm_csv):
+    status, data = _request_json(
+        f"{ui_server}/api/slice-sequence",
+        method="POST",
+        data={
+            "scenario_id": "test_ui_evolution_seq",
+            "num_snapshots": 2,
+            "step_minutes": 5,
+            "window_minutes": 10,
+            "max_chains": 10,
+        },
+    )
+    assert status == 200
+    assert data["ok"] is True
+    assert "summary" in data
+    assert data["summary"]["snapshot_count"] == 2
+    assert data["summary"]["total_distinct_alarms"] > 0
+    assert "sequences" in data
+    seq_ids = [s["id"] for s in data["sequences"]]
+    assert "test_ui_evolution_seq" in seq_ids
+
+
+def test_api_publish_sequence_rejects_missing_directory(ui_server: str):
+    status, data = _request_json(
+        f"{ui_server}/api/publish-sequence",
+        method="POST",
+        data={"sequence_path": "docs/examples/synthetic/does_not_exist"},
+    )
+    assert status == 400
+    assert "not found" in data["error"].lower()
+
+
+def test_api_publish_sequence_rejects_custom_bootstrap(ui_server: str):
+    status, data = _request_json(
+        f"{ui_server}/api/publish-sequence",
+        method="POST",
+        data={
+            "sequence_path": "docs/examples/synthetic/history_positive_lift",
+            "kafka_bootstrap": "127.0.0.1:9999",
+        },
+    )
+    assert status == 400
+    assert "configured by the Mock server" in data["error"]
+
+
+def test_api_publish_sequence_unreachable_kafka(ui_server: str):
+    status, data = _request_json(
+        f"{ui_server}/api/publish-sequence",
+        method="POST",
+        data={"sequence_path": "docs/examples/synthetic/history_positive_lift"},
+    )
+    assert status == 500
+    assert data["ok"] is False
+    assert "kafka publish failed" in data["error"].lower()
+

@@ -1,5 +1,22 @@
-import type { AISuggestion, AssistantContext, AssistantResponse, ChainAnalysis, ChainList, CounterfactualJob, Evolution, Job, OperatorFeedback, PairWhy } from './types'
+import type {
+  AISuggestion,
+  CohesionNarrativeView,
+  AnalysisConfigView,
+  AssistantContext,
+  AssistantHistoryMessage,
+  AssistantResponse,
+  AuditVisualizationArtifact,
+  CalibrationReport,
+  ChainAnalysis,
+  ChainList,
+  CounterfactualJob,
+  Evolution,
+  Job,
+  OperatorFeedback,
+  PairWhy,
+} from './types'
 import type { TopologyTreePayload } from './TopologyTree'
+
 
 export class ApiError extends Error {
   status: number
@@ -104,6 +121,34 @@ async function topologyResolveRequest(
 export const api = {
   health: (signal?: AbortSignal) =>
     request<{ status: string }>('/api/v1/health', { signal }),
+  listSnapshots: (signal?: AbortSignal) =>
+    request<{
+      active_snapshot_id: string | null
+      active_snapshot_version: string | null
+      snapshots: Array<{
+        snapshot_id: string
+        name: string
+        profile: 'IP_NETWORK' | 'IT_SERVICES' | 'ALARM_ONLY'
+        alarm_count: number
+        chain_count: number
+        description: string
+        badge: string
+        available?: boolean
+        unavailable_reason?: string | null
+      }>
+    }>('/api/v1/snapshots', { signal }),
+  selectSnapshot: (snapshotId: string, signal?: AbortSignal) =>
+    request<{
+      snapshot_id: string
+      snapshot_version: string
+      alarm_count: number
+      chain_count: number
+    }>('/api/v1/snapshots/select', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ snapshot_id: snapshotId }),
+      signal,
+    }),
   loadSnapshot: (payload: unknown) =>
     request<{
       snapshot_id: string
@@ -140,8 +185,18 @@ export const api = {
       `/api/v1/chains/${encodeURIComponent(chainId)}/deep-dive`,
       { method: 'POST' },
     ),
+  latestDeepDive: (chainId: string, signal?: AbortSignal) =>
+    request<Job | null>(
+      `/api/v1/chains/${encodeURIComponent(chainId)}/deep-dive`,
+      { signal },
+    ),
   job: (jobId: string, signal?: AbortSignal) =>
     request<Job>(`/api/v1/jobs/${encodeURIComponent(jobId)}`, { signal }),
+  auditVisualization: (chainId: string, signal?: AbortSignal) =>
+    request<AuditVisualizationArtifact>(
+      `/api/v1/chains/${encodeURIComponent(chainId)}/audit-visualization`,
+      { signal },
+    ),
   submitReview: (chainId: string) =>
     request<{ job_id: string; cache_hit: boolean; deduplicated: boolean }>(
       `/api/v1/chains/${encodeURIComponent(chainId)}/review`,
@@ -189,11 +244,16 @@ export const api = {
       `/api/v1/chains/${encodeURIComponent(chainId)}/ai-suggestion`,
       { signal },
     ),
-  assistantQuery: (query: string, context: AssistantContext, signal?: AbortSignal) =>
+  cohesionNarrative: (chainId: string, signal?: AbortSignal) =>
+    request<CohesionNarrativeView>(
+      `/api/v1/chains/${encodeURIComponent(chainId)}/cohesion-narrative`,
+      { signal },
+    ),
+  assistantQuery: (query: string, context: AssistantContext, history: AssistantHistoryMessage[] = [], signal?: AbortSignal) =>
     request<AssistantResponse>('/api/v1/assistant/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, context }),
+      body: JSON.stringify({ query, context, history }),
       signal,
     }),
   topologyProjection: (profileId: string, signal?: AbortSignal, rootId?: string) =>
@@ -202,4 +262,22 @@ export const api = {
     topologySearchRequest(profileId, query, signal),
   topologyResolve: (profileId: string, identifier: string, signal?: AbortSignal) =>
     topologyResolveRequest(profileId, identifier, signal),
+  getConfig: (signal?: AbortSignal) => request<AnalysisConfigView>('/api/v1/config', { signal }),
+  updateConfig: (parameters: Record<string, number>, signal?: AbortSignal) =>
+    request<AnalysisConfigView>('/api/v1/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parameters }),
+      signal,
+    }),
+  resetConfig: (signal?: AbortSignal) =>
+    request<AnalysisConfigView>('/api/v1/config/reset', {
+      method: 'POST',
+      signal,
+    }),
+  calibrateConfig: (signal?: AbortSignal) =>
+    request<CalibrationReport>('/api/v1/config/calibrate', {
+      method: 'POST',
+      signal,
+    }),
 }

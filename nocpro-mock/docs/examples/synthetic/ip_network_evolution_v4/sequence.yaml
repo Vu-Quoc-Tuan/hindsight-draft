@@ -1,0 +1,27 @@
+scenario_id: ip_network_evolution_v4
+sequence_type: EVOLUTION
+seed: 42
+derivation_kind: DERIVED_REPLAY
+production_validation: NOT_ESTABLISHED
+step_minutes: 5
+window_minutes: 15
+start_time: '2026-07-28T08:36:55+00:00'
+snapshots:
+- snapshot_000.json
+- snapshot_001.json
+- snapshot_002.json
+- snapshot_003.json
+- snapshot_004.json
+expected_transitions:
+- from: snapshot_000.json
+  to: snapshot_001.json
+  expected_event: CONTINUE
+- from: snapshot_001.json
+  to: snapshot_002.json
+  expected_event: CONTINUE
+- from: snapshot_002.json
+  to: snapshot_003.json
+  expected_event: CONTINUE
+- from: snapshot_003.json
+  to: snapshot_004.json
+  expected_event: CONTINUE

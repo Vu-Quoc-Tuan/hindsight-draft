@@ -41,6 +41,22 @@ class GroundedRenderResult:
     used_provider: bool
 
 
+@dataclass(frozen=True)
+class LLMToolCall:
+    name: str
+    arguments: dict[str, Any]
+    id: str = ""
+
+
+@dataclass(frozen=True)
+class GroundedAssistantCallResult:
+    content: str | None
+    tool_calls: list[LLMToolCall]
+    model: str
+    provider_status: str
+    used_provider: bool
+
+
 def _fallback(draft: str, provider_status: str) -> GroundedRenderResult:
     return GroundedRenderResult(
         message=draft,
@@ -154,11 +170,16 @@ def _response_content(
 
 
 _FORBIDDEN_NARRATIVE_CLAIMS = re.compile(
-    r"\b(root\s*cause|caused?|causality|apply|execute|mutation|tool\s*call)\b"
-    r"|nguyên\s*nhân\s*gốc|gây\s*ra|áp\s*dụng|thực\s*thi",
+    r"\b(root\s*cause\s+(?:is|was|proven|confirmed)|caused?|apply\s+(?:now|this|the)|execute|mutation)\b"
+    r"|nguyên\s*nhân\s*gốc\s+là|gây\s*ra|áp\s*dụng\s+(?:ngay|đề\s*xuất)|thực\s*thi",
+    re.IGNORECASE,
+)
+_UNSUPPORTED_QUALITATIVE_CLAIMS = re.compile(
+    r"chứng\s+minh|xấu\s+đi|nghiêm\s+trọng|improv(?:e|ed|ement)|worsen(?:ed|ing)?|proves?",
     re.IGNORECASE,
 )
 _IDENTIFIER = re.compile(r"\b[A-Za-z][A-Za-z0-9]*(?:[-_][A-Za-z0-9]+)+\b")
+_NUMBER = re.compile(r"(?<![A-Za-z0-9_])-?\d+(?:\.\d+)?%?")
 
 
 def _grounding_is_preserved(content: str, draft: str, facts: dict[str, Any], fact_refs: Sequence[str]) -> bool:
@@ -170,9 +191,40 @@ def _grounding_is_preserved(content: str, draft: str, facts: dict[str, Any], fac
     """
     if _FORBIDDEN_NARRATIVE_CLAIMS.search(content):
         return False
+    if _UNSUPPORTED_QUALITATIVE_CLAIMS.search(content) and not _UNSUPPORTED_QUALITATIVE_CLAIMS.search(draft):
+        return False
     allowed = " ".join((draft, json.dumps(facts, ensure_ascii=False, default=str), *fact_refs))
     allowed_identifiers = {item.casefold() for item in _IDENTIFIER.findall(allowed)}
-    return all(item.casefold() in allowed_identifiers for item in _IDENTIFIER.findall(content))
+    if not all(item.casefold() in allowed_identifiers for item in _IDENTIFIER.findall(content)):
+        return False
+    # A deterministic draft is the authoritative public projection. Raw fact
+    # payloads can contain incidental curve points that must not be promoted to
+    # a different named metric by narrative wording.
+    allowed_numbers = set(_NUMBER.findall(" ".join((draft, *fact_refs))))
+    return all(item in allowed_numbers for item in _NUMBER.findall(content))
+
+
+def validate_grounded_content(
+    *,
+    content: str,
+    draft: str,
+    facts: dict[str, Any],
+    fact_refs: Sequence[str],
+    model: str,
+    provider_status: str,
+) -> GroundedRenderResult:
+    """Validate an already returned provider narrative without another provider call."""
+    if provider_status != "OK" or not content.strip():
+        return _fallback(draft, provider_status or "INVALID_RESPONSE")
+    if not _grounding_is_preserved(content, draft, facts, fact_refs):
+        logger.info("Grounded LLM provider failed status=GROUNDING_VIOLATION")
+        return _fallback(draft, "GROUNDING_VIOLATION")
+    return GroundedRenderResult(
+        message=_bounded(content.strip(), _MAX_OUTPUT_CHARS),
+        model=model,
+        provider_status="OK",
+        used_provider=True,
+    )
 
 
 def render_grounded(
@@ -252,3 +304,268 @@ def render_grounded(
         # attach request headers or other sensitive details to an exception.
         logger.error("Grounded LLM provider failed status=PROVIDER_ERROR")
         return _fallback(draft, "PROVIDER_ERROR")
+
+
+def is_provider_configured() -> bool:
+    """Return True if required environment variables for LLM provider are set."""
+    api_key = os.environ.get("AI_API_KEY", "").strip()
+    base_url = os.environ.get("AI_BASE_URL", "").strip().rstrip("/")
+    model = os.environ.get("AI_MODEL", "").strip()
+    return bool(api_key and base_url and model)
+
+
+def _normalize_messages_for_protocol(
+    messages: list[dict[str, Any]], protocol: ProviderProtocol
+) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        item = dict(msg)
+        if "tool_calls" in item and isinstance(item["tool_calls"], list):
+            calls = []
+            for tc in item["tool_calls"]:
+                if not isinstance(tc, dict):
+                    continue
+                tc_copy = dict(tc)
+                fn = dict(tc_copy.get("function", {}))
+                args = fn.get("arguments", {})
+                if protocol == "OLLAMA":
+                    if isinstance(args, str):
+                        try:
+                            fn["arguments"] = json.loads(args)
+                        except Exception:
+                            pass
+                else:
+                    if isinstance(args, dict):
+                        fn["arguments"] = json.dumps(args, ensure_ascii=False)
+                tc_copy["function"] = fn
+                calls.append(tc_copy)
+            item["tool_calls"] = calls
+        if item.get("role") == "tool":
+            if protocol == "OLLAMA":
+                item.pop("tool_call_id", None)
+            else:
+                item.pop("tool_name", None)
+        normalized.append(item)
+    return normalized
+
+
+def assistant_message_with_tool_calls(
+    result: GroundedAssistantCallResult,
+) -> dict[str, Any]:
+    """Recreate the provider assistant message for the next tool round."""
+    return {
+        "role": "assistant",
+        "content": result.content or "",
+        "tool_calls": [
+            {
+                "id": call.id or f"call_{index}_{call.name}",
+                "type": "function",
+                "function": {"name": call.name, "arguments": call.arguments},
+            }
+            for index, call in enumerate(result.tool_calls)
+        ],
+    }
+
+
+def tool_result_message(
+    call_id: str,
+    name: str,
+    payload: dict[str, Any],
+    protocol: ProviderProtocol | None = None,
+) -> dict[str, Any]:
+    """Build a tool result accepted by OpenAI Chat Completions or Ollama Chat."""
+    effective = protocol or cast(
+        ProviderProtocol,
+        os.environ.get("AI_PROVIDER_PROTOCOL", "OPENAI_COMPATIBLE").strip().upper(),
+    )
+    message: dict[str, Any] = {
+        "role": "tool",
+        "content": json.dumps(payload, ensure_ascii=False, default=str),
+    }
+    if effective == "OLLAMA":
+        message["tool_name"] = name
+    else:
+        message["tool_call_id"] = call_id
+    return message
+
+
+def call_grounded_assistant(
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None = None,
+    timeout_seconds: float = 15.0,
+) -> GroundedAssistantCallResult:
+    """Call LLM with tools for assistant function selection and argument extraction."""
+    api_key = os.environ.get("AI_API_KEY", "").strip()
+    base_url = os.environ.get("AI_BASE_URL", "").strip().rstrip("/")
+    model = os.environ.get("AI_MODEL", "").strip()
+    if not api_key or not base_url or not model:
+        return GroundedAssistantCallResult(
+            content=None,
+            tool_calls=[],
+            model="DETERMINISTIC_EVIDENCE",
+            provider_status="NOT_CONFIGURED",
+            used_provider=False,
+        )
+
+    protocol_value = os.environ.get("AI_PROVIDER_PROTOCOL", "OPENAI_COMPATIBLE").strip().upper()
+    if protocol_value not in {"OPENAI_COMPATIBLE", "OLLAMA"}:
+        return GroundedAssistantCallResult(
+            content=None,
+            tool_calls=[],
+            model="DETERMINISTIC_EVIDENCE",
+            provider_status="INVALID_CONFIGURATION",
+            used_provider=False,
+        )
+
+    protocol = cast(ProviderProtocol, protocol_value)
+    normalized_messages = _normalize_messages_for_protocol(messages, protocol)
+
+    if protocol == "OLLAMA":
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": normalized_messages,
+            "stream": False,
+            "options": {"temperature": 0, "num_predict": 1_200},
+        }
+        if tools:
+            payload["tools"] = tools
+    else:
+        payload = {
+            "model": model,
+            "messages": normalized_messages,
+            "temperature": 0,
+            "max_tokens": 1_200,
+        }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+
+    encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    if len(encoded) > _MAX_REQUEST_BYTES:
+        return GroundedAssistantCallResult(
+            content=None,
+            tool_calls=[],
+            model="DETERMINISTIC_EVIDENCE",
+            provider_status="REQUEST_TOO_LARGE",
+            used_provider=False,
+        )
+
+    try:
+        request = urllib.request.Request(
+            f"{base_url}/{'chat' if protocol == 'OLLAMA' else 'chat/completions'}",
+            data=encoded,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "User-Agent": "nocpro-chain-explain/grounded-assistant-v1",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            raw_response = response.read(_MAX_RESPONSE_BYTES + 1)
+        if len(raw_response) > _MAX_RESPONSE_BYTES:
+            return GroundedAssistantCallResult(
+                content=None,
+                tool_calls=[],
+                model=model,
+                provider_status="INVALID_RESPONSE",
+                used_provider=False,
+            )
+        decoded = json.loads(raw_response.decode("utf-8"))
+
+        raw_calls: list[dict[str, Any]] = []
+        content: str | None = None
+        if protocol == "OLLAMA":
+            msg = decoded.get("message", {})
+            if isinstance(msg, dict):
+                raw_calls = msg.get("tool_calls") or []
+                content = msg.get("content")
+        else:
+            choices = decoded.get("choices", [])
+            if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+                msg = choices[0].get("message", {})
+                if isinstance(msg, dict):
+                    raw_calls = msg.get("tool_calls") or []
+                    content = msg.get("content")
+
+        if protocol == "OLLAMA" and decoded.get("done") is not True:
+            raise ValueError("incomplete Ollama response")
+
+        parsed_calls: list[LLMToolCall] = []
+        for call in raw_calls:
+            if not isinstance(call, dict):
+                continue
+            fn = call.get("function", {})
+            if not isinstance(fn, dict):
+                continue
+            name = fn.get("name", "")
+            raw_args = fn.get("arguments", {})
+            if isinstance(raw_args, str):
+                try:
+                    parsed_args = json.loads(raw_args)
+                except Exception:
+                    parsed_args = {}
+            elif isinstance(raw_args, dict):
+                parsed_args = raw_args
+            else:
+                parsed_args = {}
+            parsed_calls.append(
+                LLMToolCall(name=name, arguments=parsed_args, id=str(call.get("id", "")))
+            )
+
+        if not parsed_calls and not (isinstance(content, str) and content.strip()):
+            raise ValueError("assistant response has neither content nor tool calls")
+        return GroundedAssistantCallResult(
+            content=content.strip() if isinstance(content, str) and content.strip() else None,
+            tool_calls=parsed_calls,
+            model=model,
+            provider_status="OK",
+            used_provider=True,
+        )
+    except urllib.error.HTTPError:
+        logger.info("Grounded LLM assistant provider failed status=HTTP_ERROR")
+        return GroundedAssistantCallResult(
+            content=None,
+            tool_calls=[],
+            model=model,
+            provider_status="HTTP_ERROR",
+            used_provider=False,
+        )
+    except (TimeoutError, socket.timeout):
+        logger.info("Grounded LLM assistant provider failed status=TIMEOUT")
+        return GroundedAssistantCallResult(
+            content=None,
+            tool_calls=[],
+            model=model,
+            provider_status="TIMEOUT",
+            used_provider=False,
+        )
+    except (urllib.error.URLError, OSError):
+        logger.info("Grounded LLM assistant provider failed status=PROVIDER_ERROR")
+        return GroundedAssistantCallResult(
+            content=None,
+            tool_calls=[],
+            model=model,
+            provider_status="PROVIDER_ERROR",
+            used_provider=False,
+        )
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError, TypeError, KeyError):
+        logger.info("Grounded LLM assistant provider failed status=INVALID_RESPONSE")
+        return GroundedAssistantCallResult(
+            content=None,
+            tool_calls=[],
+            model=model,
+            provider_status="INVALID_RESPONSE",
+            used_provider=False,
+        )
+    except Exception:
+        logger.error("Grounded LLM assistant provider failed status=PROVIDER_ERROR")
+        return GroundedAssistantCallResult(
+            content=None,
+            tool_calls=[],
+            model=model,
+            provider_status="PROVIDER_ERROR",
+            used_provider=False,
+        )

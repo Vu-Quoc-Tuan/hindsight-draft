@@ -70,6 +70,7 @@ def test_small_chain_runs_exact_audit_in_tier2():
     )
     assert result.audit_graph_mode is AuditGraphMode.EXACT_FULL
     assert result.graph is not None
+    assert result.audit_visualization.status == "AVAILABLE"
     assert len(result.structural_roles) == 6
     assert result.structural_audit is not None
     assert result.over_merge is not None
@@ -130,6 +131,7 @@ def test_large_chain_returns_partial_domain_results_without_dense_paths(monkeypa
 
     monkeypatch.setattr(audit_module, "evaluate_chain_channels", forbidden)
     monkeypatch.setattr(audit_module, "build_audit_graph", forbidden)
+    monkeypatch.setattr(audit_module, "build_audit_visualization", forbidden)
     result = analyze_structural_audit(
         _package(6),
         "C1",
@@ -140,6 +142,8 @@ def test_large_chain_returns_partial_domain_results_without_dense_paths(monkeypa
 
     assert result.audit_graph_mode is AuditGraphMode.NOT_COMPUTED
     assert result.graph is None
+    assert result.audit_visualization.status == "UNAVAILABLE"
+    assert result.audit_visualization.reason == "AUDIT_LIMIT_EXCEEDED"
     assert result.structural_audit.verdict is AuditVerdict.UNAVAILABLE
     assert result.structural_audit.reason == "AUDIT_LIMIT_EXCEEDED"
     assert result.over_merge.strength.value == "UNAVAILABLE"

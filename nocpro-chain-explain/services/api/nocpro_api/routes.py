@@ -20,20 +20,29 @@ from .schemas import (
     OperatorFeedbackSubmission,
     OperatorFeedbackView,
     AISuggestionView,
+    CohesionNarrativeView,
     AssistantQueryInput,
     AssistantResponseView,
+    AuditVisualizationArtifactView,
+    CalibrationReportView,
+    ConfigUpdateInput,
+    ConfigView,
     EvolutionView,
     JobSubmissionView,
     JobView,
     PairWhyView,
+    SelectSnapshotRequest,
+    SnapshotCatalogListView,
     SnapshotLoadedView,
     SystemPairFactView,
 )
+from .catalog import list_catalog_presets, load_preset_payload
 from .serializers import (
     chain_analysis_view,
     counterfactual_job_view,
     operator_feedback_view,
     ai_suggestion_view,
+    audit_visualization_artifact_view,
     evolution_view,
     job_view,
     pair_evidence_view,
@@ -43,6 +52,7 @@ from .workspace import SnapshotNotLoaded, Workspace
 
 router = APIRouter(prefix="/api/v1")
 logger = logging.getLogger(__name__)
+
 
 
 def workspace(request: Request) -> Workspace:
@@ -75,6 +85,52 @@ def translate_error(exc: Exception) -> HTTPException:
 @router.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@router.get("/snapshots", response_model=SnapshotCatalogListView)
+async def list_snapshots(request: Request) -> SnapshotCatalogListView:
+    service = workspace(request)
+    active_id = None
+    active_version = None
+    try:
+        pkg = service.require_package()
+        active_id = pkg.snapshot.snapshot_id
+        active_version = pkg.snapshot.snapshot_version
+    except Exception:
+        pass
+
+    presets = list_catalog_presets()
+    return SnapshotCatalogListView(
+        active_snapshot_id=active_id,
+        active_snapshot_version=active_version,
+        snapshots=presets,
+    )
+
+
+@router.post(
+    "/snapshots/select",
+    response_model=SnapshotLoadedView,
+    status_code=status.HTTP_200_OK,
+)
+async def select_snapshot(
+    body: SelectSnapshotRequest, request: Request
+) -> SnapshotLoadedView:
+    service = workspace(request)
+    try:
+        payload, _ = load_preset_payload(body.snapshot_id)
+        result = await service.ingest_snapshot(payload)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+    return SnapshotLoadedView(
+        snapshot_id=result.snapshot_id,
+        snapshot_version=service.require_package().snapshot.snapshot_version,
+        alarm_count=result.alarm_count,
+        chain_count=result.chain_count,
+        incremental_snapshot={
+            "mode": service.config.incremental_snapshot.mode.value,
+            "reason": service.config.incremental_snapshot.reason,
+        },
+    )
 
 
 @router.post(
@@ -117,6 +173,9 @@ async def list_chains(request: Request) -> ChainListView:
                 member_count=item.member_count,
                 is_singleton=item.is_singleton,
                 title=item.auto_title,
+                start_time=item.start_time,
+                end_time=item.end_time,
+                duration_seconds=item.duration_seconds,
             )
             for item in sorted(result.chains.values(), key=lambda value: value.chain_id)
         ],
@@ -185,11 +244,42 @@ async def submit_deep_dive(
     )
 
 
+@router.get(
+    "/chains/{chain_id}/audit-visualization",
+    response_model=AuditVisualizationArtifactView,
+)
+async def get_audit_visualization(
+    chain_id: str, request: Request
+) -> AuditVisualizationArtifactView:
+    try:
+        lookup = await workspace(request).latest_audit_visualization(chain_id)
+        return audit_visualization_artifact_view(lookup)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
 @router.get("/jobs/{job_id}", response_model=JobView)
 async def get_job(job_id: str, request: Request) -> JobView:
     try:
-        await workspace(request).flush_audit_persistence()
-        return job_view(workspace(request).jobs.get(job_id))
+        service = workspace(request)
+        job = await service.deep_dive_job(job_id)
+        await service.flush_deep_dive_persistence()
+        await service.flush_audit_persistence()
+        return job_view(job)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.get("/chains/{chain_id}/deep-dive", response_model=JobView | None)
+async def get_latest_deep_dive(
+    chain_id: str, request: Request
+) -> JobView | None:
+    try:
+        service = workspace(request)
+        result = await service.latest_deep_dive(chain_id)
+        await service.flush_deep_dive_persistence()
+        await service.flush_audit_persistence()
+        return job_view(result) if result is not None else None
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -346,6 +436,67 @@ async def get_chain_ai_suggestion(
         raise translate_error(exc) from exc
 
 
+@router.get(
+    "/chains/{chain_id}/cohesion-narrative",
+    response_model=CohesionNarrativeView,
+)
+@router.post(
+    "/chains/{chain_id}/cohesion-narrative",
+    response_model=CohesionNarrativeView,
+)
+async def get_chain_cohesion_narrative(
+    chain_id: str, request: Request
+) -> CohesionNarrativeView:
+    try:
+        service = workspace(request)
+        audit_artifact = None
+        audit_error_reason: str | None = None
+        try:
+            audit_lookup = await service.latest_audit_visualization(chain_id)
+            if audit_lookup and audit_lookup.audit_artifact:
+                audit_artifact = audit_lookup.audit_artifact
+        except KeyError:
+            # Chain unknown or not found
+            raise
+        except Exception:
+            logger.exception("Failed to retrieve latest audit visualization for chain %s", chain_id)
+            audit_error_reason = "AUDIT_LOOKUP_FAILED"
+
+        review_result = None
+        try:
+            latest_rev = await service.latest_review(chain_id)
+            if latest_rev and latest_rev.result:
+                from tier2.counterfactual.public_contract import public_review_result
+                review_result = (
+                    public_review_result(latest_rev.result)
+                    if hasattr(latest_rev.result, "recommendations")
+                    else latest_rev.result
+                )
+        except KeyError:
+            raise
+        except Exception:
+            logger.exception("Failed to retrieve latest review for chain %s", chain_id)
+
+        from .cohesion_advisor import generate_cohesion_narrative
+        result = await _run_grounded_provider(
+            generate_cohesion_narrative,
+            service=service,
+            chain_id=chain_id,
+            audit_artifact=audit_artifact,
+            review_result=review_result,
+            audit_error_reason=audit_error_reason,
+        )
+        return CohesionNarrativeView(
+            chain_id=result.chain_id,
+            narrative=result.narrative,
+            model=result.model,
+            provider_status=result.provider_status,
+            context=result.context,
+        )
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
 @router.post("/assistant/query", response_model=AssistantResponseView)
 async def query_assistant(
     request_body: AssistantQueryInput, request: Request
@@ -355,10 +506,14 @@ async def query_assistant(
         from .assistant import answer_query, render_answer
 
         context = request_body.context.model_dump()
-        deterministic = answer_query(
-            workspace(request),
-            request_body.query,
+        ws = workspace(request)
+        query_text = request_body.query
+        deterministic = await answer_query(
+            ws,
+            query_text,
             context,
+            history=[item.model_dump() for item in request_body.history],
+            provider_runner=_run_grounded_provider,
         )
         result = await _run_grounded_provider(
             render_answer,
@@ -369,5 +524,41 @@ async def query_assistant(
             contract_version="nocpro-assistant-v1",
             **result,
         )
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.get("/config", response_model=ConfigView)
+async def get_config(request: Request) -> ConfigView:
+    try:
+        data = workspace(request).get_active_parameters()
+        return ConfigView(**data)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.post("/config", response_model=ConfigView)
+async def update_config(payload: ConfigUpdateInput, request: Request) -> ConfigView:
+    try:
+        data = workspace(request).update_parameters(payload.parameters)
+        return ConfigView(**data)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.post("/config/reset", response_model=ConfigView)
+async def reset_config(request: Request) -> ConfigView:
+    try:
+        data = workspace(request).reset_parameters()
+        return ConfigView(**data)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.post("/config/calibrate", response_model=CalibrationReportView)
+async def calibrate_config(request: Request) -> CalibrationReportView:
+    try:
+        report = await workspace(request).calibrate_from_database(include_fixtures=True)
+        return CalibrationReportView(**report)
     except Exception as exc:
         raise translate_error(exc) from exc

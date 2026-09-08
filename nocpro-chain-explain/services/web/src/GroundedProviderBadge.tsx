@@ -5,16 +5,22 @@ const FALLBACK_LABELS: Record<string, string> = {
   TIMEOUT: 'Provider timeout',
   INVALID_RESPONSE: 'Invalid provider response',
   PROVIDER_ERROR: 'Provider unavailable',
+  TOOL_LOOP_LIMIT: 'Tool loop limit reached',
+  INVALID_TOOL_CALL: 'Invalid tool call',
+  GROUNDING_VIOLATION: 'Grounding validation failed',
+  STALE_CONTEXT: 'Workspace context changed',
 }
 
 export function GroundedProviderBadge({
   model,
   providerStatus,
+  responseMode,
 }: {
   model: string
   providerStatus: string
+  responseMode?: 'LLM_PRIMARY' | 'DETERMINISTIC_FALLBACK'
 }) {
-  if (providerStatus === 'OK') {
+  if (responseMode === 'LLM_PRIMARY' || (!responseMode && providerStatus === 'OK')) {
     return (
       <span className="pill pill--positive" aria-label={`AI-assisted narrative using ${model}`}>
         AI-assisted · {model}

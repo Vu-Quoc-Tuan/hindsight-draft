@@ -4,17 +4,21 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from hashlib import sha256
+import json
 from typing import TypeVar
 
 import httpx2
 
 from nocpro_api import create_app
+from nocpro_api.workspace import Workspace
 from nocpro_api.persistence import (
     StoredEvolution,
     StoredEvolutionEdge,
     StoredEvolutionNode,
 )
 from nocpro_api.serializers import evolution_view
+from tier2 import audit_artifact_from_dict, audit_artifact_to_dict
 
 
 T = TypeVar("T")
@@ -115,7 +119,15 @@ def test_snapshot_ingest_lists_and_explains_chains():
         },
     }
     assert listed.status_code == 200
-    assert listed.json()["chains"][0]["chain_id"] == "C1"
+    assert listed.json()["chains"][0] == {
+        "chain_id": "C1",
+        "member_count": 3,
+        "is_singleton": False,
+        "title": listed.json()["chains"][0]["title"],
+        "start_time": "2026-01-01T00:00:01",
+        "end_time": "2026-01-01T00:00:03",
+        "duration_seconds": 2.0,
+    }
     assert explained.status_code == 200
     body = explained.json()
     assert body["chain_id"] == "C1"
@@ -429,6 +441,183 @@ def test_deep_dive_is_submitted_and_polled_as_a_job():
     assert topology["dependency_scope"]["status"] == "UNAVAILABLE"
     assert topology["dependency_scope"]["resource_details"]["missing_resources"] is None
     assert topology["dependency_scope"]["resource_details"]["extra_resources"] is None
+
+
+def test_latest_deep_dive_rehydrates_the_full_in_memory_result():
+    async def exercise(client: httpx2.AsyncClient):
+        await client.post("/api/v1/snapshots", json=_payload())
+        submission = await client.post("/api/v1/chains/C1/deep-dive")
+        job_id = submission.json()["job_id"]
+        for _ in range(40):
+            polled = await client.get(f"/api/v1/jobs/{job_id}")
+            if polled.json()["status"] in {"SUCCEEDED", "FAILED"}:
+                break
+            await asyncio.sleep(0.01)
+        latest = await client.get("/api/v1/chains/C1/deep-dive")
+        return polled, latest
+
+    polled, latest = run_api_test(exercise)
+
+    assert polled.json()["status"] == "SUCCEEDED"
+    assert latest.status_code == 200
+    assert latest.json() == polled.json()
+    assert latest.json()["result"]["evidence_attribution"]["status"] == "AVAILABLE"
+
+
+def test_latest_deep_dive_returns_empty_without_submitting_work():
+    async def exercise(client: httpx2.AsyncClient):
+        await client.post("/api/v1/snapshots", json=_payload())
+        return await client.get("/api/v1/chains/C1/deep-dive")
+
+    response = run_api_test(exercise)
+
+    assert response.status_code == 200
+    assert response.json() is None
+
+
+def test_audit_visualization_read_is_unavailable_without_submitting_deep_dive():
+    async def run():
+        service = Workspace()
+        app = create_app(workspace=service)
+        transport = httpx2.ASGITransport(app=app)
+        try:
+            async with httpx2.AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as client:
+                await client.post("/api/v1/snapshots", json=_payload())
+                before = len(service.jobs._jobs)
+                response = await client.get(
+                    "/api/v1/chains/C1/audit-visualization"
+                )
+                after = len(service.jobs._jobs)
+                return response, before, after
+        finally:
+            service.close()
+
+    response, before, after = asyncio.run(run())
+
+    assert response.status_code == 200
+    assert before == after == 0
+    body = response.json()
+    assert body["snapshot_id"] == "s1"
+    assert body["snapshot_version"] == "1"
+    assert body["chain_id"] == "C1"
+    assert body["audit_artifact_id"] is None
+    assert body["audit_artifact_fingerprint"] is None
+    assert body["visualization"]["status"] == "UNAVAILABLE"
+    assert body["visualization"]["reason"] == "AUDIT_ARTIFACT_NOT_AVAILABLE"
+    assert body["visualization"]["nodes"] == []
+    assert body["visualization"]["edges"] == []
+
+
+def test_audit_visualization_read_returns_the_frozen_job_projection():
+    async def exercise(client: httpx2.AsyncClient):
+        await client.post("/api/v1/snapshots", json=_payload())
+        submission = await client.post("/api/v1/chains/C1/deep-dive")
+        job_id = submission.json()["job_id"]
+        polled = await client.get(f"/api/v1/jobs/{job_id}")
+        for _ in range(20):
+            if polled.json()["status"] in {"SUCCEEDED", "FAILED"}:
+                break
+            await asyncio.sleep(0.01)
+            polled = await client.get(f"/api/v1/jobs/{job_id}")
+        projected = await client.get("/api/v1/chains/C1/audit-visualization")
+        return polled, projected
+
+    polled, projected = run_api_test(exercise)
+
+    assert polled.json()["status"] == "SUCCEEDED"
+    assert projected.status_code == 200
+    body = projected.json()
+    assert body["audit_artifact_id"]
+    assert body["audit_artifact_fingerprint"]
+    assert body["visualization"] == polled.json()["result"]["audit_visualization"]
+    assert body["visualization"]["status"] == "AVAILABLE"
+    assert body["visualization"]["shown_node_count"] == 3
+    assert len(body["visualization"]["nodes"]) == 3
+
+
+def test_audit_visualization_payload_is_identical_after_workspace_hydration():
+    async def run():
+        live = Workspace()
+        live.replace_snapshot(_payload())
+        submission = live.submit_deep_dive("C1")
+        for _ in range(40):
+            job = live.jobs.get(submission.job_id)
+            if job.status.value in {"SUCCEEDED", "FAILED"}:
+                break
+            await asyncio.sleep(0.01)
+        assert job.status.value == "SUCCEEDED"
+        artifact = job.audit_artifact
+        assert artifact is not None
+        live_lookup = await live.latest_audit_visualization("C1")
+
+        class FrozenRepository:
+            async def latest_compatible_audit_artifact(self, **_identity):
+                return artifact
+
+        restarted = Workspace()
+        restarted.replace_snapshot(_payload())
+        restarted.repository = FrozenRepository()
+        try:
+            hydrated_lookup = await restarted.latest_audit_visualization("C1")
+            return (
+                live_lookup.visualization,
+                hydrated_lookup.visualization,
+                hydrated_lookup.audit_artifact,
+            )
+        finally:
+            live.close()
+            restarted.close()
+
+    live_value, hydrated_value, hydrated_artifact = asyncio.run(run())
+
+    assert hydrated_value == live_value
+    assert hydrated_artifact is not None
+    assert hydrated_artifact.artifact_fingerprint
+
+
+def test_legacy_audit_artifact_returns_explicit_visualization_unavailability():
+    async def run():
+        source = Workspace()
+        source.replace_snapshot(_payload())
+        submission = source.submit_deep_dive("C1")
+        for _ in range(40):
+            job = source.jobs.get(submission.job_id)
+            if job.status.value in {"SUCCEEDED", "FAILED"}:
+                break
+            await asyncio.sleep(0.01)
+        assert job.audit_artifact is not None
+        payload = audit_artifact_to_dict(job.audit_artifact)
+        payload["artifact_version"] = "review-audit-v1"
+        payload.pop("visualization")
+        payload.pop("artifact_fingerprint")
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        payload["artifact_fingerprint"] = sha256(encoded.encode()).hexdigest()
+        legacy = audit_artifact_from_dict(payload)
+
+        class LegacyRepository:
+            async def latest_compatible_audit_artifact(self, **_identity):
+                return legacy
+
+        restarted = Workspace()
+        restarted.replace_snapshot(_payload())
+        restarted.repository = LegacyRepository()
+        try:
+            return await restarted.latest_audit_visualization("C1")
+        finally:
+            source.close()
+            restarted.close()
+
+    lookup = asyncio.run(run())
+
+    assert lookup.audit_artifact is not None
+    assert lookup.audit_artifact.artifact_version == "review-audit-v1"
+    assert lookup.visualization.status == "UNAVAILABLE"
+    assert (
+        lookup.visualization.reason
+        == "BOUNDED_PUBLIC_AUDIT_GRAPH_ARTIFACT_NOT_AVAILABLE"
+    )
 
 
 def test_singleton_deep_dive_serializes_not_applicable_attribution():

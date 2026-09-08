@@ -1,6 +1,7 @@
 """Layer 1 — parser tests (docs 13).
 
-The exact counts are frozen in SOURCE_MANIFEST.md. They are asserted literally:
+The exact counts are recorded in ``../nocpro-chain-explain/docs/DATA_SOURCES.md``.
+They are asserted literally:
 if a parser change moves any of them, that is a regression, not a new baseline.
 """
 

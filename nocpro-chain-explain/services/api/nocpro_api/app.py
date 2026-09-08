@@ -15,8 +15,11 @@ from .routes import router
 from .workspace import Workspace
 from .kafka_consumer import KafkaConsumerConfig, KafkaSnapshotConsumer
 from .persistence import Database, SnapshotRepository
+from .runtime_env import load_project_environment
 from .tier1a_coordinator import Tier1ACoordinator
 
+
+load_project_environment()
 
 LOGGER = logging.getLogger(__name__)
 
@@ -109,6 +112,14 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
                     coordinator,
                 )
                 await consumer.start()
+        if service.package is None and os.environ.get("AUTO_SEED_DEFAULT_SNAPSHOT", "true").lower() == "true":
+            try:
+                from .catalog import load_preset_payload
+                payload, _ = load_preset_payload("real_alarm_20260907_demo")
+                await service.ingest_snapshot(payload)
+                LOGGER.info("Auto-seeded default snapshot: real_alarm_20260907_demo")
+            except Exception:
+                LOGGER.warning("Auto-seed default snapshot skipped or failed")
         try:
             yield
         finally:
@@ -120,6 +131,8 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
                 await consumer.stop()
             service.close()
             await service.flush_review_persistence()
+            await service.flush_deep_dive_persistence()
+            await service.flush_audit_persistence()
             if database is not None:
                 await database.close()
 

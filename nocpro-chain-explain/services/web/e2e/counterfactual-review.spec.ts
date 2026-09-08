@@ -17,8 +17,12 @@ test('review tab renders a synthetic Pareto MOVE proposal without applying it', 
   expect(chain, 'Python Kafka acceptance leaves the MOVE fixture active').toBeDefined()
 
   await page.goto('/')
-  await page.getByLabel('Select alarm chain').selectOption(chain!.chain_id)
-  await page.getByRole('button', { name: 'Review' }).click()
+  await page.getByRole('button', { name: 'Chains Explorer' }).click()
+  const row = page.getByRole('row').filter({
+    has: page.getByRole('cell', { name: chain!.chain_id, exact: true }),
+  })
+  await row.getByRole('button', { name: 'Inspect →' }).click()
+  await page.getByRole('button', { name: 'Recommendations' }).click()
 
   const review = page.getByRole('heading', { name: 'Counterfactual chain review' }).locator('..').locator('..')
   await expect(review).toBeVisible()

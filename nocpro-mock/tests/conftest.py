@@ -32,7 +32,10 @@ TOPO_IP_CSV = _find_candidate_file([
     REPO_ROOT / "datasets/raw/topoIP.csv",
 ])
 GOLDEN_DIR = REPO_ROOT / "docs/examples/golden_2214039"
-CAPABILITY_CONFIG = REPO_ROOT / "docs/config/mock_capabilities.example.yaml"
+CAPABILITY_CONFIG = _find_candidate_file([
+    REPO_ROOT / "config/mock_capabilities.example.yaml",
+    REPO_ROOT / "docs/config/mock_capabilities.example.yaml",
+])
 
 
 def pytest_configure(config: pytest.Config) -> None:

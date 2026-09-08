@@ -2,7 +2,7 @@
 
 Two scenario field sets appear in the docs and are reconciled here:
 
-- ``docs/docs/10-scenarios-and-fixtures.md`` states a minimum of ``scenario_id``,
+- ``../nocpro-chain-explain/docs/DATA_SOURCES.md`` states a minimum of ``scenario_id``,
   ``scenario_version``, ``seed``, ``base_fixture``, ``mutations`` and
   ``expected_contract_assertions``.
 - The shipped fixtures in ``docs/examples/synthetic/`` carry ``scenario_id``,

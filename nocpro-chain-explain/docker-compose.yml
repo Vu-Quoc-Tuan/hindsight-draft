@@ -51,6 +51,7 @@ services:
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic nocpro.snapshot.v1.dlq --partitions 3 --replication-factor 1
 
   migrate:
+    image: ${API_IMAGE:-nocpro-chain-explain-api:latest}
     build:
       context: .
       dockerfile: services/api/Dockerfile
@@ -62,6 +63,7 @@ services:
         condition: service_healthy
 
   api:
+    image: ${API_IMAGE:-nocpro-chain-explain-api:latest}
     build:
       context: .
       dockerfile: services/api/Dockerfile
@@ -81,7 +83,7 @@ services:
       TIER1A_RECOVERY_INTERVAL_SECONDS: "${TIER1A_RECOVERY_INTERVAL_SECONDS:-2}"
       TIER1A_MAX_ATTEMPTS: "5"
       TIER1A_BACKOFF_BASE_SECONDS: "2"
-      ANALYSIS_CONFIG_PATH: "${ANALYSIS_CONFIG_PATH:-/app/config/thresholds/v1.yaml}"
+      ANALYSIS_CONFIG_PATH: "${ANALYSIS_CONFIG_PATH:-/app/config/thresholds/calibrated.yaml}"
       AI_PROVIDER_PROTOCOL: "${AI_PROVIDER_PROTOCOL:-OPENAI_COMPATIBLE}"
       AI_BASE_URL: "${AI_BASE_URL:-}"
       AI_API_KEY: "${AI_API_KEY:-}"
@@ -93,6 +95,7 @@ services:
         condition: service_completed_successfully
 
   web:
+    image: ${WEB_IMAGE:-nocpro-chain-explain-web:latest}
     build:
       context: services/web
       args:
@@ -109,7 +112,7 @@ services:
       dockerfile: nocpro-mock/Dockerfile
     working_dir: /workspace/nocpro-mock
     volumes:
-      - ../nocpro-mock/datasets/raw:/workspace/nocpro-mock/datasets/raw:ro
+      - ${HINDSIGHT_DATA_DIR:-../nocpro-mock/datasets/raw}:/workspace/nocpro-mock/datasets/raw:ro
     command:
       - .venv/bin/python
       - -m
@@ -138,7 +141,7 @@ services:
       dockerfile: nocpro-mock/Dockerfile
     working_dir: /workspace/nocpro-mock
     volumes:
-      - ../nocpro-mock/datasets/raw:/workspace/nocpro-mock/datasets/raw:ro
+      - ${HINDSIGHT_DATA_DIR:-../nocpro-mock/datasets/raw}:/workspace/nocpro-mock/datasets/raw:ro
     command:
       - .venv/bin/python
       - -m
@@ -164,13 +167,14 @@ services:
         condition: service_completed_successfully
 
   mock-ui:
+    image: ${MOCK_IMAGE:-nocpro-mock:latest}
     build:
       context: ..
       dockerfile: nocpro-mock/Dockerfile
     working_dir: /workspace/nocpro-mock
     ports: ["${MOCK_UI_HOST_PORT:-8085}:8085"]
     volumes:
-      - ../nocpro-mock/datasets/raw:/workspace/nocpro-mock/datasets/raw:ro
+      - ${HINDSIGHT_DATA_DIR:-../nocpro-mock/datasets/raw}:/workspace/nocpro-mock/datasets/raw:ro
       # Synthetic scenarios are test fixtures. They are mounted read-only for
       # explicit local acceptance/replay and are never production source data.
       - ../nocpro-mock/docs/examples/synthetic:/workspace/nocpro-mock/docs/examples/synthetic:ro
