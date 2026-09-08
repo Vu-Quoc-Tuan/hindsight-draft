@@ -100,7 +100,8 @@ def test_api_preview_golden(ui_server: str):
     assert len(preview["sample_chains"]) > 0
 
 
-def test_api_preview_real(ui_server: str):
+@pytest.mark.realdata
+def test_api_preview_real(ui_server: str, alarm_csv):
     status, data = _request_json(
         f"{ui_server}/api/preview",
         method="POST",
@@ -301,7 +302,8 @@ def test_api_slice_sequence_rejects_missing_alarm_file(ui_server: str):
     assert "not found" in data["error"].lower()
 
 
-def test_api_slice_sequence_valid(ui_server: str):
+@pytest.mark.realdata
+def test_api_slice_sequence_valid(ui_server: str, alarm_csv):
     status, data = _request_json(
         f"{ui_server}/api/slice-sequence",
         method="POST",
