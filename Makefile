@@ -83,7 +83,7 @@ dev:
 	@bash -c '\
 		trap "echo -e \"\n$(YELLOW)Shutting down all dev services...$(RESET)\"; kill \$$(jobs -p) 2>/dev/null; exit 0" EXIT SIGINT SIGTERM; \
 		(cd nocpro-mock && uv run python -m nocpro_mock.cli ui --port $(MOCK_PORT) 2>&1 | sed "s/^/[MOCK-$(MOCK_PORT)] /") & \
-		(cd nocpro-chain-explain && PYTHONPATH=.:services/analysis-worker:services/api:../nocpro-mock/src KAFKA_ENABLED=false AUTO_SEED_DEFAULT_SNAPSHOT=true uv run uvicorn nocpro_api.app:app --app-dir services/api --host 127.0.0.1 --port $(API_PORT) --reload 2>&1 | sed "s/^/[API-$(API_PORT)] /") & \
+		(cd nocpro-chain-explain && PYTHONPATH=.:services/analysis-worker:services/api:../nocpro-mock/src ANALYSIS_CONFIG_PATH=config/thresholds/calibrated.yaml KAFKA_ENABLED=false AUTO_SEED_DEFAULT_SNAPSHOT=true uv run uvicorn nocpro_api.app:app --app-dir services/api --host 127.0.0.1 --port $(API_PORT) --reload 2>&1 | sed "s/^/[API-$(API_PORT)] /") & \
 		(cd nocpro-chain-explain/services/web && pnpm dev --port $(WEB_PORT) 2>&1 | sed "s/^/[WEB-$(WEB_PORT)] /") & \
 		wait'
 
@@ -92,6 +92,7 @@ dev-api:
 	@echo -e "$(BOLD)$(GREEN)⚡ Starting Backend API (no Kafka) on http://127.0.0.1:$(API_PORT)...$(RESET)"
 	@cd nocpro-chain-explain && \
 		PYTHONPATH=.:services/analysis-worker:services/api:../nocpro-mock/src \
+		ANALYSIS_CONFIG_PATH=config/thresholds/calibrated.yaml \
 		KAFKA_ENABLED=false \
 		AUTO_SEED_DEFAULT_SNAPSHOT=true \
 		uv run uvicorn nocpro_api.app:app --app-dir services/api --host 127.0.0.1 --port $(API_PORT) --reload

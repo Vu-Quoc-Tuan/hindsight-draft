@@ -124,5 +124,6 @@ jobs:
           echo "Checking service health..."
           sleep 5
           curl -f http://127.0.0.1:8000/api/v1/health || exit 1
+          curl -f http://127.0.0.1:3000/ || exit 1
           curl -f http://127.0.0.1:8085/ || exit 1
           echo "✓ Both Explain UI (port 3000) and Mock UI (port 8085) are running successfully!"
