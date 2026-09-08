@@ -98,10 +98,10 @@ audit:
     value: 0.2
     source: DOCUMENTED_DEFAULT
   min_side_size:
-    value: 5
+    value: 2
     source: FROZEN_SPEC
   small_chain_threshold:
-    value: 10
+    value: 4
     source: FROZEN_SPEC
   calibration_n_min:
     value: 20
@@ -155,7 +155,7 @@ similar_chains:
     value: 5
     source: DOCUMENTED_DEFAULT
 notes:
-- Calibrated at 2026-09-06T07:03:38.752138+00:00 from PostgreSQL system of record.
+- Calibrated at 2026-09-07T12:25:47.594336+00:00 from PostgreSQL system of record.
 - Evaluated 0 snapshots, 0 chains, 0 alarms.
 - Calibrated DATA_DRIVEN values preserve empirical distribution evidence; DOCUMENTED_DEFAULT
   indicates fallback.
@@ -163,7 +163,7 @@ notes:
   until operator correction ground-truth is available.
 counterfactual:
   config_version: v1-calibrated-counterfactual
-  calibration_status: SYNTHETIC_ONLY
+  calibration_status: PRODUCTION_CALIBRATED
   limits:
     max_chain_members: 200
     max_remove_candidates: 10
