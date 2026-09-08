@@ -24,6 +24,26 @@ class SnapshotLoadedView(ApiModel):
     incremental_snapshot: IncrementalPolicyView
 
 
+class SnapshotCatalogItemView(ApiModel):
+    snapshot_id: str
+    name: str
+    profile: Literal["IP_NETWORK", "IT_SERVICES", "ALARM_ONLY"]
+    alarm_count: int
+    chain_count: int
+    description: str
+    badge: str
+
+
+class SnapshotCatalogListView(ApiModel):
+    active_snapshot_id: str | None = None
+    active_snapshot_version: str | None = None
+    snapshots: list[SnapshotCatalogItemView]
+
+
+class SelectSnapshotRequest(ApiModel):
+    snapshot_id: str
+
+
 class ChainSummaryView(ApiModel):
     chain_id: str
     member_count: int
@@ -577,12 +597,19 @@ class AssistantContextInput(ApiModel):
     pair_alarm_id_b: str | None = None
     selected_metric: str | None = None
     topology_resource_id: str | None = None
+    selection: dict[str, str] | None = None
     filters: dict[str, str] = Field(default_factory=dict)
+
+
+class AssistantHistoryMessageInput(ApiModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=2_000)
 
 
 class AssistantQueryInput(ApiModel):
     query: str = Field(max_length=500)
     context: AssistantContextInput
+    history: list[AssistantHistoryMessageInput] = Field(default_factory=list, max_length=8)
 
 
 class AssistantNavigationTargetView(ApiModel):
@@ -610,6 +637,8 @@ class AssistantResponseView(ApiModel):
     actions: list[AssistantActionView]
     model: str
     provider_status: str
+    response_mode: Literal["LLM_PRIMARY", "DETERMINISTIC_FALLBACK"] = "DETERMINISTIC_FALLBACK"
+    tools_used: list[str] = Field(default_factory=list)
     chart_data: dict[str, Any] | None = None
 
 

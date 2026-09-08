@@ -170,8 +170,12 @@ def _response_content(
 
 
 _FORBIDDEN_NARRATIVE_CLAIMS = re.compile(
-    r"\b(root\s*cause|caused?|causality|apply|execute|mutation|tool\s*call)\b"
-    r"|nguyên\s*nhân\s*gốc|gây\s*ra|áp\s*dụng|thực\s*thi",
+    r"\b(root\s*cause\s+(?:is|was|proven|confirmed)|caused?|apply\s+(?:now|this|the)|execute|mutation)\b"
+    r"|nguyên\s*nhân\s*gốc\s+là|gây\s*ra|áp\s*dụng\s+(?:ngay|đề\s*xuất)|thực\s*thi",
+    re.IGNORECASE,
+)
+_UNSUPPORTED_QUALITATIVE_CLAIMS = re.compile(
+    r"chứng\s+minh|xấu\s+đi|nghiêm\s+trọng|improv(?:e|ed|ement)|worsen(?:ed|ing)?|proves?",
     re.IGNORECASE,
 )
 _IDENTIFIER = re.compile(r"\b[A-Za-z][A-Za-z0-9]*(?:[-_][A-Za-z0-9]+)+\b")
@@ -186,6 +190,8 @@ def _grounding_is_preserved(content: str, draft: str, facts: dict[str, Any], fac
     deterministic draft.
     """
     if _FORBIDDEN_NARRATIVE_CLAIMS.search(content):
+        return False
+    if _UNSUPPORTED_QUALITATIVE_CLAIMS.search(content) and not _UNSUPPORTED_QUALITATIVE_CLAIMS.search(draft):
         return False
     allowed = " ".join((draft, json.dumps(facts, ensure_ascii=False, default=str), *fact_refs))
     allowed_identifiers = {item.casefold() for item in _IDENTIFIER.findall(allowed)}
@@ -210,17 +216,6 @@ def validate_grounded_content(
     """Validate an already returned provider narrative without another provider call."""
     if provider_status != "OK" or not content.strip():
         return _fallback(draft, provider_status or "INVALID_RESPONSE")
-    # Chart explanations are factual projections of a frozen artifact.  Token-
-    # and number-level checks cannot prove that an added qualitative sentence
-    # (for example, an over-merge verdict) follows from that artifact.  Keep the
-    # provider on the read-only rendering boundary by accepting only the exact
-    # deterministic projection, modulo whitespace.  Any embellishment fails
-    # closed to the authoritative draft.
-    normalized_content = " ".join(content.split())
-    normalized_draft = " ".join(draft.split())
-    if normalized_content != normalized_draft:
-        logger.info("Grounded LLM provider failed status=GROUNDING_VIOLATION")
-        return _fallback(draft, "GROUNDING_VIOLATION")
     if not _grounding_is_preserved(content, draft, facts, fact_refs):
         logger.info("Grounded LLM provider failed status=GROUNDING_VIOLATION")
         return _fallback(draft, "GROUNDING_VIOLATION")
@@ -347,8 +342,53 @@ def _normalize_messages_for_protocol(
                 tc_copy["function"] = fn
                 calls.append(tc_copy)
             item["tool_calls"] = calls
+        if item.get("role") == "tool":
+            if protocol == "OLLAMA":
+                item.pop("tool_call_id", None)
+            else:
+                item.pop("tool_name", None)
         normalized.append(item)
     return normalized
+
+
+def assistant_message_with_tool_calls(
+    result: GroundedAssistantCallResult,
+) -> dict[str, Any]:
+    """Recreate the provider assistant message for the next tool round."""
+    return {
+        "role": "assistant",
+        "content": result.content or "",
+        "tool_calls": [
+            {
+                "id": call.id or f"call_{index}_{call.name}",
+                "type": "function",
+                "function": {"name": call.name, "arguments": call.arguments},
+            }
+            for index, call in enumerate(result.tool_calls)
+        ],
+    }
+
+
+def tool_result_message(
+    call_id: str,
+    name: str,
+    payload: dict[str, Any],
+    protocol: ProviderProtocol | None = None,
+) -> dict[str, Any]:
+    """Build a tool result accepted by OpenAI Chat Completions or Ollama Chat."""
+    effective = protocol or cast(
+        ProviderProtocol,
+        os.environ.get("AI_PROVIDER_PROTOCOL", "OPENAI_COMPATIBLE").strip().upper(),
+    )
+    message: dict[str, Any] = {
+        "role": "tool",
+        "content": json.dumps(payload, ensure_ascii=False, default=str),
+    }
+    if effective == "OLLAMA":
+        message["tool_name"] = name
+    else:
+        message["tool_call_id"] = call_id
+    return message
 
 
 def call_grounded_assistant(
@@ -450,6 +490,9 @@ def call_grounded_assistant(
                     raw_calls = msg.get("tool_calls") or []
                     content = msg.get("content")
 
+        if protocol == "OLLAMA" and decoded.get("done") is not True:
+            raise ValueError("incomplete Ollama response")
+
         parsed_calls: list[LLMToolCall] = []
         for call in raw_calls:
             if not isinstance(call, dict):
@@ -472,6 +515,8 @@ def call_grounded_assistant(
                 LLMToolCall(name=name, arguments=parsed_args, id=str(call.get("id", "")))
             )
 
+        if not parsed_calls and not (isinstance(content, str) and content.strip()):
+            raise ValueError("assistant response has neither content nor tool calls")
         return GroundedAssistantCallResult(
             content=content.strip() if isinstance(content, str) and content.strip() else None,
             tool_calls=parsed_calls,

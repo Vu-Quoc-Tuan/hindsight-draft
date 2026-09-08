@@ -8,18 +8,20 @@ bound and validated against the active snapshot.
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
 from .grounded_llm import (
+    assistant_message_with_tool_calls,
     call_grounded_assistant,
     is_provider_configured,
     render_grounded,
+    tool_result_message,
     validate_grounded_content,
 )
+from .assistant_knowledge import KnowledgeCatalog, knowledge_fallback_message
 
 logger = logging.getLogger(__name__)
 
@@ -64,24 +66,19 @@ ASSISTANT_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "explain_metric",
-            "description": "Giải thích định nghĩa lý thuyết, ý nghĩa khái niệm và ranh giới khoa học của các thuật ngữ (conductance, membership_support, pair_why, counterfactual_review, topology). Dùng khi người dùng hỏi khái niệm/định nghĩa chung. KHÔNG dùng khi người dùng hỏi về số liệu, lát cắt hay biểu đồ của một chuỗi cụ thể.",
+            "name": "search_project_knowledge",
+            "description": "Tra kho kiến thức versioned của dự án để lấy thuật ngữ, công thức, ý nghĩa, điều kiện khả dụng và ranh giới diễn giải. Dùng cho mọi câu hỏi methodology hoặc metric.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "metric_name": {
+                    "query": {
                         "type": "string",
-                        "enum": [
-                            "conductance",
-                            "membership_support",
-                            "pair_why",
-                            "counterfactual_review",
-                            "topology",
-                        ],
-                        "description": "Tên chỉ số hoặc khái niệm cần giải thích.",
-                    }
+                        "description": "Thuật ngữ, alias hoặc câu hỏi ngắn cần tra cứu."
+                    },
+                    "category": {"type": "string", "description": "Bộ lọc category tùy chọn."},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 5}
                 },
-                "required": ["metric_name"],
+                "required": ["query"],
             },
         },
     },
@@ -89,14 +86,14 @@ ASSISTANT_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "navigate_workspace",
-            "description": "Điều hướng giao diện làm việc tới một tab tương ứng (why, structure, review, evolution, topology) cho một chuỗi cảnh báo (chain_id) hoặc cặp cảnh báo (pair_alarm_id_a, pair_alarm_id_b).",
+            "description": "Tạo action điều hướng có kiểm tra snapshot tới một trang workspace. Có thể dùng chain/pair đang xem nếu người dùng nói 'chuỗi này' hoặc 'cặp này'.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "tab": {
                         "type": "string",
-                        "enum": ["why", "structure", "review", "evolution", "topology", "tree"],
-                        "description": "Tab giao diện cần mở: structure (Audit kiểm định cấu trúc), why (Bằng chứng cặp Pair WHY), review (Đề xuất tách/gộp chuỗi), evolution (Tiến hóa sự cố), topology (Cây topology), tree (Chi tiết chuỗi).",
+                        "enum": ["snapshot-overview", "chains-explorer", "multi-chain-timeline", "compare-chains", "chain-overview", "why", "members", "structure", "review", "evolution", "topology", "validation"],
+                        "description": "Trang giao diện cần mở.",
                     },
                     "chain_id": {
                         "type": "string",
@@ -135,8 +132,8 @@ ASSISTANT_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "explain_root_cause_boundary",
-            "description": "Giải thích lý do tại sao bằng chứng gom nhóm cảnh báo không thể tự động kết luận nguyên nhân gốc (root cause/RCA) và đưa ra các hành động xem bằng chứng kiểm định cấu trúc hoặc so sánh cặp.",
+            "name": "explain_capability_boundary",
+            "description": "Đọc ranh giới của hệ thống về root cause, causal claim, synthetic/production validation, unavailable evidence hoặc thao tác ghi dữ liệu.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -146,8 +143,8 @@ ASSISTANT_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "report_resource_mapping_unavailable",
-            "description": "Báo cáo rằng tìm kiếm từ tài nguyên/service sang chuỗi không khả dụng và điều hướng sang cây Topology.",
+            "name": "inspect_mapping_capability",
+            "description": "Kiểm tra capability mapping resource/service/topology trong context hiện tại. Không giả lập mapping nếu artifact không có.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -157,39 +154,58 @@ ASSISTANT_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "inspect_chart",
-            "description": "Lấy dữ liệu số thực tế và đường vẽ của biểu đồ hoặc lát cắt trên một chuỗi cảnh báo cụ thể (đường cong Deletion Curve, diện tích AUC, độ dốc, điểm rơi, độ dẫn Conductance Φ của lát cắt Best Cut, Over-merge). Dùng khi người dùng hỏi về số liệu, lát cắt hoặc đường vẽ biểu đồ của chuỗi đang xem.",
+            "name": "inspect_current_view",
+            "description": "Đọc projection có cấu trúc của màn hình/selection hiện tại: snapshot, chain, member, pair, biểu đồ Audit/Review/Evolution. Dùng khi người dùng hỏi 'cái này', 'metric này' hoặc số đang thấy.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "chart_type": {
+                    "view": {
                         "type": "string",
                         "enum": [
+                            "current",
+                            "snapshot",
+                            "chain",
+                            "member",
+                            "pair",
                             "attribution_deletion_curve",
                             "conductance_cut",
                             "evolution_lineage",
                             "counterfactual_review",
                         ],
-                        "description": "Loại biểu đồ cần lấy dữ liệu: attribution_deletion_curve (đường cong Deletion curve và diện tích AUC), conductance_cut (lát cắt độ dẫn Conductance Cut và over-merge), evolution_lineage (tiến hóa theo thời gian), counterfactual_review (so sánh can thiệp tách/gộp).",
+                        "description": "Projection cần đọc; current dùng page/selection trong context.",
                     },
+                    "selected_metric": {"type": "string", "description": "Metric người dùng đang trỏ tới nếu biết."},
                     "chain_id": {
                         "type": "string",
                         "description": "ID chuỗi cảnh báo cần xem biểu đồ. Nếu bỏ trống sẽ lấy chuỗi đang chọn trong ngữ cảnh.",
                     },
                 },
-                "required": ["chart_type"],
+                "required": ["view"],
             },
         },
     },
 ]
 
 TAB_LABELS: dict[str, str] = {
+    "snapshot-overview": "Open Snapshot Overview",
+    "chains-explorer": "Open Chains Explorer",
+    "multi-chain-timeline": "Open Multi-chain Timeline",
+    "compare-chains": "Open Compare Chains",
+    "chain-overview": "Open Chain Overview",
     "why": "Open Pair WHY",
+    "members": "Open Member Diagnostics",
     "structure": "Open Structural Audit",
     "review": "Open Counterfactual Review",
     "evolution": "Open Evolution",
     "topology": "Open Topology",
-    "tree": "Open Chain",
+    "validation": "Open Validation",
+}
+
+TOOL_ALIASES = {
+    "explain_metric": "search_project_knowledge",
+    "explain_root_cause_boundary": "explain_capability_boundary",
+    "report_resource_mapping_unavailable": "inspect_mapping_capability",
+    "inspect_chart": "inspect_current_view",
 }
 
 
@@ -655,25 +671,43 @@ async def dispatch_assistant_tool(
     context: dict[str, Any],
 ) -> dict[str, Any]:
     """Execute a validated assistant tool call against the active snapshot."""
-    if tool_name == "explain_metric":
-        raw_metric = _normalize(str(arguments.get("metric_name", "")))
-        metric_key = raw_metric
-        if metric_key not in SEMANTIC_REGISTRY:
-            for k in SEMANTIC_REGISTRY:
-                if k in raw_metric or raw_metric in k:
-                    metric_key = k
-                    break
-        if metric_key in SEMANTIC_REGISTRY:
-            message, refs = _definition_response(metric_key)
-            return {"status": "AVAILABLE", "message": message, "fact_refs": refs, "actions": []}
+    requested_name = tool_name
+    tool_name = TOOL_ALIASES.get(tool_name, tool_name)
+
+    if tool_name == "search_project_knowledge":
+        query = str(arguments.get("query") or arguments.get("metric_name") or "")
+        entries = KnowledgeCatalog.load_default().search(
+            query,
+            category=str(arguments["category"]) if arguments.get("category") else None,
+            limit=int(arguments.get("limit", 5)),
+        )
+        if entries:
+            refs = [f"knowledge:{entry['id']}" for entry in entries]
+            if requested_name == "explain_metric":
+                legacy_key = _normalize(query)
+                if legacy_key in SEMANTIC_REGISTRY:
+                    refs.append(f"semantic-registry:{legacy_key}")
+            return {
+                "status": "AVAILABLE",
+                "message": knowledge_fallback_message(entries),
+                "data": {"catalog_version": "nocpro-assistant-knowledge-v1", "entries": entries},
+                "fact_refs": refs,
+                "actions": [],
+            }
+        # Preserve the old five-entry behavior for legacy callers during migration.
+        raw_metric = _normalize(query)
+        if requested_name == "explain_metric" and raw_metric in SEMANTIC_REGISTRY:
+            message, refs = _definition_response(raw_metric)
+            return {"status": "AVAILABLE", "message": message, "data": {}, "fact_refs": refs, "actions": []}
         return {
-            "status": "AVAILABLE",
-            "message": "Ask about conductance, membership support, Pair WHY, Counterfactual Review, or topology.",
-            "fact_refs": [f"semantic-registry:{REGISTRY_VERSION}"],
+            "status": "NO_FINDING",
+            "message": "Không tìm thấy thuật ngữ phù hợp trong kho kiến thức dự án.",
+            "data": {"catalog_version": "nocpro-assistant-knowledge-v1", "entries": []},
+            "fact_refs": ["knowledge:nocpro-assistant-knowledge-v1"],
             "actions": [],
         }
 
-    if tool_name == "explain_root_cause_boundary":
+    if tool_name == "explain_capability_boundary":
         chain_id = _active_chain_id(service, context)
         actions = []
         pair = _active_pair(service, context)
@@ -694,14 +728,16 @@ async def dispatch_assistant_tool(
         return {
             "status": "AVAILABLE",
             "message": "The available evidence can explain grouping and structural findings, but it does not establish a root cause. Open Pair WHY or Structural Audit to inspect the recorded evidence.",
-            "fact_refs": ["semantic-registry:pair_why", "semantic-registry:topology"],
+            "data": {"boundary": KnowledgeCatalog.load_default().search("root cause", limit=1)[0]},
+            "fact_refs": ["knowledge:boundary.root_cause"],
             "actions": actions,
         }
 
-    if tool_name == "report_resource_mapping_unavailable":
+    if tool_name == "inspect_mapping_capability":
         return {
             "status": "UNAVAILABLE",
             "message": "Resource-to-chain search is unavailable in this context. Topology source navigation does not establish an alarm-to-resource mapping or dependency semantics.",
+            "data": {"resource_mapping": "UNAVAILABLE", "reason": "RESOURCE_TO_CHAIN_MAPPING_UNAVAILABLE"},
             "fact_refs": ["capability:RESOURCE_TO_CHAIN_MAPPING_UNAVAILABLE", "semantic-registry:topology"],
             "actions": [_navigation_action(service, label="Open Topology", tab="topology")],
         }
@@ -763,7 +799,7 @@ async def dispatch_assistant_tool(
                 _navigation_action(
                     service,
                     label=f"Open {chain.chain_id} ({chain.member_count} alarms)",
-                    tab="tree",
+                    tab="chain-overview",
                     chain_id=chain.chain_id,
                 )
                 for chain in matches
@@ -771,29 +807,81 @@ async def dispatch_assistant_tool(
             return {
                 "status": "AVAILABLE",
                 "message": f"Found {len(matches)} matching chain(s) in the active snapshot. Select one to navigate.",
+                "data": {"matches": [{"chain_id": chain.chain_id, "title": chain.auto_title, "member_count": chain.member_count} for chain in matches]},
                 "fact_refs": ["tool:search_chains", f"snapshot:{service.active_identity()[0]}:{service.active_identity()[1]}"],
                 "actions": actions,
             }
         return {
             "status": "NO_FINDING",
             "message": "No deterministic match was found. Try a chain ID/title, or ask for a definition of conductance, membership support, Pair WHY, Counterfactual Review, or topology.",
+            "data": {"matches": []},
             "fact_refs": [f"semantic-registry:{REGISTRY_VERSION}"],
             "actions": [],
         }
 
-    if tool_name == "inspect_chart":
+    if tool_name == "inspect_current_view":
         target_chain = arguments.get("chain_id")
         effective_context = {
             **context,
             **({"chain_id": target_chain} if target_chain else {}),
         }
+        raw_type = str(arguments.get("view") or arguments.get("chart_type") or context.get("page") or "current").casefold()
+        if raw_type == "current":
+            raw_type = str(context.get("page") or "chain").casefold()
+        package = service.require_package()
+        if raw_type in {"snapshot", "snapshot-overview", "chains-explorer", "multi-chain-timeline", "compare-chains"}:
+            listed = service.list_chains()
+            data = {
+                "view": raw_type,
+                "snapshot_id": package.snapshot.snapshot_id,
+                "snapshot_version": package.snapshot.snapshot_version,
+                "chain_count": len(listed.chains),
+                "chains": [
+                    {"chain_id": chain.chain_id, "title": chain.auto_title, "member_count": chain.member_count}
+                    for chain in sorted(listed.chains.values(), key=lambda item: item.chain_id)[:20]
+                ],
+            }
+            return {
+                "status": "AVAILABLE",
+                "message": f"Snapshot hiện tại có {len(listed.chains)} chuỗi; projection trả tối đa 20 chuỗi.",
+                "data": data,
+                "fact_refs": [f"snapshot:{package.snapshot.snapshot_id}:{package.snapshot.snapshot_version}"],
+                "actions": [],
+            }
         chain_id = _active_chain_id(service, effective_context)
         if chain_id is None:
             return _unavailable(
-                "Biểu đồ yêu cầu một chuỗi hợp lệ trong snapshot hiện tại.",
+                "Màn hình này yêu cầu một chuỗi hợp lệ trong snapshot hiện tại.",
                 "CHAIN_CONTEXT_UNAVAILABLE",
             )
-        raw_type = str(arguments.get("chart_type", "attribution_deletion_curve")).casefold()
+        selection = context.get("selection") if isinstance(context.get("selection"), dict) else {}
+        selected_metric = str(arguments.get("selected_metric") or context.get("selected_metric") or selection.get("metric_id") or "").strip()
+        if raw_type in {"current", "chain", "member", "pair", "snapshot", "chain-overview", "members", "why"}:
+            chain = package.chains[chain_id]
+            members = list(package.members_of(chain_id))
+            data = {
+                "view": raw_type,
+                "page": context.get("page"),
+                "snapshot_id": package.snapshot.snapshot_id,
+                "snapshot_version": package.snapshot.snapshot_version,
+                "chain_id": chain_id,
+                "chain_title": getattr(chain, "auto_title", None),
+                "member_count": len(members),
+                "members": members[:20],
+                "selected_metric": selected_metric or None,
+                "alarm_id": context.get("alarm_id"),
+                "pair_alarm_id_a": context.get("pair_alarm_id_a"),
+                "pair_alarm_id_b": context.get("pair_alarm_id_b"),
+            }
+            if selected_metric:
+                data["knowledge"] = KnowledgeCatalog.load_default().search(selected_metric, limit=1)
+            return {
+                "status": "AVAILABLE",
+                "message": f"Đang xem chuỗi {chain_id} với {len(members)} cảnh báo. Dữ liệu selection đã được kiểm tra lại theo snapshot hiện hành.",
+                "data": data,
+                "fact_refs": [f"snapshot:{package.snapshot.snapshot_id}:{package.snapshot.snapshot_version}", f"chain:{chain_id}"],
+                "actions": [],
+            }
         if "conductance" in raw_type or "cut" in raw_type or "audit" in raw_type:
             chart_kind = "conductance_cut"
         elif "evolution" in raw_type or "timeline" in raw_type:
@@ -803,7 +891,10 @@ async def dispatch_assistant_tool(
         else:
             chart_kind = "attribution_deletion_curve"
 
-        return await _handle_inspect_chart(service, chain_id, chart_kind, context)
+        result = await _handle_inspect_chart(service, chain_id, chart_kind, context)
+        if "data" not in result:
+            result["data"] = result.get("chart_data") or {}
+        return result
 
     return {
         "status": "NO_FINDING",
@@ -821,18 +912,18 @@ async def _fallback_route(
     """Lightweight fallback routing used when LLM provider is offline or not configured."""
     for metric_key in SEMANTIC_REGISTRY:
         if metric_key in text:
-            return await dispatch_assistant_tool(service, "explain_metric", {"metric_name": metric_key}, context)
+            return await dispatch_assistant_tool(service, "search_project_knowledge", {"query": metric_key}, context)
 
     if "độ dẫn" in text:
-        return await dispatch_assistant_tool(service, "explain_metric", {"metric_name": "conductance"}, context)
+        return await dispatch_assistant_tool(service, "search_project_knowledge", {"query": "conductance"}, context)
     if "thành viên" in text or "membership" in text:
-        return await dispatch_assistant_tool(service, "explain_metric", {"metric_name": "membership_support"}, context)
+        return await dispatch_assistant_tool(service, "search_project_knowledge", {"query": "membership_support"}, context)
 
     if "root cause" in text or "nguyên nhân gốc" in text or "rca" in text:
-        return await dispatch_assistant_tool(service, "explain_root_cause_boundary", {}, context)
+        return await dispatch_assistant_tool(service, "explain_capability_boundary", {}, context)
 
     if "service" in text or "dịch vụ" in text or "resource" in text or "tài nguyên" in text:
-        return await dispatch_assistant_tool(service, "report_resource_mapping_unavailable", {}, context)
+        return await dispatch_assistant_tool(service, "inspect_mapping_capability", {}, context)
 
     # Chart inspection fallback
     if any(m in text for m in ("biểu đồ", "chart", "đường vẽ", "đồ thị", "deletion", "auc", "lát cắt", "độ dốc")):
@@ -843,8 +934,8 @@ async def _fallback_route(
         )
         return await dispatch_assistant_tool(
             service,
-            "inspect_chart",
-            {"chart_type": raw_chart},
+            "inspect_current_view",
+            {"view": raw_chart},
             context,
         )
 
@@ -872,29 +963,41 @@ async def answer_query(
     query: str,
     context: dict[str, Any],
     *,
+    history: list[dict[str, str]] | None = None,
     provider_runner: ProviderRunner | None = None,
 ) -> dict[str, Any]:
-    """Produce a bounded, evidence-referenced assistant response using LLM tool calling or fallback."""
-    if not _active_context_matches(service, context):
+    """Run a bounded LLM/tool loop; deterministic routing is failure fallback."""
+    def fallback_result(
+        result: dict[str, Any], reason: str, used_tools: list[str] | None = None
+    ) -> dict[str, Any]:
         return {
+            **result,
+            "model": "DETERMINISTIC_EVIDENCE",
+            "provider_status": reason,
+            "response_mode": "DETERMINISTIC_FALLBACK",
+            "tools_used": used_tools or [],
+        }
+
+    if not _active_context_matches(service, context):
+        return fallback_result({
             "status": "STALE_CONTEXT",
             "message": "The selected snapshot changed. Refresh the workspace before using this assistant result.",
             "fact_refs": [],
             "actions": [],
-        }
+        }, "STALE_CONTEXT")
 
     text = _normalize(query)
     if not text:
         selected_metric = _normalize(str(context.get("selected_metric") or ""))
         if selected_metric in SEMANTIC_REGISTRY:
             message, refs = _definition_response(selected_metric)
-            return {"status": "AVAILABLE", "message": message, "fact_refs": refs, "actions": []}
-        return {
+            return fallback_result({"status": "AVAILABLE", "message": message, "fact_refs": refs, "actions": []}, "EMPTY_QUERY")
+        return fallback_result({
             "status": "AVAILABLE",
             "message": "Ask about a metric, search a chain ID/title, or open Pair WHY, Audit, Review, Evolution, or Topology for the selected chain.",
             "fact_refs": [f"semantic-registry:{REGISTRY_VERSION}"],
             "actions": [],
-        }
+        }, "EMPTY_QUERY")
 
     # If LLM is configured, invoke it with tools
     if is_provider_configured():
@@ -903,110 +1006,114 @@ async def answer_query(
             f"Active snapshot: {context.get('snapshot_id')} version {context.get('snapshot_version')}.\n"
             f"Selected chain: {context.get('chain_id') or 'none'}.\n"
             f"Selected pair: {context.get('pair_alarm_id_a') or 'none'}, {context.get('pair_alarm_id_b') or 'none'}.\n\n"
-            "Select and call the appropriate read-only tool when the user asks to explain a metric, inspect chart/curve numbers, "
+            f"Current page: {context.get('page') or 'unknown'}; selected metric: {context.get('selected_metric') or 'none'}.\n\n"
+            "You are in a bounded agent loop. Select and call one or more appropriate read-only tools when the user asks to explain a metric, inspect current screen/chart/curve numbers, "
             "navigate tabs, search for chains, or asks about root causes. For any factual claim about the active snapshot, chain, "
             "alarms, roles, Audit, Review, Evolution, topology, chart, or metric, you must call a read-only tool before making factual claims. "
             "Do not invent or infer chain-specific facts, counts, scores, statuses, recommendations, or causal conclusions without tool data. "
             "If no tool can verify a requested repository fact, say that it cannot be verified from the available read-only tools. "
             "You may answer general conceptual or conversational questions directly in Vietnamese when they do not assert repository-specific facts."
         )
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": query},
-        ]
-        if provider_runner is None:
-            llm_result = call_grounded_assistant(
-                messages=messages,
-                tools=ASSISTANT_TOOLS,
-            )
-        else:
-            llm_result = await provider_runner(
-                call_grounded_assistant,
-                messages=messages,
-                tools=ASSISTANT_TOOLS,
-            )
-        if llm_result.used_provider and llm_result.tool_calls:
-            call = llm_result.tool_calls[0]
-            dispatched = await dispatch_assistant_tool(
-                service,
-                call.name,
-                call.arguments,
-                context,
-            )
-            # If the tool returned structured chart data, run a second turn so LLM explains the numbers and curves
-            if call.name == "inspect_chart" and dispatched.get("chart_data"):
-                chart_data = dispatched["chart_data"]
-                second_turn_messages = [
-                    *messages,
+        bounded_history_reversed: list[dict[str, str]] = []
+        history_chars = 0
+        for item in reversed((history or [])[-8:]):
+            if item.get("role") not in {"user", "assistant"} or not item.get("content"):
+                continue
+            content = item["content"][:2000]
+            remaining = 8000 - history_chars
+            if remaining <= 0:
+                break
+            content = content[-remaining:]
+            bounded_history_reversed.append({"role": item["role"], "content": content})
+            history_chars += len(content)
+        bounded_history = list(reversed(bounded_history_reversed))
+        messages = [{"role": "system", "content": system_prompt}, *bounded_history, {"role": "user", "content": query}]
+        authoritative: dict[str, Any] = {"status": "AVAILABLE", "fact_refs": [], "actions": []}
+        deterministic_messages: list[str] = []
+        tool_payloads: list[dict[str, Any]] = []
+        tools_used: list[str] = []
+        total_tool_calls = 0
+
+        async def run_provider() -> Any:
+            if provider_runner is None:
+                return call_grounded_assistant(messages=messages, tools=ASSISTANT_TOOLS)
+            return await provider_runner(call_grounded_assistant, messages=messages, tools=ASSISTANT_TOOLS)
+
+        async def tool_aware_fallback(reason: str) -> dict[str, Any]:
+            if deterministic_messages:
+                return fallback_result(
                     {
-                        "role": "assistant",
-                        "tool_calls": [
-                            {
-                                "id": call.id or "call_inspect_chart",
-                                "type": "function",
-                                "function": {
-                                    "name": call.name,
-                                    "arguments": call.arguments,
-                                },
-                            }
-                        ],
+                        **authoritative,
+                        "message": "\n\n".join(deterministic_messages),
                     },
-                    {
-                        "role": "tool",
-                        "tool_call_id": call.id or "call_inspect_chart",
-                        "content": json.dumps(chart_data, ensure_ascii=False),
-                    },
-                ]
-                if provider_runner is None:
-                    explained_result = call_grounded_assistant(
-                        messages=second_turn_messages,
-                        tools=None,
-                    )
-                else:
-                    explained_result = await provider_runner(
-                        call_grounded_assistant,
-                        messages=second_turn_messages,
-                        tools=None,
-                    )
-                if explained_result.used_provider and explained_result.content:
-                    validated = validate_grounded_content(
-                        content=explained_result.content,
-                        draft=str(dispatched.get("message", "")),
-                        facts=chart_data,
-                        fact_refs=[str(ref) for ref in dispatched.get("fact_refs", [])],
-                        model=explained_result.model,
-                        provider_status=explained_result.provider_status,
-                    )
+                    reason,
+                    tools_used,
+                )
+            return fallback_result(await _fallback_route(service, text, context), reason)
+
+        for _round in range(3):
+            llm_result = await run_provider()
+            if not llm_result.used_provider:
+                return await tool_aware_fallback(llm_result.provider_status)
+            if llm_result.tool_calls:
+                if total_tool_calls + len(llm_result.tool_calls) > 4:
+                    return await tool_aware_fallback("TOOL_LOOP_LIMIT")
+                messages.append(assistant_message_with_tool_calls(llm_result))
+                for index, call in enumerate(llm_result.tool_calls):
+                    if not _active_context_matches(service, context):
+                        return fallback_result({"status": "STALE_CONTEXT", "message": "The selected snapshot changed while the Assistant was working. Please ask again.", "fact_refs": [], "actions": []}, "STALE_CONTEXT")
+                    dispatched = await dispatch_assistant_tool(service, call.name, call.arguments, context)
+                    tool_payloads.append(dispatched)
+                    total_tool_calls += 1
+                    canonical_name = TOOL_ALIASES.get(call.name, call.name)
+                    tools_used.append(canonical_name)
+                    deterministic_messages.append(str(dispatched.get("message", "")))
+                    for ref in dispatched.get("fact_refs", []):
+                        if ref not in authoritative["fact_refs"]:
+                            authoritative["fact_refs"].append(ref)
+                    existing_actions = {
+                        repr((action.get("kind"), action.get("target")))
+                        for action in authoritative["actions"]
+                        if isinstance(action, dict)
+                    }
+                    for action in dispatched.get("actions", []):
+                        key = repr((action.get("kind"), action.get("target")))
+                        if key not in existing_actions:
+                            authoritative["actions"].append(action)
+                            existing_actions.add(key)
+                    status_priority = {"AVAILABLE": 0, "NO_FINDING": 1, "UNAVAILABLE": 2, "STALE_CONTEXT": 3}
+                    dispatched_status = str(dispatched.get("status", "AVAILABLE"))
+                    if status_priority.get(dispatched_status, 1) > status_priority.get(str(authoritative["status"]), 0):
+                        authoritative["status"] = dispatched_status
+                    if dispatched.get("chart_data") is not None:
+                        authoritative["chart_data"] = dispatched["chart_data"]
+                    call_id = call.id or f"call_{index}_{call.name}"
+                    messages.append(tool_result_message(call_id, call.name, dispatched))
+                continue
+            if llm_result.content:
+                draft = "\n\n".join(deterministic_messages) or query
+                validated = validate_grounded_content(
+                    content=llm_result.content,
+                    draft=draft,
+                    facts={"tool_results": tool_payloads, "context": context},
+                    fact_refs=[str(ref) for ref in authoritative["fact_refs"]],
+                    model=llm_result.model,
+                    provider_status=llm_result.provider_status,
+                )
+                if validated.used_provider:
                     return {
-                        **dispatched,
+                        **authoritative,
                         "message": validated.message,
                         "model": validated.model,
                         "provider_status": validated.provider_status,
-                        "used_llm_tools": True,
+                        "response_mode": "LLM_PRIMARY",
+                        "tools_used": tools_used,
                     }
-
-            # For other tools or if 2nd turn fails, preserve dispatched message
-            message = dispatched.get("message", "")
-            return {
-                **dispatched,
-                "message": message,
-                "model": llm_result.model,
-                "provider_status": llm_result.provider_status,
-                "used_llm_tools": True,
-            }
-        elif llm_result.used_provider and llm_result.content:
-            return {
-                "status": "AVAILABLE",
-                "message": llm_result.content,
-                "fact_refs": [f"semantic-registry:{REGISTRY_VERSION}"],
-                "actions": [],
-                "model": llm_result.model,
-                "provider_status": llm_result.provider_status,
-                "used_llm_tools": True,
-            }
+                return await tool_aware_fallback(validated.provider_status)
+        return await tool_aware_fallback("TOOL_LOOP_LIMIT")
 
     # Fallback when LLM is not configured or fails
-    return await _fallback_route(service, text, context)
+    return fallback_result(await _fallback_route(service, text, context), "NOT_CONFIGURED")
 
 
 def render_answer(
@@ -1019,8 +1126,12 @@ def render_answer(
         return {
             **deterministic,
             "model": "DETERMINISTIC_EVIDENCE",
-            "provider_status": "NOT_APPLIED",
+            "provider_status": "STALE_CONTEXT",
+            "response_mode": "DETERMINISTIC_FALLBACK",
+            "tools_used": [],
         }
+    if deterministic.get("response_mode"):
+        return {key: value for key, value in deterministic.items() if key != "data"}
 
     # Native tool-calling output has already been either grounded or replaced by
     # its deterministic draft. Never invoke a third provider pass here.

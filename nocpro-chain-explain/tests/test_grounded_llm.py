@@ -4,12 +4,23 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import urllib.error
+from pathlib import Path
 from typing import Any
 
 import pytest
 
-from nocpro_api.grounded_llm import render_grounded, validate_grounded_content
+from nocpro_api.grounded_llm import (
+    GroundedAssistantCallResult,
+    LLMToolCall,
+    assistant_message_with_tool_calls,
+    call_grounded_assistant,
+    render_grounded,
+    tool_result_message,
+    validate_grounded_content,
+)
+from nocpro_api.runtime_env import load_project_environment
 
 
 class _Response:
@@ -32,6 +43,26 @@ def _configure(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AI_API_KEY", "test-secret")
     monkeypatch.setenv("AI_BASE_URL", "https://provider.invalid/v1")
     monkeypatch.setenv("AI_MODEL", "test-model")
+    monkeypatch.setenv("AI_PROVIDER_PROTOCOL", "OPENAI_COMPATIBLE")
+
+
+def test_project_environment_loads_dotenv_without_overriding_process_values(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "AI_API_KEY=file-secret\nAI_BASE_URL=https://provider.example/v1\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AI_API_KEY", "process-secret")
+    monkeypatch.delenv("AI_BASE_URL", raising=False)
+
+    loaded = load_project_environment(env_file)
+
+    assert loaded is True
+    assert os.environ["AI_API_KEY"] == "process-secret"
+    assert os.environ["AI_BASE_URL"] == "https://provider.example/v1"
 
 
 def test_returned_chart_narrative_rejects_unsupported_qualitative_claim() -> None:
@@ -384,3 +415,66 @@ def test_renderer_bounds_untrusted_input_and_output(
     assert len(captured["body"]) <= 32_000
     assert len(result.message) <= 12_000
     assert result.provider_status == "OK"
+
+
+def test_openai_tool_round_uses_string_arguments_and_tool_call_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure(monkeypatch)
+    captured: dict[str, Any] = {}
+
+    def fake_urlopen(request: Any, **_kwargs: Any) -> _Response:
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        return _Response({"choices": [{"message": {"content": "final"}}]})
+
+    monkeypatch.setattr("nocpro_api.grounded_llm.urllib.request.urlopen", fake_urlopen)
+    selected = GroundedAssistantCallResult(
+        content=None,
+        tool_calls=[LLMToolCall("search_project_knowledge", {"query": "phi"}, "call-1")],
+        model="test-model",
+        provider_status="OK",
+        used_provider=True,
+    )
+    messages = [
+        {"role": "user", "content": "phi?"},
+        assistant_message_with_tool_calls(selected),
+        tool_result_message("call-1", "search_project_knowledge", {"status": "AVAILABLE"}, "OPENAI_COMPATIBLE"),
+    ]
+    result = call_grounded_assistant(messages, tools=[])
+
+    assert result.content == "final"
+    assert isinstance(captured["body"]["messages"][1]["tool_calls"][0]["function"]["arguments"], str)
+    assert captured["body"]["messages"][2]["tool_call_id"] == "call-1"
+    assert "tool_name" not in captured["body"]["messages"][2]
+
+
+def test_ollama_tool_round_uses_object_arguments_and_tool_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure(monkeypatch)
+    monkeypatch.setenv("AI_PROVIDER_PROTOCOL", "OLLAMA")
+    captured: dict[str, Any] = {}
+
+    def fake_urlopen(request: Any, **_kwargs: Any) -> _Response:
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        return _Response({"message": {"content": "final"}, "done": True})
+
+    monkeypatch.setattr("nocpro_api.grounded_llm.urllib.request.urlopen", fake_urlopen)
+    selected = GroundedAssistantCallResult(
+        content=None,
+        tool_calls=[LLMToolCall("search_project_knowledge", {"query": "phi"})],
+        model="test-model",
+        provider_status="OK",
+        used_provider=True,
+    )
+    messages = [
+        {"role": "user", "content": "phi?"},
+        assistant_message_with_tool_calls(selected),
+        tool_result_message("call-0", "search_project_knowledge", {"status": "AVAILABLE"}, "OLLAMA"),
+    ]
+    result = call_grounded_assistant(messages, tools=[])
+
+    assert result.content == "final"
+    assert captured["body"]["messages"][1]["tool_calls"][0]["function"]["arguments"] == {"query": "phi"}
+    assert captured["body"]["messages"][2]["tool_name"] == "search_project_knowledge"
+    assert "tool_call_id" not in captured["body"]["messages"][2]

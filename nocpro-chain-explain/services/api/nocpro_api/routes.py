@@ -30,9 +30,12 @@ from .schemas import (
     JobSubmissionView,
     JobView,
     PairWhyView,
+    SelectSnapshotRequest,
+    SnapshotCatalogListView,
     SnapshotLoadedView,
     SystemPairFactView,
 )
+from .catalog import list_catalog_presets, load_preset_payload
 from .serializers import (
     chain_analysis_view,
     counterfactual_job_view,
@@ -81,6 +84,52 @@ def translate_error(exc: Exception) -> HTTPException:
 @router.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@router.get("/snapshots", response_model=SnapshotCatalogListView)
+async def list_snapshots(request: Request) -> SnapshotCatalogListView:
+    service = workspace(request)
+    active_id = None
+    active_version = None
+    try:
+        pkg = service.require_package()
+        active_id = pkg.snapshot.snapshot_id
+        active_version = pkg.snapshot.snapshot_version
+    except Exception:
+        pass
+
+    presets = list_catalog_presets()
+    return SnapshotCatalogListView(
+        active_snapshot_id=active_id,
+        active_snapshot_version=active_version,
+        snapshots=presets,
+    )
+
+
+@router.post(
+    "/snapshots/select",
+    response_model=SnapshotLoadedView,
+    status_code=status.HTTP_200_OK,
+)
+async def select_snapshot(
+    body: SelectSnapshotRequest, request: Request
+) -> SnapshotLoadedView:
+    service = workspace(request)
+    try:
+        payload, _ = load_preset_payload(body.snapshot_id)
+        result = await service.ingest_snapshot(payload)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+    return SnapshotLoadedView(
+        snapshot_id=result.snapshot_id,
+        snapshot_version=service.require_package().snapshot.snapshot_version,
+        alarm_count=result.alarm_count,
+        chain_count=result.chain_count,
+        incremental_snapshot={
+            "mode": service.config.incremental_snapshot.mode.value,
+            "reason": service.config.incremental_snapshot.reason,
+        },
+    )
 
 
 @router.post(
@@ -384,6 +433,7 @@ async def query_assistant(
             ws,
             query_text,
             context,
+            history=[item.model_dump() for item in request_body.history],
             provider_runner=_run_grounded_provider,
         )
         result = await _run_grounded_provider(

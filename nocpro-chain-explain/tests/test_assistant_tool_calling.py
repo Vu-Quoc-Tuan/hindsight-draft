@@ -9,7 +9,7 @@ import httpx2
 import pytest
 
 from nocpro_api.app import create_app
-from nocpro_api.assistant import dispatch_assistant_tool
+from nocpro_api.assistant import ASSISTANT_TOOLS, dispatch_assistant_tool
 from nocpro_api.grounded_llm import GroundedAssistantCallResult, LLMToolCall
 from tests.test_api import _payload
 
@@ -18,6 +18,86 @@ def _run_deep_dive_explicitly(workspace: Any, chain_id: str = "C1") -> None:
     submission = workspace.submit_deep_dive(chain_id)
     completed = workspace.jobs.wait(submission.job_id, timeout=5)
     assert completed.status.value == "SUCCEEDED"
+
+
+def test_public_tool_registry_exposes_six_upgraded_read_only_tools() -> None:
+    names = [tool["function"]["name"] for tool in ASSISTANT_TOOLS]
+    assert names == [
+        "search_project_knowledge",
+        "navigate_workspace",
+        "search_chains",
+        "explain_capability_boundary",
+        "inspect_mapping_capability",
+        "inspect_current_view",
+    ]
+
+
+def test_current_view_combines_validated_chain_and_metric_knowledge() -> None:
+    app = create_app()
+    try:
+        async def seed() -> None:
+            transport = httpx2.ASGITransport(app=app)
+            async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                assert (await client.post("/api/v1/snapshots", json=_payload())).status_code == 201
+
+        asyncio.run(seed())
+        result = asyncio.run(dispatch_assistant_tool(
+            app.state.workspace,
+            "inspect_current_view",
+            {"view": "chain", "selected_metric": "membership_support"},
+            {"snapshot_id": "s1", "snapshot_version": "1", "chain_id": "C1"},
+        ))
+        assert result["status"] == "AVAILABLE"
+        assert result["data"]["chain_id"] == "C1"
+        assert result["data"]["selected_metric"] == "membership_support"
+        assert result["data"]["knowledge"][0]["id"] == "metric.membership_support"
+    finally:
+        app.state.workspace.close()
+
+
+def test_provider_failure_after_tool_preserves_verified_tool_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AI_API_KEY", "test-key")
+    monkeypatch.setenv("AI_BASE_URL", "https://api.test/v1")
+    monkeypatch.setenv("AI_MODEL", "mock-model")
+    calls = 0
+
+    def provider(**_kwargs: Any) -> GroundedAssistantCallResult:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return GroundedAssistantCallResult(
+                content=None,
+                tool_calls=[LLMToolCall("search_project_knowledge", {"query": "conductance"}, "call-1")],
+                model="mock-model", provider_status="OK", used_provider=True,
+            )
+        return GroundedAssistantCallResult(
+            content=None, tool_calls=[], model="mock-model",
+            provider_status="TIMEOUT", used_provider=False,
+        )
+
+    monkeypatch.setattr("nocpro_api.assistant.call_grounded_assistant", provider)
+    app = create_app()
+    try:
+        async def exercise() -> None:
+            transport = httpx2.ASGITransport(app=app)
+            async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                await client.post("/api/v1/snapshots", json=_payload())
+                response = await client.post("/api/v1/assistant/query", json={
+                    "query": "Giải thích metric đang nói tới",
+                    "context": {"snapshot_id": "s1", "snapshot_version": "1", "chain_id": "C1"},
+                })
+                body = response.json()
+                assert response.status_code == 200
+                assert body["response_mode"] == "DETERMINISTIC_FALLBACK"
+                assert body["provider_status"] == "TIMEOUT"
+                assert body["tools_used"] == ["search_project_knowledge"]
+                assert "Audit conductance" in body["message"]
+
+        asyncio.run(exercise())
+    finally:
+        app.state.workspace.close()
 
 
 def test_tool_dispatch_explain_metric() -> None:
@@ -132,6 +212,11 @@ def test_llm_tool_calling_integration(monkeypatch: pytest.MonkeyPatch) -> None:
                     system_prompt = kwargs["messages"][0]["content"]
                     assert "must call a read-only tool before making factual claims" in system_prompt
                     assert "Do not invent or infer chain-specific facts" in system_prompt
+                    if kwargs["messages"][-1]["role"] == "tool":
+                        return GroundedAssistantCallResult(
+                            content="Độ dẫn thấp gợi ý một ranh giới kết nối yếu để review; nó không tự kết luận over-merge.",
+                            tool_calls=[], model="mock-model", provider_status="OK", used_provider=True,
+                        )
                     return GroundedAssistantCallResult(
                         content="Nội dung chưa grounded ở lượt chọn tool phải bị bỏ.",
                         tool_calls=[LLMToolCall(name="explain_metric", arguments={"metric_name": "conductance"})],
@@ -152,13 +237,20 @@ def test_llm_tool_calling_integration(monkeypatch: pytest.MonkeyPatch) -> None:
                 assert resp.status_code == 200
                 data = resp.json()
                 assert data["status"] == "AVAILABLE"
-                assert "Audit conductance" in data["message"]
+                assert "Độ dẫn thấp" in data["message"]
                 assert "Nội dung chưa grounded" not in data["message"]
                 assert data["model"] == "mock-model"
                 assert data["provider_status"] == "OK"
+                assert data["response_mode"] == "LLM_PRIMARY"
+                assert data["tools_used"] == ["search_project_knowledge"]
 
                 # Test 2: LLM selects navigate_workspace
                 def fake_llm_navigate(**kwargs: Any) -> GroundedAssistantCallResult:
+                    if kwargs["messages"][-1]["role"] == "tool":
+                        return GroundedAssistantCallResult(
+                            content="Mình đã chuẩn bị điều hướng tới Structural Audit.",
+                            tool_calls=[], model="mock-model", provider_status="OK", used_provider=True,
+                        )
                     return GroundedAssistantCallResult(
                         content=None,
                         tool_calls=[LLMToolCall(name="navigate_workspace", arguments={"tab": "structure", "chain_id": "C1"})],
@@ -207,6 +299,7 @@ def test_llm_tool_calling_integration(monkeypatch: pytest.MonkeyPatch) -> None:
                 assert data["status"] == "AVAILABLE"
                 assert data["message"] == "Có, tôi có thể trả lời bằng tiếng Việt."
                 assert data["actions"] == []
+                assert data["response_mode"] == "LLM_PRIMARY"
 
         asyncio.run(run())
     finally:
@@ -421,9 +514,9 @@ def test_assistant_endpoint_bridges_persisted_evolution_read_without_placeholder
     monkeypatch.setenv("AI_MODEL", "mock-model")
 
     def select_evolution(*, tools: Any = None, **_kwargs: Any) -> GroundedAssistantCallResult:
-        if tools is None:
+        if _kwargs["messages"][-1]["role"] == "tool":
             return GroundedAssistantCallResult(
-                content=None,
+                content="Evolution chưa khả dụng vì chưa có chuỗi snapshot tuần tự đã xác minh.",
                 tool_calls=[],
                 model="mock-model",
                 provider_status="OK",
@@ -497,7 +590,7 @@ def test_llm_tool_calling_inspect_chart_multi_turn(monkeypatch: pytest.MonkeyPat
                 def mock_call_assistant(messages: list[dict[str, Any]], tools: Any = None, **kwargs: Any) -> GroundedAssistantCallResult:
                     nonlocal calls_count
                     calls_count += 1
-                    if tools is not None:
+                    if messages[-1]["role"] != "tool":
                         # Turn 1: LLM decides to call inspect_chart
                         return GroundedAssistantCallResult(
                             content=None,

@@ -19,6 +19,18 @@ from nocpro_api.grounded_llm import GroundedRenderResult
 from tests.test_api import _payload
 
 
+@pytest.fixture(autouse=True)
+def _isolate_provider_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep unit tests independent from a developer's project-root .env."""
+    for name in (
+        "AI_PROVIDER_PROTOCOL",
+        "AI_BASE_URL",
+        "AI_API_KEY",
+        "AI_MODEL",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
 def _analysis() -> SimpleNamespace:
     return SimpleNamespace(
         members={
@@ -309,7 +321,9 @@ def test_assistant_stale_context_never_invokes_llm(monkeypatch) -> None:
     assert result == {
         **deterministic,
         "model": "DETERMINISTIC_EVIDENCE",
-        "provider_status": "NOT_APPLIED",
+        "provider_status": "STALE_CONTEXT",
+        "response_mode": "DETERMINISTIC_FALLBACK",
+        "tools_used": [],
     }
 
 
@@ -350,9 +364,10 @@ def test_assistant_route_renders_after_typed_action_generation(monkeypatch) -> N
                 )
                 assert response.status_code == 200
                 body = response.json()
-                assert body["message"] == "Bản diễn giải đã được render từ action hợp lệ."
-                assert body["model"] == "configured-model"
-                assert body["provider_status"] == "OK"
+                assert "open structural audit" in body["message"].lower()
+                assert body["model"] == "DETERMINISTIC_EVIDENCE"
+                assert body["provider_status"] == "NOT_CONFIGURED"
+                assert body["response_mode"] == "DETERMINISTIC_FALLBACK"
                 assert body["fact_refs"] == ["ui-context:C1"]
                 assert body["actions"] == [{
                     "kind": "NAVIGATE",
@@ -453,8 +468,8 @@ def test_assistant_explains_registry_without_claiming_root_cause() -> None:
                 )
                 assert response.status_code == 200
                 body = response.json()
-                assert "root-cause claim" in body["message"]
-                assert body["fact_refs"] == ["semantic-registry:conductance"]
+                assert "không chứng minh" in body["message"]
+                assert body["fact_refs"] == ["knowledge:metric.conductance"]
         finally:
             app.state.workspace.close()
 
