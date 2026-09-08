@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 
 import { api, ApiError } from './api'
 import type { TopologyTreePayload } from './TopologyTree'
-import { NocHeader } from './components/NocHeader'
+import { NocHeader, type HeaderSnapshotItem } from './components/NocHeader'
 import { SubNavBar, type SubNavTab } from './components/SubNavBar'
 import { SnapshotOverviewView } from './views/SnapshotOverviewView'
 import { ChainsExplorerView } from './views/ChainsExplorerView'
@@ -59,6 +59,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [configEpoch, setConfigEpoch] = useState(0)
   const [, setActiveConfigVersion] = useState<string | null>(null)
+  const [snapshotsCatalog, setSnapshotsCatalog] = useState<HeaderSnapshotItem[]>([])
 
   // Navigation & Drawer UI states
   const [currentTab, setCurrentTab] = useState<SubNavTab>('snapshot-overview')
@@ -93,12 +94,13 @@ export default function App() {
         api.getConfig(controller.signal).then(cfg => {
           setActiveConfigVersion(cfg.config_version)
         }).catch(() => {})
+        api.listSnapshots(controller.signal).then(catalog => {
+          setSnapshotsCatalog(catalog.snapshots as HeaderSnapshotItem[])
+        }).catch(() => {})
         try {
           const existing = await api.chains(controller.signal)
           setChainList(existing)
-          if (existing.chains.length > 0) {
-            setChainId(existing.chains[0].chain_id)
-          }
+          setChainId('')
         } catch (cause) {
           if (!(cause instanceof ApiError && cause.status === 409)) throw cause
         }
@@ -217,9 +219,8 @@ export default function App() {
       await api.loadSnapshot(payload)
       const chains = await api.chains()
       setChainList(chains)
-      if (chains.chains.length > 0) {
-        setChainId(chains.chains[0].chain_id)
-      }
+      setChainId('')
+      setCurrentTab('snapshot-overview')
       setAnalysisState(null)
       setAnalysisError(null)
       setPairWhyState(null)
@@ -234,6 +235,35 @@ export default function App() {
     }
   }
 
+  // Preset Snapshot selection handler
+  const handleSelectSnapshot = async (id: string, profile: 'IP_NETWORK' | 'IT_SERVICES' | 'ALARM_ONLY') => {
+    setLoadingSnapshot(true)
+    setError(null)
+    try {
+      await api.selectSnapshot(id)
+      setTopologyProfile(profile)
+      setTopologyRootId(undefined)
+      const chains = await api.chains()
+      setChainList(chains)
+      setChainId('')
+      setCurrentTab('snapshot-overview')
+      setAnalysisState(null)
+      setAnalysisError(null)
+      setPairWhyState(null)
+      setAssistantPair(null)
+      setJob(null)
+      setAuditVisualizationState(null)
+      setApiStatus('online')
+      void api.listSnapshots().then(catalog => {
+        setSnapshotsCatalog(catalog.snapshots as HeaderSnapshotItem[])
+      }).catch(() => {})
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Snapshot selection failed')
+    } finally {
+      setLoadingSnapshot(false)
+    }
+  }
+
   // Chain selection handler
   const handleSelectChain = (id: string) => {
     setAssistantPair(null)
@@ -243,12 +273,12 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  // Clear selected chain (back to snapshot overview)
+  // Clear selected chain (back to chains explorer)
   const handleClearSelectedChain = () => {
     setAssistantPair(null)
     setReviewReadOnly(false)
     setChainId('')
-    setCurrentTab('snapshot-overview')
+    setCurrentTab('chains-explorer')
   }
 
   // Compare 2 chains
@@ -306,6 +336,7 @@ export default function App() {
     chain_id: chainId || undefined,
     pair_alarm_id_a: assistantPair?.[0],
     pair_alarm_id_b: assistantPair?.[1],
+    selection: assistantPair ? { kind: 'pair', alarm_id_a: assistantPair[0], alarm_id_b: assistantPair[1] } : undefined,
     filters: {},
   }), [assistantPair, chainList, chainId, currentTab])
 
@@ -331,6 +362,9 @@ export default function App() {
         datasetName={topologyProfile}
         snapshotId={chainList ? `${chainList.snapshot_id}@${chainList.snapshot_version}` : 'NO_SNAPSHOT'}
         currentView={currentTab}
+        snapshots={snapshotsCatalog}
+        onSelectSnapshot={handleSelectSnapshot}
+        onUploadSnapshotFile={uploadSnapshot}
         onChangeDatasetProfile={profile => {
           setTopologyProfile(profile)
           setTopologyRootId(undefined)
@@ -343,8 +377,10 @@ export default function App() {
             setChainId('')
             setCurrentTab('chains-explorer')
           } else if (tabName === 'Timeline' || tabName === 'multi-chain-timeline' || tabName === 'timeline' || tabName === 'TIMELINE') {
+            setChainId('')
             setCurrentTab('multi-chain-timeline')
           } else if (tabName === 'Compare' || tabName === 'compare-chains' || tabName === 'compare') {
+            setChainId('')
             setCurrentTab('compare-chains')
           } else {
             setCurrentTab(tabName as SubNavTab)
@@ -353,16 +389,18 @@ export default function App() {
         onOpenSettings={() => setSettingsOpen(true)}
       />
 
-      {/* 2. Sub Navigation Bar (Chain-level IA: 05 Overview, 06-09 WHY, 10 Members, 11-13 Audit, 14 Recommendations, 15-16 Evolution, 17 Topology, 18 Validation) */}
-      <SubNavBar
-        currentTab={currentTab}
-        onSelectTab={tab => {
-          if (tab === 'review') setReviewReadOnly(false)
-          setCurrentTab(tab)
-        }}
-        selectedChainId={chainId || null}
-        onClearSelectedChain={handleClearSelectedChain}
-      />
+      {/* 2. Sub Navigation Bar (Chain-level IA: only when on a chain-level tab and a chain is selected) */}
+      {!['snapshot-overview', 'chains-explorer', 'multi-chain-timeline', 'compare-chains'].includes(currentTab) && Boolean(chainId) && (
+        <SubNavBar
+          currentTab={currentTab}
+          onSelectTab={tab => {
+            if (tab === 'review') setReviewReadOnly(false)
+            setCurrentTab(tab)
+          }}
+          selectedChainId={chainId || null}
+          onClearSelectedChain={handleClearSelectedChain}
+        />
+      )}
 
       {/* 4. Global Error Alert if present */}
       {error && (

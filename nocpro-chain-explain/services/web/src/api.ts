@@ -2,6 +2,7 @@ import type {
   AISuggestion,
   AnalysisConfigView,
   AssistantContext,
+  AssistantHistoryMessage,
   AssistantResponse,
   AuditVisualizationArtifact,
   CalibrationReport,
@@ -119,6 +120,32 @@ async function topologyResolveRequest(
 export const api = {
   health: (signal?: AbortSignal) =>
     request<{ status: string }>('/api/v1/health', { signal }),
+  listSnapshots: (signal?: AbortSignal) =>
+    request<{
+      active_snapshot_id: string | null
+      active_snapshot_version: string | null
+      snapshots: Array<{
+        snapshot_id: string
+        name: string
+        profile: 'IP_NETWORK' | 'IT_SERVICES' | 'ALARM_ONLY'
+        alarm_count: number
+        chain_count: number
+        description: string
+        badge: string
+      }>
+    }>('/api/v1/snapshots', { signal }),
+  selectSnapshot: (snapshotId: string, signal?: AbortSignal) =>
+    request<{
+      snapshot_id: string
+      snapshot_version: string
+      alarm_count: number
+      chain_count: number
+    }>('/api/v1/snapshots/select', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ snapshot_id: snapshotId }),
+      signal,
+    }),
   loadSnapshot: (payload: unknown) =>
     request<{
       snapshot_id: string
@@ -209,11 +236,11 @@ export const api = {
       `/api/v1/chains/${encodeURIComponent(chainId)}/ai-suggestion`,
       { signal },
     ),
-  assistantQuery: (query: string, context: AssistantContext, signal?: AbortSignal) =>
+  assistantQuery: (query: string, context: AssistantContext, history: AssistantHistoryMessage[] = [], signal?: AbortSignal) =>
     request<AssistantResponse>('/api/v1/assistant/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, context }),
+      body: JSON.stringify({ query, context, history }),
       signal,
     }),
   topologyProjection: (profileId: string, signal?: AbortSignal, rootId?: string) =>
