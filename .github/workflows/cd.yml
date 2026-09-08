@@ -1,0 +1,122 @@
+name: CD - Build & Deploy
+
+on:
+  push:
+    branches:
+      - product
+
+concurrency:
+  group: cd-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    name: Build & Push Images to GHCR
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare lowercase image names
+        run: |
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "API_IMAGE=ghcr.io/${OWNER_LC}/hindsight-api:latest" >> $GITHUB_ENV
+          echo "WEB_IMAGE=ghcr.io/${OWNER_LC}/hindsight-web:latest" >> $GITHUB_ENV
+          echo "MOCK_IMAGE=ghcr.io/${OWNER_LC}/hindsight-mock:latest" >> $GITHUB_ENV
+
+      - name: Build & Push API Image
+        uses: docker/build-push-action@v5
+        with:
+          context: nocpro-chain-explain
+          file: nocpro-chain-explain/services/api/Dockerfile
+          push: true
+          tags: ${{ env.API_IMAGE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & Push Web Image (Explain UI)
+        uses: docker/build-push-action@v5
+        with:
+          context: nocpro-chain-explain/services/web
+          file: nocpro-chain-explain/services/web/Dockerfile
+          push: true
+          tags: ${{ env.WEB_IMAGE }}
+          build-args: |
+            VITE_NOCPRO_MOCK_URL=http://localhost:8085
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & Push Mock Image (NocPro Mock UI)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: nocpro-mock/Dockerfile
+          push: true
+          tags: ${{ env.MOCK_IMAGE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to Server
+    needs: build-and-push
+    runs-on: tuanvdt
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR on server
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Configure production environment secrets (if provided)
+        if: "${{ secrets.PROD_ENV != '' }}"
+        run: |
+          echo "${{ secrets.PROD_ENV }}" > nocpro-chain-explain/.env
+          chmod 600 nocpro-chain-explain/.env
+
+      - name: Pull pre-built images & Restart stack
+        run: |
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          export API_IMAGE="ghcr.io/${OWNER_LC}/hindsight-api:latest"
+          export WEB_IMAGE="ghcr.io/${OWNER_LC}/hindsight-web:latest"
+          export MOCK_IMAGE="ghcr.io/${OWNER_LC}/hindsight-mock:latest"
+
+          echo "Pulling pre-built images from GHCR..."
+          docker compose -f nocpro-chain-explain/docker-compose.yml pull api migrate web mock-ui
+
+          echo "Starting containers (Explain UI, Mock UI, API, Kafka, Postgres)..."
+          docker compose -f nocpro-chain-explain/docker-compose.yml up -d --no-build
+          docker compose -f nocpro-chain-explain/docker-compose.yml ps
+
+      - name: Clean up old Docker images to protect 4.5GB disk
+        run: |
+          echo "Cleaning up old unused images..."
+          docker image prune -f
+          echo "Remaining disk space on server:"
+          df -h /
+
+      - name: Verify Backend and Both UIs Health
+        run: |
+          echo "Checking service health..."
+          sleep 5
+          curl -f http://127.0.0.1:8000/api/v1/health || exit 1
+          curl -f http://127.0.0.1:8085/ || exit 1
+          echo "✓ Both Explain UI (port 3000) and Mock UI (port 8085) are running successfully!"

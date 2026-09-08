@@ -83,18 +83,8 @@ interface AuditGraphVisualizationProps {
   onRunDeepDive?: () => void
 }
 
-export function AuditGraphVisualization({
-  value,
-  analysis,
-  onRunDeepDive,
-}: AuditGraphVisualizationProps) {
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
-  const [zoomScale, setZoomScale] = useState(1)
-  const [showNodeLabels, setShowNodeLabels] = useState(true)
-  const [showWeakEdges, setShowWeakEdges] = useState(true)
-  const [showHeatmap, setShowHeatmap] = useState(true)
-
-  if (value.status !== 'AVAILABLE') {
+export function AuditGraphVisualization(props: AuditGraphVisualizationProps) {
+  if (props.value.status !== 'AVAILABLE') {
     return (
       <section
         className="rounded-xl border border-[#1e2b44] bg-[#0c1322] p-space-md shadow-sm"
@@ -107,7 +97,7 @@ export function AuditGraphVisualization({
           </h3>
         </div>
         <p className="mt-space-xs break-words font-code-sm text-code-sm text-on-surface-variant">
-          UNAVAILABLE · {value.reason ?? 'BOUNDED_PUBLIC_AUDIT_GRAPH_ARTIFACT_NOT_AVAILABLE'}
+          UNAVAILABLE · {props.value.reason ?? 'BOUNDED_PUBLIC_AUDIT_GRAPH_ARTIFACT_NOT_AVAILABLE'}
         </p>
         <p className="mt-space-xs text-body-sm text-on-surface-variant">
           No display graph is synthesized. Run Deep Dive explicitly to create a compatible bounded artifact.
@@ -115,6 +105,20 @@ export function AuditGraphVisualization({
       </section>
     )
   }
+
+  return <AuditGraphVisualizationContent {...props} />
+}
+
+function AuditGraphVisualizationContent({
+  value,
+  analysis,
+  onRunDeepDive,
+}: AuditGraphVisualizationProps) {
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
+  const [zoomScale, setZoomScale] = useState(1)
+  const [showNodeLabels, setShowNodeLabels] = useState(true)
+  const [showWeakEdges, setShowWeakEdges] = useState(true)
+  const [showHeatmap, setShowHeatmap] = useState(true)
 
   const nodes = useMemo(() => layoutAuditGraph(value.nodes), [value.nodes])
   const byId = useMemo(() => new Map(nodes.map(node => [node.alarm_id, node])), [nodes])

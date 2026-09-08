@@ -51,6 +51,7 @@ services:
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic nocpro.snapshot.v1.dlq --partitions 3 --replication-factor 1
 
   migrate:
+    image: ${API_IMAGE:-nocpro-chain-explain-api:latest}
     build:
       context: .
       dockerfile: services/api/Dockerfile
@@ -62,6 +63,7 @@ services:
         condition: service_healthy
 
   api:
+    image: ${API_IMAGE:-nocpro-chain-explain-api:latest}
     build:
       context: .
       dockerfile: services/api/Dockerfile
@@ -93,6 +95,7 @@ services:
         condition: service_completed_successfully
 
   web:
+    image: ${WEB_IMAGE:-nocpro-chain-explain-web:latest}
     build:
       context: services/web
       args:
@@ -164,6 +167,7 @@ services:
         condition: service_completed_successfully
 
   mock-ui:
+    image: ${MOCK_IMAGE:-nocpro-mock:latest}
     build:
       context: ..
       dockerfile: nocpro-mock/Dockerfile
