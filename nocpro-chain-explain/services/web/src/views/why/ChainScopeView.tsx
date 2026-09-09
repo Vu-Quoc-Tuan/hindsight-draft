@@ -386,7 +386,7 @@ export function ChainScopeView({
             <div className="flex flex-col gap-1.5 bg-[#080d17] p-space-sm rounded-lg border border-[#1b273e]/60 font-code-sm text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-on-surface-variant">
-                  Onset: <span className="text-on-surface font-semibold">{timeSpanSecs !== null ? 'T+0.00s' : 'N/A'}</span>
+                  Onset: <span className="text-on-surface font-semibold">{timeSpanSecs !== null ? `${startLabel} (T+0s)` : 'N/A'}</span>
                 </span>
                 <span className="text-secondary font-bold">
                   {burstPct !== null ? `${burstPct}% Window Cluster` : 'N/A'}
