@@ -9,10 +9,12 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+.cache/
 *.egg-info/
 playwright-report/
 test-results/
 .worktrees/
+node_modules/
 
 # AI
 /docs/

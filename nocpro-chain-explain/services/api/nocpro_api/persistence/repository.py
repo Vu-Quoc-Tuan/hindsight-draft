@@ -70,6 +70,7 @@ from .models import (
     HistoricalEvidenceModelRecord,
     TemporalDelayModelRecord,
     OperatorFeedbackRecord,
+    TopologyVersionRecord,
 )
 
 
@@ -1142,7 +1143,28 @@ class SnapshotRepository:
         row.canonical_payload = payload
         row.logical_snapshot_time = _logical_time(package.snapshot.snapshot_time)
         row.status = "COMPLETE"
-        row.tier1a_status = "PENDING"
+
+        topo_ref = package.snapshot.topology_ref
+        if topo_ref is not None:
+            if isinstance(topo_ref, dict):
+                topo_profile_id = topo_ref.get("profile_id")
+                topo_version = topo_ref.get("topology_version")
+            else:
+                topo_profile_id = topo_ref.profile_id
+                topo_version = topo_ref.topology_version
+            row.topology_profile_id = topo_profile_id
+            row.topology_version_ref = topo_version
+            topo_ready = await session.scalar(
+                select(1).select_from(TopologyVersionRecord).where(
+                    TopologyVersionRecord.profile_id == topo_profile_id,
+                    TopologyVersionRecord.topology_version == topo_version,
+                    TopologyVersionRecord.status == "READY",
+                )
+            )
+            row.tier1a_status = "PENDING" if topo_ready else "PENDING_TOPOLOGY"
+        else:
+            row.tier1a_status = "PENDING"
+
         row.completed_at = func.now()
         return payload
 
@@ -1161,6 +1183,22 @@ class SnapshotRepository:
                 if row.status == "COMPLETE" and row.canonical_payload == payload:
                     return self._result(row, duplicate=True)
                 raise ValueError("snapshot identity already exists with different content")
+            topo_ref = package.snapshot.topology_ref
+            topo_profile_id = None
+            topo_version_ref = None
+            tier1a_status = "PENDING"
+            if topo_ref is not None:
+                topo_profile_id = topo_ref.profile_id
+                topo_version_ref = topo_ref.topology_version
+                topo_ready = await session.scalar(
+                    select(1).select_from(TopologyVersionRecord).where(
+                        TopologyVersionRecord.profile_id == topo_ref.profile_id,
+                        TopologyVersionRecord.topology_version == topo_ref.topology_version,
+                        TopologyVersionRecord.status == "READY",
+                    )
+                )
+                tier1a_status = "PENDING" if topo_ready else "PENDING_TOPOLOGY"
+
             row = SnapshotIngest(
                 snapshot_id=identity[0],
                 snapshot_version=identity[1],
@@ -1174,7 +1212,9 @@ class SnapshotRepository:
                 source_kind=package.snapshot.source_kind,
                 canonical_payload=payload,
                 logical_snapshot_time=_logical_time(package.snapshot.snapshot_time),
-                tier1a_status="PENDING",
+                tier1a_status=tier1a_status,
+                topology_profile_id=topo_profile_id,
+                topology_version_ref=topo_version_ref,
                 completed_at=func.now(),
             )
             session.add(row)

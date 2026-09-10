@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import os
 import hashlib
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
+
+LOGGER = logging.getLogger(__name__)
 
 from evolution import LineageConfig, LineageNodeKey, OutOfOrderLineageError
 from libs.contracts import ContractIngestError, load_validated_package
@@ -40,6 +43,7 @@ class Tier1ACoordinator:
         max_attempts: int = 5,
         backoff_base_seconds: int = 2,
         chunk_retention_mode: ChunkRetentionMode = ChunkRetentionMode.KEEP,
+        topology_repository: Any = None,
     ) -> None:
         self.repository = repository
         self.workspace = workspace
@@ -48,6 +52,28 @@ class Tier1ACoordinator:
         self.max_attempts = max_attempts
         self.backoff_base_seconds = backoff_base_seconds
         self.chunk_retention_mode = chunk_retention_mode
+        self.topology_repository = topology_repository
+
+    async def _hydrate_payload_topology_if_needed(self, payload: dict[str, Any]) -> None:
+        if not self.topology_repository or not isinstance(payload, dict):
+            return
+        raw_snapshot = payload.get("snapshot")
+        if not isinstance(raw_snapshot, dict):
+            return
+        topo_ref = raw_snapshot.get("topology_ref")
+        if not topo_ref:
+            return
+        profile_id = topo_ref.get("profile_id") if isinstance(topo_ref, dict) else getattr(topo_ref, "profile_id", None)
+        version = topo_ref.get("topology_version") if isinstance(topo_ref, dict) else getattr(topo_ref, "topology_version", None)
+        topology = payload.setdefault("topology", {})
+        if profile_id and version and not topology.get("edges"):
+            hydrated = await self.topology_repository.hydrate_graph_for_analysis(profile_id, version)
+            if hydrated:
+                topology["edges"] = hydrated.get("edges", [])
+                if not topology.get("nodes"):
+                    topology["nodes"] = hydrated.get("nodes", [])
+                if not topology.get("alias_resolution"):
+                    topology["alias_resolution"] = hydrated.get("alias_resolution", [])
 
     async def run(self, snapshot_id: str, snapshot_version: str):
         """Process logical-oldest jobs until the requested snapshot is READY."""
@@ -69,6 +95,8 @@ class Tier1ACoordinator:
         if claim is None:
             return None
         try:
+            if isinstance(claim.payload, dict):
+                await self._hydrate_payload_topology_if_needed(claim.payload)
             package, precompute = self.workspace.compute_snapshot(claim.payload)
             renewed = await self.repository.heartbeat_tier1a(
                 claim.snapshot_id,
@@ -133,6 +161,8 @@ class Tier1ACoordinator:
         if self.workspace.active_identity() == identity:
             precompute = self.workspace.precompute
         else:
+            if isinstance(payload, dict):
+                await self._hydrate_payload_topology_if_needed(payload)
             package, precompute = self.workspace.compute_snapshot(payload)
             self.workspace.activate_snapshot(package, precompute)
         if self.workspace.similarity_index is None:
@@ -398,3 +428,14 @@ class Tier1ACoordinator:
         if self.workspace.active_identity() == (package.snapshot.snapshot_id, package.snapshot.snapshot_version):
             self.workspace.attach_temporal_delay_model(model, taxonomy)
         return True
+
+    async def wake_pending_topology(self, profile_id: str, topology_version: str) -> None:
+        """Wake any stalled snapshots waiting for this topology version and process them."""
+        LOGGER.info("Waking stalled snapshots waiting for topology %s:%s", profile_id, topology_version)
+        try:
+            while await self.run_pending_once() is not None:
+                pass
+            await self.hydrate_active()
+        except Exception:
+            LOGGER.exception("Error processing snapshots woken by topology %s:%s", profile_id, topology_version)
+

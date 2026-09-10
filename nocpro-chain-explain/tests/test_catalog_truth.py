@@ -6,18 +6,16 @@ import json
 from pathlib import Path
 import pytest
 
-from nocpro_api.catalog import _CATALOG, _MOCK_ROOT
+from nocpro_api.catalog import _CATALOG, _resolve_preset_path
 
 
 def test_catalog_file_backed_items_count_truth():
     """Declared alarm_count and chain_count in CATALOG must strictly match payload counts."""
-    assert len(_CATALOG) > 0, "Catalog must not be empty"
+    assert len(_CATALOG) == 12, "Catalog must contain all 12 presets"
 
     tested_count = 0
     for item in _CATALOG:
-        if item.file_path is None:
-            continue
-        target_path = _MOCK_ROOT / item.file_path
+        target_path = _resolve_preset_path(item)
         assert target_path.is_file(), f"File for catalog item {item.snapshot_id} must exist at {target_path}"
 
         payload = json.loads(target_path.read_text(encoding="utf-8"))
@@ -34,7 +32,7 @@ def test_catalog_file_backed_items_count_truth():
         )
         tested_count += 1
 
-    assert tested_count >= 5, f"Expected at least 5 file-backed catalog items tested, got {tested_count}"
+    assert tested_count == 12, f"Expected 12 file-backed catalog items tested, got {tested_count}"
 
 
 def test_catalog_preset_availability_reporting():
@@ -64,3 +62,18 @@ def test_catalog_preset_availability_reporting():
     avail, reason = check_item_availability(missing_item)
     assert avail is False
     assert "not found" in reason
+
+
+def test_all_catalog_presets_conform_to_input_contract_v1():
+    """All 12 presets in the catalog must strictly pass canonical Input Contract validation."""
+    from nocpro_api.workspace import load_validated_package
+
+    assert len(_CATALOG) == 12
+    for item in _CATALOG:
+        target_path = _resolve_preset_path(item)
+        assert target_path.is_file()
+        payload = json.loads(target_path.read_text(encoding="utf-8"))
+        pkg = load_validated_package(payload)
+        assert pkg.snapshot.snapshot_id is not None
+        assert len(pkg.alarms) == item.alarm_count
+

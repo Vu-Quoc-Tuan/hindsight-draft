@@ -13,6 +13,7 @@ from .repository import (
     StoredDeepDiveJob,
     Tier1AClaim,
 )
+from .topology_repository import TopologyRepository
 
 __all__ = [
     "Database",
@@ -26,4 +27,6 @@ __all__ = [
     "StoredCounterfactualJob",
     "StoredDeepDiveJob",
     "Tier1AClaim",
+    "TopologyRepository",
 ]
+

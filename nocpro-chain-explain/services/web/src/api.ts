@@ -62,17 +62,26 @@ export type TopologyNavigationResolution = {
   reason?: string
 }
 
+function explainTopologyUrl(subpath: string): URL {
+  const origin = typeof window !== 'undefined' && window.location ? window.location.origin : 'http://127.0.0.1:3000'
+  return new URL(`/api/v1/topology/${subpath.replace(/^\//, '')}`, origin)
+}
+
+async function topologyProfilesRequest(
+  signal?: AbortSignal,
+): Promise<{ status: string; profiles: string[] }> {
+  const url = explainTopologyUrl('profiles')
+  const response = await fetch(url, { signal })
+  if (!response.ok) throw new ApiError(response.status, `${response.status} ${response.statusText}`)
+  return (await response.json()) as { status: string; profiles: string[] }
+}
+
 async function topologyRequest(
   profileId: string,
   signal?: AbortSignal,
   rootId?: string,
 ): Promise<TopologyTreePayload> {
-  const base = import.meta.env.VITE_NOCPRO_MOCK_URL
-  if (!base) return {
-    status: 'UNAVAILABLE', profile: profileId as 'ALARM_ONLY' | 'IP_NETWORK' | 'IT_SERVICES', topology_kind: 'UNAVAILABLE',
-    reason: 'MOCK_TOPOLOGY_ENDPOINT_NOT_CONFIGURED',
-  }
-  const url = new URL('/api/topology/projection', base)
+  const url = explainTopologyUrl('projection')
   url.searchParams.set('profile_id', profileId)
   if (rootId) url.searchParams.set('root_id', rootId)
   const response = await fetch(url, { signal })
@@ -85,13 +94,12 @@ async function topologySearchRequest(
   query: string,
   signal?: AbortSignal,
 ): Promise<TopologySearchResult[]> {
-  const base = import.meta.env.VITE_NOCPRO_MOCK_URL
-  if (!base || !query.trim()) return []
-  const url = new URL('/api/topology/search', base)
+  if (!query.trim()) return []
+  const url = explainTopologyUrl('search')
   url.searchParams.set('profile_id', profileId)
   url.searchParams.set('q', query)
   const response = await fetch(url, { signal })
-  if (!response.ok) throw new ApiError(response.status, response.status + " " + response.statusText)
+  if (!response.ok) throw new ApiError(response.status, `${response.status} ${response.statusText}`)
   const payload = (await response.json()) as { status: string; results?: TopologySearchResult[] }
   return payload.status === 'AVAILABLE' ? payload.results ?? [] : []
 }
@@ -101,22 +109,14 @@ async function topologyResolveRequest(
   identifier: string,
   signal?: AbortSignal,
 ): Promise<TopologyNavigationResolution> {
-  const base = import.meta.env.VITE_NOCPRO_MOCK_URL
-  if (!base) {
-    return {
-      status: 'UNAVAILABLE', dataset_profile: profileId as TopologyNavigationResolution['dataset_profile'],
-      identifier, resource_id: null, mapping_status: 'UNMAPPED', source_field: null,
-      navigation_eligible: false, p2_mapping_eligible: false, dependency_semantics: 'UNAVAILABLE',
-      reason: 'MOCK_TOPOLOGY_ENDPOINT_NOT_CONFIGURED',
-    }
-  }
-  const url = new URL('/api/topology/resolve', base)
+  const url = explainTopologyUrl('resolve')
   url.searchParams.set('profile_id', profileId)
   url.searchParams.set('identifier', identifier)
   const response = await fetch(url, { signal })
-  if (!response.ok) throw new ApiError(response.status, response.status + ' ' + response.statusText)
+  if (!response.ok) throw new ApiError(response.status, `${response.status} ${response.statusText}`)
   return (await response.json()) as TopologyNavigationResolution
 }
+
 
 export const api = {
   health: (signal?: AbortSignal) =>
@@ -256,6 +256,8 @@ export const api = {
       body: JSON.stringify({ query, context, history }),
       signal,
     }),
+  topologyProfiles: (signal?: AbortSignal) =>
+    topologyProfilesRequest(signal),
   topologyProjection: (profileId: string, signal?: AbortSignal, rootId?: string) =>
     topologyRequest(profileId, signal, rootId),
   topologySearch: (profileId: string, query: string, signal?: AbortSignal) =>

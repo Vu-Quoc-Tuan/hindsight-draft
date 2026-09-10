@@ -1,0 +1,20 @@
+# Development override: binds PostgreSQL and Kafka (and optionally API / Mock UI)
+# to 127.0.0.1 for local development and test acceptance.
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres kafka kafka-init migrate
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+
+  kafka:
+    ports:
+      - "127.0.0.1:${KAFKA_HOST_PORT:-9092}:9092"
+
+  api:
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-8000}:8000"
+
+  mock-ui:
+    ports:
+      - "127.0.0.1:${MOCK_UI_HOST_PORT:-8085}:8085"

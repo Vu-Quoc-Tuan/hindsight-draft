@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from contracts.v1 import ContractViolation, parse_package
+from contracts.v1 import ContractViolation, TopologyRef, parse_package
 
 SUPPORTED_MAJOR_VERSION = "v1"
 
@@ -65,6 +65,7 @@ class IngestedSnapshot:
     produced_at: str
     config_version: str | None = None
     topology_version: str | None = None
+    topology_ref: TopologyRef | None = None
 
     @property
     def is_complete(self) -> bool:
@@ -119,6 +120,19 @@ def load_package(payload: dict[str, Any]) -> IngestedPackage:
         )
 
     raw_snapshot = _require(payload, "snapshot", "package")
+    raw_topo_ref = raw_snapshot.get("topology_ref")
+    parsed_topo_ref: TopologyRef | None = None
+    if raw_topo_ref is not None:
+        if isinstance(raw_topo_ref, TopologyRef):
+            parsed_topo_ref = raw_topo_ref
+        elif isinstance(raw_topo_ref, dict):
+            parsed_topo_ref = TopologyRef(
+                profile_id=raw_topo_ref["profile_id"],
+                topology_version=raw_topo_ref["topology_version"],
+                source_version=raw_topo_ref.get("source_version"),
+                topology_hash=raw_topo_ref.get("topology_hash"),
+            )
+
     snapshot = IngestedSnapshot(
         snapshot_id=_require(raw_snapshot, "snapshot_id", "snapshot"),
         snapshot_version=_require(raw_snapshot, "snapshot_version", "snapshot"),
@@ -129,6 +143,7 @@ def load_package(payload: dict[str, Any]) -> IngestedPackage:
         produced_at=_require(raw_snapshot, "produced_at", "snapshot"),
         config_version=raw_snapshot.get("config_version"),
         topology_version=raw_snapshot.get("topology_version"),
+        topology_ref=parsed_topo_ref,
     )
     if not snapshot.snapshot_id or not snapshot.snapshot_version:
         raise ContractIngestError(

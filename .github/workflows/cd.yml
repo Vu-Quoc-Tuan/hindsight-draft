@@ -57,8 +57,6 @@ jobs:
           file: nocpro-chain-explain/services/web/Dockerfile
           push: true
           tags: ${{ env.WEB_IMAGE }}
-          build-args: |
-            VITE_NOCPRO_MOCK_URL=http://localhost:8085
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -119,11 +117,48 @@ jobs:
           echo "Remaining disk space on server:"
           df -h /
 
-      - name: Verify Backend and Both UIs Health
+      - name: Verify Unified Gateway Health & Security Isolation
         run: |
-          echo "Checking service health..."
+          echo "Checking service health via Unified Gateway (port 3000)..."
           sleep 5
-          curl -f http://127.0.0.1:8000/api/v1/health || exit 1
+          curl -f http://127.0.0.1:3000/api/v1/health || exit 1
           curl -f http://127.0.0.1:3000/ || exit 1
-          curl -f http://127.0.0.1:8085/ || exit 1
-          echo "✓ Both Explain UI (port 3000) and Mock UI (port 8085) are running successfully!"
+
+          echo "Waiting for topology materialization (IP_NETWORK & IT_SERVICES)..."
+          PROFILES="[]"
+          for i in {1..30}; do
+            PROFILES=$(curl -sf http://127.0.0.1:3000/api/v1/topology/profiles || echo "[]")
+            if echo "$PROFILES" | grep -q "IP_NETWORK" && echo "$PROFILES" | grep -q "IT_SERVICES"; then
+              echo "Both IP_NETWORK and IT_SERVICES profiles are READY: $PROFILES"
+              break
+            fi
+            sleep 2
+          done
+
+          echo "$PROFILES" | grep -q "IP_NETWORK" || { echo "ERROR: IP_NETWORK not found in profiles: $PROFILES"; exit 1; }
+          echo "$PROFILES" | grep -q "IT_SERVICES" || { echo "ERROR: IT_SERVICES not found in profiles: $PROFILES"; exit 1; }
+
+          echo "Verifying topology search queries..."
+          IP_NODES=$(curl -sf "http://127.0.0.1:3000/api/v1/topology/search?profile_id=IP_NETWORK&q=&limit=1" || exit 1)
+          echo "IP search sample: $IP_NODES"
+          echo "$IP_NODES" | grep -q '"status":"AVAILABLE"' || { echo "ERROR: IP_NETWORK search status not AVAILABLE"; exit 1; }
+
+          IT_NODES=$(curl -sf "http://127.0.0.1:3000/api/v1/topology/search?profile_id=IT_SERVICES&q=&limit=1" || exit 1)
+          echo "IT search sample: $IT_NODES"
+          echo "$IT_NODES" | grep -q '"status":"AVAILABLE"' || { echo "ERROR: IT_SERVICES search status not AVAILABLE"; exit 1; }
+
+          echo "Verifying mock-api is completely absent from public gateway (expecting 404)..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3000/mock-api/api/publish || true)
+          if [ "$HTTP_CODE" != "404" ]; then
+            echo "ERROR: /mock-api/api/publish returned HTTP $HTTP_CODE instead of 404!"
+            exit 1
+          fi
+
+          echo "Verifying Mock Studio routing via Unified Gateway..."
+          curl -f http://127.0.0.1:3000/mock-studio/ || exit 1
+          MOCK_STATUS=$(curl -sf http://127.0.0.1:3000/mock-studio/api/status || exit 1)
+          echo "Mock Studio status: $MOCK_STATUS"
+          echo "$MOCK_STATUS" | grep -q '"ok":true' || { echo "ERROR: Mock Studio status not ok"; exit 1; }
+
+          echo "✓ Unified Gateway on port 3000 is running securely with Explain API, Mock Studio, and pure Kafka topology pipeline!"
+

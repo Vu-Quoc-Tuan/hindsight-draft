@@ -1,0 +1,445 @@
+{
+  "snapshot": {
+    "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+    "snapshot_version": "1",
+    "snapshot_time": "2026-01-01T00:00:00+00:00",
+    "status": "COMPLETE",
+    "source": "nocpro-mock",
+    "source_kind": "SYNTHETIC_TEST",
+    "produced_at": "2026-01-01T00:00:00+00:00",
+    "schema_version": "v1"
+  },
+  "alarms": [
+    {
+      "alarm_id": "SYN-SPLIT-A-01",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-SPLIT-A-01",
+        "chaining_id": "SYN-CHAIN-SPLIT-MUTATED",
+        "cah.start_time": "2026-01-01T00:00:01+00:00",
+        "device_code": "SYN-DEVICE-SPLIT-A",
+        "node_reference": "SYN-REF-SPLIT-A-1"
+      },
+      "raw_start_time": "2026-01-01T00:00:01+00:00",
+      "canonical_start_time": "2026-01-01T00:00:01+00:00",
+      "device_code": "SYN-DEVICE-SPLIT-A",
+      "node_reference": "SYN-REF-SPLIT-A-1",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-SPLIT-A-02",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-SPLIT-A-02",
+        "chaining_id": "SYN-CHAIN-SPLIT-MUTATED",
+        "cah.start_time": "2026-01-01T00:00:02+00:00",
+        "device_code": "SYN-DEVICE-SPLIT-A",
+        "node_reference": "SYN-REF-SPLIT-A-1"
+      },
+      "raw_start_time": "2026-01-01T00:00:02+00:00",
+      "canonical_start_time": "2026-01-01T00:00:02+00:00",
+      "device_code": "SYN-DEVICE-SPLIT-A",
+      "node_reference": "SYN-REF-SPLIT-A-1",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-SPLIT-A-03",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-SPLIT-A-03",
+        "chaining_id": "SYN-CHAIN-SPLIT-MUTATED",
+        "cah.start_time": "2026-01-01T00:00:03+00:00",
+        "device_code": "SYN-DEVICE-SPLIT-A",
+        "node_reference": "SYN-REF-SPLIT-A-1"
+      },
+      "raw_start_time": "2026-01-01T00:00:03+00:00",
+      "canonical_start_time": "2026-01-01T00:00:03+00:00",
+      "device_code": "SYN-DEVICE-SPLIT-A",
+      "node_reference": "SYN-REF-SPLIT-A-1",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-SPLIT-A-04",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-SPLIT-A-04",
+        "chaining_id": "SYN-CHAIN-SPLIT-MUTATED",
+        "cah.start_time": "2026-01-01T00:00:04+00:00",
+        "device_code": "SYN-DEVICE-SPLIT-A",
+        "node_reference": "SYN-REF-SPLIT-A-1"
+      },
+      "raw_start_time": "2026-01-01T00:00:04+00:00",
+      "canonical_start_time": "2026-01-01T00:00:04+00:00",
+      "device_code": "SYN-DEVICE-SPLIT-A",
+      "node_reference": "SYN-REF-SPLIT-A-1",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-SPLIT-A-05",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-SPLIT-A-05",
+        "chaining_id": "SYN-CHAIN-SPLIT-MUTATED",
+        "cah.start_time": "2026-01-01T00:00:05+00:00",
+        "device_code": "SYN-DEVICE-SPLIT-A",
+        "node_reference": "SYN-REF-SPLIT-A-2"
+      },
+      "raw_start_time": "2026-01-01T00:00:05+00:00",
+      "canonical_start_time": "2026-01-01T00:00:05+00:00",
+      "device_code": "SYN-DEVICE-SPLIT-A",
+      "node_reference": "SYN-REF-SPLIT-A-2",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-SPLIT-A-06",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-SPLIT-A-06",
+        "chaining_id": "SYN-CHAIN-SPLIT-MUTATED",
+        "cah.start_time": "2026-01-01T00:00:06+00:00",
+        "device_code": "SYN-DEVICE-SPLIT-A",
+        "node_reference": "SYN-REF-SPLIT-A-2"
+      },
+      "raw_start_time": "2026-01-01T00:00:06+00:00",
+      "canonical_start_time": "2026-01-01T00:00:06+00:00",
+      "device_code": "SYN-DEVICE-SPLIT-A",
+      "node_reference": "SYN-REF-SPLIT-A-2",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-SPLIT-A-07",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-SPLIT-A-07",
+        "chaining_id": "SYN-CHAIN-SPLIT-MUTATED",
+        "cah.start_time": "2026-01-01T00:00:07+00:00",
+        "device_code": "SYN-DEVICE-SPLIT-A",
+        "node_reference": "SYN-REF-SPLIT-A-2"
+      },
+      "raw_start_time": "2026-01-01T00:00:07+00:00",
+      "canonical_start_time": "2026-01-01T00:00:07+00:00",
+      "device_code": "SYN-DEVICE-SPLIT-A",
+      "node_reference": "SYN-REF-SPLIT-A-2",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-SPLIT-A-08",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-SPLIT-A-08",
+        "chaining_id": "SYN-CHAIN-SPLIT-MUTATED",
+        "cah.start_time": "2026-01-01T00:00:08+00:00",
+        "device_code": "SYN-DEVICE-SPLIT-A",
+        "node_reference": "SYN-REF-SPLIT-A-2"
+      },
+      "raw_start_time": "2026-01-01T00:00:08+00:00",
+      "canonical_start_time": "2026-01-01T00:00:08+00:00",
+      "device_code": "SYN-DEVICE-SPLIT-A",
+      "node_reference": "SYN-REF-SPLIT-A-2",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-SPLIT-B-01",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-SPLIT-B-01",
+        "chaining_id": "SYN-CHAIN-SPLIT-MUTATED",
+        "cah.start_time": "2026-01-01T00:10:01+00:00",
+        "device_code": "SYN-DEVICE-SPLIT-B",
+        "node_reference": "SYN-REF-SPLIT-B-1"
+      },
+      "raw_start_time": "2026-01-01T00:10:01+00:00",
+      "canonical_start_time": "2026-01-01T00:10:01+00:00",
+      "device_code": "SYN-DEVICE-SPLIT-B",
+      "node_reference": "SYN-REF-SPLIT-B-1",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-SPLIT-B-02",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-SPLIT-B-02",
+        "chaining_id": "SYN-CHAIN-SPLIT-MUTATED",
+        "cah.start_time": "2026-01-01T00:10:02+00:00",
+        "device_code": "SYN-DEVICE-SPLIT-B",
+        "node_reference": "SYN-REF-SPLIT-B-1"
+      },
+      "raw_start_time": "2026-01-01T00:10:02+00:00",
+      "canonical_start_time": "2026-01-01T00:10:02+00:00",
+      "device_code": "SYN-DEVICE-SPLIT-B",
+      "node_reference": "SYN-REF-SPLIT-B-1",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-SPLIT-B-03",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-SPLIT-B-03",
+        "chaining_id": "SYN-CHAIN-SPLIT-MUTATED",
+        "cah.start_time": "2026-01-01T00:10:03+00:00",
+        "device_code": "SYN-DEVICE-SPLIT-B",
+        "node_reference": "SYN-REF-SPLIT-B-1"
+      },
+      "raw_start_time": "2026-01-01T00:10:03+00:00",
+      "canonical_start_time": "2026-01-01T00:10:03+00:00",
+      "device_code": "SYN-DEVICE-SPLIT-B",
+      "node_reference": "SYN-REF-SPLIT-B-1",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-SPLIT-B-04",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-SPLIT-B-04",
+        "chaining_id": "SYN-CHAIN-SPLIT-MUTATED",
+        "cah.start_time": "2026-01-01T00:10:04+00:00",
+        "device_code": "SYN-DEVICE-SPLIT-B",
+        "node_reference": "SYN-REF-SPLIT-B-1"
+      },
+      "raw_start_time": "2026-01-01T00:10:04+00:00",
+      "canonical_start_time": "2026-01-01T00:10:04+00:00",
+      "device_code": "SYN-DEVICE-SPLIT-B",
+      "node_reference": "SYN-REF-SPLIT-B-1",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-SPLIT-B-05",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-SPLIT-B-05",
+        "chaining_id": "SYN-CHAIN-SPLIT-MUTATED",
+        "cah.start_time": "2026-01-01T00:10:05+00:00",
+        "device_code": "SYN-DEVICE-SPLIT-B",
+        "node_reference": "SYN-REF-SPLIT-B-2"
+      },
+      "raw_start_time": "2026-01-01T00:10:05+00:00",
+      "canonical_start_time": "2026-01-01T00:10:05+00:00",
+      "device_code": "SYN-DEVICE-SPLIT-B",
+      "node_reference": "SYN-REF-SPLIT-B-2",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-SPLIT-B-06",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-SPLIT-B-06",
+        "chaining_id": "SYN-CHAIN-SPLIT-MUTATED",
+        "cah.start_time": "2026-01-01T00:10:06+00:00",
+        "device_code": "SYN-DEVICE-SPLIT-B",
+        "node_reference": "SYN-REF-SPLIT-B-2"
+      },
+      "raw_start_time": "2026-01-01T00:10:06+00:00",
+      "canonical_start_time": "2026-01-01T00:10:06+00:00",
+      "device_code": "SYN-DEVICE-SPLIT-B",
+      "node_reference": "SYN-REF-SPLIT-B-2",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-SPLIT-B-07",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-SPLIT-B-07",
+        "chaining_id": "SYN-CHAIN-SPLIT-MUTATED",
+        "cah.start_time": "2026-01-01T00:10:07+00:00",
+        "device_code": "SYN-DEVICE-SPLIT-B",
+        "node_reference": "SYN-REF-SPLIT-B-2"
+      },
+      "raw_start_time": "2026-01-01T00:10:07+00:00",
+      "canonical_start_time": "2026-01-01T00:10:07+00:00",
+      "device_code": "SYN-DEVICE-SPLIT-B",
+      "node_reference": "SYN-REF-SPLIT-B-2",
+      "quality_flags": []
+    },
+    {
+      "alarm_id": "SYN-SPLIT-B-08",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "raw": {
+        "cah.id": "SYN-SPLIT-B-08",
+        "chaining_id": "SYN-CHAIN-SPLIT-MUTATED",
+        "cah.start_time": "2026-01-01T00:10:08+00:00",
+        "device_code": "SYN-DEVICE-SPLIT-B",
+        "node_reference": "SYN-REF-SPLIT-B-2"
+      },
+      "raw_start_time": "2026-01-01T00:10:08+00:00",
+      "canonical_start_time": "2026-01-01T00:10:08+00:00",
+      "device_code": "SYN-DEVICE-SPLIT-B",
+      "node_reference": "SYN-REF-SPLIT-B-2",
+      "quality_flags": []
+    }
+  ],
+  "chains": [
+    {
+      "chain_id": "SYN-CHAIN-SPLIT-MUTATED",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "member_count": 16,
+      "source_kind": "SYNTHETIC_TEST",
+      "provenance_class": "SYSTEM_FACT",
+      "event_span_seconds": 607
+    }
+  ],
+  "memberships": [
+    {
+      "chain_id": "SYN-CHAIN-SPLIT-MUTATED",
+      "alarm_id": "SYN-SPLIT-A-01",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-SPLIT-MUTATED",
+      "alarm_id": "SYN-SPLIT-A-02",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-SPLIT-MUTATED",
+      "alarm_id": "SYN-SPLIT-A-03",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-SPLIT-MUTATED",
+      "alarm_id": "SYN-SPLIT-A-04",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-SPLIT-MUTATED",
+      "alarm_id": "SYN-SPLIT-A-05",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-SPLIT-MUTATED",
+      "alarm_id": "SYN-SPLIT-A-06",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-SPLIT-MUTATED",
+      "alarm_id": "SYN-SPLIT-A-07",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-SPLIT-MUTATED",
+      "alarm_id": "SYN-SPLIT-A-08",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-SPLIT-MUTATED",
+      "alarm_id": "SYN-SPLIT-B-01",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-SPLIT-MUTATED",
+      "alarm_id": "SYN-SPLIT-B-02",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-SPLIT-MUTATED",
+      "alarm_id": "SYN-SPLIT-B-03",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-SPLIT-MUTATED",
+      "alarm_id": "SYN-SPLIT-B-04",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-SPLIT-MUTATED",
+      "alarm_id": "SYN-SPLIT-B-05",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-SPLIT-MUTATED",
+      "alarm_id": "SYN-SPLIT-B-06",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-SPLIT-MUTATED",
+      "alarm_id": "SYN-SPLIT-B-07",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    },
+    {
+      "chain_id": "SYN-CHAIN-SPLIT-MUTATED",
+      "alarm_id": "SYN-SPLIT-B-08",
+      "snapshot_id": "synthetic_counterfactual_split_v1:snapshot_000",
+      "source_kind": "SYNTHETIC_TEST"
+    }
+  ],
+  "system_metadata": {
+    "chain_rules": [],
+    "chain_characteristics": [],
+    "attribute_configs": [],
+    "pair_metadata": [],
+    "pair_metadata_batches": []
+  },
+  "topology": {
+    "nodes": [],
+    "edges": [],
+    "failure_domains": [],
+    "active_paths": [],
+    "mappings": []
+  },
+  "operational_context": [],
+  "provenance_manifest": {
+    "sources": [
+      {
+        "source_id": "synthetic_counterfactual_split_v1",
+        "source_kind": "SYNTHETIC_TEST",
+        "record_count": 16,
+        "notes": [
+          "COUNTERFACTUAL OVER_MERGE fixture"
+        ]
+      }
+    ],
+    "generator_version": "nocpro-mock-0.1.0",
+    "unavailable_capabilities": [],
+    "notes": [
+      "scenario_id=synthetic_counterfactual_split_v1",
+      "seed=42",
+      "Synthetic snapshot; cannot be used as real validation."
+    ]
+  },
+  "schema_version": "v1"
+}

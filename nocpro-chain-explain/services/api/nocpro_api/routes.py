@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from graybox import adapt_graybox_metadata
 from libs.contracts import ContractIngestError
@@ -562,3 +562,105 @@ async def calibrate_config(request: Request) -> CalibrationReportView:
         return CalibrationReportView(**report)
     except Exception as exc:
         raise translate_error(exc) from exc
+
+
+def topology_repo(request: Request):
+    return getattr(request.app.state, "topology_repository", None)
+
+
+@router.get("/topology/profiles")
+async def get_topology_profiles(request: Request) -> dict[str, Any]:
+    repo = topology_repo(request)
+    if repo is not None:
+        profiles = await repo.list_profiles()
+        return {"status": "AVAILABLE", "profiles": profiles}
+    return {"status": "AVAILABLE", "profiles": ["ALARM_ONLY"]}
+
+
+@router.get("/topology/projection")
+async def get_topology_projection(
+    request: Request,
+    profile_id: str | None = None,
+    profile: str | None = None,
+    root_id: str | None = None,
+    max_depth: int = Query(default=3, ge=1, le=10),
+    max_children: int = Query(default=50, ge=1, le=200),
+    version: str | None = None,
+) -> dict[str, Any]:
+    selected_profile = profile_id or profile or "ALARM_ONLY"
+    repo = topology_repo(request)
+    if repo is not None:
+        return await repo.get_projection(
+            selected_profile,
+            root_id=root_id,
+            max_depth=max_depth,
+            max_children=max_children,
+            topology_version=version,
+        )
+    return {
+        "status": "UNAVAILABLE",
+        "reason": "TOPOLOGY_PERSISTENCE_NOT_INITIALIZED",
+        "profile": selected_profile,
+        "dataset_profile": selected_profile,
+        "topology_kind": "UNAVAILABLE",
+        "topology": {"availability": "UNAVAILABLE"},
+    }
+
+
+@router.get("/topology/search")
+async def get_topology_search(
+    request: Request,
+    profile_id: str | None = None,
+    profile: str | None = None,
+    q: str = "",
+    query: str | None = None,
+    version: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    selected_profile = profile_id or profile or "ALARM_ONLY"
+    search_query = query if query is not None else q
+    repo = topology_repo(request)
+    if repo is not None:
+        return await repo.search_nodes(
+            selected_profile,
+            search_query,
+            topology_version=version,
+            limit=limit,
+        )
+    return {
+        "status": "UNAVAILABLE",
+        "reason": "TOPOLOGY_PERSISTENCE_NOT_INITIALIZED",
+        "dataset_profile": selected_profile,
+        "results": [],
+    }
+
+
+@router.get("/topology/resolve")
+async def get_topology_resolve(
+    request: Request,
+    profile_id: str | None = None,
+    profile: str | None = None,
+    identifier: str = "",
+    version: str | None = None,
+) -> dict[str, Any]:
+    selected_profile = profile_id or profile or "ALARM_ONLY"
+    repo = topology_repo(request)
+    if repo is not None:
+        return await repo.resolve_identifier(
+            selected_profile,
+            identifier,
+            topology_version=version,
+        )
+    return {
+        "status": "UNAVAILABLE",
+        "reason": "TOPOLOGY_PERSISTENCE_NOT_INITIALIZED",
+        "dataset_profile": selected_profile,
+        "identifier": identifier,
+        "resource_id": None,
+        "mapping_status": "UNMAPPED",
+        "source_field": None,
+        "navigation_eligible": False,
+        "p2_mapping_eligible": False,
+        "dependency_semantics": "UNAVAILABLE",
+    }
+

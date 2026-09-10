@@ -282,14 +282,16 @@ export function NocHeader({
             )}
           </div>
         </div>
-        <nav className="order-3 flex w-full items-center gap-space-xs overflow-x-auto lg:order-none lg:w-auto" aria-label="Snapshot navigation">
+        <nav className="order-3 flex w-full items-center gap-space-sm overflow-x-auto lg:order-none lg:w-auto" aria-label="Snapshot navigation">
           {([['snapshot-overview', 'Overview'], ['chains-explorer', 'Chains Explorer'], ['multi-chain-timeline', 'Timeline'], ['compare-chains', 'Compare']] as const).map(([view, label]) => (
-            <button key={view} className={`shrink-0 rounded px-space-sm py-1 font-code-sm text-code-sm transition-all ${currentView === view ? 'bg-surface-container-high font-semibold text-secondary' : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'}`} onClick={() => onNavigate(view)}>{label}</button>
+            <button key={view} className={`shrink-0 rounded px-space-md py-1 font-code-sm text-code-sm transition-all ${currentView === view ? 'bg-surface-container-high font-semibold text-secondary' : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'}`} onClick={() => onNavigate(view)}>{label}</button>
           ))}
         </nav>
-        <button className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-surface-container-highest bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface" onClick={onOpenSettings} title="Analysis settings" aria-label="Analysis settings">
-          <span className="material-symbols-outlined text-[18px]">settings</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-surface-container-highest bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface" onClick={onOpenSettings} title="Analysis settings" aria-label="Analysis settings">
+            <span className="material-symbols-outlined text-[18px]">settings</span>
+          </button>
+        </div>
       </div>
     </header>
   )

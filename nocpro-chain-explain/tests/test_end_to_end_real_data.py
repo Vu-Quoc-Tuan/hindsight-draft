@@ -132,6 +132,7 @@ def test_real_ip_replay_exact_mapping_can_supply_undirected_dep_hop():
         "--topo-ip",
         "datasets/raw/topo/topoIP.csv",
         "--with-topology",
+        "--include-raw-topology",
         "--chain-id",
         IP_ADJACENCY_CHAIN,
         "--snapshot-id",

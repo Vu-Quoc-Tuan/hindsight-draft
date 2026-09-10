@@ -186,14 +186,25 @@ class Workspace:
         if self._local_evolution_dag is not None:
             return self._local_evolution_dag
         try:
-            mock_root = Path(
+            presets_dir = Path(
                 os.environ.get(
-                    "NOCPRO_MOCK_ROOT",
-                    str(ROOT.parent / "nocpro-mock"),
+                    "NOCPRO_PRESETS_DIR",
+                    str(ROOT / "config" / "presets"),
                 )
             )
-            evo_dir = mock_root / "datasets" / "generated" / "real_ip_evolution_sample"
-            if not evo_dir.exists():
+            evo_files = [
+                presets_dir / "real_alarm_evolution_v1_snap_000.json",
+                presets_dir / "real_alarm_evolution_v1_snap_001.json",
+                presets_dir / "real_alarm_evolution_v1_snap_002.json",
+            ]
+            if not any(f.exists() for f in evo_files):
+                mock_sample_dir = ROOT.parent / "nocpro-mock" / "datasets" / "generated" / "real_ip_evolution_sample"
+                evo_files = [
+                    mock_sample_dir / "snapshot_000.json",
+                    mock_sample_dir / "snapshot_001.json",
+                    mock_sample_dir / "snapshot_002.json",
+                ]
+            if not any(f.exists() for f in evo_files):
                 return None
             try:
                 m_min = int(self.config.value("lineage.min_intersection"))
@@ -205,8 +216,7 @@ class Workspace:
                 m_min=m_min,
             )
             prev_pkg = None
-            for fname in ["snapshot_000.json", "snapshot_001.json", "snapshot_002.json"]:
-                fpath = evo_dir / fname
+            for fpath in evo_files:
                 if fpath.exists():
                     with open(fpath, encoding="utf-8") as f:
                         data = json.load(f)
@@ -442,10 +452,13 @@ class Workspace:
         return result
 
     def compute_snapshot(
-        self, payload: dict[str, Any]
+        self, payload: dict[str, Any] | IngestedPackage
     ) -> tuple[IngestedPackage, SnapshotPrecompute]:
         """Build Tier-1A state without changing the currently served snapshot."""
-        package = load_validated_package(payload)
+        if isinstance(payload, IngestedPackage):
+            package = payload
+        else:
+            package = load_validated_package(payload)
         # Production execution stays on the exact full path while the versioned
         # incremental policy is explicitly disabled.
         result = precompute_snapshot(

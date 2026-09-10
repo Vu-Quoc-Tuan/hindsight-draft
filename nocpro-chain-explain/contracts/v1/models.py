@@ -54,6 +54,29 @@ class GenerationMetadata:
 
 
 @dataclass(frozen=True)
+class TopologyRef:
+    """Reference to an external versioned topology graph."""
+
+    profile_id: str
+    topology_version: str
+    source_version: str | None = None
+    topology_hash: str | None = None
+
+
+def canonical_topology_version(profile_id: str, source_version: str) -> str:
+    """Deterministic, canonical topology version identifier.
+
+    Format:
+      - For IP profiles: 'ip-{32_hex_chars}'
+      - For IT profiles: 'it-{32_hex_chars}'
+      - For custom profiles: '{prefix}-{32_hex_chars}'
+    """
+    clean_hash = source_version.split(":", 1)[-1].strip().lower()
+    prefix = "ip" if "IP" in profile_id.upper() else ("it" if "IT" in profile_id.upper() else profile_id.lower())
+    return f"{prefix}-{clean_hash[:32]}"
+
+
+@dataclass(frozen=True)
 class Snapshot:
     """Primary processing boundary (ADR-0005)."""
 
@@ -67,6 +90,7 @@ class Snapshot:
     schema_version: str = "v1"
     config_version: str | None = None
     topology_version: str | None = None
+    topology_ref: TopologyRef | None = None
 
 
 @dataclass(frozen=True)
@@ -289,9 +313,9 @@ class AlarmResourceMapping:
     """Fuzzy prefix match is not a mapping method (docs 04/06)."""
 
     alarm_id: str
-    resource_id: str | None
-    mapping_status: MappingStatus
-    mapping_method: MappingMethod
+    resource_id: str | None = None
+    mapping_status: MappingStatus = MappingStatus.UNMAPPED
+    mapping_method: MappingMethod = MappingMethod.NONE
     mapping_confidence: float | None = None
     topology_layer: str | None = None
     source_version: str | None = None

@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKeyConstraint,
     Index,
+    Integer,
     LargeBinary,
     String,
     Text,
@@ -15,7 +16,13 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_sqlite(type_, compiler, **kw):
+    return "JSON"
 
 
 class Base(DeclarativeBase):
@@ -50,6 +57,8 @@ class SnapshotIngest(Base):
     lineage_status: Mapped[str | None] = mapped_column(String(32))
     lineage_result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     similarity_status: Mapped[str | None] = mapped_column(String(32))
+    topology_profile_id: Mapped[str | None] = mapped_column(String(64))
+    topology_version_ref: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -425,3 +434,166 @@ class OperatorFeedbackRecord(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class TopologyIngest(Base):
+    __tablename__ = "topology_ingest"
+
+    profile_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    topology_version: Mapped[str] = mapped_column(String(128), primary_key=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="RECEIVING")
+    total_chunks: Mapped[int | None]
+    received_chunks: Mapped[int] = mapped_column(nullable=False, default=0)
+    payload_checksum: Mapped[str | None] = mapped_column(String(64))
+    invalid_reason: Mapped[str | None] = mapped_column(Text)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class TopologyChunk(Base):
+    __tablename__ = "topology_chunks"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["profile_id", "topology_version"],
+            ["topology_ingest.profile_id", "topology_ingest.topology_version"],
+            ondelete="CASCADE",
+        ),
+    )
+
+    profile_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    topology_version: Mapped[str] = mapped_column(String(128), primary_key=True)
+    chunk_index: Mapped[int] = mapped_column(primary_key=True)
+    chunk_checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload_compressed: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class TopologyKafkaInbox(Base):
+    __tablename__ = "topology_kafka_inbox"
+
+    topic: Mapped[str] = mapped_column(String(128), primary_key=True)
+    partition: Mapped[int] = mapped_column(primary_key=True)
+    offset: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    message_key: Mapped[str | None] = mapped_column(String(256))
+    processed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class TopologyVersionRecord(Base):
+    __tablename__ = "topology_versions"
+
+    profile_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    topology_version: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="RECEIVING")
+    relation_model: Mapped[str] = mapped_column(String(64), nullable=False)
+    direction_kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    dependency_semantics: Mapped[str] = mapped_column(String(64), nullable=False)
+    navigation_eligible: Mapped[bool] = mapped_column(nullable=False, default=True)
+    p2_eligible: Mapped[bool] = mapped_column(nullable=False, default=False)
+    node_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    edge_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    alias_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    payload_checksum: Mapped[str | None] = mapped_column(String(64))
+    produced_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    committed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TopologyActiveVersionRecord(Base):
+    __tablename__ = "topology_active_versions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["profile_id", "topology_version"],
+            ["topology_versions.profile_id", "topology_versions.topology_version"],
+            ondelete="CASCADE",
+        ),
+    )
+
+    profile_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    topology_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class TopologyNodeRecord(Base):
+    __tablename__ = "topology_nodes"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["profile_id", "topology_version"],
+            ["topology_versions.profile_id", "topology_versions.topology_version"],
+            ondelete="CASCADE",
+        ),
+        Index("ix_topology_nodes_search", "profile_id", "topology_version", "display_name"),
+    )
+
+    profile_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    topology_version: Mapped[str] = mapped_column(String(128), primary_key=True)
+    resource_id: Mapped[str] = mapped_column(String(256), primary_key=True)
+    resource_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(512), nullable=False)
+    source_tables: Mapped[dict[str, Any] | list[Any] | None] = mapped_column(JSONB)
+    attributes: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
+
+class TopologyEdgeRecord(Base):
+    __tablename__ = "topology_edges"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["profile_id", "topology_version"],
+            ["topology_versions.profile_id", "topology_versions.topology_version"],
+            ondelete="CASCADE",
+        ),
+        Index("ix_topology_edges_source", "profile_id", "topology_version", "source_id"),
+        Index("ix_topology_edges_target", "profile_id", "topology_version", "target_id"),
+        UniqueConstraint(
+            "profile_id",
+            "topology_version",
+            "source_id",
+            "target_id",
+            "relation_type",
+            name="uq_topology_edges_natural",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
+    profile_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    topology_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    relation_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    direction_kind: Mapped[str | None] = mapped_column(String(64))
+    dependency_semantics: Mapped[str | None] = mapped_column(String(64))
+    source_table: Mapped[str | None] = mapped_column(String(128))
+    source_version: Mapped[str | None] = mapped_column(String(128))
+
+
+class TopologyAliasResolutionRecord(Base):
+    __tablename__ = "topology_alias_resolution"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["profile_id", "topology_version"],
+            ["topology_versions.profile_id", "topology_versions.topology_version"],
+            ondelete="CASCADE",
+        ),
+    )
+
+    profile_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    topology_version: Mapped[str] = mapped_column(String(128), primary_key=True)
+    alias_key: Mapped[str] = mapped_column(String(256), primary_key=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    unique_resource_id: Mapped[str | None] = mapped_column(String(256))
+    verified_by: Mapped[str | None] = mapped_column(String(128))
+

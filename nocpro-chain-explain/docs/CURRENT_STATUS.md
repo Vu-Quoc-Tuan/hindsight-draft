@@ -32,7 +32,7 @@ thay đổi nhưng chưa commit trong worktree. File này mô tả trạng thái
 | Bounded Audit visualization | Implemented từ persisted exact artifact | Unit + synthetic + recorded browser/restart | Visualization không phải analysis input |
 | Durable Deep Dive on demand | Lifecycle/full public result persisted; UI hydrate latest compatible run | Unit/API + PostgreSQL write/read-back + Chromium reload | Local `make dev` chỉ sống qua browser reload; API-restart durability cần `DATABASE_URL` |
 | Counterfactual Review | REMOVE/SPLIT/MOVE/MERGE implemented | Unit + synthetic Kafka/PostgreSQL/restart; browser coverage không đều mọi operation | Proposal-only, production calibration chưa được thiết lập |
-| Real topology navigation | Implemented | Source loader/resolver + recorded Chromium navigation | Navigation không cấp dependency semantics |
+| Real topology navigation & graph persistence | Implemented (Kafka chunks/barrier, ADR-0002 envelopes, PostgreSQL materialized graph, API projection/search/resolve) | Unit + synthetic Kafka consumer + API routes | Materialized navigation graph; Undirected proximity only |
 | IP `Dep_hop` | Implemented cho exact-mapped endpoints | Unit + targeted replay smoke được ghi nhận | Undirected proximity only |
 | Directed P2 topology hypotheses | Implemented cho compatible inputs | Unit + synthetic Docker | Real IP/IT sources hiện không đủ semantics |
 | Assistant/Advisor | Bounded read-only tools, grounded rendering và deterministic fallback implemented | Unit/API/UI; fallback acceptance được ghi nhận | Live provider browser acceptance của loop mới chưa được ghi nhận |
@@ -134,15 +134,57 @@ dữ liệu hoàn toàn là synthetic, trạng thái hệ thống không thể t
 6. Thu thập authoritative taxonomy, sequential snapshots và operator labels để
    đóng các production gate.
 
-## Verification gần nhất trong phiên review
+## Kiến trúc phân tách Mock & Pure Kafka Topology Pipeline (Cập nhật 2026-09-09)
 
-Các kiểm tra targeted đã được ghi nhận trước đợt docs consolidation:
+1. **Phân tách hoàn toàn `nocpro_mock` khỏi Explain API**:
+   - `services/api/nocpro_api/catalog.py` đã loại bỏ hoàn toàn việc import `nocpro_mock` và `replay_csv`.
+   - Toàn bộ 12 snapshot catalog presets (bao gồm 3 real replay: IP, IT, 20260907) đã được tiền sinh và lưu trực tiếp trong `nocpro-chain-explain/config/presets/`.
+   - API hoàn toàn tự lực (self-contained) cả khi chạy local lẫn trong Docker container.
+   - Kiểm tra `test_catalog_truth.py` tự động xác thực toàn bộ 12 preset về tính tồn tại của file và tính chính xác của `alarm_count`/`chain_count`.
 
-- backend targeted config + local Evolution tests: pass;
-- frontend Validation/Counterfactual component tests: pass;
-- frontend lint: exit 0 nhưng còn warnings;
-- browser E2E hiện tại: chưa chạy vì không có browser connection;
-- live dev services tại lần kiểm tra cuối: không còn process chạy.
+2. **Đường truyền Topology thuần Kafka (Pure Kafka Topology Pipeline)**:
+   - Giao tiếp giữa Mock và Explain API hoàn toàn 100% qua Kafka streaming, không qua HTTP proxy.
+   - Mock bắn initial topology snapshot qua topic chuyên biệt `nocpro.topology.v1` (`nocpro.topology.v1.dlq` cho dead-letter queue).
+   - **Phạm vi hiện tại (Current Scope)**: Hệ thống triển khai cơ chế **initial full-graph snapshot bootstrap** (`TOPOLOGY_CHUNK` + `TOPOLOGY_COMPLETE`). Mỗi khi có cập nhật hoặc khởi động lại, toàn bộ đồ thị theo phiên bản được stream nén theo chunk (2MB/chunk) và kết thúc bằng commit barrier. Cơ chế **incremental delta streaming** (stream từng thay đổi node/edge vi mô) được quy hoạch vào giai đoạn sau khi có upstream CDC/delta stream khả dụng.
+   - Payload được nén zstandard (level 3) và chia chunk an toàn, kết thúc bằng barrier `TOPOLOGY_COMPLETE`.
+   - Explain API (`KafkaTopologyConsumer`) lắng nghe, deduplicate qua `topology_kafka_inbox`, giải nén có cơ chế bảo vệ zip bomb (chặn nếu vượt quá 256MB), kiểm tra checksum SHA-256 toàn vẹn, và vật chất hóa (materialize) vào các bảng PostgreSQL:
+     - `topology_versions`, `topology_active_versions`
+     - `topology_nodes`, `topology_edges`, `topology_alias_resolution`
+   - Giải quyết triệt để race condition: Nếu snapshot đến trước topology mà nó tham chiếu (`topology_ref`), snapshot chuyển sang trạng thái `PENDING_TOPOLOGY`. Khi topology version tương ứng commit thành công, snapshot lập tức được đánh thức (`wake_pending_topology`) và đẩy sang Tier-1A.
 
-Sau mỗi thay đổi implementation, phải refresh file này từ source/test/runtime;
-không copy trạng thái cũ như một khẳng định hiện tại.
+3. **Snapshot Decoupling & Slimming Invariant**:
+   - Snapshot alarm đã được tách rời hoàn toàn khỏi đồ thị topology thô.
+   - Mặc định snapshot chỉ mang `topology_ref` (`profile_id`, `topology_version`) cùng với `mappings`. Thuộc tính `nodes=()` và `edges=()` để rỗng (0 nodes, 0 edges).
+   - Analysis Worker khi phân tích tương quan graph (ví dụ `Dep_hop` hoặc role analysis) sẽ hydrate trực tiếp từ PostgreSQL materialized graph theo đúng `topology_ref`, không còn phụ thuộc vào việc nhét hàng nghìn node/edge thô vào snapshot payload.
+
+4. **Chuẩn hóa Versioning Canonical đồng nhất**:
+   - Sử dụng hàm chuẩn duy nhất `canonical_topology_version(profile_id: str, source_version: str) -> str` tại `contracts/v1/models.py`.
+   - Hàm chuẩn hóa loại bỏ tiền tố `sha256:`, trích xuất 32 ký tự hex đầu tiên, và gắn tiền tố profile (`ip-` hoặc `it-`), đảm bảo tính nhất quán tuyệt đối giữa publisher, snapshot replay, và database persistence.
+   - Được bảo vệ bởi test tự động đa repository: `tests/test_cross_repo_topology_version.py`.
+
+5. **Phục vụ Navigation Tree trực tiếp từ Explain API**:
+   - Explain API cung cấp trực tiếp các endpoint REST:
+     - `GET /api/v1/topology/profiles`
+     - `GET /api/v1/topology/projection`
+     - `GET /api/v1/topology/search`
+     - `GET /api/v1/topology/resolve`
+   - Web frontend chuyển sang gọi trực tiếp Explain API (`/api/v1/topology/*`), loại bỏ hoàn toàn mọi liên kết tới `/mock-api`.
+   - Dữ liệu giữa `nocpro-mock` và `nocpro-chain-explain` hoàn toàn 100% qua Kafka streaming. Nginx gateway trong production cung cấp route `/mock-studio/` như kênh browser/operator điều khiển Mock Studio trực tiếp, không phải kênh truyền dữ liệu sang Explain; các endpoint legacy `/mock-api/` bị chặn 404 hoàn toàn.
+
+6. **Bảo tồn bất biến phương pháp luận (Methodology Invariants)**:
+   - IT Topology mang `relation_model="SOURCE_RELATION"`, `direction_kind="SOURCE_RELATION"`, `p2_eligible=False`, `dependency_semantics="UNVERIFIED"`.
+   - IP Topology mang `relation_model="PHYSICAL_ADJACENCY"`, `direction_kind="NONE"`, `p2_eligible=False`, `dependency_semantics="UNAVAILABLE"`.
+   - Các quan hệ navigation thuần túy không bao giờ bị thăng hạng (promoted) nhầm lẫn thành bằng chứng phụ thuộc vận hành (P2 operational dependency).
+
+## Verification gần nhất trong phiên review (2026-09-09)
+
+- `make test`: **120 backend tests** passed, **28 mock server tests** passed, **59 web frontend Vitest tests** passed.
+- `tests/test_topology_engine.py`: **4 passed** (kiểm tra directed hierarchy, cycles, multi-parent, undirected adjacency).
+- `tests/test_kafka_topology_consumer.py`: **5 passed** (kiểm tra deduplication inbox, DLQ routing khi payload lỗi/mismatched key, chunk assembly, barrier commit & coordinator wake).
+- `tests/test_topology_api_routes.py`: **4 passed** (kiểm tra `/api/v1/topology/{profiles,projection,search,resolve}`).
+- `tests/test_cross_repo_topology_version.py`: **3 passed** (kiểm tra snapshot & publisher version parity, deterministic digest, và snapshot slimming invariant).
+- `tests/test_topology_repository_integration.py`: **3 passed** (kiểm tra real table lifecycle, atomic inbox deduplication, dual-path barrier assembly, IP undirected projection, IT alias resolution, status lock).
+- `tests/test_kafka_topology.py` (mock producer): **3 passed** (kiểm tra IP, IT và chunk wire serialization).
+- `grep -rn "mock-api" nocpro-chain-explain/services/web/`: **0 kết quả trong code thực thi** (đã gỡ sạch khỏi frontend và Nginx).
+- `pnpm lint` (web): **0 warnings, 0 errors** (65 files, 116 rules).
+

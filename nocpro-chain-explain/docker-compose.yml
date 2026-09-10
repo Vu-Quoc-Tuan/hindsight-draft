@@ -5,7 +5,8 @@ services:
       POSTGRES_DB: nocpro
       POSTGRES_USER: nocpro
       POSTGRES_PASSWORD: nocpro
-    ports: ["${POSTGRES_HOST_PORT:-5432}:5432"]
+    expose:
+      - "5432"
     volumes: ["postgres-data:/var/lib/postgresql"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U nocpro -d nocpro"]
@@ -15,7 +16,8 @@ services:
 
   kafka:
     image: apache/kafka:4.3.1
-    ports: ["${KAFKA_HOST_PORT:-9092}:9092"]
+    expose:
+      - "19092"
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
@@ -49,6 +51,8 @@ services:
       - |
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic nocpro.snapshot.v1 --partitions 3 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic nocpro.snapshot.v1.dlq --partitions 3 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic nocpro.topology.v1 --partitions 3 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic nocpro.topology.v1.dlq --partitions 3 --replication-factor 1
 
   migrate:
     image: ${API_IMAGE:-nocpro-chain-explain-api:latest}
@@ -62,12 +66,34 @@ services:
       postgres:
         condition: service_healthy
 
+  topology-seed:
+    image: ${MOCK_IMAGE:-nocpro-mock:latest}
+    build:
+      context: ..
+      dockerfile: nocpro-mock/Dockerfile
+    working_dir: /workspace/nocpro-mock
+    volumes:
+      - ${HINDSIGHT_DATA_DIR:-../nocpro-mock/datasets/raw}:/workspace/nocpro-mock/datasets/raw:ro
+    command:
+      - .venv/bin/python
+      - -m
+      - nocpro_mock.cli
+      - publish-topology
+      - --profile
+      - ALL
+      - --kafka-bootstrap
+      - kafka:19092
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+
   api:
     image: ${API_IMAGE:-nocpro-chain-explain-api:latest}
     build:
       context: .
       dockerfile: services/api/Dockerfile
-    ports: ["${API_HOST_PORT:-8000}:8000"]
+    expose:
+      - "8000"
     environment:
       PYTHONUNBUFFERED: "1"
       DATABASE_URL: postgresql+asyncpg://nocpro:nocpro@postgres:5432/nocpro
@@ -75,6 +101,8 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:19092
       KAFKA_SNAPSHOT_TOPIC: nocpro.snapshot.v1
       KAFKA_DLQ_TOPIC: nocpro.snapshot.v1.dlq
+      KAFKA_TOPOLOGY_TOPIC: nocpro.topology.v1
+      KAFKA_TOPOLOGY_DLQ_TOPIC: nocpro.topology.v1.dlq
       KAFKA_MAX_CHUNKS: "1024"
       KAFKA_MAX_CHUNK_BYTES: "4194304"
       KAFKA_MAX_UNCOMPRESSED_BYTES: "268435456"
@@ -94,16 +122,13 @@ services:
       kafka-init:
         condition: service_completed_successfully
 
+
   web:
     image: ${WEB_IMAGE:-nocpro-chain-explain-web:latest}
     build:
       context: services/web
-      args:
-        # Vite embeds this browser-facing URL at build time. It points only to
-        # nocpro-mock's read-only topology/navigation API, never Explain/P2.
-        VITE_NOCPRO_MOCK_URL: ${VITE_NOCPRO_MOCK_URL:-http://localhost:8085}
     ports: ["${WEB_HOST_PORT:-3000}:80"]
-    depends_on: [api]
+    depends_on: [api, mock-ui]
 
   mock-producer:
     profiles: ["replay"]
@@ -172,12 +197,17 @@ services:
       context: ..
       dockerfile: nocpro-mock/Dockerfile
     working_dir: /workspace/nocpro-mock
-    ports: ["${MOCK_UI_HOST_PORT:-8085}:8085"]
+    expose:
+      - "8085"
+    environment:
+      NOCPRO_MOCK_STATE_DIR: /var/lib/nocpro-mock
+      KAFKA_BOOTSTRAP_SERVERS: kafka:19092
     volumes:
       - ${HINDSIGHT_DATA_DIR:-../nocpro-mock/datasets/raw}:/workspace/nocpro-mock/datasets/raw:ro
       # Synthetic scenarios are test fixtures. They are mounted read-only for
       # explicit local acceptance/replay and are never production source data.
       - ../nocpro-mock/docs/examples/synthetic:/workspace/nocpro-mock/docs/examples/synthetic:ro
+      - mock-studio-state:/var/lib/nocpro-mock
     command:
       - .venv/bin/python
       - -m
@@ -195,3 +225,4 @@ services:
 
 volumes:
   postgres-data:
+  mock-studio-state:

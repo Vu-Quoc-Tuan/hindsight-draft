@@ -20,12 +20,23 @@ class CatalogItem:
     chain_count: int
     description: str
     badge: str
-    file_path: str | None = None
-    replay_csv: str | None = None
+    file_path: str
 
 
-_REPO_ROOT = Path(__file__).resolve().parents[4]
-_MOCK_ROOT = Path(os.environ.get("NOCPRO_MOCK_ROOT", str(_REPO_ROOT / "nocpro-mock")))
+_EXPLAIN_ROOT = Path(__file__).resolve().parents[3]
+_PRESETS_DIR = Path(os.environ.get("NOCPRO_PRESETS_DIR", str(_EXPLAIN_ROOT / "config" / "presets")))
+
+
+def _resolve_preset_path(item: CatalogItem) -> Path:
+    direct = _PRESETS_DIR / item.file_path
+    if direct.is_file():
+        return direct
+    explain_rel = _EXPLAIN_ROOT / item.file_path
+    if explain_rel.is_file():
+        return explain_rel
+    return direct
+
+
 
 _CATALOG: list[CatalogItem] = [
     # 1. IP Network
@@ -37,7 +48,7 @@ _CATALOG: list[CatalogItem] = [
         chain_count=258,
         description="Observed IP alarms mapped to topoIP.csv router/switch adjacency graph.",
         badge="Real Replay",
-        replay_csv="datasets/raw/alarm/alarmIP.csv",
+        file_path="real_alarm_ip_demo.json",
     ),
     CatalogItem(
         snapshot_id="real_alarm_evolution_v1_snap_002",
@@ -47,7 +58,7 @@ _CATALOG: list[CatalogItem] = [
         chain_count=17,
         description="Temporal sliding window step 2 of IP network alarm progression.",
         badge="Evolution",
-        file_path="datasets/generated/real_ip_evolution_sample/snapshot_002.json",
+        file_path="real_alarm_evolution_v1_snap_002.json",
     ),
     CatalogItem(
         snapshot_id="real_alarm_evolution_v1_snap_001",
@@ -57,7 +68,7 @@ _CATALOG: list[CatalogItem] = [
         chain_count=11,
         description="Temporal sliding window step 1 of IP network alarm progression.",
         badge="Evolution",
-        file_path="datasets/generated/real_ip_evolution_sample/snapshot_001.json",
+        file_path="real_alarm_evolution_v1_snap_001.json",
     ),
     CatalogItem(
         snapshot_id="real_alarm_evolution_v1_snap_000",
@@ -67,7 +78,7 @@ _CATALOG: list[CatalogItem] = [
         chain_count=1,
         description="Initial seed single-alarm snapshot for IP network evolution.",
         badge="Evolution",
-        file_path="datasets/generated/real_ip_evolution_sample/snapshot_000.json",
+        file_path="real_alarm_evolution_v1_snap_000.json",
     ),
     # 2. IT Services
     CatalogItem(
@@ -78,7 +89,7 @@ _CATALOG: list[CatalogItem] = [
         chain_count=226,
         description="Observed IT alarms with directed source relations to microservice topology.",
         badge="Real Replay",
-        replay_csv="datasets/raw/alarm/alarmIT.csv",
+        file_path="real_alarm_it_demo.json",
     ),
     CatalogItem(
         snapshot_id="synthetic_temporal_topology_v1:snapshot_003",
@@ -88,7 +99,7 @@ _CATALOG: list[CatalogItem] = [
         chain_count=2,
         description="Directed service dependency progression across microservice components.",
         badge="Synthetic",
-        file_path="docs/examples/synthetic/temporal_topology/snapshot_003.json",
+        file_path="synthetic_temporal_topology_snapshot_003.json",
     ),
     CatalogItem(
         snapshot_id="synthetic_temporal_topology_v1:snapshot_005",
@@ -98,7 +109,7 @@ _CATALOG: list[CatalogItem] = [
         chain_count=1,
         description="Consolidated cascade scenario in synthetic temporal service topology.",
         badge="Synthetic",
-        file_path="docs/examples/synthetic/temporal_topology/snapshot_005.json",
+        file_path="synthetic_temporal_topology_snapshot_005.json",
     ),
     CatalogItem(
         snapshot_id="synthetic_temporal_topology_v1:snapshot_000",
@@ -108,7 +119,7 @@ _CATALOG: list[CatalogItem] = [
         chain_count=1,
         description="Root trigger alarm on IT upstream service node.",
         badge="Synthetic",
-        file_path="docs/examples/synthetic/temporal_topology/snapshot_000.json",
+        file_path="synthetic_temporal_topology_snapshot_000.json",
     ),
     # 3. Alarm Only
     CatalogItem(
@@ -119,7 +130,7 @@ _CATALOG: list[CatalogItem] = [
         chain_count=251,
         description="500 observed production alarms from alarm_data.csv (251 distinct chains).",
         badge="Real Replay",
-        replay_csv="datasets/raw/alarm/alarm_data.csv",
+        file_path="real_alarm_20260907_demo.json",
     ),
     CatalogItem(
         snapshot_id="synthetic_counterfactual_move_v1:snapshot_000",
@@ -129,7 +140,7 @@ _CATALOG: list[CatalogItem] = [
         chain_count=2,
         description="Controlled scenario evaluating cross-chain member reassignment (MOVE_MEMBER).",
         badge="Synthetic",
-        file_path="docs/examples/synthetic/counterfactual_move/snapshot_000.json",
+        file_path="synthetic_counterfactual_move_snapshot_000.json",
     ),
     CatalogItem(
         snapshot_id="synthetic_counterfactual_split_v1:snapshot_000",
@@ -139,7 +150,7 @@ _CATALOG: list[CatalogItem] = [
         chain_count=1,
         description="Controlled synthetic scenario evaluating cut boundary split hypothesis.",
         badge="Synthetic",
-        file_path="docs/examples/synthetic/counterfactual_split/snapshot_000.json",
+        file_path="synthetic_counterfactual_split_snapshot_000.json",
     ),
     CatalogItem(
         snapshot_id="synthetic_counterfactual_merge_v1:snapshot_000",
@@ -149,23 +160,18 @@ _CATALOG: list[CatalogItem] = [
         chain_count=2,
         description="Controlled synthetic scenario evaluating multi-chain merge hypothesis.",
         badge="Synthetic",
-        file_path="docs/examples/synthetic/counterfactual_merge/snapshot_000.json",
+        file_path="synthetic_counterfactual_merge_snapshot_000.json",
     ),
 ]
 
 
 def check_item_availability(item: CatalogItem) -> tuple[bool, str | None]:
-    if item.file_path:
-        full_path = _MOCK_ROOT / item.file_path
-        if not full_path.exists():
-            return False, f"Preset file not found: {item.file_path}"
-        return True, None
-    if item.replay_csv:
-        csv_path = _MOCK_ROOT / item.replay_csv
-        if not csv_path.exists():
-            return False, f"Replay CSV not found: {item.replay_csv}"
-        return True, None
-    return False, "No backing file or replay CSV configured"
+    if not item.file_path:
+        return False, "No backing file configured"
+    full_path = _resolve_preset_path(item)
+    if not full_path.is_file():
+        return False, f"Preset file not found: {item.file_path}"
+    return True, None
 
 
 def list_catalog_presets() -> list[dict[str, Any]]:
@@ -191,30 +197,10 @@ def load_preset_payload(snapshot_id: str) -> tuple[dict[str, Any], ProfileKind]:
     if item is None:
         raise ValueError(f"Unknown preset snapshot_id: {snapshot_id!r}")
 
-    if item.file_path:
-        full_path = _MOCK_ROOT / item.file_path
-        if not full_path.exists():
-            raise FileNotFoundError(f"Preset file not found: {full_path}")
-        return json.loads(full_path.read_text(encoding="utf-8")), item.profile
+    if not item.file_path:
+        raise ValueError(f"Catalog item {snapshot_id} has no file_path configured")
 
-    if item.replay_csv:
-        csv_path = _MOCK_ROOT / item.replay_csv
-        if not csv_path.exists():
-            raise FileNotFoundError(f"Replay CSV not found: {csv_path}")
-        try:
-            from nocpro_mock.config import MockConfig
-            from nocpro_mock.contract import package_to_dict
-            from nocpro_mock.replay.snapshot import build_real_replay_snapshot
-        except ImportError as exc:
-            raise RuntimeError(
-                f"Preset {snapshot_id} requires nocpro_mock on PYTHONPATH to parse CSV replay: {exc}"
-            ) from exc
-        pkg = build_real_replay_snapshot(
-            config=MockConfig(),
-            alarm_csv_path=str(csv_path),
-            snapshot_id=item.snapshot_id,
-            limit=500,
-        )
-        return package_to_dict(pkg), item.profile
-
-    raise ValueError(f"Catalog item {snapshot_id} has neither file_path nor replay_csv")
+    full_path = _resolve_preset_path(item)
+    if not full_path.is_file():
+        raise FileNotFoundError(f"Preset file not found: {full_path}")
+    return json.loads(full_path.read_text(encoding="utf-8")), item.profile

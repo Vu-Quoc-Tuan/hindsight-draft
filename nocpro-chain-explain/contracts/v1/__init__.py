@@ -48,6 +48,8 @@ from .models import (
     Topology,
     TopologyEdge,
     TopologyNode,
+    TopologyRef,
+    canonical_topology_version,
 )
 from .serialization import package_to_dict, package_to_json, to_jsonable
 from .parsing import parse_package
@@ -102,7 +104,9 @@ __all__ = [
     "Topology",
     "TopologyEdge",
     "TopologyNode",
+    "TopologyRef",
     "ValidationResult",
+    "canonical_topology_version",
     "is_validation_eligible",
     "package_to_dict",
     "package_to_json",

@@ -14,7 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from .routes import router
 from .workspace import Workspace
 from .kafka_consumer import KafkaConsumerConfig, KafkaSnapshotConsumer
-from .persistence import Database, SnapshotRepository
+from .kafka_topology_consumer import KafkaTopologyConsumer, KafkaTopologyConsumerConfig
+from .persistence import Database, SnapshotRepository, TopologyRepository
 from .runtime_env import load_project_environment
 from .tier1a_coordinator import Tier1ACoordinator
 
@@ -52,9 +53,10 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
     service = workspace or Workspace()
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI):
+    async def lifespan(app_instance: FastAPI):
         database = None
         consumer = None
+        topology_consumer = None
         recovery_task = None
         database_url = os.environ.get("DATABASE_URL")
         if database_url:
@@ -67,6 +69,8 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
                     )
                 ),
             )
+            topology_repository = TopologyRepository(database.sessions)
+            app_instance.state.topology_repository = topology_repository
             coordinator = Tier1ACoordinator(
                 repository,
                 service,
@@ -75,6 +79,7 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
                     os.environ.get("TIER1A_BACKOFF_BASE_SECONDS", "2")
                 ),
                 chunk_retention_mode=service.config.chunk_retention.mode,
+                topology_repository=topology_repository,
             )
             service.attach_persistence(repository, coordinator)
             # READY remains available while older pending/stale work resumes in
@@ -112,6 +117,23 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
                     coordinator,
                 )
                 await consumer.start()
+
+                topology_consumer = KafkaTopologyConsumer(
+                    KafkaTopologyConsumerConfig(
+                        bootstrap_servers=os.environ.get(
+                            "KAFKA_BOOTSTRAP_SERVERS", "kafka:19092"
+                        ),
+                        topic=os.environ.get(
+                            "KAFKA_TOPOLOGY_TOPIC", "nocpro.topology.v1"
+                        ),
+                        dlq_topic=os.environ.get(
+                            "KAFKA_TOPOLOGY_DLQ_TOPIC", "nocpro.topology.v1.dlq"
+                        ),
+                    ),
+                    topology_repository,
+                    coordinator,
+                )
+                await topology_consumer.start()
         if service.package is None and os.environ.get("AUTO_SEED_DEFAULT_SNAPSHOT", "true").lower() == "true":
             try:
                 from .catalog import load_preset_payload
@@ -129,6 +151,8 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
                     await recovery_task
             if consumer is not None:
                 await consumer.stop()
+            if topology_consumer is not None:
+                await topology_consumer.stop()
             service.close()
             await service.flush_review_persistence()
             await service.flush_deep_dive_persistence()
@@ -142,6 +166,8 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.workspace = service
+    app.state.topology_repository = None
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],

@@ -51,7 +51,13 @@ def _parse(value: Any, expected: Any, path: str) -> Any:
         for name, field in fields.items():
             if name in value:
                 parsed[name] = _parse(value[name], hints[name], f"{path}.{name}")
-            elif field.default is dataclasses.MISSING and field.default_factory is dataclasses.MISSING:
+            elif field.default is not dataclasses.MISSING:
+                parsed[name] = field.default
+            elif field.default_factory is not dataclasses.MISSING:
+                parsed[name] = field.default_factory()
+            elif type(None) in get_args(hints[name]):
+                parsed[name] = None
+            else:
                 raise _violation(path, f"missing required field {name!r}")
         try:
             return expected(**parsed)

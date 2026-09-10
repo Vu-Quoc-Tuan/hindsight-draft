@@ -49,30 +49,32 @@ real exports / observed fixtures / synthetic scenarios
 
 ## Chạy local
 
+Hindsight áp dụng mô hình **"Infra in Docker, Apps on Host"**: PostgreSQL và Kafka chạy trong Docker (bind an toàn vào `127.0.0.1`), trong khi FastAPI backend, Mock server và React web chạy trực tiếp trên host để hỗ trợ hot-reload/HMR nhanh nhất.
+
 ```bash
 make install
 make dev
 ```
 
-| Service | URL | Local mode |
+Lệnh `make dev` sẽ tự động khởi động infra (`make dev-infra`) rồi chạy đồng thời 3 service trên host:
+
+| Service | URL | Chế độ |
 | --- | --- | --- |
-| React UI | `http://127.0.0.1:5173` | Vite, proxy `/api` sang port 8000 |
-| Explain API | `http://127.0.0.1:8000` | in-memory preset, không Kafka |
-| OpenAPI | `http://127.0.0.1:8000/docs` | tài liệu FastAPI sinh tự động |
-| Mock UI/API | `http://127.0.0.1:8085` | catalog, replay và topology navigation |
+| Explain Studio | `http://127.0.0.1:5173/` | Vite dev server, proxy `/api` (8000) & `/mock-studio` (8085) |
+| Mock Studio | `http://127.0.0.1:5173/mock-studio/` | Unified dev UI (proxied qua Vite từ daemon 8085) |
+| Explain API (Internal) | `http://127.0.0.1:8000` | Auto-reload, kết nối PostgreSQL & Kafka, Topology API (`/api/v1/topology/*`) |
+| OpenAPI Docs | `http://127.0.0.1:8000/docs` | Swagger/OpenAPI |
+| Mock Daemon (Internal) | *Internal port 8085* | Backend xử lý Mock Studio, không truy cập trực tiếp |
 
-Có thể chạy riêng bằng `make dev-api`, `make dev-web` hoặc `make dev-mock`.
+- `make dev-infra`: Chỉ khởi động PostgreSQL và Kafka trong Docker (tự động seed topology vào Kafka).
+- `make dev-infra-down`: Dừng infra Docker.
+- `make dev-no-kafka`: Chế độ offline không cần Docker/Kafka (chạy hoàn toàn in-memory với presets).
+- `make publish-topology`: Bắn initial topology (IP và IT) sang topic Kafka `nocpro.topology.v1`.
+- Có thể chạy riêng lẻ: `make dev-api`, `make dev-web` hoặc `make dev-mock`.
 
-Local mode là đường phát triển nhanh, không tương đương stack đầy đủ:
+## Chạy stack container (Production)
 
-- không có `DATABASE_URL`, nên không có PostgreSQL coordinator/persistence;
-- không consume Kafka;
-- auto-seed một snapshot preset;
-- không tự tạo historical corpus hoặc production calibration;
-- các capability cần lịch sử, taxonomy hoặc persisted artifact có thể trả
-  `UNAVAILABLE`.
-
-## Chạy stack container
+Trong production, hệ thống sử dụng **Unified Web Gateway** qua Nginx: **chỉ có cổng 3000 được public ra ngoài**, các service nội bộ (API, PostgreSQL, Kafka) hoàn toàn ẩn sau Docker network. Giao tiếp dữ liệu giữa `nocpro-mock` và `nocpro-chain-explain` hoàn toàn 100% qua Kafka streaming (`nocpro.topology.v1` và `nocpro.snapshot.v1`). HTTP `/mock-studio/` là kênh operator/browser điều khiển trực tiếp Mock Studio và không phải kênh truyền dữ liệu sang Explain; các request legacy direct `/mock-api/` bị chặn 404 hoàn toàn.
 
 ```bash
 make prod
@@ -81,19 +83,19 @@ make logs
 make down
 ```
 
-Stack Compose gồm PostgreSQL, migration, Kafka, API, web và mock UI. Producer
-replay là profile riêng; việc container đang `Up` chỉ chứng minh process sống,
-không chứng minh snapshot đã READY hay một capability đã production-validated.
+Các cổng trong Production:
 
-Các cổng mặc định:
+| Service | Cổng Public | Ranh giới an toàn |
+| --- | ---: | --- |
+| Web Gateway (Nginx) | **3000** | Cổng duy nhất public. Phục vụ Web UI (`/`), proxy API (`/api`), và proxy Mock Studio operator console (`/mock-studio/`) |
+| Explain API | *Internal* (8000) | Không public ra host. Chỉ nhận request từ Gateway |
+| Mock Studio UI | *Internal* (8085) | Không public trực tiếp ra host. Chỉ nhận request từ Gateway qua `/mock-studio/` |
+| PostgreSQL | *Internal* (5432) | Không public ra host. Lưu trữ snapshot, materialized topology graph, audit và feedback |
+| Kafka Broker | *Internal* (19092) | Không public ra host. Broker nội bộ điều phối snapshot & topology streaming |
+| Topology Seed | *Internal* (Run once) | Container seed publish initial topology graphs sang Kafka lúc khởi động |
 
-| Service | Port |
-| --- | ---: |
-| Web | 3000 |
-| API | 8000 |
-| Mock UI | 8085 |
-| Kafka host listener | 9092 |
-| PostgreSQL | 5432 |
+
+> **Lưu ý**: Để truy cập trực tiếp các cổng PostgreSQL (`5432`) hoặc Kafka (`9092`) từ máy dev/test, sử dụng file override: `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d`.
 
 ## Kiểm thử
 

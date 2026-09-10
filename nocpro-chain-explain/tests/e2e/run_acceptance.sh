@@ -9,40 +9,38 @@ export POSTGRES_HOST_PORT="${POSTGRES_HOST_PORT:-55432}"
 export KAFKA_HOST_PORT="${KAFKA_HOST_PORT:-29092}"
 export API_HOST_PORT="${API_HOST_PORT:-8800}"
 export WEB_HOST_PORT="${WEB_HOST_PORT:-3300}"
-export MOCK_UI_HOST_PORT="${MOCK_UI_HOST_PORT:-38085}"
-# This value is compiled into the browser bundle. Browser traffic goes to the
-# host-published read-only mock endpoint; it does not grant the Explain API
-# any topology P2 semantics.
-export VITE_NOCPRO_MOCK_URL="${VITE_NOCPRO_MOCK_URL:-http://127.0.0.1:${MOCK_UI_HOST_PORT}}"
 export TIER1A_RECOVERY_INTERVAL_SECONDS="${TIER1A_RECOVERY_INTERVAL_SECONDS:-0.25}"
 export NOCPRO_E2E_KAFKA="127.0.0.1:${KAFKA_HOST_PORT}"
 export NOCPRO_E2E_DATABASE_URL="postgresql://nocpro:nocpro@127.0.0.1:${POSTGRES_HOST_PORT}/nocpro"
 export NOCPRO_E2E_BASE_URL="http://127.0.0.1:${WEB_HOST_PORT}"
 export NOCPRO_E2E_API_URL="http://127.0.0.1:${API_HOST_PORT}"
+export NOCPRO_E2E_TOPOLOGY_URL="${NOCPRO_E2E_BASE_URL}/api/v1/topology"
+
+COMPOSE="docker compose -f docker-compose.yml -f docker-compose.dev.yml"
 
 cleanup() {
   if [[ "${KEEP_E2E_STACK:-0}" == "1" ]]; then
-    docker compose ps
+    $COMPOSE ps
     return
   fi
-  docker compose down --volumes --remove-orphans
+  $COMPOSE down --volumes --remove-orphans
 }
 trap cleanup EXIT
 
-docker compose down --volumes --remove-orphans
+$COMPOSE down --volumes --remove-orphans
 if [[ "${NOCPRO_E2E_SKIP_BUILD:-0}" == "1" ]]; then
   # Useful when a verified local image already exists and the registry is
   # temporarily unavailable. CI and normal acceptance still rebuild by default.
-  docker compose up -d migrate api web mock-ui
+  $COMPOSE up -d migrate api web topology-seed
 else
-  docker compose up -d --build migrate api web mock-ui
+  $COMPOSE up -d --build migrate api web topology-seed
 fi
 
 wait_for_postgres() {
   local deadline=$((SECONDS + 60))
-  until docker compose exec -T postgres pg_isready -U nocpro -d nocpro >/dev/null; do
+  until $COMPOSE exec -T postgres pg_isready -U nocpro -d nocpro >/dev/null; do
     if (( SECONDS >= deadline )); then
-      docker compose logs --no-color postgres migrate api
+      $COMPOSE logs --no-color postgres migrate api
       echo "PostgreSQL did not become ready for host-side migration acceptance" >&2
       exit 1
     fi
@@ -55,14 +53,14 @@ wait_for_snapshot_ready() {
   local deadline=$((SECONDS + 120))
   local state=""
   while (( SECONDS < deadline )); do
-    state="$(docker compose exec -T postgres psql -U nocpro -d nocpro -At -c \
+    state="$($COMPOSE exec -T postgres psql -U nocpro -d nocpro -At -c \
       "SELECT concat_ws('|', status, tier1a_status, lineage_status, similarity_status) FROM snapshot_ingest WHERE snapshot_id='${snapshot_id}' AND snapshot_version='1';")"
     if [[ "$state" == "COMPLETE|READY|READY|READY" ]]; then
       return 0
     fi
     sleep 1
   done
-  docker compose logs --no-color api
+  $COMPOSE logs --no-color api
   echo "snapshot ${snapshot_id} failed acceptance readiness: ${state:-missing}" >&2
   return 1
 }
@@ -70,14 +68,18 @@ wait_for_snapshot_ready() {
 wait_for_postgres
 
 deadline=$((SECONDS + 60))
-until curl -fsS "http://127.0.0.1:${MOCK_UI_HOST_PORT}/api/topology/profiles" >/dev/null; do
+until curl -fsS "${NOCPRO_E2E_BASE_URL}/api/v1/topology/profiles" | grep -q "IP_NETWORK" && curl -fsS "${NOCPRO_E2E_BASE_URL}/api/v1/topology/profiles" | grep -q "IT_SERVICES"; do
   if (( SECONDS >= deadline )); then
-    docker compose logs --no-color mock-ui
-    echo "NocPro mock topology UI did not become ready" >&2
+    $COMPOSE logs --no-color api topology-seed
+    echo "NocPro topology API did not become ready with IP_NETWORK and IT_SERVICES" >&2
     exit 1
   fi
   sleep 1
 done
+
+# Verify search queries on both profiles
+curl -fsS "${NOCPRO_E2E_BASE_URL}/api/v1/topology/search?profile_id=IP_NETWORK&q=&limit=1" | grep -q '"status":"AVAILABLE"'
+curl -fsS "${NOCPRO_E2E_BASE_URL}/api/v1/topology/search?profile_id=IT_SERVICES&q=&limit=1" | grep -q '"status":"AVAILABLE"'
 
 # Select a real, unambiguous IT source identifier from the same mounted data.
 # The browser test receives an input field value rather than a hard-coded
@@ -88,7 +90,7 @@ from nocpro_mock.loaders.topology_it_csv import ITTopologyLoader
 aliases, _ = ITTopologyLoader(Path("../nocpro-mock/datasets/raw/topo/topoIT")).load_aliases()
 print(next(iter(sorted(aliases))))
 ')"
-export NOCPRO_E2E_MOCK_URL="http://127.0.0.1:${MOCK_UI_HOST_PORT}"
+
 
 NOCPRO_RUN_DOCKER_E2E=1 PYTHONPATH="../nocpro-mock/src" \
   .venv/bin/python -m pytest tests/e2e/test_postgres_migrations_runtime.py -q
@@ -103,7 +105,7 @@ snapshot_id="acceptance-real-$(date -u +%Y%m%dT%H%M%SZ)"
 raw_alarm_csv="../nocpro-mock/datasets/raw/alarm/alarm_data.csv"
 if [[ -f "$raw_alarm_csv" ]]; then
   MOCK_SNAPSHOT_ID="$snapshot_id" MOCK_SNAPSHOT_VERSION=1 \
-    docker compose --profile replay run --rm --no-deps mock-producer
+    $COMPOSE --profile replay run --rm --no-deps mock-producer
 
   wait_for_snapshot_ready "$snapshot_id"
 
@@ -128,7 +130,7 @@ fi
 ip_snapshot_id="acceptance-ip-topology-$(date -u +%Y%m%dT%H%M%SZ)"
 if [[ -f "../nocpro-mock/datasets/raw/alarm/alarmIP.csv" && -f "../nocpro-mock/datasets/raw/topo/topoIP.csv" ]]; then
   MOCK_IP_SNAPSHOT_ID="$ip_snapshot_id" MOCK_IP_SNAPSHOT_VERSION=1 \
-    docker compose --profile replay-ip run --rm --no-deps mock-producer-ip
+    $COMPOSE --profile replay-ip run --rm --no-deps mock-producer-ip
   wait_for_snapshot_ready "$ip_snapshot_id"
   curl -fsS "http://127.0.0.1:${API_HOST_PORT}/api/v1/chains/6912465/pairs/3960289954/3960289955" \
     | .venv/bin/python -c '
@@ -146,11 +148,11 @@ else
 fi
 
 ANALYSIS_CONFIG_PATH="/app/config/thresholds/e2e-p2.yaml" \
-  docker compose up -d --force-recreate api
+  $COMPOSE up -d --force-recreate api
 deadline=$((SECONDS + 60))
 until curl -fsS "http://127.0.0.1:${API_HOST_PORT}/api/v1/health" >/dev/null; do
   if (( SECONDS >= deadline )); then
-    docker compose logs --no-color api
+    $COMPOSE logs --no-color api
     echo "API did not restart with synthetic P2 acceptance config" >&2
     exit 1
   fi
@@ -169,11 +171,11 @@ PYTHONPATH="../nocpro-mock/src:services/analysis-worker" \
     tests/test_temporal_delay_model.py tests/test_historical_pair_why.py -q
 
 ANALYSIS_CONFIG_PATH="/app/config/thresholds/e2e-counterfactual.yaml" \
-  docker compose up -d --force-recreate api
+  $COMPOSE up -d --force-recreate api
 deadline=$((SECONDS + 60))
 until curl -fsS "http://127.0.0.1:${API_HOST_PORT}/api/v1/health" >/dev/null; do
   if (( SECONDS >= deadline )); then
-    docker compose logs --no-color api
+    $COMPOSE logs --no-color api
     echo "API did not restart with synthetic Counterfactual acceptance config" >&2
     exit 1
   fi
