@@ -106,7 +106,10 @@ TIMEWINDOW_VETO_SENTINEL = contract.TIMEWINDOW_VETO_SENTINEL
 Topology = contract.Topology
 TopologyEdge = contract.TopologyEdge
 TopologyNode = contract.TopologyNode
+TopologyRef = getattr(contract, "TopologyRef", None)
+canonical_topology_version = getattr(contract, "canonical_topology_version", None)
 ValidationResult = contract.ValidationResult
+
 is_validation_eligible = contract.is_validation_eligible
 package_to_dict = contract.package_to_dict
 package_to_json = contract.package_to_json
@@ -155,7 +158,10 @@ __all__ = [
     "Topology",
     "TopologyEdge",
     "TopologyNode",
+    "TopologyRef",
     "ValidationResult",
+    "canonical_topology_version",
+
     "is_validation_eligible",
     "package_to_dict",
     "package_to_json",

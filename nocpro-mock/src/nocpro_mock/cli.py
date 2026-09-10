@@ -94,8 +94,10 @@ def _cmd_replay(args: argparse.Namespace) -> int:
         snapshot_id=args.snapshot_id,
         snapshot_version=args.snapshot_version,
         topo_ip_path=args.topo_ip if args.with_topology else None,
+        topo_it_dir=args.topo_it_dir,
         chain_ids=set(args.chain_id) if args.chain_id else None,
         limit=args.limit,
+        include_raw_topology=getattr(args, "include_raw_topology", False),
     )
     return _emit(package, args)
 
@@ -277,7 +279,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_replay = sub.add_parser("replay", help="emit a Direct Snapshot package")
     p_replay.add_argument("--alarm-csv", default=DEFAULT_ALARM_CSV)
     p_replay.add_argument("--topo-ip", default=DEFAULT_TOPO_IP_CSV)
+    p_replay.add_argument("--topo-it-dir", default=None, help="path to topoIT directory")
     p_replay.add_argument("--with-topology", action="store_true")
+    p_replay.add_argument(
+        "--include-raw-topology",
+        action="store_true",
+        help="legacy: include full nodes/edges in snapshot package",
+    )
     p_replay.add_argument("--snapshot-id", default="snapshot_replay_001")
     p_replay.add_argument(
         "--snapshot-version",
@@ -339,7 +347,83 @@ def build_parser() -> argparse.ArgumentParser:
     p_ui.add_argument("--kafka-bootstrap", default=None, help="default Kafka bootstrap broker")
     p_ui.set_defaults(func=_cmd_ui)
 
+    p_topo = sub.add_parser(
+        "publish-topology",
+        help="publish full initial topology graphs (IP and IT) to Kafka topic nocpro.topology.v1",
+    )
+    p_topo.add_argument("--kafka-bootstrap", default="localhost:9092", help="Kafka bootstrap broker")
+    p_topo.add_argument("--topic", default="nocpro.topology.v1", help="Kafka topology topic")
+    p_topo.add_argument("--topo-ip-csv", default=DEFAULT_TOPO_IP_CSV, help="path to topoIP.csv")
+    p_topo.add_argument("--topo-it-dir", default="datasets/raw/topo/topoIT", help="path to topoIT directory")
+    p_topo.add_argument("--profile", choices=["ALL", "IP_NETWORK", "IT_SERVICES"], default="ALL", help="profile to publish")
+    p_topo.set_defaults(func=_cmd_publish_topology)
+
     return parser
+
+
+def _cmd_publish_topology(args: argparse.Namespace) -> int:
+    from aiokafka import AIOKafkaProducer
+    from .producer.kafka_topology import (
+        KafkaTopologyConfig,
+        build_ip_topology_payload,
+        build_it_topology_payload,
+        build_topology_wire_batch,
+        publish_topology_batch,
+    )
+
+    async def _publish() -> int:
+        producer = AIOKafkaProducer(
+            bootstrap_servers=args.kafka_bootstrap,
+            enable_idempotence=True,
+            max_request_size=8 * 1024 * 1024,
+        )
+        await producer.start()
+        cfg = KafkaTopologyConfig(topic=args.topic)
+        published_count = 0
+        try:
+            if args.profile in ("ALL", "IP_NETWORK"):
+                ip_csv = Path(args.topo_ip_csv)
+                if ip_csv.is_file():
+                    print(f"Building IP topology from {ip_csv}...")
+                    ip_payload = build_ip_topology_payload(ip_csv)
+                    ip_batch = build_topology_wire_batch(ip_payload, config=cfg)
+                    print(
+                        f"Publishing IP topology ({len(ip_batch.chunks)} chunks, "
+                        f"{ip_batch.complete['node_count']} nodes, {ip_batch.complete['edge_count']} edges) "
+                        f"to {args.topic}..."
+                    )
+                    await publish_topology_batch(producer, ip_batch, topic=args.topic)
+                    print("✓ IP topology published successfully.")
+                    published_count += 1
+                else:
+                    print(f"Notice: {ip_csv} not found, skipping IP topology.")
+
+            if args.profile in ("ALL", "IT_SERVICES"):
+                it_dir = Path(args.topo_it_dir)
+                if it_dir.is_dir():
+                    print(f"Building IT topology from {it_dir}...")
+                    it_payload = build_it_topology_payload(it_dir)
+                    it_batch = build_topology_wire_batch(it_payload, config=cfg)
+                    print(
+                        f"Publishing IT topology ({len(it_batch.chunks)} chunks, "
+                        f"{it_batch.complete['node_count']} nodes, {it_batch.complete['edge_count']} edges) "
+                        f"to {args.topic}..."
+                    )
+                    await publish_topology_batch(producer, it_batch, topic=args.topic)
+                    print("✓ IT topology published successfully.")
+                    published_count += 1
+                else:
+                    print(f"Notice: {it_dir} not found, skipping IT topology.")
+        finally:
+            await producer.stop()
+
+        if published_count == 0:
+            import sys
+            print("Error: No topology profiles were published because requested data sources were missing.", file=sys.stderr)
+            return 1
+        return 0
+
+    return asyncio.run(_publish())
 
 
 def _cmd_slice_sequence(args: argparse.Namespace) -> int:

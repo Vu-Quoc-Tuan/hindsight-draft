@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any, Sequence
 import yaml
 
-from ..config import MockConfig
 from ..contract import (
     MockSnapshotPackage,
     ProvenanceClass,
@@ -26,6 +25,9 @@ from ..contract import (
     SourceKind,
     SourceRecord,
     SystemMetadata,
+    Topology,
+    TopologyRef,
+    canonical_topology_version,
     package_to_json,
 )
 from ..loaders.alarm_csv import AlarmCsvLoader, AlarmRecord, parse_timestamp
@@ -60,8 +62,16 @@ def slice_alarm_sequence(
     start_time_iso: str | None = None,
     max_chains_per_snapshot: int | None = None,
     source_kind: SourceKind = SourceKind.REAL_EXPORT_REPLAY,
+    profile_id: str = "ALARM_ONLY",
+    topo_ip_path: str | Path | None = None,
+    topo_it_path: str | Path | None = None,
 ) -> SlicedSequenceSummary:
     """Slice alarms into consecutive snapshot packages and save sequence directory."""
+    if profile_id not in ("ALARM_ONLY", "IP_NETWORK", "IT_SERVICES"):
+        raise ValueError(
+            f"Unsupported profile_id for sequence slicing: '{profile_id}'. "
+            "Supported profiles are ALARM_ONLY, IP_NETWORK, and IT_SERVICES."
+        )
     if num_snapshots < 1:
         raise ValueError("num_snapshots must be >= 1")
     if step_minutes < 1:
@@ -125,6 +135,72 @@ def slice_alarm_sequence(
     step_delta = timedelta(minutes=step_minutes)
     window_delta = timedelta(minutes=window_minutes)
 
+    topology_ref = None
+    topology_version = None
+    topo_sources: list[SourceRecord] = []
+    unavailable_caps: list[str] = []
+    mapper = None
+
+    if profile_id == "IP_NETWORK" and topo_ip_path is not None:
+        from ..loaders.topology_ip_csv import TopoIPLoader
+        from ..normalize.resource_mapping import ResourceMapper, TOPOLOGY_LAYER_IP
+        topo_ip_p = Path(topo_ip_path)
+        if topo_ip_p.is_file():
+            topo_loader = TopoIPLoader(topo_ip_p)
+            topo_src_ver = topo_loader.source_version()
+            topology_version = (
+                canonical_topology_version("IP_NETWORK", topo_src_ver)
+                if canonical_topology_version
+                else f"ip-{topo_src_ver.split(':', 1)[-1][:32]}"
+            )
+            topology_ref = TopologyRef(
+                profile_id="IP_NETWORK",
+                topology_version=topology_version,
+                source_version=topo_src_ver,
+            )
+            device_codes = topo_loader.device_codes()
+            mapper = ResourceMapper(
+                device_codes,
+                topology_layer=TOPOLOGY_LAYER_IP,
+                source_version=topo_src_ver,
+            )
+            topo_sources.append(
+                SourceRecord(
+                    source_id="topo_ip_csv",
+                    source_kind=source_kind,
+                    file_path=str(topo_ip_p),
+                )
+            )
+    elif profile_id == "IT_SERVICES" and topo_it_path is not None:
+        from ..normalize.resource_mapping import build_it_resource_mapper
+        from ..loaders.topology_it_csv import ITTopologyLoader
+        topo_it_p = Path(topo_it_path)
+        if topo_it_p.is_dir():
+            loader = ITTopologyLoader(topo_it_p)
+            graph = loader.load_graph()
+            topo_src_ver = graph.source_version
+            topology_version = (
+                canonical_topology_version("IT_SERVICES", topo_src_ver)
+                if canonical_topology_version
+                else f"it-{topo_src_ver.split(':', 1)[-1][:32]}"
+            )
+            topology_ref = TopologyRef(
+                profile_id="IT_SERVICES",
+                topology_version=topology_version,
+                source_version=topo_src_ver,
+            )
+            mapper = build_it_resource_mapper(topo_it_p, source_version=topo_src_ver)
+            topo_sources.append(
+                SourceRecord(
+                    source_id="topo_it_dir",
+                    source_kind=source_kind,
+                    file_path=str(topo_it_p),
+                )
+            )
+            unavailable_caps.append("OPERATIONAL_DEPENDENCY_MAPPING_UNVERIFIED")
+    elif profile_id == "ALARM_ONLY":
+        unavailable_caps.append("TOPOLOGY_NOT_LOADED")
+
     snapshot_files: list[str] = []
     seen_alarms: set[str] = set()
     seen_chains: set[str] = set()
@@ -171,6 +247,17 @@ def slice_alarm_sequence(
             )
         ]
 
+        if mapper is not None:
+            mappings = tuple(
+                mapper.map_alarm(
+                    a.alarm_id, device_code=a.device_code, node_reference=a.node_reference
+                )
+                for a in alarms
+            )
+            topology = Topology(nodes=(), edges=(), mappings=mappings)
+        else:
+            topology = Topology(nodes=(), edges=(), mappings=())
+
         package = MockSnapshotPackage(
             snapshot=Snapshot(
                 snapshot_id=snap_id,
@@ -182,15 +269,17 @@ def slice_alarm_sequence(
                 # Derived replay has no upstream production timestamp.  Pin
                 # this to snapshot time so equal inputs serialize identically.
                 produced_at=snap_time_str,
+                topology_version=topology_version,
+                topology_ref=topology_ref,
             ),
             alarms=alarms,
             chains=chains,
             memberships=memberships,
-            topology=None,
+            topology=topology,
             system_metadata=SystemMetadata(pair_metadata=()),
             provenance_manifest=ProvenanceManifest(
-                sources=tuple(sources),
-                unavailable_capabilities=("TOPOLOGY_NOT_LOADED",),
+                sources=tuple(sources + topo_sources),
+                unavailable_capabilities=tuple(unavailable_caps),
                 notes=(
                     "DERIVED_REPLAY: time windows were generated from a single "
                     "real export and are not verified upstream snapshots.",

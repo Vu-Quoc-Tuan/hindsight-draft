@@ -29,6 +29,8 @@ from ..contract import (
     SourceRecord,
     SystemMetadata,
     Topology,
+    TopologyRef,
+    canonical_topology_version,
 )
 from ..fixtures.golden import GoldenFixture, load_golden_fixture
 from ..loaders.alarm_csv import AlarmCsvLoader
@@ -64,9 +66,11 @@ def build_real_replay_snapshot(
     snapshot_version: str = "1",
     snapshot_time: datetime | None = None,
     topo_ip_path: str | Path | None = None,
+    topo_it_dir: str | Path | None = None,
     chain_ids: set[str] | None = None,
     limit: int | None = None,
     bounded_subgraph: bool = True,
+    include_raw_topology: bool = False,
 ) -> MockSnapshotPackage:
     """Replay the real alarm export as one canonical snapshot.
 
@@ -108,10 +112,22 @@ def build_real_replay_snapshot(
     topology = Topology()
     unavailable: list[str] = []
 
+    topology_ref = None
     if topo_ip_path is not None and config.topo_ip_enabled:
         topology_loader = TopoIPLoader(topo_ip_path)
         all_relations = topology_loader.load()
         topology_source_version = topology_loader.source_version()
+        if TopologyRef is not None:
+            topology_version = (
+                canonical_topology_version("IP_NETWORK", topology_source_version)
+                if canonical_topology_version is not None
+                else f"ip-{topology_source_version.split(':', 1)[-1][:32]}"
+            )
+            topology_ref = TopologyRef(
+                profile_id="IP_NETWORK",
+                topology_version=topology_version,
+                source_version=topology_source_version,
+            )
         if bounded_subgraph:
             seed_codes = {a.device_code for a in alarms if a.device_code}
             relations = extract_bounded_ip_subgraph(all_relations, seed_codes, max_hops=1)
@@ -137,7 +153,11 @@ def build_real_replay_snapshot(
             )
             for a in alarms
         )
-        topology = Topology(nodes=nodes, edges=edges, mappings=mappings)
+        topology = (
+            Topology(nodes=nodes, edges=edges, mappings=mappings)
+            if include_raw_topology
+            else Topology(nodes=(), edges=(), mappings=mappings)
+        )
         sources.append(
             SourceRecord(
                 source_id="topo_ip_csv",
@@ -147,11 +167,48 @@ def build_real_replay_snapshot(
             )
         )
         unavailable.extend(TOPO_IP_UNAVAILABLE_CAPABILITIES)
-    else:
-        unavailable.append("TOPOLOGY_NOT_LOADED")
+    elif topo_it_dir is not None and config.topo_it_enabled:
+        it_dir = Path(topo_it_dir)
+        from ..loaders.topology_it_csv import ITTopologyLoader
+        from ..normalize.resource_mapping import build_it_resource_mapper
 
-    if not config.topo_it_enabled:
-        unavailable.append(f"TOPO_IT ({config.topo_it_disabled_reason})")
+        it_loader = ITTopologyLoader(it_dir)
+        it_graph = it_loader.load_graph()
+        it_source_version = it_graph.source_version
+        if TopologyRef is not None:
+            it_version = (
+                canonical_topology_version("IT_SERVICES", it_source_version)
+                if canonical_topology_version is not None
+                else f"it-{it_source_version.split(':', 1)[-1][:32]}"
+            )
+            topology_ref = TopologyRef(
+                profile_id="IT_SERVICES",
+                topology_version=it_version,
+                source_version=it_source_version,
+            )
+        it_mapper = build_it_resource_mapper(it_dir)
+        mappings = tuple(
+            it_mapper.map_alarm(
+                a.alarm_id,
+                device_code=a.device_code,
+                node_reference=a.node_reference,
+            )
+            for a in alarms
+        )
+        topology = Topology(nodes=(), edges=(), mappings=mappings)
+        sources.append(
+            SourceRecord(
+                source_id="topo_it_xml",
+                source_kind=source_kind,
+                file_path=str(it_dir),
+                record_count=len(it_graph.nodes) + len(it_graph.edges),
+            )
+        )
+    else:
+        if not (topo_ip_path is not None and config.topo_ip_enabled):
+            unavailable.append("TOPOLOGY_NOT_LOADED")
+        if not config.topo_it_enabled:
+            unavailable.append(f"TOPO_IT ({config.topo_it_disabled_reason})")
 
     return MockSnapshotPackage(
         snapshot=Snapshot(
@@ -163,6 +220,7 @@ def build_real_replay_snapshot(
             source_kind=source_kind,
             produced_at=_now_iso(),
             config_version=config.config_version,
+            topology_ref=topology_ref,
         ),
         alarms=alarms,
         chains=chains,

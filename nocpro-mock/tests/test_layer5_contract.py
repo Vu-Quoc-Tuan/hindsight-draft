@@ -181,6 +181,7 @@ def test_real_topology_replay_carries_a_content_source_version(alarm_csv, topo_i
         snapshot_id="snap_topology_version",
         snapshot_time=FIXED_TIME,
         chain_ids={"6912465"},
+        include_raw_topology=True,
     )
 
     assert package.topology.edges

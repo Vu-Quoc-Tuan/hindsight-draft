@@ -114,6 +114,20 @@ def build_snapshot_wire_batch(
     )
 
 
+async def publish_snapshot_batch(
+    producer: AIOKafkaProducer,
+    batch: SnapshotWireBatch,
+    topic: str = SNAPSHOT_TOPIC,
+) -> None:
+    """Send all chunk events and complete barrier sequentially to ensure partition order."""
+    for event in batch.events:
+        await producer.send_and_wait(
+            topic,
+            key=batch.key,
+            value=encode_event(event),
+        )
+
+
 async def publish_snapshot(
     package: MockSnapshotPackage,
     *,
@@ -129,12 +143,7 @@ async def publish_snapshot(
     )
     try:
         await producer.start()
-        for event in batch.events:
-            await producer.send_and_wait(
-                config.topic,
-                key=batch.key,
-                value=encode_event(event),
-            )
+        await publish_snapshot_batch(producer, batch, config.topic)
     finally:
         await producer.stop()
     return batch

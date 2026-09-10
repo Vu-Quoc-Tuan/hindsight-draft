@@ -142,3 +142,43 @@ def test_slice_alarm_sequence_sanitizes_dirty_and_future_timestamps(tmp_path: Pa
     alarm_ids = {a.alarm_id for a in package.alarms}
     assert "2" not in alarm_ids
     assert "3" in alarm_ids
+
+
+def test_slice_alarm_sequence_it_services(tmp_path: Path, sample_alarm_csv: Path) -> None:
+    topo_it = tmp_path / "topoIT"
+    topo_it.mkdir(parents=True, exist_ok=True)
+    import csv
+
+    def _write_csv(filename, headers, rows):
+        with (topo_it / filename).open("w", newline="", encoding="utf-8") as fh:
+            writer = csv.DictWriter(fh, fieldnames=headers)
+            writer.writeheader()
+            writer.writerows(rows)
+
+    _write_csv("service_module_server.csv", ["service_id", "service_code", "module_id", "module_code", "instance_id", "instance_ip"], [{"service_id": "s1", "service_code": "SVC-BILL", "module_id": "m1", "module_code": "MOD-API", "instance_id": "i1", "instance_ip": "10.0.0.1/24"}])
+    _write_csv("module_database.csv", ["module_id", "database_id"], [{"module_id": "m1", "database_id": "d1"}])
+    _write_csv("database.csv", ["database_id", "service_id", "instance_id"], [{"database_id": "d1", "service_id": "s1", "instance_id": "i1"}])
+    _write_csv("storage.csv", ["storage_name", "instance_id"], [{"storage_name": "st1", "instance_id": "i1"}])
+
+    out_dir = tmp_path / "seq_it_out"
+    summary = slice_alarm_sequence(
+        alarm_csv_path=sample_alarm_csv,
+        output_dir=out_dir,
+        scenario_id="test_slice_it_v1",
+        num_snapshots=2,
+        step_minutes=5,
+        window_minutes=10,
+        profile_id="IT_SERVICES",
+        topo_it_path=topo_it,
+    )
+
+    assert summary.snapshot_count == 2
+    package = parse_package(json.loads((out_dir / "snapshot_000.json").read_text(encoding="utf-8")))
+    assert package.snapshot.topology_ref is not None
+    assert package.snapshot.topology_ref.profile_id == "IT_SERVICES"
+    assert package.snapshot.topology_ref.topology_version.startswith("it-")
+    assert package.topology.nodes == ()
+    assert package.topology.edges == ()
+    assert len(package.topology.mappings) == len(package.alarms)
+    assert "OPERATIONAL_DEPENDENCY_MAPPING_UNVERIFIED" in package.provenance_manifest.unavailable_capabilities
+
