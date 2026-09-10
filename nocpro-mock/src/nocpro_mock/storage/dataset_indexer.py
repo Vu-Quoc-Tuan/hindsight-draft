@@ -29,7 +29,7 @@ MOCK_ROOT = Path(__file__).resolve().parents[3]
 ENV_STATE_DIR = "NOCPRO_MOCK_STATE_DIR"
 MAPPING_POLICY_VERSION = "v1-exact-only"
 NORMALIZER_VERSION = "v1-canonical"
-CONFIG_VERSION = "mock-v3-active-alarm-columns"
+CONFIG_VERSION = "mock-v2-active-alarm-columns"
 CURSOR_VERSION = "time-v1"
 
 
