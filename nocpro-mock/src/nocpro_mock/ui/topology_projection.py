@@ -32,6 +32,8 @@ class TopologyProjectionNode:
     hidden_child_count: int = 0
     reference_kind: ReferenceKind | None = None
     linked_parent_count: int = 0
+    source_port: str | None = None
+    target_port: str | None = None
 
     @property
     def expandable(self) -> bool:
@@ -56,6 +58,8 @@ class NavigationRelationEdge:
     relation_type: str
     source_table: str
     source_version: str
+    source_port: str | None = None
+    target_port: str | None = None
 
 
 def project_relation_tree(
@@ -87,10 +91,20 @@ def project_relation_tree(
 
     primary_seen = {root_id}
 
-    def build(node_id: str, relation: TopologyRelationEdge | None, path: frozenset[str], depth: int) -> TopologyProjectionNode:
+    def build(node_id: str, relation: TopologyRelationEdge | NavigationRelationEdge | None, path: frozenset[str], depth: int) -> TopologyProjectionNode:
         node = node_map[node_id]
+        src_port = getattr(relation, "source_port", None)
+        tgt_port = getattr(relation, "target_port", None)
         if depth >= max_depth:
-            return TopologyProjectionNode(node_id, node.resource_type, node.display_name, relation.relation_type if relation else None, relation.source_table if relation else None)
+            return TopologyProjectionNode(
+                node_id,
+                node.resource_type,
+                node.display_name,
+                relation.relation_type if relation else None,
+                relation.source_table if relation else None,
+                source_port=src_port,
+                target_port=tgt_port,
+            )
         rendered: list[TopologyProjectionNode] = []
         hidden = 0
         for edge in outgoing.get(node_id, ()): 
@@ -98,8 +112,21 @@ def project_relation_tree(
                 hidden += 1
                 continue
             child = node_map[edge.target_id]
+            e_src_port = getattr(edge, "source_port", None)
+            e_tgt_port = getattr(edge, "target_port", None)
             if child.resource_id in path:
-                rendered.append(TopologyProjectionNode(child.resource_id, child.resource_type, child.display_name, edge.relation_type, edge.source_table, reference_kind="CYCLE"))
+                rendered.append(
+                    TopologyProjectionNode(
+                        child.resource_id,
+                        child.resource_type,
+                        child.display_name,
+                        edge.relation_type,
+                        edge.source_table,
+                        reference_kind="CYCLE",
+                        source_port=e_src_port,
+                        target_port=e_tgt_port,
+                    )
+                )
                 continue
             if child.resource_id in primary_seen:
                 rendered.append(
@@ -111,12 +138,24 @@ def project_relation_tree(
                         edge.source_table,
                         reference_kind="MULTI_PARENT",
                         linked_parent_count=max(1, incoming_count[child.resource_id] - 1),
+                        source_port=e_src_port,
+                        target_port=e_tgt_port,
                     )
                 )
                 continue
             primary_seen.add(child.resource_id)
             rendered.append(build(child.resource_id, edge, path | {child.resource_id}, depth + 1))
-        return TopologyProjectionNode(node_id, node.resource_type, node.display_name, relation.relation_type if relation else None, relation.source_table if relation else None, tuple(rendered), hidden)
+        return TopologyProjectionNode(
+            node_id,
+            node.resource_type,
+            node.display_name,
+            relation.relation_type if relation else None,
+            relation.source_table if relation else None,
+            tuple(rendered),
+            hidden,
+            source_port=src_port,
+            target_port=tgt_port,
+        )
 
     source_version = next((edge.source_version for items in outgoing.values() for edge in items), "UNKNOWN")
     return TopologyTreeProjection(
@@ -142,7 +181,15 @@ def project_adjacency_tree(
         for edge in edges
         for direction in (
             edge,
-            NavigationRelationEdge(edge.target_id, edge.source_id, edge.relation_type, edge.source_table, edge.source_version),
+            NavigationRelationEdge(
+                edge.target_id,
+                edge.source_id,
+                edge.relation_type,
+                edge.source_table,
+                edge.source_version,
+                source_port=edge.target_port,
+                target_port=edge.source_port,
+            ),
         )
     )
     projection = project_relation_tree(nodes, doubled, root_id=root_id, max_depth=max_depth, max_children=max_children)

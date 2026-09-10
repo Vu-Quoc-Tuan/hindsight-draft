@@ -75,7 +75,29 @@ def _source_signature(profile: DatasetProfile, path: Path) -> tuple[tuple[str, i
     return tuple((str(file), file.stat().st_size, file.stat().st_mtime_ns) for file in files)
 
 
+def _normalize_network_class(class_name: str | None, device_code: str | None) -> str:
+    raw = (class_name or "").strip().upper()
+    if raw and raw not in {"OTHER", "DEVICE", "UNKNOWN", "NULL", "NONE"}:
+        return raw
+    code = (device_code or "").strip().upper()
+    if "ASW" in code or "SW" in code or "ACCESS" in code:
+        return "SWITCH"
+    if "AGG" in code:
+        return "AGG_DISTRICT"
+    if "OLT" in code or "XGS" in code or "GPON" in code:
+        return "GPON_OLT"
+    if "BRAS" in code or "BNG" in code:
+        return "BRAS"
+    if "COR" in code or "CR" in code or "CORE" in code:
+        return "CORE_PROVINCE"
+    if "SRT" in code or "SITE" in code:
+        return "SITE_ROUTER"
+    return raw or "SITE_ROUTER"
+
+
 def _cached_graph(profile: DatasetProfile, path: Path) -> _CachedTopologyGraph:
+    if not path.exists():
+        return _CachedTopologyGraph((), (), "UNAVAILABLE", None, frozenset())
     signature = _source_signature(profile, path)
     key = (profile.profile_id, str(path.resolve()), signature)
     cached = _GRAPH_CACHE.get(key)
@@ -100,19 +122,46 @@ def _cached_graph(profile: DatasetProfile, path: Path) -> _CachedTopologyGraph:
         relations = TopoIPLoader(path).load()
         source_version = _content_version(path)
         labels: dict[str, str] = {}
+        device_classes: dict[str, str] = {}
         adjacency: list[NavigationRelationEdge] = []
         seen_pairs: set[tuple[str, str]] = set()
         for relation in relations:
             if not relation.device_code or not relation.device_code_relation or relation.device_code == relation.device_code_relation:
                 continue
+            if relation.device_code:
+                cls1 = _normalize_network_class(relation.network_class_name, relation.device_code)
+                if relation.device_code not in device_classes or device_classes[relation.device_code] in {"OTHER", "DEVICE"}:
+                    device_classes[relation.device_code] = cls1
+            if relation.device_code_relation:
+                cls2 = _normalize_network_class(relation.network_class_name_relation, relation.device_code_relation)
+                if relation.device_code_relation not in device_classes or device_classes[relation.device_code_relation] in {"OTHER", "DEVICE"}:
+                    device_classes[relation.device_code_relation] = cls2
             pair = tuple(sorted((relation.device_code, relation.device_code_relation)))
             if pair in seen_pairs:
                 continue
             seen_pairs.add(pair)
             labels.setdefault(relation.device_code, relation.device_code)
             labels.setdefault(relation.device_code_relation, relation.device_code_relation)
-            adjacency.append(NavigationRelationEdge(relation.device_code, relation.device_code_relation, "ADJACENT_TO", "topoIP.csv", source_version))
-        nodes = tuple(TopologyRelationNode(resource_id, "DEVICE", label, ("topoIP.csv",)) for resource_id, label in sorted(labels.items()))  # type: ignore[arg-type]
+            adjacency.append(
+                NavigationRelationEdge(
+                    relation.device_code,
+                    relation.device_code_relation,
+                    "ADJACENT_TO",
+                    "topoIP.csv",
+                    source_version,
+                    source_port=relation.interface_port,
+                    target_port=relation.interface_port_relation,
+                )
+            )
+        nodes = tuple(
+            TopologyRelationNode(
+                resource_id,
+                device_classes.get(resource_id, _normalize_network_class(None, resource_id)),
+                label,
+                ("topoIP.csv",),
+            )
+            for resource_id, label in sorted(labels.items())
+        )
         cached = _CachedTopologyGraph(nodes, tuple(adjacency), source_version, None, frozenset())
     _GRAPH_CACHE[key] = cached
     return cached
@@ -224,6 +273,63 @@ def search_payload(
         "dataset_profile": profile.profile_id,
         "results": matches[:max(1, min(limit, 100))],
     }
+
+
+def roots_payload(
+    profile_id: str,
+    *,
+    source_root: str | Path | None = None,
+    limit: int = 10000,
+) -> dict[str, Any]:
+    profile = resolve_dataset_profile(profile_id)
+    base = Path(source_root) if source_root is not None else _mock_root()
+    topology_path = _path(profile, base)
+    if topology_path is None or not topology_path.exists():
+        return {"status": "UNAVAILABLE", "profile_id": profile.profile_id, "roots": []}
+
+    graph = _cached_graph(profile, topology_path)
+    if profile.profile_id == "IT_SERVICES":
+        outgoing_counts: dict[str, int] = {}
+        for edge in graph.edges:
+            outgoing_counts[edge.source_id] = outgoing_counts.get(edge.source_id, 0) + 1
+        services = [
+            {
+                "resource_id": node.resource_id,
+                "resource_type": node.resource_type,
+                "display_name": node.display_name,
+                "child_count": outgoing_counts.get(node.resource_id, 0),
+            }
+            for node in graph.nodes
+            if node.resource_type == "SERVICE"
+        ]
+        services.sort(key=lambda s: (-s["child_count"], s["display_name"]))
+        return {
+            "status": "AVAILABLE",
+            "profile_id": profile.profile_id,
+            "total_roots": len(services),
+            "roots": services[:limit],
+        }
+    else:
+        degree_counts: dict[str, int] = {}
+        for edge in graph.edges:
+            degree_counts[edge.source_id] = degree_counts.get(edge.source_id, 0) + 1
+            degree_counts[edge.target_id] = degree_counts.get(edge.target_id, 0) + 1
+        sorted_nodes = sorted(graph.nodes, key=lambda n: degree_counts.get(n.resource_id, 0), reverse=True)
+        roots = [
+            {
+                "resource_id": node.resource_id,
+                "resource_type": node.resource_type,
+                "display_name": node.display_name,
+                "child_count": degree_counts.get(node.resource_id, 0),
+            }
+            for node in sorted_nodes[:limit]
+        ]
+        return {
+            "status": "AVAILABLE",
+            "profile_id": profile.profile_id,
+            "total_roots": len(graph.nodes),
+            "roots": roots,
+        }
 
 
 def resolve_navigation_payload(

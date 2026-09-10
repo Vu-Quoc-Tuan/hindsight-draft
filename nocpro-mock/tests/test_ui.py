@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import urllib.request
 import urllib.error
 import pytest
@@ -12,19 +13,19 @@ from nocpro_mock.ui.server import start_server_in_thread
 
 @pytest.fixture(scope="module")
 def ui_server():
-    server, base_url = start_server_in_thread(host="127.0.0.1", port=0)
+    server, base_url = start_server_in_thread(host="127.0.0.1", port=0, default_kafka="127.0.0.1:59999")
     yield base_url
     server.shutdown()
     server.server_close()
 
 
-def _request_json(url: str, method: str = "GET", data: dict | None = None) -> tuple[int, dict]:
+def _request_json(url: str, method: str = "GET", data: dict | None = None, timeout: float = 15.0) -> tuple[int, dict]:
     req = urllib.request.Request(url, method=method)
     req.add_header("Content-Type", "application/json")
     body = json.dumps(data).encode("utf-8") if data is not None else None
 
     try:
-        with urllib.request.urlopen(req, data=body, timeout=5) as response:
+        with urllib.request.urlopen(req, data=body, timeout=timeout) as response:
             status = response.status
             content = json.loads(response.read().decode("utf-8"))
             return status, content
@@ -278,6 +279,10 @@ def test_ui_contains_topology_and_slicer_components(ui_server: str):
         assert "btn-run-slicer" in html
         assert "btn-stream-sequence" in html
         assert "select-slicer-alarm-csv" in html
+        assert "alarmIT.csv" in html
+        assert "IT_SERVICES" in html
+        assert "snapshot-select" in html
+        assert "btn-publish-single-snapshot" in html
         assert "Topology Explorer" in html
         assert "Sequence Slicer" in html
 
@@ -358,3 +363,225 @@ def test_api_publish_sequence_unreachable_kafka(ui_server: str):
     assert data["ok"] is False
     assert "kafka publish failed" in data["error"].lower()
 
+
+def test_api_mock_studio_subpath_normalization(ui_server: str):
+    status, data = _request_json(f"{ui_server}/mock-studio/api/status")
+    assert status == 200
+    assert data["ok"] is True
+    assert "datasets" in data
+
+
+def test_mock_studio_trailing_slash_redirect(ui_server: str):
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def http_error_301(self, req, fp, code, msg, headers):
+            return fp
+
+    opener = urllib.request.build_opener(NoRedirect)
+    req = urllib.request.Request(f"{ui_server}/mock-studio")
+    try:
+        resp = opener.open(req)
+        assert resp.status in (301, 308)
+        assert resp.headers.get("Location") == "/mock-studio/"
+    except urllib.error.HTTPError as err:
+        assert err.code in (301, 308)
+        assert err.headers.get("Location") == "/mock-studio/"
+
+
+def test_api_datasets(ui_server: str):
+    status, data = _request_json(f"{ui_server}/api/datasets")
+    assert status == 200
+    assert data["ok"] is True
+    assert "datasets" in data
+    ids = [d["id"] for d in data["datasets"]]
+    assert "alarm_data" in ids
+    assert "alarm_ip" in ids
+    assert "alarm_it" in ids
+    assert "topo_ip" not in ids
+    assert "topo_it" not in ids
+
+
+def test_api_topology_metadata(ui_server: str):
+    status, data = _request_json(f"{ui_server}/api/topology/metadata?profile_id=IP_NETWORK")
+    assert status == 200
+    assert data["ok"] is True
+    meta = data["metadata"]
+    assert meta["profile_id"] == "IP_NETWORK"
+    assert meta["capabilities"]["relation_model"] == "PHYSICAL_ADJACENCY"
+    assert meta["capabilities"]["p2_eligible"] is False
+    assert meta["capabilities"]["alarm_mapping"] == "PARTIAL_EXACT"
+    assert meta["stats"]["node_count"] == 99780
+    assert meta["stats"]["edge_count"] == 110916
+    assert meta["stats"]["alias_count"] == 0
+
+    # IT Services
+    status_it, data_it = _request_json(f"{ui_server}/api/topology/metadata?profile_id=IT_SERVICES")
+    assert status_it == 200
+    meta_it = data_it["metadata"]
+    assert meta_it["capabilities"]["relation_model"] == "SOURCE_RELATION"
+    assert meta_it["capabilities"]["alarm_mapping"] == "UNAVAILABLE"
+    assert meta_it["stats"]["node_count"] == 128322
+    assert meta_it["stats"]["edge_count"] == 218635
+    assert meta_it["stats"]["alias_count"] == 111472
+    assert meta_it["canonical_version"].startswith("it-")
+
+
+def test_api_jobs_lifecycle_and_conflict(ui_server: str):
+    # Submit a slice job
+    status, data = _request_json(
+        f"{ui_server}/api/slice-jobs",
+        method="POST",
+        data={
+            "scenario_id": "test_api_slice_01",
+            "num_snapshots": 1,
+            "step_minutes": 5,
+            "window_minutes": 15,
+        },
+    )
+    assert status in (202, 409)
+    if status == 202:
+        job = data["job"]
+        job_id = job["job_id"]
+
+        # Query job
+        status_q, data_q = _request_json(f"{ui_server}/api/jobs/{job_id}")
+        assert status_q == 200
+        assert data_q["job"]["job_id"] == job_id
+
+        # Query list
+        status_l, data_l = _request_json(f"{ui_server}/api/jobs")
+        assert status_l == 200
+        assert any(j["job_id"] == job_id for j in data_l["jobs"])
+
+
+def test_api_alarms_and_facets_and_detail(ui_server: str):
+    # Query facets
+    status_f, data_f = _request_json(f"{ui_server}/api/alarm-facets?dataset_id=alarm_data")
+    assert status_f == 200
+    assert data_f["ok"] is True
+    assert "facets" in data_f
+
+    # Query alarms
+    status_a, data_a = _request_json(f"{ui_server}/api/alarms?dataset_id=alarm_data&limit=10")
+    assert status_a == 200
+    assert data_a["ok"] is True
+    assert len(data_a["items"]) > 0
+    assert data_a["sort"] == {
+        "field": "canonical_start_time",
+        "direction": "ASC",
+        "nulls": "LAST",
+        "tie_breaker": "logical_row",
+    }
+    column_keys = [column["key"] for column in data_a["columns"]]
+    assert "alarm_id" in column_keys
+    assert "content" not in column_keys
+    assert all(all(key in item for key in column_keys) for item in data_a["items"])
+    sort_keys = [
+        (item["canonical_start_time"] is None, item["canonical_start_time"] or "", item["logical_row"])
+        for item in data_a["items"]
+    ]
+    assert sort_keys == sorted(sort_keys)
+    first_item = data_a["items"][0]
+    row_id = first_item["logical_row"]
+
+    # Query detail
+    status_d, data_d = _request_json(f"{ui_server}/api/alarms/alarm_data/{row_id}")
+    assert status_d == 200
+    assert data_d["ok"] is True
+    assert "canonical" in data_d["detail"]
+    assert "raw" in data_d["detail"]
+    assert len(data_d["detail"]["raw"]) >= 20
+    # ALARM_ONLY has UNAVAILABLE mapping capability invariant
+    assert first_item["mapping_status"] == "UNAVAILABLE"
+    assert data_a["dataset_id"] == "alarm_data"
+
+    # Query with mapping_status filter
+    status_m, data_m = _request_json(f"{ui_server}/api/alarms?dataset_id=alarm_data&mapping_status=UNAVAILABLE&limit=5")
+    assert status_m == 200
+    assert data_m["ok"] is True
+    assert len(data_m["items"]) > 0
+    assert all(item["mapping_status"] == "UNAVAILABLE" for item in data_m["items"])
+
+    # Query with non-matching mapping_status
+    status_none, data_none = _request_json(f"{ui_server}/api/alarms?dataset_id=alarm_data&mapping_status=EXACT&limit=5")
+    assert status_none == 200
+    assert len(data_none["items"]) == 0
+
+    # Query with time filter
+    start_val = first_item["canonical_start_time"]
+    if start_val:
+        import urllib.parse
+        status_t, data_t = _request_json(f"{ui_server}/api/alarms?dataset_id=alarm_data&start_time={urllib.parse.quote(start_val)}&limit=5")
+        assert status_t == 200
+        assert all(item["canonical_start_time"] >= start_val for item in data_t["items"])
+
+
+def test_api_slice_job_it_services(ui_server: str):
+    # Slice job accepts IT_SERVICES
+    status, data = _request_json(
+        f"{ui_server}/api/slice-jobs",
+        method="POST",
+        data={
+            "scenario_id": "test_api_it_slice_01",
+            "profile_id": "IT_SERVICES",
+            "alarm_csv": "datasets/raw/alarm/alarmIT.csv",
+            "num_snapshots": 1,
+            "step_minutes": 5,
+            "window_minutes": 15,
+        },
+    )
+    assert status in (202, 409)
+    if status == 202:
+        assert data["ok"] is True
+        assert data["job"]["params"]["profile_id"] == "IT_SERVICES"
+
+
+@pytest.mark.realdata
+def test_api_alarms_real_ip_dataset(ui_server: str):
+    if not Path("datasets/raw/alarm/alarmIP.csv").is_file():
+        pytest.skip("alarmIP.csv missing")
+    status_ip, data_ip = _request_json(f"{ui_server}/api/alarms?dataset_id=alarm_ip&limit=5", timeout=60.0)
+    assert status_ip == 200
+    assert data_ip["ok"] is True
+    assert data_ip["dataset_id"] == "alarm_ip"
+    assert len(data_ip["items"]) > 0
+
+
+def test_api_csrf_and_origin_protection(ui_server: str):
+    # Cross-site mutating request rejected
+    req = urllib.request.Request(
+        f"{ui_server}/api/check-kafka",
+        data=b"{}",
+        headers={"Content-Type": "application/json", "Sec-Fetch-Site": "cross-site"},
+        method="POST",
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(req)
+    assert exc.value.code == 403
+
+    # Untrusted origin rejected
+    req2 = urllib.request.Request(
+        f"{ui_server}/api/check-kafka",
+        data=b"{}",
+        headers={"Content-Type": "application/json", "Origin": "http://evil-attacker.com"},
+        method="POST",
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc2:
+        urllib.request.urlopen(req2)
+    assert exc2.value.code == 403
+
+
+def test_api_sse_stream_initial_init_event(ui_server: str):
+    # Submit job
+    status, data = _request_json(
+        f"{ui_server}/api/slice-jobs",
+        method="POST",
+        data={"scenario_id": "test_sse_init", "num_snapshots": 1},
+    )
+    assert status in (202, 409)
+    if status == 202:
+        job_id = data["job"]["job_id"]
+        # Connect to SSE
+        req = urllib.request.Request(f"{ui_server}/api/jobs/{job_id}/events")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            line1 = resp.readline().decode("utf-8")
+            assert "event: init" in line1

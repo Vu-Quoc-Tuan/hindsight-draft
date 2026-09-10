@@ -6,9 +6,13 @@ Zero external dependencies: uses Python stdlib (http.server + asyncio).
 from __future__ import annotations
 
 import asyncio
+from dataclasses import asdict
+import functools
 import json
 import logging
+import mimetypes
 import os
+import queue
 import socket
 import threading
 import time
@@ -21,19 +25,44 @@ from urllib.parse import parse_qs, urlparse
 from ..config import load_config
 from ..data_profiles import dataset_profiles
 from .topology_api import projection_payload, resolve_navigation_payload, search_payload
+from .topology_api import (
+    projection_payload,
+    resolve_navigation_payload,
+    roots_payload,
+    search_payload,
+)
 from ..contract import (
     ContractViolation,
     MockSnapshotPackage,
+    canonical_topology_version,
     package_to_json,
     parse_package,
     validate_package,
 )
 from ..fixtures.golden import load_golden_fixture
+from ..jobs.job_manager import (
+    ConflictError,
+    JobManager,
+    JobStatus,
+    JobType,
+    get_job_manager,
+)
 from ..loaders.topology_ip_csv import TopoIPLoader
 from ..producer.kafka_snapshot import KafkaSnapshotConfig, publish_snapshot
+from ..producer.kafka_topology import (
+    _content_version,
+    build_ip_topology_payload,
+    build_it_topology_payload,
+)
 from ..replay.sequence_slicer import slice_alarm_sequence
 from ..replay.snapshot import build_golden_snapshot, build_real_replay_snapshot
 from ..scenarios.sequence import load_sequence_manifest
+from ..storage.dataset_indexer import (
+    DatasetIndexer,
+    get_dataset_indexer,
+    get_state_dir,
+    _topo_signature,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +77,39 @@ MAX_REQUEST_BODY_BYTES = 1 * 1024 * 1024
 MAX_CHUNK_TARGET_BYTES = 4 * 1024 * 1024
 DEFAULT_KAFKA_TOPIC = "nocpro.snapshot.v1"
 
+DATASET_CATALOG: dict[str, dict[str, Any]] = {
+    "alarm_ip": {
+        "id": "alarm_ip",
+        "name": "Alarm IP Network (212k alarms, Physical Topology)",
+        "profile_id": "IP_NETWORK",
+        "alarm_path": "datasets/raw/alarm/alarmIP.csv",
+        "topo_path": "datasets/raw/topo/topoIP.csv",
+        "description": "IP network alarms with physical adjacency topology correlation (topoIP.csv)",
+    },
+    "alarm_it": {
+        "id": "alarm_it",
+        "name": "Alarm IT Services (258k alarms, Multi-Tier Topology)",
+        "profile_id": "IT_SERVICES",
+        "alarm_path": "datasets/raw/alarm/alarmIT.csv",
+        "topo_path": "datasets/raw/topo/topoIT",
+        "description": "IT services alarms with multi-tier architecture topology (topoIT/)",
+    },
+    "alarm_data": {
+        "id": "alarm_data",
+        "name": "Alarm Legacy Export (8.7k alarms, Uncorrelated)",
+        "profile_id": "ALARM_ONLY",
+        "alarm_path": "datasets/raw/alarm/alarm_data.csv",
+        "topo_path": None,
+        "description": "Alarm export without topology correlation (mapping capability: UNAVAILABLE)",
+    },
+}
+
+
+def _resolve_dataset_entry(dataset_id: str | None) -> dict[str, Any]:
+    if not dataset_id or dataset_id not in DATASET_CATALOG:
+        return DATASET_CATALOG["alarm_ip"]
+    return DATASET_CATALOG[dataset_id]
+
 
 def _allowed_input_roots() -> tuple[Path, ...]:
     """Return the only directories a browser request may select input from.
@@ -61,6 +123,7 @@ def _allowed_input_roots() -> tuple[Path, ...]:
         (MOCK_ROOT / "datasets").resolve(),
         (MOCK_ROOT / "docs" / "examples" / "synthetic").resolve(),
         (MOCK_ROOT / "docs" / "examples" / "golden_2214039").resolve(),
+        get_state_dir().resolve(),
     )
 
 
@@ -104,28 +167,35 @@ def _chunk_target_bytes(value: object) -> int:
 
 
 def _discover_sequences() -> list[dict[str, Any]]:
-    syn_dir = _resolve_path(DEFAULT_SYNTHETIC_DIR)
-    if not syn_dir.is_dir():
-        return []
-
+    candidate_dirs = [
+        _resolve_path(DEFAULT_SYNTHETIC_DIR),
+        get_state_dir() / "sequences",
+    ]
+    seen_ids = set()
     sequences = []
-    for item in sorted(syn_dir.iterdir()):
-        if item.is_dir() and (item / "sequence.yaml").is_file():
-            try:
-                manifest = load_sequence_manifest(item / "sequence.yaml")
-                sequences.append(
-                    {
-                        "id": item.name,
-                        "name": item.name.replace("_", " ").title(),
-                        "path": str(item.relative_to(MOCK_ROOT) if item.is_relative_to(MOCK_ROOT) else item),
-                        "sequence_type": manifest.sequence_type.value,
-                        "snapshots": list(manifest.snapshots),
-                        "history_snapshots": list(manifest.history_snapshots),
-                        "target_snapshot": manifest.target_snapshot,
-                    }
-                )
-            except Exception as e:
-                logger.debug("Failed loading manifest %s: %s", item, e)
+    for syn_dir in candidate_dirs:
+        if not syn_dir.is_dir():
+            continue
+        for item in sorted(syn_dir.iterdir()):
+            if item.is_dir() and (item / "sequence.yaml").is_file():
+                if item.name in seen_ids:
+                    continue
+                try:
+                    manifest = load_sequence_manifest(item / "sequence.yaml")
+                    seen_ids.add(item.name)
+                    sequences.append(
+                        {
+                            "id": item.name,
+                            "name": item.name.replace("_", " ").title(),
+                            "path": str(item.relative_to(MOCK_ROOT) if item.is_relative_to(MOCK_ROOT) else item),
+                            "sequence_type": manifest.sequence_type.value,
+                            "snapshots": list(manifest.snapshots),
+                            "history_snapshots": list(manifest.history_snapshots),
+                            "target_snapshot": manifest.target_snapshot,
+                        }
+                    )
+                except Exception as e:
+                    logger.debug("Failed loading manifest %s: %s", item, e)
     return sequences
 
 
@@ -283,7 +353,7 @@ def dispatch_topology_route(
     if path == "/api/topology/profiles":
         return HTTPStatus.OK, {"profiles": [profile.__dict__ for profile in dataset_profiles()]}
 
-    if path not in {"/api/topology/projection", "/api/topology/search", "/api/topology/resolve"}:
+    if path not in {"/api/topology/projection", "/api/topology/search", "/api/topology/resolve", "/api/topology/roots"}:
         return HTTPStatus.NOT_FOUND, {"error": "endpoint not found"}
 
     profile = query.get("profile_id", [None])[0] or query.get("profile", [None])[0]
@@ -291,13 +361,21 @@ def dispatch_topology_route(
         return HTTPStatus.BAD_REQUEST, {"error": "profile_id is required"}
 
     try:
+        if path == "/api/topology/roots":
+            payload = roots_payload(
+                profile,
+                source_root=source_root,
+                limit=_integer(query.get("limit", [None])[0], 10000, minimum=1, maximum=20000),
+            )
+            return HTTPStatus.OK, payload
+
         if path == "/api/topology/projection":
             payload = projection_payload(
                 profile,
-                root_id=query.get("root_id", [None])[0],
+                root_id=query.get("root_id", [None])[0] or query.get("focal_resource_id", [None])[0] or query.get("focal_id", [None])[0],
                 source_root=source_root,
                 max_depth=_integer(query.get("depth", [None])[0], 3, minimum=0, maximum=8),
-                max_children=_integer(query.get("child_limit", [None])[0], 50, minimum=1, maximum=200),
+                max_children=_integer(query.get("child_limit", [None])[0], 10000, minimum=1, maximum=20000),
             )
             return HTTPStatus.OK, payload
 
@@ -327,6 +405,41 @@ def dispatch_topology_route(
     return HTTPStatus.NOT_FOUND, {"error": "endpoint not found"}
 
 
+@functools.lru_cache(maxsize=4)
+def _get_topo_ip_stats(path_str: str, mtime_ns: int) -> tuple[int, int, int, str, str]:
+    path = Path(path_str)
+    payload = build_ip_topology_payload(path)
+    return (
+        len(payload["nodes"]),
+        len(payload["edges"]),
+        len(payload.get("alias_resolution", [])),
+        payload["source_version"],
+        payload["topology_version"],
+    )
+
+
+@functools.lru_cache(maxsize=4)
+def _get_topo_it_stats(dir_str: str, signature: str) -> tuple[int, int, int, str, str]:
+    path = Path(dir_str)
+    payload = build_it_topology_payload(path)
+    return (
+        len(payload["nodes"]),
+        len(payload["edges"]),
+        len(payload.get("alias_resolution", [])),
+        payload["source_version"],
+        payload["topology_version"],
+    )
+
+
+def _normalize_request_path(raw_path: str) -> str:
+    path = raw_path.split("?")[0]
+    if path.startswith("/mock-studio/"):
+        return "/" + path[len("/mock-studio/") :]
+    if path == "/mock-studio":
+        return "/"
+    return path
+
+
 class MockUIRequestHandler(SimpleHTTPRequestHandler):
     """Custom request handler for NocPro Mock UI and API."""
 
@@ -337,7 +450,7 @@ class MockUIRequestHandler(SimpleHTTPRequestHandler):
     def do_OPTIONS(self) -> None:
         self.send_response(HTTPStatus.NO_CONTENT)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
@@ -370,36 +483,130 @@ class MockUIRequestHandler(SimpleHTTPRequestHandler):
             raise ValueError("JSON request payload must be an object")
         return dict(parsed)
 
+    def _serve_static(self, path: str, head_only: bool = False) -> bool:
+        if path in ("", "/", "/index.html"):
+            target = ASSETS_DIR / "index.html"
+        else:
+            rel = path.lstrip("/")
+            target = (ASSETS_DIR / rel).resolve()
+            if not target.is_file() or not target.is_relative_to(ASSETS_DIR.resolve()):
+                return False
+
+        mime_type, _ = mimetypes.guess_type(str(target))
+        if mime_type is None:
+            if target.suffix == ".js":
+                mime_type = "text/javascript; charset=utf-8"
+            elif target.suffix == ".css":
+                mime_type = "text/css; charset=utf-8"
+            else:
+                mime_type = "application/octet-stream"
+        elif "text/" in mime_type or mime_type in ("application/javascript", "application/json"):
+            mime_type += "; charset=utf-8"
+
+        file_size = target.stat().st_size
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", mime_type)
+        self.send_header("Content-Length", str(file_size))
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        if not head_only:
+            try:
+                self.wfile.write(target.read_bytes())
+            except BrokenPipeError:
+                pass
+        return True
+
+    def _handle_sse_stream(self, job_id: str) -> None:
+        jm = get_job_manager()
+        ctrl = jm.get_controller(job_id)
+        if not ctrl:
+            self.send_error(HTTPStatus.NOT_FOUND, f"Job '{job_id}' not found")
+            return
+
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache, no-transform")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+
+        q = ctrl.subscribe()
+        try:
+            # First send current job snapshot as "event: init"
+            initial_event = f"event: init\ndata: {json.dumps(ctrl.record.to_dict())}\n\n"
+            self.wfile.write(initial_event.encode("utf-8"))
+            self.wfile.flush()
+
+            while True:
+                try:
+                    event = q.get(timeout=1.0)
+                    if isinstance(event, dict):
+                        ev_type = event.get("event_type", "message")
+                        ev_payload = event.get("data", event)
+                    else:
+                        ev_type = getattr(event, "event_type", "message")
+                        ev_payload = (
+                            event.to_dict()
+                            if hasattr(event, "to_dict")
+                            else getattr(event, "data", str(event))
+                        )
+                    line = f"event: {ev_type}\ndata: {json.dumps(ev_payload)}\n\n"
+                    self.wfile.write(line.encode("utf-8"))
+                    self.wfile.flush()
+                    if ev_type in ("complete", "error"):
+                        break
+                except queue.Empty:
+                    # Heartbeat
+                    if ctrl.record.status in (
+                        JobStatus.COMPLETED,
+                        JobStatus.FAILED,
+                        JobStatus.STOPPED,
+                        JobStatus.CANCELLED,
+                    ):
+                        break
+                    self.wfile.write(b": keepalive\n\n")
+                    self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            ctrl.unsubscribe(q)
+
     def do_HEAD(self) -> None:
-        path = self.path.split("?")[0]
-        if path == "/" or path == "/index.html":
-            index_file = ASSETS_DIR / "index.html"
-            if not index_file.is_file():
-                self.send_error(HTTPStatus.NOT_FOUND, "UI assets not found")
-                return
-            content = index_file.read_bytes()
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(content)))
+        parsed = urlparse(self.path)
+        if parsed.path in ("/mock-studio", "/"):
+            qs = f"?{parsed.query}" if parsed.query else ""
+            self.send_response(HTTPStatus.MOVED_PERMANENTLY if parsed.path == "/mock-studio" else HTTPStatus.FOUND)
+            self.send_header("Location", f"/mock-studio/{qs}")
             self.end_headers()
             return
-        super().do_HEAD()
+        path = _normalize_request_path(self.path)
+        if not path.startswith("/api/"):
+            if self._serve_static(path, head_only=True):
+                return
+        self.send_error(HTTPStatus.NOT_FOUND, f"Endpoint not found: {path}")
 
     def do_GET(self) -> None:
-        path = self.path.split("?")[0]
-        if path == "/" or path == "/index.html":
-            index_file = ASSETS_DIR / "index.html"
-            if not index_file.is_file():
-                self.send_error(HTTPStatus.NOT_FOUND, "UI assets not found")
-                return
-            content = index_file.read_bytes()
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(content)))
+        raw_path = self.path
+        parsed = urlparse(raw_path)
+        if parsed.path in ("/mock-studio", "/"):
+            qs = f"?{parsed.query}" if parsed.query else ""
+            self.send_response(HTTPStatus.MOVED_PERMANENTLY if parsed.path == "/mock-studio" else HTTPStatus.FOUND)
+            self.send_header("Location", f"/mock-studio/{qs}")
             self.end_headers()
-            self.wfile.write(content)
+            return
+        path = _normalize_request_path(raw_path)
+        query = parse_qs(parsed.query)
+
+        # 1. Static Assets
+        if not path.startswith("/api/"):
+            if self._serve_static(path):
+                return
+            self.send_error(HTTPStatus.NOT_FOUND, f"Endpoint not found: {path}")
             return
 
+        # 2. Status
         if path == "/api/status":
             alarm_csv = _resolve_path(DEFAULT_ALARM_CSV)
             topo_csv = _resolve_path(DEFAULT_TOPO_IP_CSV)
@@ -433,11 +640,272 @@ class MockUIRequestHandler(SimpleHTTPRequestHandler):
             )
             return
 
+        # 3. Datasets Explorer Endpoints
+        if path == "/api/datasets":
+            indexer = get_dataset_indexer()
+            datasets_list = []
+            for ds_id, ds_info in DATASET_CATALOG.items():
+                try:
+                    alarm_csv = _resolve_path(ds_info["alarm_path"])
+                    topo_path = _resolve_path(ds_info["topo_path"]) if ds_info["topo_path"] else None
+                except Exception:
+                    continue
+
+                profile_id = ds_info["profile_id"]
+                is_file = alarm_csv.is_file()
+                size_bytes = alarm_csv.stat().st_size if is_file else 0
+                is_indexed, fp = False, ""
+                rec_count = 0
+                if is_file:
+                    is_indexed, fp = indexer.is_indexed(profile_id, alarm_csv, topo_path)
+                    if is_indexed:
+                        rec_count = indexer.count_alarms(profile_id, fp)
+
+                datasets_list.append(
+                    {
+                        "id": ds_id,
+                        "name": ds_info["name"],
+                        "profile_id": profile_id,
+                        "type": "ALARM_CSV",
+                        "path": str(alarm_csv.relative_to(MOCK_ROOT) if alarm_csv.is_relative_to(MOCK_ROOT) else alarm_csv),
+                        "topo_path": str(topo_path.relative_to(MOCK_ROOT) if topo_path and topo_path.is_relative_to(MOCK_ROOT) else (topo_path or "")),
+                        "exists": is_file,
+                        "size_bytes": size_bytes,
+                        "indexed": is_indexed,
+                        "fingerprint": fp,
+                        "total_records": rec_count,
+                        "description": ds_info["description"],
+                    }
+                )
+            self._send_json(HTTPStatus.OK, {"ok": True, "datasets": datasets_list})
+            return
+
+        if path == "/api/alarms":
+            dataset_id = query.get("dataset_id", ["alarm_ip"])[0]
+            ds_entry = _resolve_dataset_entry(dataset_id)
+            cursor = query.get("cursor", [None])[0]
+            limit = _integer(query.get("limit", [None])[0], 50, minimum=1, maximum=200)
+            severity = query.get("severity", [None])[0]
+            quality_flag = query.get("quality_flag", [None])[0]
+            device_code = query.get("device_code", [None])[0]
+            alarm_name = query.get("alarm_name", [None])[0]
+            chaining_id = query.get("chaining_id", [None])[0]
+            search = query.get("search", [None])[0]
+            mapping_status = query.get("mapping_status", [None])[0]
+            start_time = query.get("start_time", [None])[0]
+            end_time = query.get("end_time", [None])[0]
+            alarm_status = query.get("alarm_status", [None])[0]
+            has_reason = query.get("has_reason", ["0"])[0] in ("1", "true", "True")
+            has_trouble_code = query.get("has_trouble_code", ["0"])[0] in ("1", "true", "True")
+            has_parent = query.get("has_parent", ["0"])[0] in ("1", "true", "True")
+
+            try:
+                alarm_csv = _resolve_path(ds_entry["alarm_path"])
+                topo_path = _resolve_path(ds_entry["topo_path"]) if ds_entry["topo_path"] else None
+                profile_id = ds_entry["profile_id"]
+                indexer = get_dataset_indexer()
+                if not alarm_csv.is_file():
+                    self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": f"Alarm CSV not found: {alarm_csv.name}"})
+                    return
+
+                dataset_version, _ = indexer.ensure_indexed(
+                    alarm_csv,
+                    profile_id=profile_id,
+                    topo_path=topo_path,
+                )
+
+                page = indexer.query_alarms(
+                    profile_id=profile_id,
+                    dataset_version=dataset_version,
+                    cursor=cursor,
+                    limit=limit,
+                    severity=severity,
+                    quality_flag=quality_flag,
+                    device_code=device_code,
+                    alarm_name=alarm_name,
+                    chaining_id=chaining_id,
+                    alarm_status=alarm_status,
+                    has_reason=has_reason,
+                    has_trouble_code=has_trouble_code,
+                    has_parent=has_parent,
+                    mapping_status=mapping_status,
+                    start_time=start_time,
+                    end_time=end_time,
+                    query=search,
+                )
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "ok": True,
+                        "items": page["items"],
+                        "next_cursor": page["next_cursor"],
+                        "has_more": page["has_more"],
+                        "total_estimate": page.get("total_filtered", 0),
+                        "columns": page["columns"],
+                        "sort": page["sort"],
+                        "dataset_id": dataset_id,
+                        "dataset_version": dataset_version,
+                    },
+                )
+            except Exception as exc:
+                logger.exception("Failed querying alarms: %s", exc)
+                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+            return
+
+        if path == "/api/alarm-facets":
+            dataset_id = query.get("dataset_id", ["alarm_ip"])[0]
+            ds_entry = _resolve_dataset_entry(dataset_id)
+            try:
+                alarm_csv = _resolve_path(ds_entry["alarm_path"])
+                topo_path = _resolve_path(ds_entry["topo_path"]) if ds_entry["topo_path"] else None
+                profile_id = ds_entry["profile_id"]
+                indexer = get_dataset_indexer()
+                if not alarm_csv.is_file():
+                    self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": f"Alarm CSV not found: {alarm_csv.name}"})
+                    return
+
+                dataset_version, _ = indexer.ensure_indexed(
+                    alarm_csv,
+                    profile_id=profile_id,
+                    topo_path=topo_path,
+                )
+
+                facets = indexer.query_facets(profile_id, dataset_version)
+                self._send_json(HTTPStatus.OK, {"ok": True, "facets": facets, "dataset_id": dataset_id, "dataset_version": dataset_version})
+            except Exception as exc:
+                logger.exception("Failed querying facets: %s", exc)
+                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+            return
+
+        if path.startswith("/api/alarms/"):
+            parts = path[len("/api/alarms/") :].split("/")
+            if len(parts) == 2:
+                dataset_id, row_id_str = parts
+                ds_entry = _resolve_dataset_entry(dataset_id)
+                try:
+                    indexer = get_dataset_indexer()
+                    alarm_csv = _resolve_path(ds_entry["alarm_path"])
+                    topo_path = _resolve_path(ds_entry["topo_path"]) if ds_entry["topo_path"] else None
+                    profile_id = ds_entry["profile_id"]
+                    if not alarm_csv.is_file():
+                        self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": f"Alarm CSV not found: {alarm_csv.name}"})
+                        return
+
+                    dataset_version, _ = indexer.ensure_indexed(
+                        alarm_csv,
+                        profile_id=profile_id,
+                        topo_path=topo_path,
+                    )
+
+                    detail = indexer.get_alarm_detail(
+                        profile_id=profile_id,
+                        dataset_version=dataset_version,
+                        row_id=row_id_str,
+                    )
+                    self._send_json(HTTPStatus.OK, {"ok": True, "detail": detail})
+                except (KeyError, ValueError) as exc:
+                    self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": f"Alarm '{row_id_str}' not found: {exc}"})
+                except Exception as exc:
+                    logger.exception("Failed getting alarm detail: %s", exc)
+                    self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+                return
+
+        # 4. Topology Metadata & Navigation Routes
+        if path == "/api/topology/metadata":
+            profile_id = query.get("profile_id", ["IP_NETWORK"])[0]
+            try:
+                if profile_id == "IP_NETWORK":
+                    topo_csv = _resolve_path(DEFAULT_TOPO_IP_CSV)
+                    node_count = 0
+                    edge_count = 0
+                    alias_count = 0
+                    source_ver = "unknown"
+                    canon_ver = "none"
+                    if topo_csv.is_file():
+                        node_count, edge_count, alias_count, source_ver, canon_ver = _get_topo_ip_stats(
+                            str(topo_csv), topo_csv.stat().st_mtime_ns
+                        )
+                    meta = {
+                        "profile_id": "IP_NETWORK",
+                        "source_path": str(topo_csv.relative_to(MOCK_ROOT) if topo_csv.is_relative_to(MOCK_ROOT) else topo_csv),
+                        "source_version": source_ver,
+                        "canonical_version": canon_ver,
+                        "stats": {
+                            "node_count": node_count,
+                            "edge_count": edge_count,
+                            "alias_count": alias_count,
+                        },
+                        "capabilities": {
+                            "relation_model": "PHYSICAL_ADJACENCY",
+                            "direction_kind": "NONE",
+                            "dependency_semantics": "UNAVAILABLE",
+                            "navigation_eligible": True,
+                            "p2_eligible": False,
+                            "alarm_mapping": "PARTIAL_EXACT",
+                        },
+                        "status_notes": [
+                            "Strict invariant: physical adjacency graph only.",
+                            "P2 dependency semantics are UNAVAILABLE for IP adjacency.",
+                            "Navigation hop distance eligible.",
+                        ],
+                    }
+                elif profile_id == "IT_SERVICES":
+                    topo_it = MOCK_ROOT / "datasets" / "raw" / "topo" / "topoIT"
+                    node_count = 0
+                    edge_count = 0
+                    alias_count = 0
+                    source_ver = "unknown"
+                    canon_ver = "none"
+                    if topo_it.is_dir():
+                        sig = _topo_signature(topo_it)
+                        node_count, edge_count, alias_count, source_ver, canon_ver = _get_topo_it_stats(
+                            str(topo_it), sig
+                        )
+                    meta = {
+                        "profile_id": "IT_SERVICES",
+                        "source_path": str(topo_it.relative_to(MOCK_ROOT) if topo_it.is_relative_to(MOCK_ROOT) else topo_it),
+                        "source_version": source_ver,
+                        "canonical_version": canon_ver,
+                        "stats": {
+                            "node_count": node_count,
+                            "edge_count": edge_count,
+                            "alias_count": alias_count,
+                        },
+                        "capabilities": {
+                            "relation_model": "SOURCE_RELATION",
+                            "direction_kind": "SOURCE_RELATION",
+                            "dependency_semantics": "UNVERIFIED",
+                            "navigation_eligible": True,
+                            "p2_eligible": False,
+                            "alarm_mapping": "UNAVAILABLE",
+                        },
+                        "status_notes": [
+                            "Strict invariant: source relation, unverified operational dependency.",
+                            "Alarm resource mapping is UNAVAILABLE (fail-closed) until verified mapping exists.",
+                        ],
+                    }
+                else:
+                    meta = {
+                        "profile_id": "ALARM_ONLY",
+                        "capabilities": {
+                            "relation_model": "NONE",
+                            "direction_kind": "NONE",
+                            "dependency_semantics": "NONE",
+                            "navigation_eligible": False,
+                            "p2_eligible": False,
+                            "alarm_mapping": "NONE",
+                        },
+                        "status_notes": ["No topology reference attached to snapshots."],
+                    }
+                self._send_json(HTTPStatus.OK, {"ok": True, "metadata": meta})
+            except Exception as exc:
+                logger.exception("Failed getting topology metadata: %s", exc)
+                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+            return
+
         if path.startswith("/api/topology/"):
-            parsed = urlparse(self.path)
-            query = parse_qs(parsed.query)
             status, payload = dispatch_topology_route(
-                parsed.path,
+                path,
                 query,
                 source_root=getattr(self.server, "source_root", None),
             )
@@ -447,10 +915,48 @@ class MockUIRequestHandler(SimpleHTTPRequestHandler):
                 self._send_json(status, payload)
             return
 
+        # 5. Background Jobs API
+        if path == "/api/jobs":
+            jm = get_job_manager()
+            limit = _integer(query.get("limit", [None])[0], 50, minimum=1, maximum=200)
+            self._send_json(HTTPStatus.OK, {"ok": True, "jobs": jm.list_jobs(limit=limit)})
+            return
+
+        if path.startswith("/api/jobs/"):
+            suffix = path[len("/api/jobs/") :]
+            if suffix.endswith("/events"):
+                job_id = suffix[: -len("/events")].strip("/")
+                self._handle_sse_stream(job_id)
+                return
+
+            job_id = suffix.strip("/")
+            jm = get_job_manager()
+            job = jm.get_job(job_id)
+            if not job:
+                self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": f"Job '{job_id}' not found"})
+                return
+            self._send_json(HTTPStatus.OK, {"ok": True, "job": job.to_dict()})
+            return
+
         self.send_error(HTTPStatus.NOT_FOUND, f"Endpoint not found: {path}")
 
     def do_POST(self) -> None:
-        path = self.path.split("?")[0]
+        path = _normalize_request_path(self.path)
+
+        # Cross-origin & CSRF check on mutating requests
+        sec_fetch_site = self.headers.get("Sec-Fetch-Site")
+        if sec_fetch_site == "cross-site":
+            self._send_json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "Cross-origin requests to mutating endpoints are prohibited"})
+            return
+
+        origin = self.headers.get("Origin")
+        if origin:
+            parsed_origin = urlparse(origin)
+            host = self.headers.get("Host", "").split(":")[0]
+            if parsed_origin.hostname not in (host, "localhost", "127.0.0.1", "web", "gateway", "testserver"):
+                self._send_json(HTTPStatus.FORBIDDEN, {"ok": False, "error": f"Untrusted origin: {origin}"})
+                return
+
         try:
             body = self._read_body_json()
         except Exception as exc:
@@ -500,56 +1006,33 @@ class MockUIRequestHandler(SimpleHTTPRequestHandler):
                     body.get("chunk_target_bytes", 2 * 1024 * 1024)
                 )
                 package = build_package_from_request(body)
-                config = KafkaSnapshotConfig(
+                jm = get_job_manager()
+                record = jm.submit_single_publish_job(
+                    package=package,
+                    bootstrap_servers=bootstrap,
                     topic=topic,
                     chunk_target_bytes=chunk_bytes,
                 )
-
-                batch = asyncio.run(
-                    publish_snapshot(
-                        package,
-                        bootstrap_servers=bootstrap,
-                        config=config,
-                    )
-                )
-
-                duration_ms = round((time.perf_counter() - start_t) * 1000, 2)
-                events_log = []
-                for c in batch.chunks:
-                    events_log.append(
-                        {
-                            "event_type": c["event_type"],
-                            "chunk_index": c["chunk_index"],
-                            "chunk_count": c["chunk_count"],
-                            "chunk_checksum": c["chunk_checksum"][:12] + "...",
-                            "payload_size": len(c["payload"]),
-                        }
-                    )
-                events_log.append(
-                    {
-                        "event_type": batch.complete["event_type"],
-                        "expected_chunk_count": batch.complete["expected_chunk_count"],
-                        "total_uncompressed_bytes": batch.complete["total_uncompressed_bytes"],
-                        "snapshot_checksum": batch.complete["snapshot_checksum"][:12] + "...",
-                    }
-                )
-
-                self._send_json(
-                    HTTPStatus.OK,
-                    {
-                        "ok": True,
-                        "snapshot_id": package.snapshot.snapshot_id,
-                        "snapshot_version": package.snapshot.snapshot_version,
-                        "topic": topic,
-                        "bootstrap": bootstrap,
-                        "chunks_published": len(batch.chunks),
-                        "total_uncompressed_bytes": len(batch.canonical_bytes),
-                        "compressed_bytes": len(batch.compressed_bytes),
-                        "snapshot_checksum": batch.complete["snapshot_checksum"],
-                        "duration_ms": duration_ms,
-                        "events": events_log,
-                    },
-                )
+                ctrl = jm.get_controller(record.job_id)
+                if ctrl:
+                    while ctrl.record.status in (JobStatus.PENDING, JobStatus.RUNNING):
+                        time.sleep(0.05)
+                    if ctrl.record.status == JobStatus.FAILED:
+                        err_msg = ctrl.record.error or "Kafka publish failed"
+                        self._send_json(
+                            HTTPStatus.INTERNAL_SERVER_ERROR,
+                            {"ok": False, "error": f"Kafka publish failed: {err_msg}"},
+                        )
+                        return
+                    if ctrl.record.result:
+                        res = dict(ctrl.record.result)
+                        res["ok"] = True
+                        res["duration_ms"] = round((time.perf_counter() - start_t) * 1000, 2)
+                        self._send_json(HTTPStatus.OK, res)
+                        return
+                self._send_json(HTTPStatus.OK, {"ok": True, "job": record.to_dict()})
+            except ConflictError as exc:
+                self._send_json(HTTPStatus.CONFLICT, {"ok": False, "error": str(exc), "code": "LANE_CONFLICT"})
             except ContractViolation as exc:
                 self._send_json(
                     HTTPStatus.BAD_REQUEST,
@@ -582,53 +1065,42 @@ class MockUIRequestHandler(SimpleHTTPRequestHandler):
                     self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": f"Sequence directory not found: {seq_path}"})
                     return
 
-                manifest = load_sequence_manifest(seq_path / "sequence.yaml")
                 chunk_bytes = _chunk_target_bytes(body.get("chunk_target_bytes", 2 * 1024 * 1024))
                 delay_sec = max(0.0, float(body.get("delay_seconds", 0.3)))
-                config = KafkaSnapshotConfig(topic=topic, chunk_target_bytes=chunk_bytes)
 
-                published_results = []
-                for idx, snap_file in enumerate(manifest.snapshots):
-                    snap_path = seq_path / snap_file
-                    if not snap_path.is_file():
-                        continue
-                    raw_pkg = json.loads(snap_path.read_text(encoding="utf-8"))
-                    package = parse_package(raw_pkg)
-
-                    batch = asyncio.run(
-                        publish_snapshot(
-                            package,
-                            bootstrap_servers=bootstrap,
-                            config=config,
-                        )
-                    )
-                    published_results.append({
-                        "snapshot_id": package.snapshot.snapshot_id,
-                        "snapshot_version": package.snapshot.snapshot_version,
-                        "chunks_count": len(batch.chunks),
-                        "total_bytes": len(batch.canonical_bytes),
-                        "checksum": batch.complete["snapshot_checksum"][:12] + "...",
-                    })
-                    if idx < len(manifest.snapshots) - 1 and delay_sec > 0:
-                        time.sleep(delay_sec)
-
-                duration_ms = round((time.perf_counter() - start_t) * 1000, 2)
-                self._send_json(
-                    HTTPStatus.OK,
-                    {
-                        "ok": True,
-                        "sequence_id": manifest.scenario_id,
-                        "total_snapshots": len(manifest.snapshots),
-                        "published_count": len(published_results),
-                        "snapshots": published_results,
-                        "duration_ms": duration_ms,
-                        "topic": topic,
-                    },
+                jm = get_job_manager()
+                record = jm.submit_sequence_publish_job(
+                    sequence_path=seq_path,
+                    bootstrap_servers=bootstrap,
+                    topic=topic,
+                    chunk_target_bytes=chunk_bytes,
+                    delay_seconds=delay_sec,
+                    mode=body.get("mode", "paced"),
                 )
+                ctrl = jm.get_controller(record.job_id)
+                if ctrl:
+                    while ctrl.record.status in (JobStatus.PENDING, JobStatus.RUNNING, JobStatus.PAUSED, JobStatus.PAUSE_REQUESTED):
+                        time.sleep(0.05)
+                    if ctrl.record.status == JobStatus.FAILED:
+                        err_msg = ctrl.record.error or "Kafka publish failed"
+                        self._send_json(
+                            HTTPStatus.INTERNAL_SERVER_ERROR,
+                            {"ok": False, "error": f"Kafka publish failed: {err_msg}"},
+                        )
+                        return
+                    if ctrl.record.result:
+                        res = dict(ctrl.record.result)
+                        res["ok"] = True
+                        res["duration_ms"] = round((time.perf_counter() - start_t) * 1000, 2)
+                        self._send_json(HTTPStatus.OK, res)
+                        return
+                self._send_json(HTTPStatus.OK, {"ok": True, "job": record.to_dict()})
+            except ConflictError as exc:
+                self._send_json(HTTPStatus.CONFLICT, {"ok": False, "error": str(exc), "code": "LANE_CONFLICT"})
             except Exception as exc:
                 logger.exception("Failed to publish sequence to Kafka: %s", exc)
                 self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": f"Kafka publish failed: {exc}"})
-                return
+            return
 
         if path == "/api/slice-sequence":
             try:
@@ -659,40 +1131,172 @@ class MockUIRequestHandler(SimpleHTTPRequestHandler):
                 if max_chains_raw not in (None, "", "null"):
                     max_chains = _integer(str(max_chains_raw), 50, minimum=1, maximum=10000)
 
-                output_dir = _resolve_path(DEFAULT_SYNTHETIC_DIR) / raw_scenario_id
-                summary = slice_alarm_sequence(
+                output_dir = get_state_dir() / "sequences" / raw_scenario_id
+                profile_id = body.get("profile_id", "ALARM_ONLY")
+                if profile_id not in ("ALARM_ONLY", "IP_NETWORK", "IT_SERVICES"):
+                    self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": f"Invalid profile_id '{profile_id}' for slicing"})
+                    return
+                topo_path = _resolve_path(DEFAULT_TOPO_IP_CSV) if profile_id == "IP_NETWORK" else None
+                topo_it_path = (MOCK_ROOT / "datasets" / "raw" / "topo" / "topoIT") if profile_id == "IT_SERVICES" else None
+
+                jm = get_job_manager()
+                record = jm.submit_slice_job(
                     alarm_csv_path=alarm_path,
                     output_dir=output_dir,
                     scenario_id=raw_scenario_id,
                     num_snapshots=num_snapshots,
                     step_minutes=step_minutes,
                     window_minutes=window_minutes,
-                    max_chains_per_snapshot=max_chains,
+                    max_chains=max_chains,
+                    profile_id=profile_id,
+                    topo_ip_path=topo_path,
+                    topo_it_path=topo_it_path,
                 )
+                ctrl = jm.get_controller(record.job_id)
+                if ctrl:
+                    while ctrl.record.status in (JobStatus.PENDING, JobStatus.RUNNING, JobStatus.PAUSED, JobStatus.PAUSE_REQUESTED):
+                        time.sleep(0.05)
+                    if ctrl.record.status == JobStatus.FAILED:
+                        self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": ctrl.record.error or "Slice failed"})
+                        return
+                    if ctrl.record.result:
+                        res = {
+                            "ok": True,
+                            "summary": dict(ctrl.record.result),
+                            "sequences": _discover_sequences(),
+                        }
+                        self._send_json(HTTPStatus.OK, res)
+                        return
 
                 sequences = _discover_sequences()
-                self._send_json(
-                    HTTPStatus.OK,
-                    {
-                        "ok": True,
-                        "summary": {
-                            "scenario_id": summary.scenario_id,
-                            "output_dir": str(summary.output_dir.relative_to(MOCK_ROOT) if summary.output_dir.is_relative_to(MOCK_ROOT) else summary.output_dir),
-                            "snapshot_count": summary.snapshot_count,
-                            "total_distinct_alarms": summary.total_distinct_alarms,
-                            "total_distinct_chains": summary.total_distinct_chains,
-                            "start_time": summary.start_time,
-                            "end_time": summary.end_time,
-                            "step_minutes": summary.step_minutes,
-                            "window_minutes": summary.window_minutes,
-                        },
-                        "sequences": sequences,
-                    },
-                )
+                self._send_json(HTTPStatus.OK, {"ok": True, "sequences": sequences})
+            except ConflictError as exc:
+                self._send_json(HTTPStatus.CONFLICT, {"ok": False, "error": str(exc), "code": "LANE_CONFLICT"})
             except Exception as exc:
                 logger.exception("Failed to slice sequence: %s", exc)
                 self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
             return
+
+        # Background Jobs Endpoints
+        if path == "/api/topology-publish-jobs":
+            jm = get_job_manager()
+            bootstrap = getattr(self.server, "default_kafka", "localhost:9092")
+            profile_id = body.get("profile_id", "IP_NETWORK")
+            source_path = _resolve_path(DEFAULT_TOPO_IP_CSV) if profile_id == "IP_NETWORK" else (MOCK_ROOT / "datasets" / "raw" / "topo" / "topoIT")
+            try:
+                record = jm.submit_topology_publish_job(
+                    profile_id=profile_id,
+                    source_path=source_path,
+                    bootstrap_servers=bootstrap,
+                    topic=body.get("topic", "nocpro.topology.v1"),
+                    chunk_target_bytes=_chunk_target_bytes(body.get("chunk_target_bytes", 2 * 1024 * 1024)),
+                )
+                self._send_json(HTTPStatus.ACCEPTED, {"ok": True, "job": record.to_dict()})
+            except ConflictError as exc:
+                self._send_json(HTTPStatus.CONFLICT, {"ok": False, "error": str(exc), "code": "LANE_CONFLICT"})
+            except Exception as exc:
+                logger.exception("Failed submitting topology publish job: %s", exc)
+                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+            return
+
+        if path == "/api/slice-jobs":
+            jm = get_job_manager()
+            try:
+                raw_scenario_id = str(body.get("scenario_id") or "real_alarm_evolution_v1").strip()
+                import re
+                if not re.match(r"^[a-zA-Z0-9_.-]+$", raw_scenario_id):
+                    self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "scenario_id must contain only alphanumeric, dash, underscore, or period characters"})
+                    return
+                alarm_csv = _resolve_path(body.get("alarm_csv", DEFAULT_ALARM_CSV))
+                if not alarm_csv.is_file():
+                    self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": f"Alarm CSV file not found: {alarm_csv}"})
+                    return
+
+                profile_id = body.get("profile_id", "ALARM_ONLY")
+                if profile_id not in ("ALARM_ONLY", "IP_NETWORK", "IT_SERVICES"):
+                    self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": f"Invalid profile_id '{profile_id}' for slicing"})
+                    return
+                topo_path = _resolve_path(DEFAULT_TOPO_IP_CSV) if profile_id == "IP_NETWORK" else None
+                topo_it_path = (MOCK_ROOT / "datasets" / "raw" / "topo" / "topoIT") if profile_id == "IT_SERVICES" else None
+
+                output_dir = get_state_dir() / "sequences" / raw_scenario_id
+                record = jm.submit_slice_job(
+                    alarm_csv_path=alarm_csv,
+                    output_dir=output_dir,
+                    scenario_id=raw_scenario_id,
+                    num_snapshots=_integer(str(body.get("num_snapshots", 5)), 5, minimum=1, maximum=20),
+                    step_minutes=_integer(str(body.get("step_minutes", 5)), 5, minimum=1, maximum=120),
+                    window_minutes=_integer(str(body.get("window_minutes", 15)), 15, minimum=1, maximum=240),
+                    max_chains=_integer(str(body["max_chains"]), 50, minimum=1, maximum=10000) if body.get("max_chains") else None,
+                    profile_id=profile_id,
+                    topo_ip_path=topo_path,
+                    topo_it_path=topo_it_path,
+                )
+                self._send_json(HTTPStatus.ACCEPTED, {"ok": True, "job": record.to_dict()})
+            except ConflictError as exc:
+                self._send_json(HTTPStatus.CONFLICT, {"ok": False, "error": str(exc), "code": "LANE_CONFLICT"})
+            except Exception as exc:
+                logger.exception("Failed submitting slice job: %s", exc)
+                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+            return
+
+        if path == "/api/publish-jobs":
+            jm = get_job_manager()
+            bootstrap = getattr(self.server, "default_kafka", "localhost:9092")
+            try:
+                job_type = body.get("type", "sequence")
+                if job_type == "sequence":
+                    seq_path = _resolve_path(body.get("sequence_path", ""))
+                    if not seq_path.is_dir():
+                        self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": f"Sequence directory not found: {seq_path}"})
+                        return
+                    record = jm.submit_sequence_publish_job(
+                        sequence_path=seq_path,
+                        bootstrap_servers=bootstrap,
+                        topic=body.get("topic", DEFAULT_KAFKA_TOPIC),
+                        chunk_target_bytes=_chunk_target_bytes(body.get("chunk_target_bytes", 2 * 1024 * 1024)),
+                        delay_seconds=max(0.0, float(body.get("delay_seconds", 0.3))),
+                        mode=body.get("mode", "paced"),
+                    )
+                else:
+                    package = build_package_from_request(body)
+                    record = jm.submit_single_publish_job(
+                        package=package,
+                        bootstrap_servers=bootstrap,
+                        topic=body.get("topic", DEFAULT_KAFKA_TOPIC),
+                        chunk_target_bytes=_chunk_target_bytes(body.get("chunk_target_bytes", 2 * 1024 * 1024)),
+                    )
+                self._send_json(HTTPStatus.ACCEPTED, {"ok": True, "job": record.to_dict()})
+            except ConflictError as exc:
+                self._send_json(HTTPStatus.CONFLICT, {"ok": False, "error": str(exc), "code": "LANE_CONFLICT"})
+            except Exception as exc:
+                logger.exception("Failed submitting publish job: %s", exc)
+                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+            return
+
+        if path.startswith("/api/jobs/"):
+            parts = path[len("/api/jobs/") :].split("/")
+            if len(parts) == 2:
+                job_id, action = parts
+                jm = get_job_manager()
+                ctrl = jm.get_controller(job_id)
+                if not ctrl:
+                    self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": f"Job '{job_id}' not found"})
+                    return
+                try:
+                    if action == "pause":
+                        ctrl.request_pause()
+                    elif action == "resume":
+                        ctrl.request_resume()
+                    elif action == "stop":
+                        ctrl.request_stop()
+                    else:
+                        self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": f"Unknown job action: {action}"})
+                        return
+                    self._send_json(HTTPStatus.OK, {"ok": True, "job": ctrl.record.to_dict()})
+                except ValueError as exc:
+                    self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+                return
 
         self.send_error(HTTPStatus.NOT_FOUND, f"Endpoint not found: {path}")
 
