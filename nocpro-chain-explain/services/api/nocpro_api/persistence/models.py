@@ -6,6 +6,8 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     DateTime,
+    Float,
+    ForeignKey,
     ForeignKeyConstraint,
     Index,
     Integer,
@@ -597,3 +599,231 @@ class TopologyAliasResolutionRecord(Base):
     unique_resource_id: Mapped[str | None] = mapped_column(String(256))
     verified_by: Mapped[str | None] = mapped_column(String(128))
 
+
+class ReviewSessionModel(Base):
+    __tablename__ = "review_session"
+    __table_args__ = (
+        Index("ix_review_session_job_id", "job_id"),
+        Index("ix_review_session_chain_id", "chain_id"),
+        Index("ix_review_session_review_time", "review_time"),
+    )
+
+    review_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    job_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    snapshot_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    snapshot_version: Mapped[str] = mapped_column(String(255), nullable=False)
+    chain_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    review_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    lineage_component_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    candidate_set_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    generator_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    config_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    delay_model_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    retrieval_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    exposure_policy: Mapped[str] = mapped_column(String(64), nullable=False, default="ALL_EVALUATED")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="COMPLETED")
+    review_domain: Mapped[str] = mapped_column(String(64), nullable=False)
+    snapshot_observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    job_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    source_alarm_universe_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class CandidateExposureModel(Base):
+    __tablename__ = "candidate_exposure"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["review_id"],
+            ["review_session.review_id"],
+            ondelete="RESTRICT",
+        ),
+        Index("ix_candidate_exposure_review_id", "review_id"),
+        Index("ix_candidate_exposure_candidate_id", "candidate_id"),
+        Index("ix_candidate_exposure_fingerprint", "candidate_fingerprint"),
+        UniqueConstraint("review_id", "candidate_id", name="uq_candidate_exposure_review_candidate"),
+    )
+
+    exposure_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    review_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    candidate_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    candidate_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    operation: Mapped[str] = mapped_column(String(64), nullable=False)
+    original_rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    displayed_rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    deterministic_eligibility: Mapped[str] = mapped_column(String(64), nullable=False)
+    hard_gate_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    pareto_state: Mapped[str] = mapped_column(String(64), nullable=False)
+    deterministic_context: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    case_context: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    temporal_context: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    feature_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    feature_schema_version: Mapped[str] = mapped_column(String(64), nullable=False, default="cf-features-v1")
+    feature_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class CandidateDisplayEventModel(Base):
+    __tablename__ = "candidate_display_event"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["review_id", "candidate_id"],
+            ["candidate_exposure.review_id", "candidate_exposure.candidate_id"],
+            ondelete="RESTRICT",
+            name="fk_display_event_candidate_exposure",
+        ),
+        Index("ix_candidate_display_review_candidate", "review_id", "candidate_id"),
+        Index("ix_candidate_display_client_event_id", "client_event_id"),
+        UniqueConstraint("review_id", "client_event_id", name="uq_display_event_review_client_event"),
+    )
+
+    display_event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    review_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    candidate_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    displayed_rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    exposure_policy: Mapped[str] = mapped_column(String(64), nullable=False)
+    surface: Mapped[str] = mapped_column(String(64), nullable=False)
+    rendered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    viewer_session_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    client_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ReviewFeedbackModel(Base):
+    __tablename__ = "review_feedback"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["review_id"],
+            ["review_session.review_id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["supersedes_feedback_id"],
+            ["review_feedback.feedback_id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["review_id", "candidate_id"],
+            ["candidate_exposure.review_id", "candidate_exposure.candidate_id"],
+            ondelete="RESTRICT",
+            name="fk_feedback_candidate_exposure",
+        ),
+        Index("ix_review_feedback_review_id", "review_id"),
+        Index("ix_review_feedback_candidate_id", "candidate_id"),
+        Index("ix_review_feedback_reviewer_subject", "reviewer_subject"),
+        Index("ix_review_feedback_decision", "decision"),
+    )
+
+    feedback_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    review_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    candidate_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reviewer_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    reviewer_role: Mapped[str] = mapped_column(String(64), nullable=False)
+    domain_scope: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    decision: Mapped[str] = mapped_column(String(32), nullable=False)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reason_policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    reason_codes: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    reason_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    truth_tier: Mapped[str] = mapped_column(String(32), nullable=False)
+    supersedes_feedback_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    artifact_fingerprints: Mapped[dict[str, str]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class FeedbackLifecycleEventModel(Base):
+    __tablename__ = "feedback_lifecycle_event"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["feedback_id"],
+            ["review_feedback.feedback_id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["superseded_by_id"],
+            ["review_feedback.feedback_id"],
+            ondelete="RESTRICT",
+        ),
+        Index("ix_feedback_lifecycle_feedback_id", "feedback_id"),
+        Index("ix_feedback_lifecycle_event_type", "event_type"),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    feedback_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    superseded_by_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ManualCorrectionModel(Base):
+    __tablename__ = "manual_correction"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["feedback_id"],
+            ["review_feedback.feedback_id"],
+            ondelete="RESTRICT",
+        ),
+        Index("ix_manual_correction_feedback_id", "feedback_id"),
+    )
+
+    correction_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    feedback_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    operation: Mapped[str] = mapped_column(String(64), nullable=False)
+    partition_delta: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    correction_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ReviewCaseModel(Base):
+    __tablename__ = "review_case"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["review_id"],
+            ["review_session.review_id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["feedback_id"],
+            ["review_feedback.feedback_id"],
+            ondelete="RESTRICT",
+        ),
+        Index("ix_review_case_fingerprint_hash", "fingerprint_hash"),
+        Index("ix_review_case_decision", "decision"),
+        Index("ix_review_case_review_id", "review_id"),
+        Index("ix_review_case_feedback_id", "feedback_id"),
+        Index("ix_review_case_status", "status"),
+        Index("ix_review_case_case_domain", "case_domain"),
+    )
+
+    case_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    review_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    feedback_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    candidate_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    case_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    lineage_component_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    operation_pattern: Mapped[str] = mapped_column(String(64), nullable=False)
+    fingerprint_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    fingerprint_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    fingerprint_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    case_domain: Mapped[str] = mapped_column(String(64), nullable=False)
+    domain_scope: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    decision: Mapped[str] = mapped_column(String(32), nullable=False)
+    truth_tier: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="ACTIVE")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

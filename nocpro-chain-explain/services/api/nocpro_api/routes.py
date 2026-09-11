@@ -8,17 +8,21 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from graybox import adapt_graybox_metadata
 from libs.contracts import ContractIngestError
 
 from .schemas import (
+    CandidateDisplayEventBatchSubmission,
+    CandidateDisplayEventBatchView,
     ChainListView,
     ChainSummaryView,
     CounterfactualJobView,
     OperatorFeedbackSubmission,
     OperatorFeedbackView,
+    ReasonPolicyView,
+    RetractionSubmission,
     AISuggestionView,
     CohesionNarrativeView,
     AssistantQueryInput,
@@ -48,6 +52,13 @@ from .serializers import (
     pair_evidence_view,
 )
 from .workspace import SnapshotNotLoaded, Workspace
+from .review_principal import (
+    ReviewReasonPolicyUnavailable,
+    ReviewerPrincipal,
+    get_reviewer_principal,
+    load_reason_policy,
+)
+from review_learning.contracts import SimilarCaseRetrievalResult
 
 
 router = APIRouter(prefix="/api/v1")
@@ -71,14 +82,34 @@ async def _run_grounded_provider(function: Any, **kwargs: Any) -> Any:
 
 
 def translate_error(exc: Exception) -> HTTPException:
-    if isinstance(exc, SnapshotNotLoaded):
+    from review_learning.contracts import (
+        ReviewSessionNotFound,
+        ReviewFeedbackNotFound,
+        UnknownExposureCandidate,
+        ImmutableReviewConflict,
+        InactiveFeedbackConflict,
+        ReviewIdentityUnavailable,
+        ReviewDomainForbidden,
+        ReviewerRoleForbidden,
+    )
+    if isinstance(exc, HTTPException):
+        return exc
+    if isinstance(exc, (ImmutableReviewConflict, InactiveFeedbackConflict, SnapshotNotLoaded)):
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
-    if isinstance(exc, KeyError):
+    if isinstance(exc, (ReviewSessionNotFound, ReviewFeedbackNotFound)):
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-    if isinstance(exc, (ContractIngestError, ValueError)):
+    if isinstance(exc, (ReviewDomainForbidden, ReviewerRoleForbidden)):
+        return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+    if isinstance(exc, ReviewIdentityUnavailable):
+        return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+    if isinstance(exc, ReviewReasonPolicyUnavailable):
+        return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+    if isinstance(exc, (UnknownExposureCandidate, ContractIngestError, ValueError)):
         return HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
         )
+    if isinstance(exc, KeyError):
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     raise exc
 
 
@@ -340,6 +371,39 @@ async def get_latest_review(
         raise translate_error(exc) from exc
 
 
+@router.get(
+    "/review-reasons",
+    response_model=ReasonPolicyView,
+)
+async def get_review_reasons() -> ReasonPolicyView:
+    try:
+        policy = load_reason_policy()
+        return ReasonPolicyView.model_validate(policy)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.post(
+    "/review-jobs/{job_id}/display-events",
+    response_model=CandidateDisplayEventBatchView,
+    status_code=status.HTTP_201_CREATED,
+)
+async def record_display_events(
+    job_id: str,
+    submission: CandidateDisplayEventBatchSubmission,
+    request: Request,
+    principal: ReviewerPrincipal = Depends(get_reviewer_principal),
+) -> CandidateDisplayEventBatchView:
+    try:
+        service = workspace(request)
+        count = await service.record_candidate_display_events(
+            job_id, [e.model_dump() for e in submission.events], principal=principal
+        )
+        return CandidateDisplayEventBatchView(recorded_events=count)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
 @router.post(
     "/review-jobs/{job_id}/feedback",
     response_model=OperatorFeedbackView,
@@ -349,13 +413,57 @@ async def submit_operator_feedback(
     job_id: str,
     submission: OperatorFeedbackSubmission,
     request: Request,
+    principal: ReviewerPrincipal = Depends(get_reviewer_principal),
 ) -> OperatorFeedbackView:
     try:
         service = workspace(request)
         result = await service.record_operator_feedback(
-            job_id, submission.model_dump()
+            job_id, submission.model_dump(), principal=principal
         )
         return operator_feedback_view(result)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.post(
+    "/review-jobs/{job_id}/feedback/{feedback_id}/supersede",
+    response_model=OperatorFeedbackView,
+    status_code=status.HTTP_201_CREATED,
+)
+async def supersede_operator_feedback(
+    job_id: str,
+    feedback_id: str,
+    submission: OperatorFeedbackSubmission,
+    request: Request,
+    principal: ReviewerPrincipal = Depends(get_reviewer_principal),
+) -> OperatorFeedbackView:
+    try:
+        service = workspace(request)
+        result = await service.supersede_operator_feedback(
+            job_id, feedback_id, submission.model_dump(), principal=principal
+        )
+        return operator_feedback_view(result)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.post(
+    "/review-jobs/{job_id}/feedback/{feedback_id}/retract",
+    status_code=status.HTTP_200_OK,
+)
+async def retract_operator_feedback(
+    job_id: str,
+    feedback_id: str,
+    submission: RetractionSubmission,
+    request: Request,
+    principal: ReviewerPrincipal = Depends(get_reviewer_principal),
+) -> dict[str, Any]:
+    try:
+        service = workspace(request)
+        await service.retract_operator_feedback(
+            job_id, feedback_id, principal=principal, reason=submission.reason
+        )
+        return {"status": "RETRACTED", "feedback_id": feedback_id}
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -365,11 +473,13 @@ async def submit_operator_feedback(
     response_model=list[OperatorFeedbackView],
 )
 async def get_job_operator_feedback(
-    job_id: str, request: Request
+    job_id: str,
+    request: Request,
+    principal: ReviewerPrincipal = Depends(get_reviewer_principal),
 ) -> list[OperatorFeedbackView]:
     try:
         service = workspace(request)
-        feedbacks = await service.list_operator_feedback(job_id=job_id)
+        feedbacks = await service.list_operator_feedback(job_id=job_id, principal=principal)
         return [operator_feedback_view(f) for f in feedbacks]
     except Exception as exc:
         raise translate_error(exc) from exc
@@ -380,12 +490,98 @@ async def get_job_operator_feedback(
     response_model=list[OperatorFeedbackView],
 )
 async def get_chain_operator_feedback(
-    chain_id: str, request: Request
+    chain_id: str,
+    request: Request,
+    principal: ReviewerPrincipal = Depends(get_reviewer_principal),
 ) -> list[OperatorFeedbackView]:
     try:
         service = workspace(request)
-        feedbacks = await service.list_operator_feedback(chain_id=chain_id)
+        feedbacks = await service.list_operator_feedback(chain_id=chain_id, principal=principal)
         return [operator_feedback_view(f) for f in feedbacks]
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.get(
+    "/review-jobs/{job_id}/candidates/{candidate_id}/similar-cases",
+)
+async def get_candidate_similar_cases(
+    job_id: str,
+    candidate_id: str,
+    request: Request,
+    top_k: int = Query(5, ge=1, le=20),
+    principal: ReviewerPrincipal = Depends(get_reviewer_principal),
+) -> dict[str, Any]:
+    try:
+        service = workspace(request)
+        res = await service.find_similar_cases_for_candidate(
+            job_id, candidate_id, principal=principal, top_k=top_k
+        )
+        if isinstance(res, SimilarCaseRetrievalResult):
+            return {
+                "retrieval_status": res.retrieval_status,
+                "min_similarity": res.min_similarity,
+                "reason": res.reason,
+                "common_block_count": res.common_block_count,
+                "required_common_block_count": res.required_common_block_count,
+                "disclaimer": res.disclaimer,
+                "cross_incident_cases": [
+                    {
+                        "case_id": m.case_id,
+                        "review_id": m.review_id,
+                        "candidate_id": m.candidate_id,
+                        "decision": m.decision,
+                        "truth_tier": m.truth_tier,
+                        "similarity_score": m.similarity_score,
+                        "common_block_count": m.common_block_count,
+                        "block_scores": m.block_scores,
+                        "lineage_component_id": m.lineage_component_id,
+                        "disclaimer": m.disclaimer,
+                    }
+                    for m in res.cross_incident_cases
+                ],
+                "same_lineage_history": [
+                    {
+                        "case_id": m.case_id,
+                        "review_id": m.review_id,
+                        "candidate_id": m.candidate_id,
+                        "decision": m.decision,
+                        "truth_tier": m.truth_tier,
+                        "similarity_score": m.similarity_score,
+                        "common_block_count": m.common_block_count,
+                        "block_scores": m.block_scores,
+                        "lineage_component_id": m.lineage_component_id,
+                        "disclaimer": m.disclaimer,
+                    }
+                    for m in res.same_lineage_history
+                ],
+            }
+        elif isinstance(res, list):
+            return {
+                "retrieval_status": "AVAILABLE",
+                "min_similarity": 0.5,
+                "reason": None,
+                "common_block_count": 5,
+                "required_common_block_count": 3,
+                "disclaimer": "Historical reference only — not probability or automated recommendation. Intended solely as peer context for human decision-making.",
+                "cross_incident_cases": [
+                    {
+                        "case_id": getattr(m, "case_id", None) or m.get("case_id"),
+                        "review_id": getattr(m, "review_id", None) or m.get("review_id"),
+                        "candidate_id": getattr(m, "candidate_id", None) or m.get("candidate_id"),
+                        "decision": getattr(m, "decision", None) or m.get("decision"),
+                        "truth_tier": getattr(m, "truth_tier", None) or m.get("truth_tier"),
+                        "similarity_score": getattr(m, "similarity_score", None) or m.get("similarity_score"),
+                        "common_block_count": getattr(m, "common_block_count", None) or m.get("common_block_count"),
+                        "block_scores": getattr(m, "block_scores", None) or m.get("block_scores"),
+                        "lineage_component_id": getattr(m, "lineage_component_id", None) or m.get("lineage_component_id"),
+                        "disclaimer": getattr(m, "disclaimer", "Historical reference only — not probability or automated recommendation."),
+                    }
+                    for m in res
+                ],
+                "same_lineage_history": [],
+            }
+        return dict(res)
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -663,4 +859,3 @@ async def get_topology_resolve(
         "p2_mapping_eligible": False,
         "dependency_semantics": "UNAVAILABLE",
     }
-

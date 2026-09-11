@@ -10,3 +10,9 @@ __pycache__/
 .pytest_cache/
 services/web/node_modules/
 services/web/dist/
+
+# Generated review-learning models and one-off local diagnostics are reproducible
+# from the versioned training code and must not enter source control.
+/artifacts/
+/docs/superpowers/
+/scripts/reproduce_aiosqlite_hang.py

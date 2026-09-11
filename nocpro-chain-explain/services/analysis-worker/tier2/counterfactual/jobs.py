@@ -5,6 +5,7 @@ from __future__ import annotations
 from concurrent.futures import Future, ThreadPoolExecutor
 from collections.abc import Mapping
 from dataclasses import dataclass, fields, is_dataclass
+from datetime import datetime, timezone
 from enum import Enum
 from hashlib import sha256
 import json
@@ -116,6 +117,10 @@ class CounterfactualJobView:
     cache_hit: bool
     result: Any | None = None
     error: str | None = None
+    lineage_component_id: str | None = None
+    submitted_at: datetime | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
 
     @property
     def cache_fingerprint(self) -> str:
@@ -131,6 +136,10 @@ class CounterfactualJobView:
             "status": self.status.value,
             "progress_percent": self.progress_percent,
             "cache_hit": self.cache_hit,
+            "lineage_component_id": self.lineage_component_id,
+            "submitted_at": self.submitted_at.isoformat() if self.submitted_at else None,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "identity": _jsonable(self.identity),
             "result": (
                 public_review_result(self.result)
@@ -151,6 +160,10 @@ class _MutableJob:
     cache_hit: bool
     result: Any | None = None
     error: str | None = None
+    lineage_component_id: str | None = None
+    submitted_at: datetime | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
 
     def view(self) -> CounterfactualJobView:
         return CounterfactualJobView(**vars(self))
@@ -202,6 +215,7 @@ class CounterfactualJobManager:
         audit_artifact,
         analysis_config,
         external_artifact: ExternalValidationArtifact | None = None,
+        lineage_component_id: str | None = None,
     ) -> CounterfactualSubmission:
         if chain_id not in package.chains:
             raise KeyError(f"unknown chain_id {chain_id!r}")
@@ -219,6 +233,7 @@ class CounterfactualJobManager:
             external_artifact=external_artifact,
         )
         key = identity.cache_tuple()
+        now = datetime.now(timezone.utc)
         with self._lock:
             cached = self._cache.get(key)
             if cached is not None:
@@ -231,6 +246,10 @@ class CounterfactualJobManager:
                     progress_percent=100,
                     cache_hit=True,
                     result=cached,
+                    lineage_component_id=lineage_component_id,
+                    submitted_at=now,
+                    started_at=now,
+                    completed_at=now,
                 )
                 submission = CounterfactualSubmission(job_id, True, False)
                 cached_view = self._jobs[job_id].view()
@@ -250,6 +269,10 @@ class CounterfactualJobManager:
                 status=JobStatus.QUEUED,
                 progress_percent=5,
                 cache_hit=False,
+                lineage_component_id=lineage_component_id,
+                submitted_at=now,
+                started_at=None,
+                completed_at=None,
             )
             self._inflight_by_key[key] = job_id
             queued_view = self._jobs[job_id].view()
@@ -277,6 +300,7 @@ class CounterfactualJobManager:
         with self._lock:
             job = self._jobs[job_id]
             job.status = JobStatus.RUNNING
+            job.started_at = datetime.now(timezone.utc)
             job.progress_percent = 20
             running_view = job.view()
         self._notify(running_view)
@@ -301,6 +325,7 @@ class CounterfactualJobManager:
             with self._lock:
                 job = self._jobs[job_id]
                 job.status = JobStatus.FAILED
+                job.completed_at = datetime.now(timezone.utc)
                 job.progress_percent = 100
                 job.error = f"{type(exc).__name__}: {exc}"
                 self._inflight_by_key.pop(job.identity.cache_tuple(), None)
@@ -315,6 +340,7 @@ class CounterfactualJobManager:
             self._cache[key] = result
             job.result = result
             job.status = JobStatus.SUCCEEDED
+            job.completed_at = datetime.now(timezone.utc)
             job.progress_percent = 100
             self._inflight_by_key.pop(key, None)
             self._latest_succeeded[

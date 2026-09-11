@@ -7,6 +7,7 @@ from dataclasses import replace
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
+import uuid
 
 import zstandard
 from sqlalchemy import and_, case, delete, func, or_, select, tuple_, update
@@ -71,6 +72,26 @@ from .models import (
     TemporalDelayModelRecord,
     OperatorFeedbackRecord,
     TopologyVersionRecord,
+    CandidateDisplayEventModel,
+    CandidateExposureModel,
+    FeedbackLifecycleEventModel,
+    ManualCorrectionModel,
+    ReviewCaseModel,
+    ReviewFeedbackModel,
+    ReviewSessionModel,
+)
+from review_learning.contracts import (
+    CandidateDisplayEvent,
+    CandidateExposure,
+    FeedbackLifecycleEvent,
+    FeedbackLifecycleType,
+    FeedbackStatus,
+    ManualCorrection,
+    ReviewCase,
+    ReviewDecision,
+    ReviewFeedback,
+    ReviewSession,
+    TruthTier,
 )
 
 
@@ -851,6 +872,816 @@ class SnapshotRepository:
             partition_delta=row.partition_delta,
             mutation_dispatched=row.mutation_dispatched,
             mutation_dispatch_result=row.mutation_dispatch_result,
+            created_at=row.created_at,
+        )
+
+    # -------------------------------------------------------------------------
+    # Review Learning Store (Migration 0013, Append-Only & Zero-Mutation)
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _as_datetime(val: Any) -> datetime:
+        if isinstance(val, datetime):
+            if val.tzinfo is None:
+                return val.replace(tzinfo=timezone.utc)
+            return val.astimezone(timezone.utc)
+        if isinstance(val, str) and val.strip():
+            try:
+                dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    return dt.replace(tzinfo=timezone.utc)
+                return dt.astimezone(timezone.utc)
+            except Exception:
+                pass
+        return datetime.now(timezone.utc)
+
+    async def persist_succeeded_job_and_review_bundle(
+        self,
+        job_payload: Mapping[str, Any],
+        session: ReviewSession,
+        exposures: Sequence[CandidateExposure],
+    ) -> None:
+        """Atomically persist succeeded counterfactual job and immutable review bundle in a single transaction."""
+        from review_learning.contracts import ImmutableReviewConflict
+
+        status_rank = {"QUEUED": 0, "RUNNING": 1, "SUCCEEDED": 2, "FAILED": 2}
+        if job_payload["status"] not in status_rank:
+            raise ValueError("unknown counterfactual job status")
+
+        job_values = {
+            "job_id": job_payload["job_id"],
+            "snapshot_id": job_payload["snapshot_id"],
+            "snapshot_version": job_payload["snapshot_version"],
+            "chain_id": job_payload["chain_id"],
+            "cache_fingerprint": job_payload["cache_fingerprint"],
+            "status": job_payload["status"],
+            "progress_percent": job_payload["progress_percent"],
+            "cache_hit": job_payload["cache_hit"],
+            "identity_payload": job_payload["identity"],
+            "result_payload": job_payload.get("result"),
+            "error": job_payload.get("error"),
+        }
+
+        async with self.sessions.begin() as db_session:
+            # 1. Upsert CounterfactualJobRecord
+            existing_job = await db_session.get(
+                CounterfactualJobRecord, job_payload["job_id"], with_for_update=True
+            )
+            if existing_job is not None:
+                immutable = (
+                    existing_job.snapshot_id,
+                    existing_job.snapshot_version,
+                    existing_job.chain_id,
+                    existing_job.cache_fingerprint,
+                    existing_job.identity_payload,
+                )
+                proposed = (
+                    job_values["snapshot_id"],
+                    job_values["snapshot_version"],
+                    job_values["chain_id"],
+                    job_values["cache_fingerprint"],
+                    job_values["identity_payload"],
+                )
+                if immutable != proposed:
+                    raise ValueError(
+                        f"Job {job_payload['job_id']}: identity attributes are immutable"
+                    )
+                for key, val in job_values.items():
+                    setattr(existing_job, key, val)
+            else:
+                db_session.add(CounterfactualJobRecord(**job_values))
+
+            # 2. Persist ReviewSession and CandidateExposureModel rows
+            existing_session = await db_session.get(ReviewSessionModel, session.review_id, with_for_update=True)
+            if existing_session is not None:
+                if (
+                    existing_session.candidate_set_fingerprint != session.candidate_set_fingerprint
+                    or existing_session.snapshot_id != session.snapshot_id
+                    or existing_session.snapshot_version != session.snapshot_version
+                    or existing_session.chain_id != session.chain_id
+                    or existing_session.lineage_component_id != session.lineage_component_id
+                ):
+                    raise ImmutableReviewConflict(
+                        f"Conflict: persisted review session {session.review_id} already exists with differing fingerprint or snapshot context"
+                    )
+                existing_exps = list((await db_session.scalars(
+                    select(CandidateExposureModel).where(CandidateExposureModel.review_id == session.review_id)
+                )).all())
+                existing_fps = {exp.candidate_id: exp.candidate_fingerprint for exp in existing_exps}
+                new_fps = {exp.candidate_id: exp.candidate_fingerprint for exp in exposures}
+                if existing_fps != new_fps:
+                    raise ImmutableReviewConflict(
+                        f"Conflict: persisted review exposures for session {session.review_id} differ from submitted bundle"
+                    )
+            else:
+                review_row = ReviewSessionModel(
+                    review_id=session.review_id,
+                    job_id=session.job_id,
+                    snapshot_id=session.snapshot_id,
+                    snapshot_version=session.snapshot_version,
+                    chain_id=session.chain_id,
+                    review_time=self._as_datetime(session.review_time),
+                    source_kind=session.source_kind,
+                    lineage_component_id=session.lineage_component_id,
+                    candidate_set_fingerprint=session.candidate_set_fingerprint,
+                    generator_version=session.generator_version,
+                    config_version=session.config_version,
+                    delay_model_version=session.delay_model_version,
+                    retrieval_version=session.retrieval_version,
+                    exposure_policy=session.exposure_policy,
+                    status=session.status,
+                    review_domain=getattr(session, "review_domain", "UNKNOWN_DOMAIN"),
+                    snapshot_observed_at=self._as_datetime(session.snapshot_observed_at) if getattr(session, "snapshot_observed_at", None) else None,
+                    job_completed_at=self._as_datetime(session.job_completed_at) if getattr(session, "job_completed_at", None) else None,
+                    source_alarm_universe_fingerprint=getattr(session, "source_alarm_universe_fingerprint", None),
+                    created_at=self._as_datetime(session.created_at),
+                )
+                db_session.add(review_row)
+                await db_session.flush()
+                for exp in exposures:
+                    exposure_row = CandidateExposureModel(
+                        exposure_id=f"exp_{exp.review_id}_{exp.candidate_id}",
+                        review_id=exp.review_id,
+                        candidate_id=exp.candidate_id,
+                        candidate_fingerprint=exp.candidate_fingerprint,
+                        operation=exp.operation,
+                        original_rank=exp.original_rank,
+                        displayed_rank=exp.displayed_rank,
+                        deterministic_eligibility=exp.deterministic_eligibility,
+                        hard_gate_status=exp.hard_gate_status,
+                        pareto_state=exp.pareto_state,
+                        deterministic_context=exp.deterministic_context,
+                        case_context=exp.case_context,
+                        temporal_context=exp.temporal_context,
+                        feature_fingerprint=exp.feature_fingerprint,
+                        feature_schema_version=exp.feature_schema_version,
+                        feature_payload=exp.feature_payload,
+                        created_at=self._as_datetime(exp.created_at),
+                    )
+                    db_session.add(exposure_row)
+
+    async def persist_review_bundle(
+        self,
+        session: ReviewSession,
+        exposures: Sequence[CandidateExposure],
+    ) -> None:
+        from review_learning.contracts import ImmutableReviewConflict
+        async with self.sessions.begin() as db_session:
+            existing = await db_session.get(ReviewSessionModel, session.review_id, with_for_update=True)
+            if existing is not None:
+                if (
+                    existing.candidate_set_fingerprint != session.candidate_set_fingerprint
+                    or existing.snapshot_id != session.snapshot_id
+                    or existing.snapshot_version != session.snapshot_version
+                    or existing.chain_id != session.chain_id
+                    or existing.lineage_component_id != session.lineage_component_id
+                ):
+                    raise ImmutableReviewConflict(
+                        f"Conflict: persisted review session {session.review_id} already exists with differing fingerprint or snapshot context"
+                    )
+                existing_exps = list((await db_session.scalars(
+                    select(CandidateExposureModel).where(CandidateExposureModel.review_id == session.review_id)
+                )).all())
+                existing_fps = {exp.candidate_id: exp.candidate_fingerprint for exp in existing_exps}
+                new_fps = {exp.candidate_id: exp.candidate_fingerprint for exp in exposures}
+                if existing_fps != new_fps:
+                    raise ImmutableReviewConflict(
+                        f"Conflict: persisted review exposures for session {session.review_id} differ from submitted bundle"
+                    )
+                return
+
+            review_row = ReviewSessionModel(
+                review_id=session.review_id,
+                job_id=session.job_id,
+                snapshot_id=session.snapshot_id,
+                snapshot_version=session.snapshot_version,
+                chain_id=session.chain_id,
+                review_time=self._as_datetime(session.review_time),
+                source_kind=session.source_kind,
+                lineage_component_id=session.lineage_component_id,
+                candidate_set_fingerprint=session.candidate_set_fingerprint,
+                generator_version=session.generator_version,
+                config_version=session.config_version,
+                delay_model_version=session.delay_model_version,
+                retrieval_version=session.retrieval_version,
+                exposure_policy=session.exposure_policy,
+                status=session.status,
+                review_domain=getattr(session, "review_domain", "UNKNOWN_DOMAIN"),
+                snapshot_observed_at=self._as_datetime(session.snapshot_observed_at) if getattr(session, "snapshot_observed_at", None) else None,
+                job_completed_at=self._as_datetime(session.job_completed_at) if getattr(session, "job_completed_at", None) else None,
+                source_alarm_universe_fingerprint=getattr(session, "source_alarm_universe_fingerprint", None),
+                created_at=self._as_datetime(session.created_at),
+            )
+            db_session.add(review_row)
+            await db_session.flush()
+            for exp in exposures:
+                exposure_row = CandidateExposureModel(
+                    exposure_id=f"exp_{exp.review_id}_{exp.candidate_id}",
+                    review_id=exp.review_id,
+                    candidate_id=exp.candidate_id,
+                    candidate_fingerprint=exp.candidate_fingerprint,
+                    operation=exp.operation,
+                    original_rank=exp.original_rank,
+                    displayed_rank=exp.displayed_rank,
+                    deterministic_eligibility=str(exp.deterministic_eligibility) if exp.deterministic_eligibility is not None else "ELIGIBLE",
+                    hard_gate_status=exp.hard_gate_status,
+                    pareto_state=exp.pareto_state,
+                    deterministic_context=exp.deterministic_context,
+                    case_context=exp.case_context,
+                    temporal_context=exp.temporal_context,
+                    feature_fingerprint=exp.feature_fingerprint,
+                    feature_schema_version=exp.feature_schema_version,
+                    feature_payload=exp.feature_payload,
+                    created_at=self._as_datetime(exp.created_at),
+                )
+                db_session.add(exposure_row)
+
+    async def get_review_session(self, review_id: str) -> ReviewSession | None:
+        async with self.sessions() as db_session:
+            row = await db_session.get(ReviewSessionModel, review_id)
+            return self._stored_review_session(row) if row is not None else None
+
+    async def get_review_session_by_job_id(self, job_id: str) -> ReviewSession | None:
+        async with self.sessions() as db_session:
+            result = await db_session.scalars(
+                select(ReviewSessionModel).where(ReviewSessionModel.job_id == job_id).limit(1)
+            )
+            row = result.first()
+            return self._stored_review_session(row) if row is not None else None
+
+    async def get_candidate_exposures(self, review_id: str) -> list[CandidateExposure]:
+        async with self.sessions() as db_session:
+            result = await db_session.scalars(
+                select(CandidateExposureModel)
+                .where(CandidateExposureModel.review_id == review_id)
+                .order_by(CandidateExposureModel.displayed_rank.asc())
+            )
+            return [self._stored_candidate_exposure(row) for row in result.all()]
+
+    async def append_candidate_display_events(
+        self, events: Sequence[CandidateDisplayEvent]
+    ) -> None:
+        if not events:
+            return
+        async with self.sessions.begin() as db_session:
+            for ev in events:
+                surf_val = ev.surface.value if hasattr(ev.surface, "value") else str(ev.surface)
+                row = CandidateDisplayEventModel(
+                    display_event_id=ev.display_event_id,
+                    review_id=ev.review_id,
+                    candidate_id=ev.candidate_id,
+                    displayed_rank=ev.displayed_rank,
+                    exposure_policy=ev.exposure_policy,
+                    surface=surf_val,
+                    rendered_at=self._as_datetime(ev.rendered_at),
+                    viewer_session_id=ev.viewer_session_id,
+                    client_event_id=ev.client_event_id,
+                    created_at=self._as_datetime(ev.created_at),
+                )
+                db_session.add(row)
+
+    async def append_review_feedback(
+        self,
+        feedback: ReviewFeedback,
+        manual_correction: ManualCorrection | None = None,
+        review_case: ReviewCase | None = None,
+    ) -> ReviewFeedback:
+        async with self.sessions.begin() as db_session:
+            session_row = await db_session.get(ReviewSessionModel, feedback.review_id)
+            if session_row is None:
+                raise ValueError(f"Review session {feedback.review_id} does not exist")
+
+            feedback_row = ReviewFeedbackModel(
+                feedback_id=feedback.feedback_id,
+                review_id=feedback.review_id,
+                candidate_id=feedback.candidate_id,
+                reviewer_subject=feedback.reviewer_subject,
+                reviewer_role=feedback.reviewer_role,
+                domain_scope=list(feedback.domain_scope),
+                decision=feedback.decision.value,
+                confidence=feedback.confidence,
+                reason_policy_version=feedback.reason_policy_version,
+                reason_codes=list(feedback.reason_codes),
+                reason_text=feedback.reason_text,
+                truth_tier=feedback.truth_tier.value,
+                supersedes_feedback_id=feedback.supersedes_feedback_id,
+                artifact_fingerprints=feedback.artifact_fingerprints,
+                created_at=self._as_datetime(feedback.created_at),
+            )
+            db_session.add(feedback_row)
+            await db_session.flush()
+
+            lifecycle_row = FeedbackLifecycleEventModel(
+                event_id=f"lc_{feedback.feedback_id}_created",
+                feedback_id=feedback.feedback_id,
+                event_type=FeedbackLifecycleType.CREATED.value,
+                actor_subject=feedback.reviewer_subject,
+                superseded_by_id=None,
+                reason=None,
+                created_at=self._as_datetime(feedback.created_at),
+            )
+            db_session.add(lifecycle_row)
+
+            if manual_correction is not None:
+                mc_row = ManualCorrectionModel(
+                    correction_id=manual_correction.correction_id,
+                    feedback_id=manual_correction.feedback_id,
+                    operation=manual_correction.operation,
+                    partition_delta=manual_correction.partition_delta,
+                    correction_fingerprint=manual_correction.correction_fingerprint,
+                    created_at=self._as_datetime(manual_correction.created_at),
+                )
+                db_session.add(mc_row)
+
+            if review_case is not None:
+                case_row = ReviewCaseModel(
+                    case_id=review_case.case_id,
+                    review_id=review_case.review_id,
+                    feedback_id=review_case.feedback_id,
+                    candidate_id=review_case.candidate_id,
+                    case_time=self._as_datetime(review_case.case_time),
+                    lineage_component_id=review_case.lineage_component_id,
+                    operation_pattern=review_case.operation_pattern,
+                    fingerprint_schema_version=review_case.fingerprint_schema_version,
+                    fingerprint_payload=review_case.fingerprint_payload,
+                    fingerprint_hash=review_case.fingerprint_hash,
+                    case_domain=getattr(review_case, "case_domain", "UNKNOWN_DOMAIN"),
+                    domain_scope=list(review_case.domain_scope) if getattr(review_case, "domain_scope", None) else None,
+                    decision=review_case.decision.value,
+                    truth_tier=review_case.truth_tier.value,
+                    status="ACTIVE",
+                    created_at=self._as_datetime(review_case.created_at),
+                )
+                db_session.add(case_row)
+
+        return feedback
+
+    async def append_superseding_feedback(
+        self,
+        feedback: ReviewFeedback,
+        supersedes_feedback_id: str,
+        manual_correction: ManualCorrection | None = None,
+        review_case: ReviewCase | None = None,
+    ) -> ReviewFeedback:
+        from review_learning.contracts import InactiveFeedbackConflict
+        async with self.sessions.begin() as db_session:
+            old_feedback = await db_session.scalar(
+                select(ReviewFeedbackModel)
+                .where(ReviewFeedbackModel.feedback_id == supersedes_feedback_id)
+                .with_for_update()
+            )
+            if old_feedback is None:
+                raise ValueError(f"Previous feedback {supersedes_feedback_id} does not exist")
+
+            terminal_events = list(
+                (
+                    await db_session.scalars(
+                        select(FeedbackLifecycleEventModel).where(
+                            FeedbackLifecycleEventModel.feedback_id == supersedes_feedback_id,
+                            FeedbackLifecycleEventModel.event_type.in_([
+                                FeedbackLifecycleType.SUPERSEDED.value,
+                                FeedbackLifecycleType.RETRACTED.value,
+                            ]),
+                        )
+                    )
+                ).all()
+            )
+            if terminal_events:
+                event_types = [e.event_type for e in terminal_events]
+                raise InactiveFeedbackConflict(f"Cannot supersede feedback {supersedes_feedback_id} because it is already {event_types}")
+
+            if old_feedback.review_id != feedback.review_id:
+                raise ValueError(f"Feedback review_id mismatch: {feedback.review_id} vs {old_feedback.review_id}")
+
+            feedback_row = ReviewFeedbackModel(
+                feedback_id=feedback.feedback_id,
+                review_id=feedback.review_id,
+                candidate_id=feedback.candidate_id,
+                reviewer_subject=feedback.reviewer_subject,
+                reviewer_role=feedback.reviewer_role,
+                domain_scope=list(feedback.domain_scope),
+                decision=feedback.decision.value,
+                confidence=feedback.confidence,
+                reason_policy_version=feedback.reason_policy_version,
+                reason_codes=list(feedback.reason_codes),
+                reason_text=feedback.reason_text,
+                truth_tier=feedback.truth_tier.value,
+                supersedes_feedback_id=supersedes_feedback_id,
+                artifact_fingerprints=feedback.artifact_fingerprints,
+                created_at=self._as_datetime(feedback.created_at),
+            )
+            db_session.add(feedback_row)
+            await db_session.flush()
+
+            lc_superseded = FeedbackLifecycleEventModel(
+                event_id=f"lc_{old_feedback.feedback_id}_superseded_{feedback.feedback_id}",
+                feedback_id=old_feedback.feedback_id,
+                event_type=FeedbackLifecycleType.SUPERSEDED.value,
+                actor_subject=feedback.reviewer_subject,
+                superseded_by_id=feedback.feedback_id,
+                reason=f"Superseded by {feedback.feedback_id}",
+                created_at=self._as_datetime(feedback.created_at),
+            )
+            db_session.add(lc_superseded)
+
+            lc_created = FeedbackLifecycleEventModel(
+                event_id=f"lc_{feedback.feedback_id}_created",
+                feedback_id=feedback.feedback_id,
+                event_type=FeedbackLifecycleType.CREATED.value,
+                actor_subject=feedback.reviewer_subject,
+                superseded_by_id=None,
+                reason=None,
+                created_at=self._as_datetime(feedback.created_at),
+            )
+            db_session.add(lc_created)
+
+            if manual_correction is not None:
+                mc_row = ManualCorrectionModel(
+                    correction_id=manual_correction.correction_id,
+                    feedback_id=manual_correction.feedback_id,
+                    operation=manual_correction.operation,
+                    partition_delta=manual_correction.partition_delta,
+                    correction_fingerprint=manual_correction.correction_fingerprint,
+                    created_at=self._as_datetime(manual_correction.created_at),
+                )
+                db_session.add(mc_row)
+
+            if review_case is not None:
+                case_row = ReviewCaseModel(
+                    case_id=review_case.case_id,
+                    review_id=review_case.review_id,
+                    feedback_id=review_case.feedback_id,
+                    candidate_id=review_case.candidate_id,
+                    case_time=self._as_datetime(review_case.case_time),
+                    lineage_component_id=review_case.lineage_component_id,
+                    operation_pattern=review_case.operation_pattern,
+                    fingerprint_schema_version=review_case.fingerprint_schema_version,
+                    fingerprint_payload=review_case.fingerprint_payload,
+                    fingerprint_hash=review_case.fingerprint_hash,
+                    case_domain=getattr(review_case, "case_domain", "UNKNOWN_DOMAIN"),
+                    domain_scope=list(review_case.domain_scope) if getattr(review_case, "domain_scope", None) else None,
+                    decision=review_case.decision.value,
+                    truth_tier=review_case.truth_tier.value,
+                    status="ACTIVE",
+                    created_at=self._as_datetime(review_case.created_at),
+                )
+                db_session.add(case_row)
+
+        return feedback
+
+    async def append_retraction_event(
+        self,
+        feedback_id: str,
+        actor_subject: str,
+        expected_review_id: str | None = None,
+        reason: str | None = None,
+        created_at: datetime | None = None,
+    ) -> None:
+        from review_learning.contracts import ReviewFeedbackNotFound, InactiveFeedbackConflict
+        async with self.sessions.begin() as db_session:
+            query = select(ReviewFeedbackModel).where(ReviewFeedbackModel.feedback_id == feedback_id)
+            if expected_review_id is not None:
+                query = query.where(ReviewFeedbackModel.review_id == expected_review_id)
+            query = query.with_for_update()
+            feedback = await db_session.scalar(query)
+            if feedback is None:
+                raise ReviewFeedbackNotFound(f"Feedback {feedback_id} not found in review session")
+
+            inactive = await db_session.scalar(
+                select(FeedbackLifecycleEventModel.event_id)
+                .where(
+                    FeedbackLifecycleEventModel.feedback_id == feedback_id,
+                    FeedbackLifecycleEventModel.event_type.in_(
+                        [FeedbackLifecycleType.SUPERSEDED.value, FeedbackLifecycleType.RETRACTED.value]
+                    ),
+                )
+                .limit(1)
+            )
+            if inactive is not None:
+                raise InactiveFeedbackConflict(f"Feedback {feedback_id} is already inactive (superseded or retracted)")
+
+            event_time = self._as_datetime(created_at) if created_at is not None else datetime.now(timezone.utc)
+            lc_retracted = FeedbackLifecycleEventModel(
+                event_id=f"lc_{uuid.uuid4().hex[:16]}",
+                feedback_id=feedback_id,
+                event_type=FeedbackLifecycleType.RETRACTED.value,
+                actor_subject=actor_subject,
+                superseded_by_id=None,
+                reason=reason,
+                created_at=event_time,
+            )
+            db_session.add(lc_retracted)
+
+    async def active_review_feedback_with_sessions(
+        self,
+        job_id: str | None = None,
+        chain_id: str | None = None,
+    ) -> list[tuple[ReviewFeedback, ReviewSession]]:
+        """Return active feedbacks joined with their parent review sessions in a single query."""
+        async with self.sessions() as db_session:
+            inactive_subquery = (
+                select(FeedbackLifecycleEventModel.feedback_id)
+                .where(
+                    FeedbackLifecycleEventModel.event_type.in_(
+                        [FeedbackLifecycleType.SUPERSEDED.value, FeedbackLifecycleType.RETRACTED.value]
+                    )
+                )
+                .scalar_subquery()
+            )
+
+            query = (
+                select(ReviewFeedbackModel, ReviewSessionModel)
+                .join(ReviewSessionModel, ReviewFeedbackModel.review_id == ReviewSessionModel.review_id)
+                .where(ReviewFeedbackModel.feedback_id.not_in(inactive_subquery))
+            )
+            if job_id is not None:
+                query = query.where(ReviewSessionModel.job_id == job_id)
+            if chain_id is not None:
+                query = query.where(ReviewSessionModel.chain_id == chain_id)
+            query = query.order_by(ReviewFeedbackModel.created_at.asc())
+
+            rows = (await db_session.execute(query)).all()
+            return [
+                {
+                    "feedback": self._stored_review_feedback(fb_row),
+                    "session": self._stored_review_session(sess_row),
+                }
+                for fb_row, sess_row in rows
+            ]
+
+    async def active_review_feedback(
+        self,
+        review_id: str | None = None,
+        job_id: str | None = None,
+        chain_id: str | None = None,
+    ) -> list[ReviewFeedback]:
+        async with self.sessions() as db_session:
+            inactive_subquery = (
+                select(FeedbackLifecycleEventModel.feedback_id)
+                .where(
+                    FeedbackLifecycleEventModel.event_type.in_(
+                        [FeedbackLifecycleType.SUPERSEDED.value, FeedbackLifecycleType.RETRACTED.value]
+                    )
+                )
+                .scalar_subquery()
+            )
+
+            query = select(ReviewFeedbackModel).where(
+                ReviewFeedbackModel.feedback_id.not_in(inactive_subquery)
+            )
+
+            if review_id is not None:
+                query = query.where(ReviewFeedbackModel.review_id == review_id)
+            elif job_id is not None or chain_id is not None:
+                query = query.join(ReviewSessionModel, ReviewFeedbackModel.review_id == ReviewSessionModel.review_id)
+                if job_id is not None:
+                    query = query.where(ReviewSessionModel.job_id == job_id)
+                if chain_id is not None:
+                    query = query.where(ReviewSessionModel.chain_id == chain_id)
+
+            query = query.order_by(ReviewFeedbackModel.created_at.asc())
+            rows = await db_session.scalars(query)
+            return [self._stored_review_feedback(r) for r in rows.all()]
+
+    async def active_review_cases_before(
+        self, cutoff: datetime
+    ) -> list[ReviewCase]:
+        if cutoff.tzinfo is None:
+            cutoff = cutoff.replace(tzinfo=timezone.utc)
+        async with self.sessions() as db_session:
+            inactive_feedback_subquery = (
+                select(FeedbackLifecycleEventModel.feedback_id)
+                .where(
+                    FeedbackLifecycleEventModel.event_type.in_(
+                        [FeedbackLifecycleType.SUPERSEDED.value, FeedbackLifecycleType.RETRACTED.value]
+                    ),
+                    FeedbackLifecycleEventModel.created_at < cutoff,
+                )
+                .scalar_subquery()
+            )
+            query = (
+                select(ReviewCaseModel)
+                .where(
+                    ReviewCaseModel.feedback_id.not_in(inactive_feedback_subquery),
+                    ReviewCaseModel.case_time < cutoff,
+                )
+                .order_by(ReviewCaseModel.case_time.desc())
+            )
+            rows = await db_session.scalars(query)
+            return [self._stored_review_case(r) for r in rows.all()]
+
+    async def training_review_groups_before(
+        self, cutoff: datetime
+    ) -> list[dict[str, Any]]:
+        if cutoff.tzinfo is None:
+            cutoff = cutoff.replace(tzinfo=timezone.utc)
+        async with self.sessions() as db_session:
+            inactive_subquery = (
+                select(FeedbackLifecycleEventModel.feedback_id)
+                .where(
+                    FeedbackLifecycleEventModel.event_type.in_(
+                        [FeedbackLifecycleType.SUPERSEDED.value, FeedbackLifecycleType.RETRACTED.value]
+                    ),
+                    FeedbackLifecycleEventModel.created_at < cutoff,
+                )
+                .scalar_subquery()
+            )
+            feedback_session_ids_subquery = (
+                select(ReviewFeedbackModel.review_id)
+                .where(
+                    ReviewFeedbackModel.created_at < cutoff,
+                    ReviewFeedbackModel.feedback_id.not_in(inactive_subquery),
+                )
+                .distinct()
+                .scalar_subquery()
+            )
+            sessions = list(
+                (
+                    await db_session.scalars(
+                        select(ReviewSessionModel)
+                        .where(ReviewSessionModel.review_id.in_(feedback_session_ids_subquery))
+                        .order_by(ReviewSessionModel.review_time.asc())
+                    )
+                ).all()
+            )
+
+            groups: list[dict[str, Any]] = []
+            for s in sessions:
+                exposures = list(
+                    (
+                        await db_session.scalars(
+                            select(CandidateExposureModel)
+                            .where(CandidateExposureModel.review_id == s.review_id)
+                            .order_by(CandidateExposureModel.displayed_rank.asc())
+                        )
+                    ).all()
+                )
+                displays = list(
+                    (
+                        await db_session.scalars(
+                            select(CandidateDisplayEventModel)
+                            .where(CandidateDisplayEventModel.review_id == s.review_id)
+                            .order_by(CandidateDisplayEventModel.rendered_at.asc())
+                        )
+                    ).all()
+                )
+                feedbacks = list(
+                    (
+                        await db_session.scalars(
+                            select(ReviewFeedbackModel)
+                            .where(
+                                ReviewFeedbackModel.review_id == s.review_id,
+                                ReviewFeedbackModel.created_at < cutoff,
+                                ReviewFeedbackModel.feedback_id.not_in(inactive_subquery),
+                            )
+                            .order_by(ReviewFeedbackModel.created_at.asc())
+                        )
+                    ).all()
+                )
+                corrections = list(
+                    (
+                        await db_session.scalars(
+                            select(ManualCorrectionModel)
+                            .join(ReviewFeedbackModel, ManualCorrectionModel.feedback_id == ReviewFeedbackModel.feedback_id)
+                            .where(
+                                ReviewFeedbackModel.review_id == s.review_id,
+                                ReviewFeedbackModel.created_at < cutoff,
+                                ReviewFeedbackModel.feedback_id.not_in(inactive_subquery),
+                            )
+                        )
+                    ).all()
+                )
+
+                corrections_list = [
+                    ManualCorrection(
+                        correction_id=mc.correction_id,
+                        feedback_id=mc.feedback_id,
+                        operation=mc.operation,
+                        partition_delta=mc.partition_delta,
+                        correction_fingerprint=mc.correction_fingerprint,
+                        created_at=mc.created_at,
+                    )
+                    for mc in corrections
+                ]
+                mc_by_fb = {mc.feedback_id: mc for mc in corrections_list}
+                group = {
+                    "review_session": self._stored_review_session(s),
+                    "candidate_exposures": [self._stored_candidate_exposure(e) for e in exposures],
+                    "candidate_display_events": [
+                        CandidateDisplayEvent(
+                            display_event_id=d.display_event_id,
+                            review_id=d.review_id,
+                            candidate_id=d.candidate_id,
+                            displayed_rank=d.displayed_rank,
+                            exposure_policy=d.exposure_policy,
+                            surface=d.surface,
+                            rendered_at=d.rendered_at,
+                            viewer_session_id=d.viewer_session_id,
+                            client_event_id=d.client_event_id,
+                            created_at=d.created_at,
+                        )
+                        for d in displays
+                    ],
+                    "active_feedbacks": [
+                        self._stored_review_feedback(f, manual_correction=mc_by_fb.get(f.feedback_id))
+                        for f in feedbacks
+                    ],
+                    "manual_corrections": corrections_list,
+                }
+                groups.append(group)
+
+            return groups
+
+    @classmethod
+    def _stored_review_session(cls, row: ReviewSessionModel) -> ReviewSession:
+        return ReviewSession(
+            review_id=row.review_id,
+            job_id=row.job_id,
+            snapshot_id=row.snapshot_id,
+            snapshot_version=row.snapshot_version,
+            chain_id=row.chain_id,
+            review_time=cls._as_datetime(row.review_time),
+            source_kind=row.source_kind,
+            lineage_component_id=row.lineage_component_id,
+            candidate_set_fingerprint=row.candidate_set_fingerprint,
+            generator_version=row.generator_version,
+            config_version=row.config_version,
+            delay_model_version=row.delay_model_version,
+            retrieval_version=row.retrieval_version,
+            exposure_policy=row.exposure_policy,
+            status=row.status,
+            review_domain=getattr(row, "review_domain", "IP_NETWORK"),
+            snapshot_observed_at=cls._as_datetime(getattr(row, "snapshot_observed_at", None)) if getattr(row, "snapshot_observed_at", None) is not None else None,
+            job_completed_at=cls._as_datetime(getattr(row, "job_completed_at", None)) if getattr(row, "job_completed_at", None) is not None else None,
+            source_alarm_universe_fingerprint=getattr(row, "source_alarm_universe_fingerprint", None),
+            created_at=cls._as_datetime(row.created_at),
+        )
+
+    @staticmethod
+    def _stored_candidate_exposure(row: CandidateExposureModel) -> CandidateExposure:
+        return CandidateExposure(
+            review_id=row.review_id,
+            candidate_id=row.candidate_id,
+            candidate_fingerprint=row.candidate_fingerprint,
+            operation=row.operation,
+            original_rank=row.original_rank,
+            displayed_rank=row.displayed_rank,
+            deterministic_eligibility=row.deterministic_eligibility,
+            hard_gate_status=row.hard_gate_status,
+            pareto_state=row.pareto_state,
+            deterministic_context=row.deterministic_context or {},
+            case_context=row.case_context or {},
+            temporal_context=row.temporal_context or {},
+            feature_fingerprint=row.feature_fingerprint,
+            feature_schema_version=getattr(row, "feature_schema_version", "cf-features-v1") or "cf-features-v1",
+            feature_payload=row.feature_payload or {},
+            created_at=row.created_at,
+        )
+
+    @staticmethod
+    def _stored_review_feedback(
+        row: ReviewFeedbackModel,
+        manual_correction: ManualCorrection | None = None,
+    ) -> ReviewFeedback:
+        scopes = tuple(row.domain_scope or [])
+        return ReviewFeedback(
+            feedback_id=row.feedback_id,
+            review_id=row.review_id,
+            candidate_id=row.candidate_id,
+            reviewer_subject=row.reviewer_subject,
+            reviewer_role=row.reviewer_role,
+            domain_scope=scopes,
+            reviewer_domain_scope=scopes,
+            decision=ReviewDecision(row.decision),
+            confidence=row.confidence,
+            reason_policy_version=row.reason_policy_version,
+            reason_codes=tuple(row.reason_codes or []),
+            reason_text=row.reason_text,
+            truth_tier=TruthTier(row.truth_tier),
+            supersedes_feedback_id=row.supersedes_feedback_id,
+            artifact_fingerprints=row.artifact_fingerprints or {},
+            manual_correction=manual_correction,
+            created_at=row.created_at,
+        )
+
+    @staticmethod
+    def _stored_review_case(row: ReviewCaseModel) -> ReviewCase:
+        return ReviewCase(
+            case_id=row.case_id,
+            review_id=row.review_id,
+            feedback_id=row.feedback_id,
+            candidate_id=row.candidate_id,
+            case_time=row.case_time,
+            lineage_component_id=row.lineage_component_id or "",
+            operation_pattern=row.operation_pattern,
+            fingerprint_schema_version=row.fingerprint_schema_version,
+            fingerprint_payload=row.fingerprint_payload or {},
+            fingerprint_hash=row.fingerprint_hash,
+            case_domain=getattr(row, "case_domain", "IP_NETWORK"),
+            domain_scope=tuple(getattr(row, "domain_scope", None) or []),
+            decision=ReviewDecision(row.decision),
+            truth_tier=TruthTier(row.truth_tier),
+            status=row.status,
             created_at=row.created_at,
         )
 

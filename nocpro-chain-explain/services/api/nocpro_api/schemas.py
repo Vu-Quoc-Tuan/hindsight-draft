@@ -553,13 +553,30 @@ class CounterfactualJobView(ApiModel):
     # The Counterfactual artifact owns its explicitly versioned nested schema.
     result: dict[str, object] | None
     error: str | None
+    lineage_component_id: str | None = None
+    submitted_at: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
+
+
+class ManualCorrectionSubmission(ApiModel):
+    operation: str
+    partition_delta: dict[str, Any]
+    target_chain_id: str | None = None
+    edit_summary: str | None = None
+    raw_payload: dict[str, Any] | None = None
 
 
 class OperatorFeedbackSubmission(ApiModel):
-    candidate_id: str
+    candidate_id: str | None = None
     decision: str
-    operator_id: str = "viettel_operator"
+    confidence: float | None = 1.0
     reason: str | None = None
+    notes: str | None = None
+    reason_code: str | None = None
+    reason_codes: list[str] | None = None
+    reason_policy_version: str = "review-reasons-v1"
+    manual_correction: ManualCorrectionSubmission | None = None
 
 
 class OperatorFeedbackView(ApiModel):
@@ -568,13 +585,56 @@ class OperatorFeedbackView(ApiModel):
     snapshot_id: str
     snapshot_version: str
     chain_id: str
-    candidate_id: str
-    operation: str
+    candidate_id: str | None = None
+    operation: str = ""
     decision: str
     operator_id: str
+    confidence: float | None = None
+    reviewer_subject: str | None = None
+    reviewer_role: str | None = None
+    domain_scope: list[str] | None = None
+    truth_tier: str = "PO_ASSERTED"
+    supersedes_feedback_id: str | None = None
     reason: str | None = None
-    partition_delta: dict[str, object]
+    reason_policy_version: str | None = None
+    reason_codes: list[str] = []
+    partition_delta: dict[str, object] = {}
+    has_manual_correction: bool = False
     created_at: str
+
+
+class CandidateDisplayEventItem(ApiModel):
+    candidate_id: str
+    displayed_rank: int
+    exposure_policy: str = "ALL_EVALUATED"
+    surface: str = "VALIDATION_VIEW_TOP_CARD"
+    rendered_at: str
+    viewer_session_id: str | None = None
+    client_event_id: str | None = None
+
+
+class CandidateDisplayEventBatchSubmission(ApiModel):
+    events: list[CandidateDisplayEventItem]
+
+
+class CandidateDisplayEventBatchView(ApiModel):
+    recorded_events: int
+
+
+class ReviewReasonItem(ApiModel):
+    code: str
+    label: str
+    description: str
+
+
+class ReasonPolicyView(ApiModel):
+    policy_version: str
+    description: str
+    reasons_by_decision: dict[str, list[ReviewReasonItem]]
+
+
+class RetractionSubmission(ApiModel):
+    reason: str | None = None
 
 
 class AISuggestionView(ApiModel):

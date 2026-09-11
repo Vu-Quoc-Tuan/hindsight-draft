@@ -19,6 +19,14 @@ from channels import evaluate_pair_channels
 from evolution import GlobalEpisodeDag, LineageConfig, LineageNodeKey
 from history import HistoricalEvidenceModel, HistoricalTaxonomy
 from temporal_delay import FrozenDelayModel
+from .review_learning_service import ReviewLearningService
+from .review_principal import ReviewerPrincipal, verify_domain_authorization
+from review_learning.contracts import (
+    ImmutableReviewSnapshotContext,
+    ReviewDecision,
+    ReviewSessionNotFound,
+    normalize_review_decision,
+)
 from .persistence import StoredEvolution, StoredEvolutionNode, StoredEvolutionEdge
 from configuration import (
     AnalysisConfig,
@@ -180,7 +188,46 @@ class Workspace:
         self._audit_persistence_futures: list[Future] = []
         self._deep_dive_persistence_futures: list[Future] = []
         self.operator_feedbacks: list[dict[str, Any]] = []
+        self._job_persistence_locks: dict[str, asyncio.Lock] = {}
+        ranker_art_dir = os.environ.get("NOCPRO_REVIEW_RANKER_ARTIFACT_DIR")
+        enforce_gov = os.environ.get("NOCPRO_REVIEW_RANKER_ENFORCE_GOVERNANCE", "1").lower() in {"1", "true", "yes"}
+        signing_key = os.environ.get("NOCPRO_GOVERNANCE_SIGNING_KEY")
+        abstention_thresh_raw = os.environ.get("NOCPRO_REVIEW_RANKER_ABSTENTION_THRESHOLD")
+
+        app_env = (os.environ.get("APP_ENV") or os.environ.get("ENVIRONMENT") or "").strip().lower()
+        is_production = app_env in {"production", "prod"}
+        if is_production and not enforce_gov:
+            raise RuntimeError(
+                f"Production environment detected (APP_ENV={app_env}), but NOCPRO_REVIEW_RANKER_ENFORCE_GOVERNANCE is disabled! "
+                "Disabling ranker governance in production is strictly forbidden."
+            )
+        if is_production and abstention_thresh_raw is not None:
+            raise RuntimeError(
+                "Production must use the signed artifact abstention threshold; "
+                "NOCPRO_REVIEW_RANKER_ABSTENTION_THRESHOLD is not permitted."
+            )
+        abstention_thresh = float(abstention_thresh_raw) if abstention_thresh_raw is not None else None
+        if abstention_thresh is not None:
+            logger.warning(
+                "Deployment environment override applied for review ranker abstention threshold: %s",
+                abstention_thresh,
+            )
+
+        self.review_learning: ReviewLearningService = ReviewLearningService(
+            repository=None,
+            ranker_artifact_dir=ranker_art_dir,
+            enforce_production_governance=enforce_gov,
+            signing_key=signing_key,
+            abstention_threshold=abstention_thresh,
+        )
         self._local_evolution_dag: GlobalEpisodeDag | None = None
+
+    def _get_job_persistence_lock(self, job_id: str) -> asyncio.Lock:
+        lock = self._job_persistence_locks.get(job_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._job_persistence_locks[job_id] = lock
+        return lock
 
     def _get_or_build_local_evolution_dag(self) -> GlobalEpisodeDag | None:
         if self._local_evolution_dag is not None:
@@ -352,10 +399,8 @@ class Workspace:
             pending = list(self._review_persistence_futures)
             self._review_persistence_futures.clear()
         if pending:
-            await asyncio.gather(
-                *(asyncio.wrap_future(future) for future in pending),
-                return_exceptions=False,
-            )
+            for future in pending:
+                await asyncio.wrap_future(future)
 
     async def flush_deep_dive_persistence(self) -> None:
         with self._lock:
@@ -370,15 +415,111 @@ class Workspace:
     def attach_persistence(self, repository, coordinator) -> None:
         self.repository = repository
         self.coordinator = coordinator
+        self.review_learning.repository = repository
         self._persistence_loop = asyncio.get_running_loop()
 
         def persist_review_state(view) -> None:
-            future = asyncio.run_coroutine_threadsafe(
-                repository.persist_counterfactual_job(view.persistence_payload()),
-                self._persistence_loop,
-            )
-            with self._lock:
-                self._review_persistence_futures.append(future)
+            status_val = view.status.value if hasattr(view.status, "value") else str(view.status)
+            if status_val == "SUCCEEDED" and view.result is not None:
+                lineage_id = getattr(view, "lineage_component_id", None) or self.lineage_by_chain.get(view.chain_id)
+                if lineage_id is None and self.package is not None:
+                    dag = self._get_or_build_local_evolution_dag()
+                    if dag is not None:
+                        k = LineageNodeKey(
+                            self.package.snapshot.snapshot_id,
+                            self.package.snapshot.snapshot_version,
+                            view.chain_id,
+                        )
+                        lineage_id = dag.canonical_lineage(k)
+                        if lineage_id:
+                            self.lineage_by_chain[view.chain_id] = lineage_id
+                if lineage_id is None or lineage_id.startswith("fallback_lineage:"):
+                    lineage_id = "LINEAGE_UNAVAILABLE"
+
+                raw_source_kind = (
+                    getattr(self.package.snapshot, "source_kind", None)
+                    if self.package and getattr(self.package, "snapshot", None)
+                    else None
+                )
+                if raw_source_kind in {"REAL_LIVE", "REAL_EXPORT_REPLAY"}:
+                    source_k = raw_source_kind
+                elif hasattr(raw_source_kind, "value") and raw_source_kind.value in {"REAL_LIVE", "REAL_EXPORT_REPLAY"}:
+                    source_k = raw_source_kind.value
+                else:
+                    source_k = "SOURCE_KIND_UNAVAILABLE"
+
+                domain_val = getattr(view.identity, "domain", None) if hasattr(view, "identity") else None
+                if not domain_val and self.package is not None:
+                    if getattr(self.package, "topology", None) and isinstance(self.package.topology, dict):
+                        domain_val = self.package.topology.get("domain")
+                if not domain_val:
+                    domain_val = "UNKNOWN_DOMAIN"
+
+                snapshot_obs_at = (
+                    getattr(self.package.snapshot, "observed_at", None)
+                    or getattr(self.package.snapshot, "snapshot_time", None)
+                    or getattr(self.package.snapshot, "produced_at", None)
+                ) if (self.package and getattr(self.package, "snapshot", None)) else None
+                job_comp_at = getattr(view, "completed_at", None) or datetime.now(timezone.utc)
+                rev_time = job_comp_at
+
+                context = ImmutableReviewSnapshotContext(
+                    snapshot_id=str(getattr(view.identity, "snapshot_id", "") or (self.package.snapshot.snapshot_id if self.package else "")),
+                    snapshot_version=str(getattr(view.identity, "snapshot_version", "1") or (self.package.snapshot.snapshot_version if self.package else "1")),
+                    chain_id=str(view.chain_id),
+                    review_time=rev_time,
+                    snapshot_observed_at=snapshot_obs_at,
+                    job_completed_at=job_comp_at,
+                    review_domain=domain_val,
+                    generator_version="v1",
+                    config_version="v1",
+                    exposure_policy_version="ALL_EVALUATED",
+                    source_kind=source_k,
+                    lineage_component_id=lineage_id,
+                )
+                session, exposures = self.review_learning.prepare_review_bundle(
+                    job_id=view.job_id,
+                    job_view=view,
+                    package=self.package,
+                    delay_model=self.temporal_delay_model,
+                    taxonomy=self.temporal_delay_taxonomy or self.historical_taxonomy_source,
+                    config_version="v1",
+                    exposure_policy="ALL_EVALUATED",
+                    context=context,
+                )
+
+                async def _persist_atomic() -> None:
+                    async with self._get_job_persistence_lock(view.job_id):
+                        await repository.persist_succeeded_job_and_review_bundle(
+                            view.persistence_payload(), session, exposures
+                        )
+                        self.review_learning.register_persisted_bundle(session, exposures)
+
+                loop = self._persistence_loop
+                if loop is None or loop.is_closed():
+                    raise RuntimeError("Persistence event loop is not attached or is closed")
+
+                freeze_future = asyncio.run_coroutine_threadsafe(
+                    _persist_atomic(),
+                    loop,
+                )
+                with self._lock:
+                    self._review_persistence_futures.append(freeze_future)
+            else:
+                loop = self._persistence_loop
+                if loop is None or loop.is_closed():
+                    raise RuntimeError("Persistence event loop is not attached or is closed")
+
+                async def _persist_non_terminal() -> None:
+                    async with self._get_job_persistence_lock(view.job_id):
+                        await repository.persist_counterfactual_job(view.persistence_payload())
+
+                future = asyncio.run_coroutine_threadsafe(
+                    _persist_non_terminal(),
+                    loop,
+                )
+                with self._lock:
+                    self._review_persistence_futures.append(future)
 
         self.review_jobs.set_state_listener(persist_review_state)
 
@@ -760,12 +901,28 @@ class Workspace:
         package, tier1b_artifact, audit_artifact, _ = await self._review_context(
             chain_id
         )
+        lineage_id = getattr(self, "lineage_by_chain", {}).get(chain_id)
+        if lineage_id is None and self.package is not None:
+            dag = self._get_or_build_local_evolution_dag()
+            if dag is not None:
+                k = LineageNodeKey(
+                    self.package.snapshot.snapshot_id,
+                    self.package.snapshot.snapshot_version,
+                    chain_id,
+                )
+                lineage_id = dag.canonical_lineage(k)
+                if lineage_id:
+                    self.lineage_by_chain[chain_id] = lineage_id
+        if lineage_id is None or lineage_id.startswith("fallback_lineage:"):
+            lineage_id = "LINEAGE_UNAVAILABLE"
+            self.lineage_by_chain[chain_id] = lineage_id
         return self.review_jobs.submit(
             package,
             chain_id,
             tier1b_artifact=tier1b_artifact,
             audit_artifact=audit_artifact,
             analysis_config=self.config,
+            lineage_component_id=lineage_id,
         )
 
     async def latest_review(self, chain_id: str):
@@ -891,14 +1048,18 @@ class Workspace:
         )
 
     async def record_operator_feedback(
-        self, job_id: str, payload: dict[str, Any]
+        self,
+        job_id: str,
+        payload: dict[str, Any],
+        principal: ReviewerPrincipal | None = None,
     ) -> dict[str, Any]:
         job = None
         try:
             job = self.review_jobs.get(job_id)
-        except KeyError:
-            if self.repository is not None:
-                job = await self.repository.counterfactual_job(job_id)
+        except Exception:
+            pass
+        if job is None and self.repository is not None:
+            job = await self.repository.counterfactual_job(job_id)
 
         if job is None:
             raise KeyError(f"unknown review job_id {job_id!r}")
@@ -913,7 +1074,84 @@ class Workspace:
         else:
             result_dict = dict(job.result)
 
-        candidate_id = payload["candidate_id"]
+        session = await self.review_learning._ensure_session_by_job_hydrated(job_id)
+        review_id = self.review_learning.get_review_id_for_job(job_id)
+        if session is None and review_id not in self.review_learning._sessions:
+            chain_id_val = getattr(job, "chain_id", None) or result_dict.get("identity", {}).get("chain_id") or ""
+            snapshot_id_val = result_dict.get("identity", {}).get("snapshot_id") or (
+                getattr(job, "identity", {}).get("snapshot_id") if hasattr(job, "identity") else ""
+            ) or ""
+            snapshot_version_val = result_dict.get("identity", {}).get("snapshot_version") or (
+                getattr(job, "identity", {}).get("snapshot_version") if hasattr(job, "identity") else "1"
+            ) or "1"
+            lineage_id = getattr(job, "lineage_component_id", None) or getattr(self, "lineage_by_chain", {}).get(str(chain_id_val))
+            if lineage_id is None and self.package is not None:
+                dag = self._get_or_build_local_evolution_dag()
+                if dag is not None:
+                    k = LineageNodeKey(
+                        self.package.snapshot.snapshot_id,
+                        self.package.snapshot.snapshot_version,
+                        str(chain_id_val),
+                    )
+                    lineage_id = dag.canonical_lineage(k)
+                    if lineage_id:
+                        self.lineage_by_chain[str(chain_id_val)] = lineage_id
+            if lineage_id is None:
+                lineage_id = "LINEAGE_UNAVAILABLE"
+
+            domain_val = getattr(job, "review_domain", None)
+            if not domain_val and self.package is not None:
+                if getattr(self.package, "topology", None) and isinstance(self.package.topology, dict):
+                    domain_val = self.package.topology.get("domain")
+            if not domain_val:
+                domain_val = "UNKNOWN_DOMAIN"
+
+            snapshot_obs_at = getattr(job, "snapshot_observed_at", None) or (
+                (
+                    getattr(self.package.snapshot, "observed_at", None)
+                    or getattr(self.package.snapshot, "snapshot_time", None)
+                    or getattr(self.package.snapshot, "produced_at", None)
+                )
+                if (self.package and getattr(self.package, "snapshot", None))
+                else None
+            )
+            job_comp_at = getattr(job, "completed_at", None) or datetime.now(timezone.utc)
+            rev_time = datetime.now(timezone.utc)
+            source_k = getattr(job, "source_kind", None) or "SOURCE_KIND_UNAVAILABLE"
+
+            context = ImmutableReviewSnapshotContext(
+                snapshot_id=str(snapshot_id_val),
+                snapshot_version=str(snapshot_version_val),
+                chain_id=str(chain_id_val),
+                review_time=rev_time,
+                snapshot_observed_at=snapshot_obs_at,
+                job_completed_at=job_comp_at,
+                review_domain=domain_val,
+                generator_version=getattr(job, "generator_version", "v1") if hasattr(job, "generator_version") else "v1",
+                config_version="v1",
+                exposure_policy_version="ALL_EVALUATED",
+                source_kind=source_k,
+                lineage_component_id=lineage_id,
+            )
+            session = await self.review_learning.freeze_review_bundle(
+                job_id=job_id,
+                job_view=job,
+                package=self.package,
+                delay_model=self.temporal_delay_model,
+                taxonomy=self.temporal_delay_taxonomy or self.historical_taxonomy_source,
+                config_version="v1",
+                exposure_policy="ALL_EVALUATED",
+                context=context,
+            )
+        elif session is None:
+            session = self.review_learning._sessions.get(review_id)
+
+        try:
+            decision = normalize_review_decision(payload["decision"])
+        except ValueError as exc:
+            raise ValueError(f"invalid decision {payload['decision']!r}") from exc
+
+        candidate_id = payload.get("candidate_id")
         evaluated = {
             str(candidate.get("candidate_id")): candidate
             for candidate in result_dict.get("evaluated_candidates", [])
@@ -924,31 +1162,23 @@ class Workspace:
             for reference in result_dict.get("recommendations", [])
             if isinstance(reference, dict) and reference.get("candidate_id")
         }
-        # Legacy artifacts could contain fully materialized recommendation
-        # candidates. They are still operator-facing only when explicitly
-        # present in that recommendations list.
         for reference in result_dict.get("recommendations", []):
             if isinstance(reference, dict) and reference.get("operation"):
                 evaluated.setdefault(str(reference["candidate_id"]), reference)
 
-        if candidate_id not in recommendation_ids:
-            raise ValueError(
-                f"candidate_id {candidate_id!r} is not an operator-facing recommendation "
-                f"for review job {job_id!r}"
-            )
-        candidate = evaluated.get(candidate_id)
-        if candidate is None:
-            raise ValueError(
-                f"candidate_id {candidate_id!r} is referenced by recommendations "
-                "but its evaluated detail is unavailable"
-            )
+        if decision == ReviewDecision.NONE_ACCEPTABLE:
+            candidate_id = None
+            candidate = {}
+        else:
+            if not candidate_id or (candidate_id not in recommendation_ids and candidate_id not in evaluated):
+                raise ValueError(
+                    f"candidate_id {candidate_id!r} is not an operator-facing recommendation "
+                    f"for review job {job_id!r}"
+                )
+            candidate = evaluated.get(candidate_id, {})
 
         operation = candidate.get("operation", "UNKNOWN")
         partition_delta = candidate.get("partition_delta", {})
-
-        decision = payload["decision"].upper()
-        if decision not in {"APPROVED", "REJECTED", "ACCEPTED"}:
-            raise ValueError(f"invalid decision {payload['decision']!r}")
 
         chain_id = getattr(job, "chain_id", None) or result_dict.get("identity", {}).get("chain_id")
         snapshot_id = result_dict.get("identity", {}).get("snapshot_id") or (
@@ -958,43 +1188,246 @@ class Workspace:
             getattr(job, "identity", {}).get("snapshot_version") if hasattr(job, "identity") else "1"
         )
 
-        feedback_id = f"fb_{uuid.uuid4().hex[:12]}"
-        now = datetime.now(timezone.utc)
+        if principal is None:
+            subject = (
+                os.environ.get("REVIEW_LOCAL_SUBJECT")
+                or os.environ.get("LOCAL_DEV_OPERATOR_ID")
+                or "local_dev_operator"
+            )
+            role = (
+                os.environ.get("REVIEW_LOCAL_ROLE")
+                or os.environ.get("LOCAL_DEV_OPERATOR_ROLE")
+                or "PRODUCT_OWNER"
+            )
+            scope_env = (
+                os.environ.get("REVIEW_LOCAL_DOMAIN_SCOPE")
+                or os.environ.get("LOCAL_DEV_DOMAIN_SCOPE")
+            )
+            domain_scope = (
+                tuple(s.strip() for s in scope_env.split(",") if s.strip()) if scope_env else ("IP_NETWORK", "IT_SERVICES", "UNKNOWN_DOMAIN")
+            )
+            principal = ReviewerPrincipal(
+                subject=subject,
+                role=role,
+                domain_scope=domain_scope,
+                auth_type="LOCAL_DEV",
+            )
+
+        if session is not None:
+            verify_domain_authorization(principal, session.review_domain)
+
+        fb = await self.review_learning.record_feedback(
+            job_id=job_id,
+            submission={**payload, "candidate_id": candidate_id, "decision": decision.value},
+            principal=principal,
+            package=self.package,
+        )
+
         record: dict[str, Any] = {
-            "feedback_id": feedback_id,
+            "feedback_id": fb.feedback_id,
+            "review_id": fb.review_id,
             "job_id": job_id,
             "snapshot_id": str(snapshot_id or ""),
             "snapshot_version": str(snapshot_version or "1"),
             "chain_id": str(chain_id or ""),
-            "candidate_id": candidate_id,
+            "candidate_id": fb.candidate_id,
             "operation": operation,
-            "decision": decision,
-            "operator_id": payload.get("operator_id") or "viettel_operator",
-            "reason": payload.get("reason"),
-            "partition_delta": partition_delta,
-            "created_at": now,
+            "decision": fb.decision.value,
+            "operator_id": fb.reviewer_subject,
+            "confidence": fb.confidence,
+            "reviewer_subject": fb.reviewer_subject,
+            "reviewer_role": fb.reviewer_role,
+            "domain_scope": list(fb.domain_scope),
+            "truth_tier": fb.truth_tier.value,
+            "reason": fb.reason_text,
+            "reason_policy_version": fb.reason_policy_version,
+            "reason_codes": list(fb.reason_codes),
+            "partition_delta": (
+                fb.manual_correction.partition_delta
+                if fb.manual_correction is not None
+                else partition_delta
+            ),
+            "created_at": fb.created_at,
         }
 
         self.operator_feedbacks.append(record)
 
-        if self.repository is not None:
-            persisted = await self.repository.persist_operator_feedback(record)
-            return persisted
-
         return record
 
     async def list_operator_feedback(
-        self, job_id: str | None = None, chain_id: str | None = None
+        self,
+        job_id: str | None = None,
+        chain_id: str | None = None,
+        principal: ReviewerPrincipal | None = None,
     ) -> list[Any]:
-        if self.repository is not None:
-            if job_id is not None:
-                return await self.repository.operator_feedback_for_job(job_id)
-            if chain_id is not None:
-                return await self.repository.operator_feedback_for_chain(chain_id)
+        # Validate job existence and domain authorization when job_id is specified
+        if job_id is not None:
+            session = None
+            if self.repository is not None:
+                session = await self.review_learning._ensure_session_by_job_hydrated(job_id)
+            else:
+                rev_id = self.review_learning.get_review_id_for_job(job_id)
+                session = self.review_learning._sessions.get(rev_id) or self.review_learning._sessions.get(job_id)
 
-        results = self.operator_feedbacks
+            job = None
+            try:
+                job = self.review_jobs.get(job_id)
+            except Exception:
+                pass
+            if job is None and self.repository is not None:
+                job = await self.repository.counterfactual_job(job_id)
+
+            if session is None and job is None:
+                raise KeyError(f"unknown review job_id {job_id!r}")
+
+            if principal is not None:
+                domain = None
+                if session is not None and getattr(session, "review_domain", None):
+                    domain = session.review_domain
+                elif job is not None:
+                    domain = getattr(job, "review_domain", None)
+                    if not domain and hasattr(job, "topology") and isinstance(job.topology, dict):
+                        domain = job.topology.get("domain")
+                if domain is not None:
+                    principal.verify_domain_authorization(domain)
+
+        if self.repository is not None:
+            pairs = await self.repository.active_review_feedback_with_sessions(
+                job_id=job_id, chain_id=chain_id
+            )
+            if principal is not None:
+                for item in pairs:
+                    sess = item.get("session")
+                    if sess is None:
+                        raise ReviewSessionNotFound(
+                            "Historical feedback is missing its immutable review-session provenance"
+                        )
+                    principal.verify_domain_authorization(sess.review_domain)
+
+            results = []
+            for item in pairs:
+                fb = item["feedback"]
+                session = item.get("session")
+                results.append({
+                    "feedback_id": fb.feedback_id,
+                    "review_id": fb.review_id,
+                    "job_id": session.job_id if session else (job_id or ""),
+                    "snapshot_id": session.snapshot_id if session else "",
+                    "snapshot_version": session.snapshot_version if session else "1",
+                    "chain_id": session.chain_id if session else (chain_id or ""),
+                    "candidate_id": fb.candidate_id or "",
+                    "decision": fb.decision.value if hasattr(fb.decision, "value") else str(fb.decision),
+                    "operator_id": fb.reviewer_subject,
+                    "confidence": fb.confidence,
+                    "reviewer_subject": fb.reviewer_subject,
+                    "reviewer_role": fb.reviewer_role,
+                    "domain_scope": list(fb.domain_scope),
+                    "truth_tier": fb.truth_tier.value if hasattr(fb.truth_tier, "value") else str(fb.truth_tier),
+                    "supersedes_feedback_id": fb.supersedes_feedback_id,
+                    "reason": fb.reason_text,
+                    "reason_policy_version": fb.reason_policy_version,
+                    "reason_codes": list(fb.reason_codes),
+                    "created_at": fb.created_at,
+                })
+            return results
+
+        active_ids = set(self.review_learning._active_feedbacks.keys())
+        results = [
+            f for f in self.operator_feedbacks
+            if f.get("feedback_id") in active_ids or "feedback_id" not in f
+        ]
         if job_id is not None:
             results = [f for f in results if f.get("job_id") == job_id]
         if chain_id is not None:
             results = [f for f in results if f.get("chain_id") == chain_id]
+
+        if principal is not None:
+            for f in results:
+                rev_id = f.get("review_id") or self.review_learning.get_review_id_for_job(
+                    str(f.get("job_id", ""))
+                )
+                sess = self.review_learning._sessions.get(rev_id) if rev_id else None
+                if sess is None:
+                    raise ReviewSessionNotFound(
+                        "Historical feedback is missing its immutable review-session provenance"
+                    )
+                principal.verify_domain_authorization(sess.review_domain)
+
         return results
+
+    async def record_candidate_display_events(
+        self,
+        job_id: str,
+        events: Sequence[dict[str, Any]],
+        principal: ReviewerPrincipal,
+    ) -> int:
+        return await self.review_learning.record_display_events(
+            job_id=job_id, events_payload=events, principal=principal
+        )
+
+    async def supersede_operator_feedback(
+        self,
+        job_id: str,
+        supersedes_feedback_id: str,
+        payload: dict[str, Any],
+        principal: ReviewerPrincipal,
+    ) -> dict[str, Any]:
+        session = await self.review_learning._ensure_session_by_job_hydrated(job_id)
+        if session is not None:
+            verify_domain_authorization(principal, session.review_domain)
+
+        fb = await self.review_learning.supersede_feedback(
+            job_id=job_id,
+            supersedes_feedback_id=supersedes_feedback_id,
+            submission=payload,
+            principal=principal,
+            package=self.package,
+        )
+        record = {
+            "feedback_id": fb.feedback_id,
+            "job_id": job_id,
+            "candidate_id": fb.candidate_id or "",
+            "decision": fb.decision.value,
+            "operator_id": fb.reviewer_subject,
+            "confidence": fb.confidence,
+            "reviewer_subject": fb.reviewer_subject,
+            "reviewer_role": fb.reviewer_role,
+            "domain_scope": list(fb.domain_scope),
+            "truth_tier": fb.truth_tier.value,
+            "supersedes_feedback_id": fb.supersedes_feedback_id,
+            "reason": fb.reason_text,
+            "reason_policy_version": fb.reason_policy_version,
+            "reason_codes": list(fb.reason_codes),
+            "created_at": fb.created_at,
+        }
+        self.operator_feedbacks.append(record)
+        return record
+
+    async def retract_operator_feedback(
+        self,
+        job_id: str,
+        feedback_id: str,
+        principal: ReviewerPrincipal,
+        reason: str | None = None,
+    ) -> None:
+        session = await self.review_learning._ensure_session_by_job_hydrated(job_id)
+        if session is not None:
+            verify_domain_authorization(principal, session.review_domain)
+
+        await self.review_learning.retract_feedback(
+            job_id=job_id,
+            feedback_id=feedback_id,
+            principal=principal,
+            reason=reason,
+        )
+
+    async def find_similar_cases_for_candidate(
+        self, job_id: str, candidate_id: str, *, principal: ReviewerPrincipal, top_k: int = 5
+    ) -> list[Any]:
+        return await self.review_learning.find_similar_cases_for_candidate(
+            job_id=job_id,
+            candidate_id=candidate_id,
+            principal=principal,
+            top_k=top_k,
+            package=self.package,
+        )

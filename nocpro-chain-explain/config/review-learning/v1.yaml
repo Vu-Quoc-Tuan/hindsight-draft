@@ -1,0 +1,18 @@
+config_version: "v1"
+mode: "REVIEW_MEMORY"
+retrieval:
+  enabled: true
+  top_k: 5
+  min_common_blocks: 3
+ranker:
+  mode: "DISABLED"
+  model_family: "xgboost"
+  feature_schema_version: "cf-features-v1"
+  label_policy_version: "review-label-v1"
+mutation:
+  mode: "REVIEW_ONLY"
+promotion:
+  min_review_groups: 200
+  min_groups_per_enabled_operation: 30
+  min_explicit_positive_per_operation: 10
+  min_explicit_negative_per_operation: 10

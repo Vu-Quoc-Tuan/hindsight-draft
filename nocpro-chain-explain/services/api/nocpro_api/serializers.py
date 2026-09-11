@@ -244,6 +244,11 @@ def counterfactual_result_view(result):
 
 
 def counterfactual_job_view(job) -> CounterfactualJobView:
+    def _iso(val):
+        if val is None:
+            return None
+        return val.isoformat() if hasattr(val, "isoformat") else str(val)
+
     if isinstance(job, DomainCounterfactualJobView):
         payload = {
             "job_id": job.job_id,
@@ -252,6 +257,10 @@ def counterfactual_job_view(job) -> CounterfactualJobView:
             "progress_percent": job.progress_percent,
             "cache_hit": job.cache_hit,
             "cache_fingerprint": job.cache_fingerprint,
+            "lineage_component_id": job.lineage_component_id,
+            "submitted_at": _iso(job.submitted_at),
+            "started_at": _iso(job.started_at),
+            "completed_at": _iso(job.completed_at),
             "identity": asdict(job.identity),
             "result": (
                 public_review_result(job.result)
@@ -262,15 +271,19 @@ def counterfactual_job_view(job) -> CounterfactualJobView:
         }
     else:
         payload = {
-            "job_id": job.job_id,
-            "chain_id": job.chain_id,
-            "status": job.status,
-            "progress_percent": job.progress_percent,
-            "cache_hit": job.cache_hit,
-            "cache_fingerprint": job.cache_fingerprint,
-            "identity": job.identity,
-            "result": job.result,
-            "error": job.error,
+            "job_id": getattr(job, "job_id", None) or job.get("job_id"),
+            "chain_id": getattr(job, "chain_id", None) or job.get("chain_id"),
+            "status": getattr(job, "status", None) or job.get("status"),
+            "progress_percent": getattr(job, "progress_percent", None) or job.get("progress_percent"),
+            "cache_hit": getattr(job, "cache_hit", None) or job.get("cache_hit"),
+            "cache_fingerprint": getattr(job, "cache_fingerprint", None) or job.get("cache_fingerprint"),
+            "lineage_component_id": getattr(job, "lineage_component_id", None) or (job.get("lineage_component_id") if isinstance(job, dict) else None),
+            "submitted_at": _iso(getattr(job, "submitted_at", None) or (job.get("submitted_at") if isinstance(job, dict) else None)),
+            "started_at": _iso(getattr(job, "started_at", None) or (job.get("started_at") if isinstance(job, dict) else None)),
+            "completed_at": _iso(getattr(job, "completed_at", None) or (job.get("completed_at") if isinstance(job, dict) else None)),
+            "identity": getattr(job, "identity", None) or job.get("identity"),
+            "result": getattr(job, "result", None) or job.get("result"),
+            "error": getattr(job, "error", None) or job.get("error"),
         }
     return CounterfactualJobView.model_validate(payload)
 
@@ -700,18 +713,34 @@ def operator_feedback_view(feedback: Any) -> OperatorFeedbackView:
     created_at = d.get("created_at")
     if isinstance(created_at, datetime):
         created_at = created_at.isoformat()
+    decision_val = d["decision"]
+    if hasattr(decision_val, "value"):
+        decision_val = decision_val.value
+    truth_tier_val = d.get("truth_tier", "PO_ASSERTED")
+    if hasattr(truth_tier_val, "value"):
+        truth_tier_val = truth_tier_val.value
+
     return OperatorFeedbackView(
         feedback_id=d["feedback_id"],
-        job_id=d["job_id"],
-        snapshot_id=d["snapshot_id"],
-        snapshot_version=d["snapshot_version"],
-        chain_id=d["chain_id"],
-        candidate_id=d["candidate_id"],
-        operation=d["operation"],
-        decision=d["decision"],
-        operator_id=d["operator_id"],
-        reason=d.get("reason"),
-        partition_delta=d["partition_delta"],
+        job_id=d.get("job_id", ""),
+        snapshot_id=d.get("snapshot_id", ""),
+        snapshot_version=d.get("snapshot_version", ""),
+        chain_id=d.get("chain_id", ""),
+        candidate_id=d.get("candidate_id"),
+        operation=d.get("operation", ""),
+        decision=str(decision_val),
+        operator_id=d.get("reviewer_subject") or d.get("operator_id", ""),
+        confidence=d.get("confidence"),
+        reviewer_subject=d.get("reviewer_subject"),
+        reviewer_role=d.get("reviewer_role"),
+        domain_scope=list(d.get("domain_scope") or []),
+        truth_tier=str(truth_tier_val),
+        supersedes_feedback_id=d.get("supersedes_feedback_id"),
+        reason=d.get("reason_text") or d.get("reason"),
+        reason_policy_version=d.get("reason_policy_version"),
+        reason_codes=list(d.get("reason_codes") or []),
+        partition_delta=d.get("partition_delta", {}),
+        has_manual_correction=bool(d.get("has_manual_correction") or d.get("manual_correction") or str(decision_val) == "MANUAL_CORRECTION"),
         created_at=str(created_at),
     )
 
