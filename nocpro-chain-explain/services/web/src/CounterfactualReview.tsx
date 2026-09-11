@@ -338,7 +338,9 @@ export function CounterfactualReview({
                 if (!controller.signal.aborted) {
                   const map: Record<string, OperatorFeedback> = {}
                   for (const fb of list) {
-                    map[fb.candidate_id] = fb
+                    if (fb.candidate_id) {
+                      map[fb.candidate_id] = fb
+                    }
                   }
                   setFeedbacks(map)
                 }
@@ -372,14 +374,13 @@ export function CounterfactualReview({
   const handleFeedbackSubmit = async (
     candidateId: string,
     decision: 'APPROVED' | 'REJECTED',
-    operatorId?: string,
+    _operatorId?: string,
     reason?: string,
   ) => {
     if (!job?.job_id) return
     const fb = await api.submitReviewFeedback(job.job_id, {
       candidate_id: candidateId,
       decision,
-      operator_id: operatorId,
       reason,
     })
     setFeedbacks((prev) => ({ ...prev, [candidateId]: fb }))

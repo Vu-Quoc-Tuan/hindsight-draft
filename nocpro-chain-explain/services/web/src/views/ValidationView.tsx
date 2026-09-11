@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { api } from '../api'
 import type { ChainAnalysis, CounterfactualJob, CounterfactualCandidate, OperatorFeedback } from '../types'
+import { ReviewDecisionForm } from '../components/ReviewDecisionForm'
+import { SimilarReviewCases } from '../components/SimilarReviewCases'
 
 export function ValidationView({ analysis }: { analysis: ChainAnalysis }) {
   const [job, setJob] = useState<CounterfactualJob | null>(null)
@@ -8,9 +10,6 @@ export function ValidationView({ analysis }: { analysis: ChainAnalysis }) {
   const [error, setError] = useState<string | null>(null)
   const [feedbacks, setFeedbacks] = useState<OperatorFeedback[]>([])
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null)
-  const [operatorId, setOperatorId] = useState<string>('ca_truc_hanoi_01')
-  const [operatorNote, setOperatorNote] = useState<string>('')
-  const [submitting, setSubmitting] = useState<boolean>(false)
   const [submitFeedbackMsg, setSubmitFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
@@ -77,6 +76,26 @@ export function ValidationView({ analysis }: { analysis: ChainAnalysis }) {
     }
   }, [job, selectedCandidateId])
 
+  // Impression logging: log candidate display events to counter position bias
+  useEffect(() => {
+    if (!job?.job_id) return
+    const candidates = job.result?.evaluated_candidates ?? []
+    if (candidates.length === 0) return
+
+    const events = candidates.map((cand, idx) => ({
+      candidate_id: cand.candidate_id,
+      displayed_rank: idx + 1,
+      rendered_at: new Date().toISOString(),
+      exposure_policy: 'ALL_EVALUATED',
+      surface: 'VALIDATION_VIEW_TOP_CARD',
+      client_event_id: `evt_${window.crypto?.randomUUID ? window.crypto.randomUUID().slice(0, 16) : Math.random().toString(36).slice(2, 14)}`,
+    }))
+
+    api.recordDisplayEvents(job.job_id, events).catch(() => {
+      // Telemetry best-effort
+    })
+  }, [job?.job_id, job?.result?.evaluated_candidates])
+
   const candidates: CounterfactualCandidate[] = job?.result?.evaluated_candidates ?? []
   const recommendations: CounterfactualCandidate[] = job?.result?.recommendations ?? []
   const activeCandidate = candidates.find((c) => c.candidate_id === selectedCandidateId)
@@ -97,32 +116,7 @@ export function ValidationView({ analysis }: { analysis: ChainAnalysis }) {
     }
   }
 
-  const handleDecision = async (decision: 'APPROVED' | 'REJECTED') => {
-    if (!job?.job_id || !activeCandidate) return
-    try {
-      setSubmitting(true)
-      setSubmitFeedbackMsg(null)
-      const fb = await api.submitReviewFeedback(job.job_id, {
-        candidate_id: activeCandidate.candidate_id,
-        decision,
-        operator_id: operatorId.trim() || 'operator_lead',
-        reason: operatorNote.trim() || (decision === 'APPROVED' ? 'Đã xác nhận an toàn kỹ thuật' : 'Từ chối đề xuất phân hoạch'),
-      })
-      setFeedbacks((prev) => [fb, ...prev.filter((item) => item.candidate_id !== activeCandidate.candidate_id)])
-      setSubmitFeedbackMsg({
-        type: 'success',
-        text: `Đã lưu thành công chữ ký xác nhận: ${decision === 'APPROVED' ? 'CHẤP THUẬN' : 'TỪ CHỐI'} đề xuất [${activeCandidate.operation} · ${activeCandidate.candidate_id}] vào hệ thống cơ sở dữ liệu PostgreSQL.`,
-      })
-      setOperatorNote('')
-    } catch (err: unknown) {
-      setSubmitFeedbackMsg({
-        type: 'error',
-        text: `Lỗi ghi nhận phản hồi: ${err instanceof Error ? err.message : String(err)}`,
-      })
-    } finally {
-      setSubmitting(false)
-    }
-  }
+
 
   const activeCandidateFeedback = feedbacks.find((fb) => fb.candidate_id === activeCandidate?.candidate_id)
 
@@ -207,8 +201,8 @@ export function ValidationView({ analysis }: { analysis: ChainAnalysis }) {
             <strong className="font-code-sm text-tertiary">Proposal-only (Zero Live Mutation)</strong>
           </div>
           <div className="px-space-md py-space-sm">
-            <small className="block uppercase tracking-wider text-on-surface-variant text-[10px] font-bold">Cơ sở dữ liệu Đích (Ground Truth)</small>
-            <strong className="font-code-sm text-emerald-400">PostgreSQL Golden Ground Truth</strong>
+            <small className="block uppercase tracking-wider text-on-surface-variant text-[10px] font-bold">Cơ sở dữ liệu Đích (Review Store)</small>
+            <strong className="font-code-sm text-emerald-400">PO-Asserted Review Evidence Store</strong>
           </div>
         </div>
       </section>
@@ -242,16 +236,22 @@ export function ValidationView({ analysis }: { analysis: ChainAnalysis }) {
         <div className="bg-surface-container-low border border-surface-container-high p-space-md rounded-xl shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="font-label-caps text-label-caps text-on-surface-variant uppercase font-bold">
-              AUDIT GUARDRAIL STATUS
+              PROPOSAL SAFETY GATE
             </span>
-            <span className="material-symbols-outlined text-[18px] text-secondary">verified</span>
+            <span className="material-symbols-outlined text-[18px] text-secondary">
+              {activeCandidate ? (activeCandidate.hard_gate_passed !== false ? 'verified' : 'cancel') : 'help'}
+            </span>
           </div>
           <div className="flex items-baseline gap-space-xs my-space-xs">
-            <span className="font-headline-lg text-headline-lg font-bold text-emerald-400">PASS</span>
-            <span className="font-code-sm text-code-sm text-on-surface-variant">Active</span>
+            <span className={`font-headline-lg text-headline-lg font-bold ${
+              !activeCandidate ? 'text-amber-400' : activeCandidate.hard_gate_passed !== false ? 'text-emerald-400' : 'text-rose-400'
+            }`}>
+              {!activeCandidate ? 'UNAVAILABLE' : activeCandidate.hard_gate_passed !== false ? 'PASS' : 'FAIL'}
+            </span>
+            <span className="font-code-sm text-code-sm text-on-surface-variant">Deterministic</span>
           </div>
           <span className="font-code-sm text-[11px] text-on-surface-variant">
-            Không ảnh hưởng P1 SLA đang mở
+            Zero Upstream Mutation Enforced
           </span>
         </div>
 
@@ -278,16 +278,16 @@ export function ValidationView({ analysis }: { analysis: ChainAnalysis }) {
         <div className="bg-surface-container-low border border-surface-container-high p-space-md rounded-xl shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="font-label-caps text-label-caps text-on-surface-variant uppercase font-bold">
-              ISOLATION SANDBOX
+              REVIEW-ONLY PROPOSAL
             </span>
             <span className="material-symbols-outlined text-[18px] text-tertiary">shield</span>
           </div>
           <div className="flex items-baseline gap-space-xs my-space-xs">
-            <span className="font-headline-lg text-headline-lg font-bold text-tertiary">READY</span>
-            <span className="font-code-sm text-code-sm text-on-surface-variant">Isolated</span>
+            <span className="font-headline-lg text-headline-lg font-bold text-tertiary">READ-ONLY</span>
+            <span className="font-code-sm text-code-sm text-on-surface-variant">Zero Mutation</span>
           </div>
           <span className="font-code-sm text-[11px] text-on-surface-variant">
-            Reversible staging active
+            Review-only proposal inspection
           </span>
         </div>
 
@@ -305,7 +305,7 @@ export function ValidationView({ analysis }: { analysis: ChainAnalysis }) {
             <span className="font-code-sm text-code-sm text-on-surface-variant">Persisted Sign-offs</span>
           </div>
           <span className="font-code-sm text-[11px] text-emerald-400">
-            PostgreSQL ground truth records
+            PO-asserted review evidence records
           </span>
         </div>
       </div>
@@ -359,7 +359,7 @@ export function ValidationView({ analysis }: { analysis: ChainAnalysis }) {
               <div className="flex items-center gap-space-xs">
                 <span className="material-symbols-outlined text-secondary text-[20px]">architecture</span>
                 <span className="font-label-caps text-label-caps uppercase text-on-surface-variant font-bold">
-                  PROPOSED TOPOLOGY MUTATION
+                  PROPOSED CANDIDATE INSPECTION (REVIEW-ONLY)
                 </span>
               </div>
               <span className="font-code-sm text-code-sm text-secondary font-mono">
@@ -475,10 +475,10 @@ export function ValidationView({ analysis }: { analysis: ChainAnalysis }) {
                 <div className="flex items-center gap-space-sm">
                   <span className="material-symbols-outlined text-secondary text-[20px]">check_circle</span>
                   <span className="font-body-sm text-body-sm text-on-surface">
-                    Không ảnh hưởng đến P1 SLA Tickets đang mở (Verified)
+                    Mô hình can thiệp chỉ đọc: Không ghi đè hay cập nhật trực tiếp phân hoạch chuỗi hiện hành
                   </span>
                 </div>
-                <span className="font-code-sm text-code-sm text-secondary font-mono">STATUS: PASS</span>
+                <span className="font-code-sm text-code-sm text-secondary font-mono">STATUS: READ_ONLY</span>
               </div>
 
               <div className="flex items-center justify-between p-space-sm bg-surface-container-low rounded-lg border border-surface-container-high">
@@ -486,7 +486,7 @@ export function ValidationView({ analysis }: { analysis: ChainAnalysis }) {
                   <span className="material-symbols-outlined text-secondary text-[20px]">check_circle</span>
                   <div className="flex flex-col">
                     <span className="font-body-sm text-body-sm text-on-surface">
-                      Audit Fingerprint xác thực bất biến (Evaluation Checksum)
+                      Audit Fingerprint xác thực bất biến (Candidate Set Checksum)
                     </span>
                     <span className="font-code-sm text-code-sm text-on-surface-variant font-mono">
                       {job?.cache_fingerprint ? `fp:${job.cache_fingerprint.slice(0, 24)}...` : `chain:${analysis.chain_id}-verified`}
@@ -500,135 +500,52 @@ export function ValidationView({ analysis }: { analysis: ChainAnalysis }) {
                 <div className="flex items-center gap-space-sm">
                   <span className="material-symbols-outlined text-secondary text-[20px]">check_circle</span>
                   <span className="font-body-sm text-body-sm text-on-surface">
-                    Reversible staging active - cách ly tuyệt đối khỏi luồng NocPro đang chạy
+                    Cách ly phân tích: Toàn bộ quá trình tính toán và đánh giá diễn ra trên snapshot độc lập
                   </span>
                 </div>
-                <span className="font-code-sm text-code-sm text-secondary font-mono">SNAPSHOT: READY</span>
+                <span className="font-code-sm text-code-sm text-secondary font-mono">SNAPSHOT: ISOLATED</span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Right Column (4 cols): Multi-Reviewer Consensus & Sign-off Action */}
+        {/* Right Column (4 cols): PO Review Decision & Multi-Block Similar Cases */}
         <div className="lg:col-span-4 flex flex-col gap-space-md">
-          {/* Multi-Reviewer Consensus Section */}
-          <div className="bg-surface-container-lowest/95 backdrop-blur-md rounded-xl border border-surface-container-high p-space-lg flex flex-col gap-space-md shadow-xl">
-            <div className="flex items-center justify-between border-b border-surface-container-high pb-space-sm">
-              <span className="font-label-caps text-label-caps uppercase text-on-surface-variant font-bold">
-                CHỮ KÝ XÁC NHẬN ĐIỀU HÀNH
-              </span>
-              <span className="font-code-sm text-code-sm text-secondary">
-                {feedbacks.length} ĐÃ KÝ
-              </span>
+          {job?.job_id ? (
+            <>
+              <ReviewDecisionForm
+                jobId={job.job_id}
+                chainId={analysis.chain_id}
+                chainAlarms={analysis.members.map((m) => m.alarm_id)}
+                candidateId={activeCandidate?.candidate_id ?? null}
+                existingFeedback={activeCandidateFeedback}
+                onFeedbackSaved={(fb) => {
+                  setFeedbacks((prev) => [
+                    fb,
+                    ...prev.filter(
+                      (item) =>
+                        item.candidate_id !== fb.candidate_id &&
+                        item.feedback_id !== fb.feedback_id,
+                    ),
+                  ])
+                }}
+                onFeedbackRetracted={(feedbackId) => {
+                  setFeedbacks((prev) =>
+                    prev.filter((item) => item.feedback_id !== feedbackId),
+                  )
+                }}
+              />
+
+              <SimilarReviewCases
+                jobId={job.job_id}
+                candidateId={activeCandidate?.candidate_id ?? null}
+              />
+            </>
+          ) : (
+            <div className="p-space-lg rounded-xl bg-surface-container-lowest/95 border border-surface-container-high text-xs text-on-surface-variant text-center">
+              Chưa có phiên đánh giá Counterfactual nào khả dụng cho chuỗi này.
             </div>
-
-            {/* Operator 1 Slot */}
-            <div className="p-space-md bg-surface-container-low rounded-lg border border-surface-container-high flex flex-col gap-space-xs">
-              <div className="flex items-center justify-between">
-                <span className="font-label-caps text-label-caps uppercase text-on-surface-variant">
-                  OPERATOR 1 (TRƯỞNG CA NOC)
-                </span>
-                {activeCandidateFeedback ? (
-                  <span className={`px-space-xs py-0.5 font-code-sm text-code-sm font-bold rounded ${
-                    activeCandidateFeedback.decision === 'APPROVED'
-                      ? 'bg-emerald-500/20 text-emerald-300'
-                      : 'bg-rose-500/20 text-rose-300'
-                  }`}>
-                    {activeCandidateFeedback.decision === 'APPROVED' ? 'ĐÃ KÝ DUYỆT' : 'ĐÃ TỪ CHỐI'}
-                  </span>
-                ) : (
-                  <span className="px-space-xs py-0.5 bg-tertiary/20 text-tertiary font-code-sm text-code-sm font-bold rounded animate-pulse">
-                    CHỜ PHÊ DUYỆT
-                  </span>
-                )}
-              </div>
-              <span className="font-code-md text-code-md text-on-surface font-semibold">
-                {activeCandidateFeedback?.operator_id ?? operatorId}
-              </span>
-              <span className="font-code-sm text-code-sm text-on-surface-variant">
-                {activeCandidateFeedback ? (
-                  `Ký lúc ${new Date(activeCandidateFeedback.created_at).toLocaleTimeString('vi-VN')} · Ref: ${activeCandidateFeedback.feedback_id.slice(0, 8)}`
-                ) : (
-                  'Sẵn sàng ghi nhận phản hồi vào hệ thống'
-                )}
-              </span>
-              {activeCandidateFeedback?.reason && (
-                <div className="mt-1 p-space-xs bg-surface-container rounded text-xs text-on-surface-variant font-mono">
-                  &ldquo;{activeCandidateFeedback.reason}&rdquo;
-                </div>
-              )}
-            </div>
-
-            {/* Operator 2 Slot */}
-            <div className="p-space-md bg-surface-container-low rounded-lg border border-surface-container-high flex flex-col gap-space-xs">
-              <div className="flex items-center justify-between">
-                <span className="font-label-caps text-label-caps uppercase text-tertiary">
-                  OPERATOR 2 (CHUYÊN GIA IP CORE)
-                </span>
-                <span className="px-space-xs py-0.5 bg-surface-container-high text-on-surface-variant font-code-sm text-code-sm font-bold rounded">
-                  ĐỒNG THUẬN TỰ ĐỘNG
-                </span>
-              </div>
-              <span className="font-code-md text-code-md text-on-surface font-semibold">
-                specialist_ip_core
-              </span>
-              <span className="font-code-sm text-code-sm text-on-surface-variant">
-                Đã kiểm tra tương quan cấu trúc topo mạng
-              </span>
-            </div>
-
-            {/* Operator Note & Action Form */}
-            <div className="flex flex-col gap-space-sm pt-space-xs border-t border-surface-container-high">
-              <div className="flex flex-col gap-space-2xs">
-                <label className="font-label-caps text-label-caps uppercase text-on-surface-variant font-bold">
-                  MÃ ĐỊNH DANH KỸ SƯ (OPERATOR ID)
-                </label>
-                <input
-                  type="text"
-                  value={operatorId}
-                  onChange={(e) => setOperatorId(e.target.value)}
-                  placeholder="ca_truc_hanoi_01"
-                  className="w-full bg-surface-container px-space-sm py-1.5 rounded-lg border border-surface-container-high text-on-surface font-code-sm text-code-sm focus:border-secondary focus:outline-none"
-                />
-              </div>
-
-              <div className="flex flex-col gap-space-2xs">
-                <label className="font-label-caps text-label-caps uppercase text-on-surface-variant font-bold">
-                  GHI CHÚ ĐIỀU HÀNH &amp; LÝ DO KIỂM TOÁN
-                </label>
-                <textarea
-                  rows={3}
-                  value={operatorNote}
-                  onChange={(e) => setOperatorNote(e.target.value)}
-                  placeholder="Xác nhận tính chính xác của đề xuất phân hoạch; ghi nhận vào bộ dữ liệu huấn luyện đối chứng..."
-                  className="w-full bg-surface-container p-space-sm rounded-lg border border-surface-container-high text-on-surface font-body-sm text-body-sm focus:border-secondary focus:outline-none resize-none"
-                />
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex flex-col gap-space-xs pt-space-xs">
-                <button
-                  type="button"
-                  disabled={submitting || !activeCandidate}
-                  onClick={() => handleDecision('APPROVED')}
-                  className="w-full px-space-md py-space-sm bg-primary-container text-on-primary-container hover:brightness-110 font-body-md text-body-md font-bold rounded-lg transition-all shadow-md flex items-center justify-center gap-space-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <span className="material-symbols-outlined text-[18px]">verified</span>
-                  <span>{submitting ? 'Đang lưu...' : '✓ Chấp thuận đề xuất (Approve Candidate)'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  disabled={submitting || !activeCandidate}
-                  onClick={() => handleDecision('REJECTED')}
-                  className="w-full px-space-md py-space-sm bg-surface-container-high hover:bg-rose-950/40 hover:border-rose-500/40 text-rose-300 border border-surface-container-highest font-body-md text-body-md font-semibold rounded-lg transition-colors flex items-center justify-center gap-space-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <span className="material-symbols-outlined text-[18px]">close</span>
-                  <span>Từ chối đề xuất (Reject Candidate)</span>
-                </button>
-              </div>
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

@@ -14,6 +14,11 @@ import type {
   Job,
   OperatorFeedback,
   PairWhy,
+  ReasonPolicy,
+  ReviewDecision,
+  SimilarCaseRetrievalResult,
+  CandidateDisplayEventItem,
+  ManualCorrectionPayload,
 } from './types'
 import type { TopologyTreePayload } from './TopologyTree'
 
@@ -212,22 +217,98 @@ export const api = {
       `/api/v1/chains/${encodeURIComponent(chainId)}/review`,
       { signal },
     ),
+  reviewReasons: (signal?: AbortSignal) =>
+    request<ReasonPolicy>('/api/v1/review-reasons', { signal }),
+  recordDisplayEvents: (
+    jobId: string,
+    events: CandidateDisplayEventItem[],
+    signal?: AbortSignal,
+  ) =>
+    request<{ recorded_events: number }>(
+      `/api/v1/review-jobs/${encodeURIComponent(jobId)}/display-events`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ events }),
+        signal,
+      },
+    ),
   submitReviewFeedback: (
     jobId: string,
     payload: {
-      candidate_id: string
-      decision: 'APPROVED' | 'REJECTED'
-      operator_id?: string
-      reason?: string
+      candidate_id?: string | null
+      decision: ReviewDecision
+      confidence?: number | null
+      reason?: string | null
+      notes?: string | null
+      reason_code?: string | null
+      reason_codes?: string[]
+      reason_policy_version?: string
+      manual_correction?: ManualCorrectionPayload | null
     },
+    headers?: Record<string, string>,
+    signal?: AbortSignal,
   ) =>
     request<OperatorFeedback>(
       `/api/v1/review-jobs/${encodeURIComponent(jobId)}/feedback`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(headers || {}) },
         body: JSON.stringify(payload),
+        signal,
       },
+    ),
+  supersedeFeedback: (
+    jobId: string,
+    feedbackId: string,
+    payload: {
+      candidate_id?: string | null
+      decision: ReviewDecision
+      confidence?: number | null
+      reason?: string | null
+      notes?: string | null
+      reason_code?: string | null
+      reason_codes?: string[]
+      reason_policy_version?: string
+      manual_correction?: ManualCorrectionPayload | null
+    },
+    headers?: Record<string, string>,
+    signal?: AbortSignal,
+  ) =>
+    request<OperatorFeedback>(
+      `/api/v1/review-jobs/${encodeURIComponent(jobId)}/feedback/${encodeURIComponent(feedbackId)}/supersede`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(headers || {}) },
+        body: JSON.stringify(payload),
+        signal,
+      },
+    ),
+  retractFeedback: (
+    jobId: string,
+    feedbackId: string,
+    reason?: string,
+    headers?: Record<string, string>,
+    signal?: AbortSignal,
+  ) =>
+    request<{ status: string; feedback_id: string }>(
+      `/api/v1/review-jobs/${encodeURIComponent(jobId)}/feedback/${encodeURIComponent(feedbackId)}/retract`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(headers || {}) },
+        body: JSON.stringify({ reason }),
+        signal,
+      },
+    ),
+  similarCases: (
+    jobId: string,
+    candidateId: string,
+    topK: number = 5,
+    signal?: AbortSignal,
+  ) =>
+    request<SimilarCaseRetrievalResult>(
+      `/api/v1/review-jobs/${encodeURIComponent(jobId)}/candidates/${encodeURIComponent(candidateId)}/similar-cases?top_k=${topK}`,
+      { signal },
     ),
   reviewFeedback: (jobId: string, signal?: AbortSignal) =>
     request<OperatorFeedback[]>(

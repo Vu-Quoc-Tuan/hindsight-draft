@@ -354,6 +354,7 @@ export type CounterfactualCandidate = {
   operation_specific_evidence?: Record<string, unknown>
   metric_deltas?: Record<string, number>
   hard_gate_result?: { status: string; reason: string | null }
+  hard_gate_passed?: boolean
   pareto_state?: string
   external_validation?: string
 }
@@ -531,19 +532,98 @@ export type TopologyHypothesesResult = {
   dependency_scope: DependencyScopeResult
 }
 
+export type ReviewDecision =
+  | 'APPROVE'
+  | 'REJECT'
+  | 'DEFER'
+  | 'INSUFFICIENT_EVIDENCE'
+  | 'NONE_ACCEPTABLE'
+  | 'MANUAL_CORRECTION'
+  | 'APPROVED'
+  | 'REJECTED'
+
+export type ReviewReasonItem = {
+  code: string
+  label: string
+  description: string
+}
+
+export type ReasonPolicy = {
+  policy_version: string
+  description: string
+  reasons_by_decision: Record<string, ReviewReasonItem[]>
+}
+
+export type BlockScoreDetail = {
+  status: 'AVAILABLE' | 'UNAVAILABLE'
+  score: number | null
+}
+
+export type SimilarReviewCase = {
+  case_id: string
+  review_id: string
+  candidate_id: string
+  decision: string
+  truth_tier: string
+  similarity_score: number
+  common_block_count: number
+  block_scores: Record<string, BlockScoreDetail | number>
+  lineage_component_id?: string | null
+  disclaimer: string
+}
+
+export type SimilarCaseRetrievalResult = {
+  retrieval_status: 'AVAILABLE' | 'UNAVAILABLE'
+  min_similarity: number
+  reason?: string | null
+  common_block_count?: number
+  required_common_block_count?: number
+  cross_incident_cases: SimilarReviewCase[]
+  same_lineage_history: SimilarReviewCase[]
+  disclaimer: string
+}
+
+export type ManualCorrectionPayload = {
+  operation: string
+  partition_delta: {
+    before?: [string, string[]][]
+    after?: [string, string[]][]
+  }
+  edit_summary?: string
+}
+
+export type CandidateDisplayEventItem = {
+  candidate_id: string
+  displayed_rank: number
+  rendered_at: string
+  exposure_policy?: string
+  surface?: string
+  viewer_session_id?: string
+  client_event_id?: string
+}
+
 export type OperatorFeedback = {
   feedback_id: string
   job_id: string
   chain_id: string
-  candidate_id: string
+  candidate_id: string | null
   operation: string
-  decision: 'APPROVED' | 'REJECTED' | 'ACCEPTED'
+  decision: ReviewDecision
   operator_id: string
+  confidence?: number | null
+  reviewer_subject?: string | null
+  reviewer_role?: string | null
+  domain_scope?: string[]
+  truth_tier?: string
+  supersedes_feedback_id?: string | null
   reason?: string | null
-  partition_delta: {
-    before: [string, string[]][]
-    after: [string, string[]][]
+  reason_policy_version?: string | null
+  reason_codes?: string[]
+  partition_delta?: {
+    before?: [string, string[]][]
+    after?: [string, string[]][]
   }
+  has_manual_correction?: boolean
   created_at: string
 }
 
