@@ -86,6 +86,8 @@ def _candidate(
         target_chain_id=candidate.target_chain_id,
         merged_chain_ids=candidate.merged_chain_ids,
         operation_evidence=candidate.operation_evidence,
+        semantic_effects=[item.value for item in evaluation.semantic_effects],
+        structural_facts=asdict(evaluation.move_structural_facts) if evaluation.move_structural_facts else None,
         language=language,
     )
     return {

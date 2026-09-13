@@ -88,6 +88,8 @@ def build_deterministic_comparative_explanation(
     target_chain_id: str | None = None,
     merged_chain_ids: tuple[str, str] | list[str] | None = None,
     operation_evidence: dict[str, Any] | None = None,
+    semantic_effects: Sequence[str] | None = None,
+    structural_facts: Mapping[str, Any] | None = None,
     language: str = "vi",
 ) -> ComparativeExplanation:
     """Build exact, deterministic comparative rationale for a counterfactual candidate."""
@@ -224,23 +226,72 @@ def build_deterministic_comparative_explanation(
 
     elif operation == "MOVE_MEMBER":
         m_str = ", ".join(affected_details) if affected_details else ", ".join(member_ids)
+        effects = set(semantic_effects or ())
+        is_connector = (
+            "BECOMES_CONNECTOR" in effects
+            or (structural_facts is not None and structural_facts.get("after_structural_role") == "CONNECTOR")
+        )
+        blocks = structural_facts.get("after_blocks_supported") if structural_facts else None
+        blocks_text_vi = f"{blocks} phân đoạn mạng" if blocks else "các phân đoạn mạng"
+        blocks_text_en = f"{blocks} network blocks" if blocks else "network blocks"
+
+        if is_connector:
+            if is_vi:
+                action_summary = f"Đề xuất di chuyển cảnh báo {m_str} sang chuỗi {target_chain_id or ''} để làm CẦU NỐI (CONNECTOR) liên kết".strip()
+                points.append(f"Cảnh báo sau khi di chuyển đóng vai trò là CẦU NỐI (Articulation Point) liên kết trực tiếp giữa {blocks_text_vi} trong chuỗi đích.")
+                points.append("Khắc phục phân mảnh tô-pô, giúp chuỗi sự cố đạt tính liên thông cấu trúc toàn diện.")
+                if s_a is not None and s_b is not None and s_a >= s_b:
+                    points.append(f"Duy trì hoặc cải thiện độ hỗ trợ thành viên ({s_b*100:.1f}% → {s_a*100:.1f}%).")
+                why_better = (
+                    f"Cảnh báo {m_str} đóng vai trò là CẦU NỐI (CONNECTOR) then chốt: trong chuỗi hiện tại nó không phát huy tác dụng liên kết, "
+                    f"nhưng khi đưa sang chuỗi {target_chain_id}, nó bắc cầu kết nối trực tiếp giữa {blocks_text_vi} bị tách rời thành một sự cố mạng thống nhất, "
+                    "giúp kỹ sư NOC nhìn rõ đường truyền lỗi và xử lý triệt để nguyên nhân gốc rễ."
+                )
+            else:
+                action_summary = f"Proposal to move alarm {m_str} to target chain {target_chain_id or ''} as a structural CONNECTOR".strip()
+                points.append(f"Member becomes a CONNECTOR (articulation point) bridging {blocks_text_en} in target chain {target_chain_id}.")
+                points.append("Eliminates topological fragmentation and restores end-to-end incident continuity.")
+                if s_a is not None and s_b is not None and s_a >= s_b:
+                    points.append(f"Maintains or improves membership support ({s_b*100:.1f}% → {s_a*100:.1f}%).")
+                why_better = (
+                    f"Alarm {m_str} serves as an indispensable structural CONNECTOR: transferring it bridges {blocks_text_en} "
+                    f"in chain {target_chain_id} into a single cohesive fault domain, enabling operators to trace the root-cause propagation path."
+                )
+        else:
+            if is_vi:
+                action_summary = f"Đề xuất di chuyển cảnh báo {m_str} từ chuỗi {source_chain_id or ''} sang chuỗi đích {target_chain_id or ''}".strip()
+                points.append(f"Cảnh báo có biên độ liên kết (Margin) ưu tiên nghiêng về chuỗi đích {target_chain_id}.")
+                if s_a is not None and s_b is not None and s_a >= s_b:
+                    points.append(f"Duy trì hoặc cải thiện độ hỗ trợ thành viên tối thiểu ({s_b*100:.1f}% → {s_a*100:.1f}%).")
+                why_better = (
+                    f"Cảnh báo {m_str} có mức độ tương đồng bằng chứng và vị trí topo gần gũi với chuỗi {target_chain_id} hơn so với chuỗi hiện tại. "
+                    "Việc chuyển giao giúp cảnh báo nằm đúng vào chuỗi sự cố gốc của nó."
+                )
+            else:
+                action_summary = f"Proposal to move alarm {m_str} from chain {source_chain_id or ''} to chain {target_chain_id or ''}".strip()
+                points.append(f"Member exhibits a target-favored margin towards destination chain {target_chain_id}.")
+                if s_a is not None and s_b is not None and s_a >= s_b:
+                    points.append(f"Maintains or improves minimum membership support ({s_b*100:.1f}% → {s_a*100:.1f}%).")
+                why_better = (
+                    f"The alarm {m_str} shares stronger topological and temporal affinity with {target_chain_id} than its current chain. "
+                    "Reassigning places the alarm in its authentic incident context."
+                )
+
+    elif operation == "ADD_MEMBER":
+        m_str = ", ".join(affected_details) if affected_details else ", ".join(member_ids)
         if is_vi:
-            action_summary = f"Đề xuất di chuyển cảnh báo {m_str} từ chuỗi {source_chain_id or ''} sang chuỗi đích {target_chain_id or ''}".strip()
-            points.append(f"Cảnh báo có biên độ liên kết (Margin) ưu tiên nghiêng về chuỗi đích {target_chain_id}.")
-            if s_a is not None and s_b is not None and s_a >= s_b:
-                points.append(f"Duy trì hoặc cải thiện độ hỗ trợ thành viên tối thiểu ({s_b*100:.1f}% → {s_a*100:.1f}%).")
+            action_summary = f"Đề xuất bổ sung cảnh báo {m_str} vào chuỗi {target_chain_id or ''} làm CẦU NỐI liên kết".strip()
+            points.append("Bổ sung phần tử liên kết tô-pô giúp nối liền các phân đoạn cảnh báo rời rạc.")
             why_better = (
-                f"Cảnh báo {m_str} có mức độ tương đồng bằng chứng và vị trí topo gần gũi với chuỗi {target_chain_id} hơn so với chuỗi hiện tại. "
-                "Việc chuyển giao giúp cảnh báo nằm đúng vào chuỗi sự cố gốc của nó."
+                f"Cảnh báo {m_str} đóng vai trò là CẦU NỐI (CONNECTOR) còn thiếu: việc bổ sung cảnh báo này vào chuỗi "
+                "giúp hàn gắn vết đứt gãy giữa các cụm sự cố, khôi phục bức tranh toàn cảnh về sự cố mạng lan truyền."
             )
         else:
-            action_summary = f"Proposal to move alarm {m_str} from chain {source_chain_id or ''} to chain {target_chain_id or ''}".strip()
-            points.append(f"Member exhibits a target-favored margin towards destination chain {target_chain_id}.")
-            if s_a is not None and s_b is not None and s_a >= s_b:
-                points.append(f"Maintains or improves minimum membership support ({s_b*100:.1f}% → {s_a*100:.1f}%).")
+            action_summary = f"Proposal to add alarm {m_str} to chain {target_chain_id or ''} as a linking connector".strip()
+            points.append("Adds a topological connector that bridges previously disjoint alarm segments.")
             why_better = (
-                f"The alarm {m_str} shares stronger topological and temporal affinity with {target_chain_id} than its current chain. "
-                "Reassigning places the alarm in its authentic incident context."
+                f"Alarm {m_str} acts as a missing structural CONNECTOR: adding it resolves the topological gap "
+                "between incident clusters and restores the complete cascading incident chain."
             )
 
     elif operation == "MERGE_CHAINS":

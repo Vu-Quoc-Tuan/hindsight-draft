@@ -233,3 +233,30 @@ def test_public_review_result_integration_with_counterfactual_result():
     assert len(comp["delta_highlights"]) > 0
     assert len(comp["why_better"]) > 0
     assert len(comp["comparison_points"]) > 0
+
+
+def test_move_member_becomes_connector_explanation():
+    explanation = build_deterministic_comparative_explanation(
+        operation="MOVE_MEMBER",
+        candidate_id="move-bridge-01",
+        partition_delta=None,
+        before_metrics=None,
+        after_metrics=None,
+        member_ids=("ALM_BRIDGE",),
+        source_chain_id="6892487",
+        target_chain_id="6892533",
+        semantic_effects=("BECOMES_CONNECTOR",),
+        structural_facts={
+            "after_structural_role": "CONNECTOR",
+            "after_is_articulation_point": True,
+            "after_blocks_supported": 2,
+        },
+        language="vi",
+    )
+
+    assert "CẦU NỐI (CONNECTOR)" in explanation.summary_action
+    assert "CẦU NỐI (Articulation Point)" in explanation.comparison_points[0]
+    assert "2 phân đoạn mạng" in explanation.comparison_points[0]
+    assert "CẦU NỐI (CONNECTOR) then chốt" in explanation.why_better
+    assert "bắc cầu kết nối trực tiếp giữa 2 phân đoạn mạng" in explanation.why_better
+
