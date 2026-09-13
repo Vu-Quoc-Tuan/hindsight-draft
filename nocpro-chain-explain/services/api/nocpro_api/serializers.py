@@ -392,13 +392,16 @@ def descriptor_view(descriptor) -> DescriptorView:
     )
 
 
-def chain_analysis_view(analysis: ChainAnalysis, package) -> ChainAnalysisView:
-    unavailable = {str(item).upper() for item in analysis.graybox.unavailable_capabilities}
-    def availability(name: str, tokens: tuple[str, ...], *, fail_closed: bool = False) -> dict[str, str | None]:
-        if fail_closed:
-            return {"state": "UNAVAILABLE", "reason": "No frozen historical model is attached to this chain-analysis response."}
-        reason = next((item for item in unavailable if any(token in item for token in tokens)), None)
-        return {"state": "UNAVAILABLE", "reason": reason} if reason else {"state": "AVAILABLE", "reason": None}
+def chain_analysis_view(
+    analysis: ChainAnalysis,
+    package,
+    *,
+    evidence_availability: dict[str, dict[str, str | None]] | None = None,
+) -> ChainAnalysisView:
+    availability = evidence_availability or {
+        key: {"state": "UNAVAILABLE", "reason": "EVIDENCE_AVAILABILITY_NOT_PROVIDED"}
+        for key in ("historical", "temporal_delay", "topology", "dependency")
+    }
     members = []
     for alarm_id, item in analysis.members.items():
         alarm = package.alarms[alarm_id]
@@ -462,12 +465,7 @@ def chain_analysis_view(analysis: ChainAnalysis, package) -> ChainAnalysisView:
                 analysis.graybox.unavailable_capabilities
             ),
         ),
-        evidence_availability={
-            "historical": availability("historical", ("HISTORICAL",), fail_closed=True),
-            "temporal_delay": availability("temporal_delay", ("DELAY", "TEMPORAL")),
-            "topology": availability("topology", ("TOPOLOGY",)),
-            "dependency": availability("dependency", ("DEPENDENCY",)),
-        },
+        evidence_availability=availability,
         descriptors=[
             descriptor_view(item)
             for item in (*analysis.descriptors.identity, *analysis.descriptors.contrastive)

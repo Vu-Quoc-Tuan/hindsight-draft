@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx2
 import pytest
 from fastapi import FastAPI
-from starlette.testclient import TestClient
 
 from nocpro_api.routes import router
 
 
 @pytest.fixture
-def client():
+def app() -> FastAPI:
     app = FastAPI()
     app.include_router(router)
 
@@ -70,12 +70,20 @@ def client():
         }
     )
     app.state.topology_repository = repo
-    # Instantiate TestClient directly without entering blocking portal lifespan context
-    return TestClient(app)
+    return app
 
 
-def test_topology_profiles(client: TestClient):
-    res = client.get("/api/v1/topology/profiles")
+async def _get(app: FastAPI, path: str) -> httpx2.Response:
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        return await client.get(path)
+
+
+@pytest.mark.anyio
+async def test_topology_profiles(app: FastAPI):
+    res = await _get(app, "/api/v1/topology/profiles")
     assert res.status_code == 200
     data = res.json()
     assert data["status"] == "AVAILABLE"
@@ -84,8 +92,9 @@ def test_topology_profiles(client: TestClient):
     assert "ALARM_ONLY" in data["profiles"]
 
 
-def test_topology_projection(client: TestClient):
-    res = client.get("/api/v1/topology/projection?profile_id=IT_SERVICES&root_id=svc1")
+@pytest.mark.anyio
+async def test_topology_projection(app: FastAPI):
+    res = await _get(app, "/api/v1/topology/projection?profile_id=IT_SERVICES&root_id=svc1")
     assert res.status_code == 200
     data = res.json()
     assert data["status"] == "AVAILABLE"
@@ -95,8 +104,9 @@ def test_topology_projection(client: TestClient):
     assert data["tree"]["resource_id"] == "svc1"
 
 
-def test_topology_search(client: TestClient):
-    res = client.get("/api/v1/topology/search?profile_id=IT_SERVICES&q=Order")
+@pytest.mark.anyio
+async def test_topology_search(app: FastAPI):
+    res = await _get(app, "/api/v1/topology/search?profile_id=IT_SERVICES&q=Order")
     assert res.status_code == 200
     data = res.json()
     assert data["status"] == "AVAILABLE"
@@ -104,8 +114,9 @@ def test_topology_search(client: TestClient):
     assert data["results"][0]["resource_id"] == "svc1"
 
 
-def test_topology_resolve(client: TestClient):
-    res = client.get("/api/v1/topology/resolve?profile_id=IT_SERVICES&identifier=order-srv")
+@pytest.mark.anyio
+async def test_topology_resolve(app: FastAPI):
+    res = await _get(app, "/api/v1/topology/resolve?profile_id=IT_SERVICES&identifier=order-srv")
     assert res.status_code == 200
     data = res.json()
     assert data["status"] == "AVAILABLE"

@@ -1,8 +1,8 @@
 """CLI script to train XGBRanker model and save verified artifact.
 
 Usage:
-  # Synthetic training (for pipeline validation & offline testing):
-  python scripts/review_learning/train_ranker.py --synthetic-groups 30 --output-dir artifacts/review_ranker/v1
+  # Synthetic training (explicit pipeline validation only):
+  python scripts/review_learning/train_ranker.py --source synthetic --allow-synthetic --synthetic-groups 30 --output-dir artifacts/review_ranker/synthetic-test
 
   # Postgres training (real review data):
   python scripts/review_learning/train_ranker.py --source postgres --database-url postgresql+asyncpg://... --cutoff 2026-09-10T00:00:00Z --output-dir artifacts/review_ranker/v1
@@ -83,6 +83,7 @@ from review_learning import (
     train_best_ranker,
     train_xgbranker,
 )
+from scripts.review_learning.postgres_source import fetch_postgres_groups
 
 
 def evaluate_slice_subset(
@@ -206,22 +207,6 @@ def evaluate_operation_slices(
     return evaluate_all_slices(dataset, scores)["operations"]
 
 
-async def fetch_postgres_groups(db_url: str, cutoff: str) -> list[dict[str, Any]]:
-    """Fetch review groups from PostgreSQL database before cutoff."""
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-    from nocpro_api.persistence.repository import SnapshotRepository
-
-    engine = create_async_engine(db_url)
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-    repo = SnapshotRepository(session_factory)
-    cutoff_dt = datetime.datetime.fromisoformat(cutoff.replace("Z", "+00:00"))
-    if cutoff_dt.tzinfo is None:
-        cutoff_dt = cutoff_dt.replace(tzinfo=datetime.timezone.utc)
-    groups = await repo.training_review_groups_before(cutoff_dt)
-    await engine.dispose()
-    return groups
-
-
 def get_dependency_versions() -> dict[str, str]:
     """Capture runtime dependency versions for governance manifest."""
     import numpy as np
@@ -240,10 +225,11 @@ def get_dependency_versions() -> dict[str, str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train XGBRanker and export artifact")
-    parser.add_argument("--source", choices=["synthetic", "postgres"], default="synthetic", help="Data source")
+    parser.add_argument("--source", choices=["synthetic", "postgres"], default="postgres", help="Data source; PostgreSQL is required by default")
     parser.add_argument("--database-url", type=str, default=os.getenv("DATABASE_URL", ""), help="Database connection URL")
     parser.add_argument("--cutoff", type=str, default="2026-09-10T00:00:00Z", help="Temporal cutoff")
     parser.add_argument("--synthetic-groups", type=int, default=30, help="Number of synthetic review groups")
+    parser.add_argument("--allow-synthetic", action="store_true", help="Required acknowledgement for synthetic test data")
     parser.add_argument("--output-dir", type=str, default="artifacts/review_ranker/v1", help="Output directory")
     parser.add_argument("--model-version", type=str, default="v1", help="Model artifact version")
     parser.add_argument("--n-estimators", type=int, default=50, help="Number of boosting trees")
@@ -257,6 +243,9 @@ def main() -> None:
     parser.add_argument("--allow-temporal-inversion-debug", action="store_true", default=False, help="Allow temporal inversion for debug")
     parser.add_argument("--abstention-threshold", type=float, default=0.0, help="Abstention margin threshold")
     args = parser.parse_args()
+
+    if args.source == "synthetic" and not args.allow_synthetic:
+        parser.error("--source synthetic requires --allow-synthetic; synthetic data cannot create a real learning artifact")
 
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

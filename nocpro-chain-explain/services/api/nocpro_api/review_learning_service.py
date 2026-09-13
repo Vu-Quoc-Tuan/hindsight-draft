@@ -98,6 +98,16 @@ class ReviewLearningService:
             else 0.0
         )
 
+    @staticmethod
+    def _feedback_truth_tier() -> TruthTier:
+        """Current product policy: submitted operator feedback is PO-asserted.
+
+        Identity/domain validation still happens at the route/service boundary;
+        this centralizes the deliberately configured default so submit and
+        supersede cannot silently diverge.
+        """
+        return TruthTier.PO_ASSERTED
+
     def rerank_candidate_exposures(
         self, exposures: list[CandidateExposure]
     ) -> list[CandidateExposure]:
@@ -828,8 +838,6 @@ class ReviewLearningService:
         # Verify reviewer domain authorization fail-closed
         principal.verify_domain_authorization(session.review_domain)
 
-        # TODO: role authorization will be enforced here after login/auth is implemented
-
         decision = normalize_review_decision(submission["decision"])
         candidate_id = submission.get("candidate_id")
 
@@ -920,7 +928,7 @@ class ReviewLearningService:
                 now=now,
             )
 
-        resolved_truth_tier = TruthTier.PO_ASSERTED  # TODO: derive from role after auth is implemented
+        resolved_truth_tier = self._feedback_truth_tier()
 
         feedback = ReviewFeedback(
             feedback_id=feedback_id,
@@ -1016,8 +1024,6 @@ class ReviewLearningService:
         # Verify reviewer domain authorization fail-closed
         principal.verify_domain_authorization(session.review_domain)
 
-        # TODO: role authorization will be enforced here after login/auth is implemented
-
         decision = normalize_review_decision(submission["decision"])
         candidate_id = submission.get("candidate_id")
 
@@ -1110,7 +1116,7 @@ class ReviewLearningService:
                 now=now,
             )
 
-        resolved_truth_tier = TruthTier.PO_ASSERTED  # TODO: derive from role after auth is implemented
+        resolved_truth_tier = self._feedback_truth_tier()
 
         new_feedback = ReviewFeedback(
             feedback_id=feedback_id,
@@ -1194,7 +1200,6 @@ class ReviewLearningService:
         reason: str | None = None,
     ) -> None:
         """Retract feedback and mark related review cases inactive."""
-        # TODO: role authorization will be enforced here after login/auth is implemented
         session = await self._ensure_session_by_job_hydrated(job_id)
         if session is None and self.repository is None and job_id not in self._job_to_review_id:
             raise ReviewSessionNotFound(f"Review session for job {job_id!r} not found")

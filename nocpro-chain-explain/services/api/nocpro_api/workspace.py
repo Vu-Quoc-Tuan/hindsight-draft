@@ -760,6 +760,40 @@ class Workspace:
             predicate_index=self.precompute.predicate_index,
         )
 
+    def chain_evidence_availability(self, analysis) -> dict[str, dict[str, str | None]]:
+        """Expose only directly observed or attached evidence capabilities.
+
+        A missing upstream ``unavailable_capabilities`` marker is not proof that
+        a model, topology mapping, or dependency relation exists.
+        """
+        stats = analysis.evidence.statistics
+        unavailable = {str(item).upper() for item in analysis.graybox.unavailable_capabilities}
+
+        def unavailable_for(*tokens: str) -> str | None:
+            return next((item for item in unavailable if any(token in item for token in tokens)), None)
+
+        def channel_state(channel_id: str, fallback: str) -> dict[str, str | None]:
+            fits = [fit for (alarm_id, cid), fit in stats.fits.items() if cid == channel_id]
+            if any(fit.unavailable_reason is None for fit in fits):
+                return {"state": "AVAILABLE", "reason": None}
+            reason = next((fit.unavailable_reason for fit in fits if fit.unavailable_reason), None)
+            return {"state": "UNAVAILABLE", "reason": reason or fallback}
+
+        return {
+            "historical": (
+                {"state": "AVAILABLE", "reason": None}
+                if self.historical_model is not None and self.historical_taxonomy is not None
+                else {"state": "UNAVAILABLE", "reason": self.historical_unavailable_reason or "HISTORICAL_MODEL_UNAVAILABLE"}
+            ),
+            "temporal_delay": (
+                {"state": "AVAILABLE", "reason": None}
+                if self.temporal_delay_model is not None and self.temporal_delay_taxonomy is not None
+                else {"state": "UNAVAILABLE", "reason": self.temporal_delay_unavailable_reason or unavailable_for("DELAY", "TEMPORAL") or "TEMPORAL_DELAY_MODEL_UNAVAILABLE"}
+            ),
+            "topology": channel_state("Dep_hop", unavailable_for("TOPOLOGY") or "TOPOLOGY_MAPPING_UNAVAILABLE"),
+            "dependency": channel_state("Dep_hop", unavailable_for("DEPENDENCY") or "DEPENDENCY_EVIDENCE_UNAVAILABLE"),
+        }
+
     def pair_why(self, chain_id: str, alarm_a: str, alarm_b: str):
         package = self.require_package()
         return evaluate_pair_channels(

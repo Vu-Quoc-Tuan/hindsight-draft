@@ -273,7 +273,11 @@ async def explain_chain(chain_id: str, request: Request):
     service = workspace(request)
     try:
         result = service.analyze(chain_id)
-        return chain_analysis_view(result, service.require_package())
+        return chain_analysis_view(
+            result,
+            service.require_package(),
+            evidence_availability=service.chain_evidence_availability(result),
+        )
     except Exception as exc:
         raise translate_error(exc) from exc
 

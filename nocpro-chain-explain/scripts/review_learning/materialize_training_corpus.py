@@ -1,8 +1,8 @@
 """CLI script to materialize review learning training corpus and data profile.
 
 Usage:
-  # Synthetic mode (default):
-  python scripts/review_learning/materialize_training_corpus.py --cutoff 2026-09-10T00:00:00Z --synthetic-groups 30 --output-dir .cache/corpus
+  # Synthetic mode (explicit test-only):
+  python scripts/review_learning/materialize_training_corpus.py --source synthetic --allow-synthetic --cutoff 2026-09-10T00:00:00Z --synthetic-groups 30 --output-dir .cache/corpus
 
   # Postgres mode (real database):
   python scripts/review_learning/materialize_training_corpus.py --source postgres --database-url postgresql+asyncpg://... --cutoff 2026-09-10T00:00:00Z --output-dir .cache/corpus
@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import datetime
 import json
 import os
 import sys
@@ -32,35 +31,24 @@ from review_learning import (
     materialize_training_corpus,
     materialize_training_corpus_from_repository_groups,
 )
-
-
-async def fetch_postgres_groups(db_url: str, cutoff: str) -> list[dict[str, Any]]:
-    """Fetch review groups from PostgreSQL database before cutoff."""
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-    from nocpro_api.persistence.repository import SnapshotRepository
-
-    engine = create_async_engine(db_url)
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-    repo = SnapshotRepository(session_factory)
-    cutoff_dt = datetime.datetime.fromisoformat(cutoff.replace("Z", "+00:00"))
-    if cutoff_dt.tzinfo is None:
-        cutoff_dt = cutoff_dt.replace(tzinfo=datetime.timezone.utc)
-    groups = await repo.training_review_groups_before(cutoff_dt)
-    await engine.dispose()
-    return groups
+from scripts.review_learning.postgres_source import fetch_postgres_groups
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Materialize review-learning corpus and data profile")
-    parser.add_argument("--source", choices=["synthetic", "postgres"], default="synthetic", help="Data source")
+    parser.add_argument("--source", choices=["synthetic", "postgres"], default="postgres", help="Data source; PostgreSQL is required by default")
     parser.add_argument("--database-url", type=str, default=os.getenv("DATABASE_URL", ""), help="PostgreSQL database URL")
     parser.add_argument("--cutoff", type=str, default="2026-09-10T00:00:00Z", help="Exclusive cutoff timestamp")
     parser.add_argument("--synthetic-groups", type=int, default=30, help="Generate N synthetic review groups for testing")
+    parser.add_argument("--allow-synthetic", action="store_true", help="Required acknowledgement for synthetic test data")
     parser.add_argument("--output-dir", type=str, default=".cache/corpus", help="Directory to write output artifacts")
     parser.add_argument("--allow-unprotected-debug", action="store_true", default=False, help="Allow unprotected debug mode for postgres source")
     parser.add_argument("--strict-temporal-holdout", action="store_true", default=None, help="Embargo straddling lineages to guarantee zero temporal inversion")
     parser.add_argument("--allow-temporal-inversion-debug", action="store_true", default=False, help="Allow temporal inversion for debug")
     args = parser.parse_args()
+
+    if args.source == "synthetic" and not args.allow_synthetic:
+        parser.error("--source synthetic requires --allow-synthetic; synthetic data is test-only")
 
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

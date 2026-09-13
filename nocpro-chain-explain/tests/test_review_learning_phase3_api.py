@@ -2,8 +2,8 @@ import asyncio
 from types import SimpleNamespace
 from dataclasses import asdict
 from pathlib import Path
+import httpx2
 import pytest
-from fastapi.testclient import TestClient
 from nocpro_api.app import create_app
 from nocpro_api.workspace import Workspace
 from nocpro_api.review_principal import ReviewerPrincipal
@@ -18,11 +18,14 @@ from tests.test_counterfactual_analysis import (
 )
 
 
-def test_review_learning_status_endpoint():
+@pytest.mark.anyio
+async def test_review_learning_status_endpoint():
     app = create_app()
-    client = TestClient(app)
-
-    res = client.get("/api/v1/review-learning/status")
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        res = await client.get("/api/v1/review-learning/status")
     assert res.status_code == 200
     data = res.json()
     assert data["loaded"] is False

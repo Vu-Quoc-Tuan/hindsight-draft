@@ -93,7 +93,14 @@ def extract_candidate_case_blocks(
     after = _partition_members(delta, "after") if isinstance(delta, Mapping) else {}
     before_members = set().union(*before.values()) if before else set()
     after_members = set().union(*after.values()) if after else set()
-    removed_count = len(before_members - after_members)
+    source_chain = str(candidate.get("source_chain_id") or chain_id)
+    if source_chain not in before and before:
+        source_chain = sorted(before)[0]
+    source_before = before.get(source_chain, set())
+    source_after = after.get(source_chain, set())
+    # REMOVE and MOVE preserve the alarm in a new partition, so count movement
+    # away from the source chain rather than disappearance from the universe.
+    removed_count = len(source_before - source_after)
     before_owner = {member: chain for chain, members in before.items() for member in members}
     after_owner = {member: chain for chain, members in after.items() for member in members}
     moved_count = sum(1 for member in before_members & after_members if before_owner.get(member) != after_owner.get(member))
@@ -109,7 +116,7 @@ def extract_candidate_case_blocks(
         "split_partition_count": split_count,
         "created_chain_count": created_chain_count,
         "removed_chain_count": removed_chain_count,
-        "relative_size_ratio": round(len(after_members) / len(before_members), 4) if before_members else 1.0,
+        "relative_size_ratio": round(len(source_after) / len(source_before), 4) if source_before else 1.0,
     }
 
     return {

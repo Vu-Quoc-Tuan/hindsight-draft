@@ -2,10 +2,10 @@
 
 Usage:
   # Evaluate baseline only on test split of synthetic data:
-  python scripts/review_learning/evaluate_ranker.py --synthetic-groups 30 --split test
+  python scripts/review_learning/evaluate_ranker.py --source synthetic --allow-synthetic --synthetic-groups 30 --split test
 
   # Evaluate trained model artifact against baseline:
-  python scripts/review_learning/evaluate_ranker.py --artifact-dir artifacts/review_ranker/v1 --synthetic-groups 30 --split test
+  python scripts/review_learning/evaluate_ranker.py --artifact-dir artifacts/review_ranker/synthetic-test --source synthetic --allow-synthetic --synthetic-groups 30 --split test
 
   # Evaluate trained model on PostgreSQL data:
   python scripts/review_learning/evaluate_ranker.py --artifact-dir artifacts/review_ranker/v1 --source postgres --database-url postgresql+asyncpg://... --cutoff 2026-09-10T00:00:00Z --split test
@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import datetime
 import json
 import os
 import sys
@@ -41,6 +40,7 @@ from review_learning import (
     materialize_training_corpus,
     materialize_training_corpus_from_repository_groups,
 )
+from scripts.review_learning.postgres_source import fetch_postgres_groups
 
 
 def evaluate_slice_subset(
@@ -165,29 +165,14 @@ def evaluate_operation_slices(
     return evaluate_all_slices(dataset, scores, abstention_threshold=abstention_threshold)["operations"]
 
 
-async def fetch_postgres_groups(db_url: str, cutoff: str) -> list[dict[str, Any]]:
-    """Fetch review groups from PostgreSQL database before cutoff."""
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-    from nocpro_api.persistence.repository import SnapshotRepository
-
-    engine = create_async_engine(db_url)
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-    repo = SnapshotRepository(session_factory)
-    cutoff_dt = datetime.datetime.fromisoformat(cutoff.replace("Z", "+00:00"))
-    if cutoff_dt.tzinfo is None:
-        cutoff_dt = cutoff_dt.replace(tzinfo=datetime.timezone.utc)
-    groups = await repo.training_review_groups_before(cutoff_dt)
-    await engine.dispose()
-    return groups
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate baseline and model ranking")
     parser.add_argument("--artifact-dir", type=str, default="", help="Path to ranker artifact directory")
-    parser.add_argument("--source", choices=["synthetic", "postgres"], default="synthetic", help="Data source")
+    parser.add_argument("--source", choices=["synthetic", "postgres"], default="postgres", help="Data source; PostgreSQL is required by default")
     parser.add_argument("--database-url", type=str, default=os.getenv("DATABASE_URL", ""), help="Database connection URL")
     parser.add_argument("--cutoff", type=str, default="2026-09-10T00:00:00Z", help="Temporal cutoff")
     parser.add_argument("--synthetic-groups", type=int, default=30, help="Number of synthetic groups")
+    parser.add_argument("--allow-synthetic", action="store_true", help="Required acknowledgement for synthetic test data")
     parser.add_argument("--split", choices=["train", "val", "test"], default="test", help="Evaluation split")
     parser.add_argument("--allow-unprotected-debug", action="store_true", default=False, help="Allow unprotected debug mode for postgres source")
     parser.add_argument("--strict-temporal-holdout", action="store_true", default=None, help="Embargo straddling lineages to guarantee zero temporal inversion")
@@ -195,6 +180,9 @@ def main() -> None:
     parser.add_argument("--require-production-governance", action="store_true", default=False, help="Require production governance (valid HMAC signature, no forbidden tiers)")
     parser.add_argument("--abstention-threshold", type=float, default=None, help="Optional override for abstention margin threshold")
     args = parser.parse_args()
+
+    if args.source == "synthetic" and not args.allow_synthetic:
+        parser.error("--source synthetic requires --allow-synthetic; synthetic data is test-only")
 
     protected_mode = (not args.allow_unprotected_debug) if args.source == "postgres" else False
 
