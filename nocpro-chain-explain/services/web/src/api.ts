@@ -320,14 +320,14 @@ export const api = {
       `/api/v1/chains/${encodeURIComponent(chainId)}/feedback`,
       { signal },
     ),
-  aiSuggestion: (chainId: string, signal?: AbortSignal) =>
+  aiSuggestion: (chainId: string, signal?: AbortSignal, lang: string = 'vi') =>
     request<AISuggestion>(
-      `/api/v1/chains/${encodeURIComponent(chainId)}/ai-suggestion`,
+      `/api/v1/chains/${encodeURIComponent(chainId)}/ai-suggestion?lang=${encodeURIComponent(lang)}`,
       { signal },
     ),
-  cohesionNarrative: (chainId: string, signal?: AbortSignal) =>
+  cohesionNarrative: (chainId: string, signal?: AbortSignal, lang: string = 'vi') =>
     request<CohesionNarrativeView>(
-      `/api/v1/chains/${encodeURIComponent(chainId)}/cohesion-narrative`,
+      `/api/v1/chains/${encodeURIComponent(chainId)}/cohesion-narrative?lang=${encodeURIComponent(lang)}`,
       { signal },
     ),
   assistantQuery: (query: string, context: AssistantContext, history: AssistantHistoryMessage[] = [], signal?: AbortSignal) =>

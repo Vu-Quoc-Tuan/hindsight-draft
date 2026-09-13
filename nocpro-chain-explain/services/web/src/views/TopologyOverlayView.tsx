@@ -1,15 +1,20 @@
 import { useState, useMemo } from 'react'
-import type { ChainAnalysis, Member } from '../types'
-import type { TopologyTreePayload } from '../TopologyTree'
+import type { ChainAnalysis, Member, TopologyHypothesesResult } from '../types'
+import { TopologyTree, type TopologyTreePayload } from '../TopologyTree'
+import { TopologyHypotheses } from '../TopologyHypotheses'
+import { api, type TopologyNavigationResolution } from '../api'
 import { InfoTip } from '../components/InfoTip'
 
 interface TopologyOverlayViewProps {
   analysis: ChainAnalysis
   topologyPayload?: TopologyTreePayload | null
+  topologyHypotheses?: TopologyHypothesesResult | null
   onRootChange?: (resourceId: string) => void
 }
 
-export function TopologyOverlayView({ analysis, topologyPayload, onRootChange: _onRootChange }: TopologyOverlayViewProps) {
+export function TopologyOverlayView({ analysis, topologyPayload, topologyHypotheses, onRootChange }: TopologyOverlayViewProps) {
+  const [topologyViewMode, setTopologyViewMode] = useState<'overlay' | 'tree'>('overlay')
+  const [sourceResolution, setSourceResolution] = useState<TopologyNavigationResolution | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null)
   const [showAlarmsLayer, setShowAlarmsLayer] = useState(true)
@@ -166,6 +171,34 @@ export function TopologyOverlayView({ analysis, topologyPayload, onRootChange: _
           {/* ========================================================================= */}
       <div className="w-full bg-[#0c1424] px-space-md py-2 rounded-lg flex flex-wrap items-center justify-between gap-space-md border border-[#1b273e] text-xs">
         <div className="flex items-center gap-2 flex-wrap">
+          {/* View Mode Switcher */}
+          <div className="flex items-center gap-1 bg-[#141b2b] p-0.5 rounded border border-[#1b273e] mr-2">
+            <button
+              type="button"
+              onClick={() => setTopologyViewMode('overlay')}
+              className={`px-2.5 py-1 rounded font-code-sm text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                topologyViewMode === 'overlay'
+                  ? 'bg-secondary text-[#070e1d] font-bold shadow-xs'
+                  : 'text-on-surface-variant hover:text-on-surface'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[14px]">lan</span>
+              <span>Overlay Graph</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTopologyViewMode('tree')}
+              className={`px-2.5 py-1 rounded font-code-sm text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                topologyViewMode === 'tree'
+                  ? 'bg-secondary text-[#070e1d] font-bold shadow-xs'
+                  : 'text-on-surface-variant hover:text-on-surface'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[14px]">account_tree</span>
+              <span>Hierarchy Tree</span>
+            </button>
+          </div>
+
           <span className="font-label-caps text-[10px] uppercase text-on-surface-variant font-bold tracking-wider mr-1">
             LAYERS:
           </span>
@@ -224,8 +257,35 @@ export function TopologyOverlayView({ analysis, topologyPayload, onRootChange: _
       </div>
 
       {/* ========================================================================= */}
-      {/* 3. Primary Split Layout (35% Left: Entities Tree | 65% Right: SVG Graph) */}
+      {/* 3. Primary View: Hierarchy Tree OR Split Overlay Graph Layout             */}
       {/* ========================================================================= */}
+      {topologyViewMode === 'tree' ? (
+        <div className="w-full">
+          {topologyPayload ? (
+            <TopologyTree
+              key={
+                topologyPayload.status === 'AVAILABLE'
+                  ? `${topologyPayload.profile}:${topologyPayload.source_version}:${topologyPayload.tree.resource_id}`
+                  : `${topologyPayload.profile}:${topologyPayload.reason}`
+              }
+              payload={topologyPayload}
+              onSearchSource={(query) => api.topologySearch((topologyPayload as any).profile || 'IP_NETWORK', query)}
+              onResolveSource={async (identifier) => {
+                const resolution = await api.topologyResolve((topologyPayload as any).profile || 'IP_NETWORK', identifier)
+                setSourceResolution(resolution)
+                return resolution
+              }}
+              sourceResolution={sourceResolution}
+              onRootChange={onRootChange}
+            />
+          ) : (
+            <div className="rounded-xl border border-dashed border-[#1b273e] bg-[#0c1424] p-space-xl text-center font-code-sm text-sm text-on-surface-variant">
+              <span className="material-symbols-outlined mb-2 block text-4xl text-secondary animate-pulse">account_tree</span>
+              Topology tree projection unavailable for this profile.
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-space-md items-start">
         {/* LEFT PANEL: Alarm-Bearing Devices & Member Impact Tree */}
         <div className="lg:col-span-4 flex flex-col gap-space-sm bg-[#0c1424] rounded-xl border border-[#1b273e] p-space-md shadow-md h-[680px]">
@@ -690,6 +750,7 @@ export function TopologyOverlayView({ analysis, topologyPayload, onRootChange: _
           </div>
         </div>
       </div>
+      )}
 
       {/* ========================================================================= */}
       {/* 4. Topological Alarm Verification Matrix matching ui/17 */}
@@ -736,6 +797,26 @@ export function TopologyOverlayView({ analysis, topologyPayload, onRootChange: _
           </div>
         </div>
       </section>
+
+      {/* ========================================================================= */}
+      {/* 5. Topology Hypotheses & Dependency Propagation (P2 Capability)           */}
+      {/* ========================================================================= */}
+      {topologyHypotheses && (
+        <section className="bg-[#0c1424] rounded-xl border border-[#1b273e] p-space-md shadow-md flex flex-col gap-space-sm">
+          <div className="flex items-center justify-between pb-space-xs border-b border-[#1b273e]">
+            <div className="flex items-center gap-space-xs">
+              <span className="material-symbols-outlined text-secondary text-[18px]">account_tree</span>
+              <span className="font-label-caps text-xs uppercase text-secondary font-bold tracking-wider">
+                TOPOLOGY HYPOTHESES &amp; DEPENDENCY PROPAGATION
+              </span>
+            </div>
+            <span className="font-code-sm text-xs text-on-surface-variant">
+              P2 Unavoidable Dominator &amp; Directed Propagation
+            </span>
+          </div>
+          <TopologyHypotheses topology_hypotheses={topologyHypotheses} />
+        </section>
+      )}
         </>
       )}
     </div>

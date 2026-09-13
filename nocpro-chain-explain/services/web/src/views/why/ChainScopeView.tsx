@@ -827,8 +827,8 @@ export function ChainScopeView({
               <p className="font-body-sm text-xs text-on-surface-variant leading-relaxed">
                 {narrativeData?.narrative || (
                   analysis.singleton
-                    ? 'This chain contains one observed alarm. Multi-member cohesion and propagation analysis are not applicable.'
-                    : `Chain ${analysis.chain_id} contains ${totalAlarms} observed alarm(s). Tier-2 structural audit has not been performed.`
+                    ? 'Chuỗi này chỉ chứa 1 cảnh báo duy nhất đã quan sát. Phân tích gắn kết đa thành viên và lan truyền không áp dụng.'
+                    : `Chuỗi ${analysis.chain_id} chứa ${totalAlarms} cảnh báo đã quan sát. Kiểm tra cấu trúc Tier-2 chưa được thực hiện.`
                 )}
               </p>
             )}

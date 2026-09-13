@@ -555,7 +555,11 @@ export default function App() {
           )}
 
           {analysis && (currentTab === 'review' || currentTab === 'validation') && (
-            <RecommendationsView analysis={analysis} readOnly={reviewReadOnly} />
+            <RecommendationsView
+              analysis={analysis}
+              readOnly={reviewReadOnly}
+              initialSubTab={currentTab === 'validation' ? 'validation' : 'recommendations'}
+            />
           )}
 
           {analysis && currentTab === 'evolution' && (
@@ -566,6 +570,7 @@ export default function App() {
             <TopologyOverlayView
               analysis={analysis}
               topologyPayload={topologyPayload}
+              topologyHypotheses={job?.chain_id === analysis.chain_id && job?.status === 'SUCCEEDED' ? job.result?.topology_hypotheses : null}
               onRootChange={setTopologyRootId}
             />
           )}

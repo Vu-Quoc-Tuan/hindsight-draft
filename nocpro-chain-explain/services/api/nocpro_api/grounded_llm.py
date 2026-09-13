@@ -182,6 +182,20 @@ _IDENTIFIER = re.compile(r"\b[A-Za-z][A-Za-z0-9]*(?:[-_][A-Za-z0-9]+)+\b")
 _NUMBER = re.compile(r"(?<![A-Za-z0-9_])-?\d+(?:\.\d+)?%?")
 
 
+def _normalize_content_chars(text: str) -> str:
+    """Normalize non-breaking spaces, typographic hyphens, decimal commas, and percent spacing."""
+    s = (
+        text.replace("\u202f", " ")
+        .replace("\xa0", " ")
+        .replace("\u2011", "-")
+        .replace("\u2013", "-")
+        .replace("\u2014", "-")
+    )
+    s = re.sub(r"(\d+),(\d+)", r"\1.\2", s)
+    s = re.sub(r"(\d+(?:\.\d+)?)\s+%", r"\1%", s)
+    return s
+
+
 def _grounding_is_preserved(content: str, draft: str, facts: dict[str, Any], fact_refs: Sequence[str]) -> bool:
     """Reject narrative-only claims that cannot be represented by supplied facts.
 
@@ -189,19 +203,28 @@ def _grounding_is_preserved(content: str, draft: str, facts: dict[str, Any], fac
     not an authority: an unsafe or unverifiable answer falls back to the exact
     deterministic draft.
     """
-    if _FORBIDDEN_NARRATIVE_CLAIMS.search(content):
+    normalized_content = _normalize_content_chars(content)
+    if _FORBIDDEN_NARRATIVE_CLAIMS.search(normalized_content):
+        logger.info("Grounding rejected: forbidden narrative claim: %s", _FORBIDDEN_NARRATIVE_CLAIMS.search(normalized_content))
         return False
-    if _UNSUPPORTED_QUALITATIVE_CLAIMS.search(content) and not _UNSUPPORTED_QUALITATIVE_CLAIMS.search(draft):
+    if _UNSUPPORTED_QUALITATIVE_CLAIMS.search(normalized_content) and not _UNSUPPORTED_QUALITATIVE_CLAIMS.search(draft):
+        logger.info("Grounding rejected: unsupported qualitative claim: %s", _UNSUPPORTED_QUALITATIVE_CLAIMS.search(normalized_content))
         return False
     allowed = " ".join((draft, json.dumps(facts, ensure_ascii=False, default=str), *fact_refs))
     allowed_identifiers = {item.casefold() for item in _IDENTIFIER.findall(allowed)}
-    if not all(item.casefold() in allowed_identifiers for item in _IDENTIFIER.findall(content)):
+    unmatched_ids = [item for item in _IDENTIFIER.findall(normalized_content) if item.casefold() not in allowed_identifiers]
+    if unmatched_ids:
+        logger.info("Grounding rejected: unmatched identifiers: %s", unmatched_ids)
         return False
     # A deterministic draft is the authoritative public projection. Raw fact
     # payloads can contain incidental curve points that must not be promoted to
     # a different named metric by narrative wording.
     allowed_numbers = set(_NUMBER.findall(" ".join((draft, *fact_refs))))
-    return all(item in allowed_numbers for item in _NUMBER.findall(content))
+    unmatched_nums = [item for item in _NUMBER.findall(normalized_content) if item not in allowed_numbers]
+    if unmatched_nums:
+        logger.info("Grounding rejected: unmatched numbers: %s (allowed: %s)", unmatched_nums, allowed_numbers)
+        return False
+    return True
 
 
 def validate_grounded_content(
@@ -216,11 +239,12 @@ def validate_grounded_content(
     """Validate an already returned provider narrative without another provider call."""
     if provider_status != "OK" or not content.strip():
         return _fallback(draft, provider_status or "INVALID_RESPONSE")
-    if not _grounding_is_preserved(content, draft, facts, fact_refs):
+    normalized_content = _normalize_content_chars(content)
+    if not _grounding_is_preserved(normalized_content, draft, facts, fact_refs):
         logger.info("Grounded LLM provider failed status=GROUNDING_VIOLATION")
         return _fallback(draft, "GROUNDING_VIOLATION")
     return GroundedRenderResult(
-        message=_bounded(content.strip(), _MAX_OUTPUT_CHARS),
+        message=_bounded(normalized_content.strip(), _MAX_OUTPUT_CHARS),
         model=model,
         provider_status="OK",
         used_provider=True,

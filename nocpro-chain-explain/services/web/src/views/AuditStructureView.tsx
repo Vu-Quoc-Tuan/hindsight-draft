@@ -1,4 +1,5 @@
 import { EvidenceAttribution } from '../EvidenceAttribution'
+import { TopologyHypotheses } from '../TopologyHypotheses'
 import { AuditGraphVisualization } from '../components/AuditGraphVisualization'
 import type { AuditVisualizationArtifact, ChainAnalysis, DeepDive, Job } from '../types'
 import { InfoTip } from '../components/InfoTip'
@@ -66,6 +67,10 @@ function AuditResult({
       <EvidenceAttribution
         result={result.evidence_attribution}
         evaluation={result.evidence_attribution_evaluation}
+      />
+
+      <TopologyHypotheses
+        topology_hypotheses={result.topology_hypotheses}
       />
     </div>
   )

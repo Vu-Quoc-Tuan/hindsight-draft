@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { CounterfactualReview } from '../CounterfactualReview'
 import { ValidationView } from './ValidationView'
 import type { ChainAnalysis } from '../types'
@@ -14,6 +14,10 @@ export function RecommendationsView({
   initialSubTab?: 'recommendations' | 'validation'
 }) {
   const [activeTab, setActiveTab] = useState<'recommendations' | 'validation'>(initialSubTab)
+
+  useEffect(() => {
+    setActiveTab(initialSubTab)
+  }, [initialSubTab])
 
   return (
     <div className="flex w-full flex-col gap-space-md pb-12 animate-fadeIn">

@@ -8,6 +8,7 @@ const ChainScopeView = lazy(() => import('./why/ChainScopeView').then(m => ({ de
 const MemberScopeView = lazy(() => import('./why/MemberScopeView').then(m => ({ default: m.MemberScopeView })))
 const PairScopeView = lazy(() => import('./why/PairScopeView').then(m => ({ default: m.PairScopeView })))
 const GroupScopeView = lazy(() => import('./why/GroupScopeView').then(m => ({ default: m.GroupScopeView })))
+const AIAdvisorPanel = lazy(() => import('../AIAdvisorPanel').then(m => ({ default: m.AIAdvisorPanel })))
 
 interface ChainDetailViewProps {
   analysis: ChainAnalysis
@@ -234,6 +235,20 @@ export function ChainDetailView({
                 Inspect members
               </button>
             </div>
+          </div>
+
+          {/* AI Operational Advisor Evidence Summary */}
+          <div className="xl:col-span-12 w-full mt-space-sm">
+            <Suspense
+              fallback={
+                <div className="flex h-32 items-center justify-center gap-space-sm text-on-surface-variant font-code-sm bg-surface-container-low rounded-lg p-space-md">
+                  <span className="material-symbols-outlined animate-spin text-xl text-primary">progress_activity</span>
+                  <span>Đang tải AI Evidence Summary…</span>
+                </div>
+              }
+            >
+              <AIAdvisorPanel chainId={analysis.chain_id} />
+            </Suspense>
           </div>
         </div>
       )}

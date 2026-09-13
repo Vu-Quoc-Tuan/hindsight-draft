@@ -639,7 +639,7 @@ async def get_candidate_similar_cases(
     response_model=AISuggestionView,
 )
 async def get_chain_ai_suggestion(
-    chain_id: str, request: Request
+    chain_id: str, request: Request, lang: str = Query("en")
 ) -> AISuggestionView:
     try:
         service = workspace(request)
@@ -670,6 +670,7 @@ async def get_chain_ai_suggestion(
             review_result=review_result,
             review_status=review_status,
             review_reason=review_reason,
+            language=lang,
         )
         return ai_suggestion_view(suggestion)
     except Exception as exc:
@@ -685,7 +686,7 @@ async def get_chain_ai_suggestion(
     response_model=CohesionNarrativeView,
 )
 async def get_chain_cohesion_narrative(
-    chain_id: str, request: Request
+    chain_id: str, request: Request, lang: str = Query("en")
 ) -> CohesionNarrativeView:
     try:
         service = workspace(request)
@@ -725,6 +726,7 @@ async def get_chain_cohesion_narrative(
             audit_artifact=audit_artifact,
             review_result=review_result,
             audit_error_reason=audit_error_reason,
+            language=lang,
         )
         return CohesionNarrativeView(
             chain_id=result.chain_id,
