@@ -226,7 +226,7 @@ def build_deterministic_comparative_explanation(
             points.append("Loại bỏ phần tử không tương đồng giúp nâng cao độ gắn kết nội tại của chuỗi sự cố.")
             why_better = (
                 f"Cảnh báo {m_str} có mức độ gắn kết yếu với các thành viên còn lại. "
-                "Việc loại bỏ giúp chuỗi thuần nhất hơn về đặc trưng sự cố, ngăn ngừa tình trạng một cảnh báo ngoại lai làm loãng bức tranh phân tích nguyên nhân gốc."
+                "Việc loại bỏ giúp chuỗi thuần nhất hơn về đặc trưng sự cố, ngăn ngừa tình trạng một cảnh báo ngoại lai làm loãng bức tranh khoanh vùng sự cố."
             )
         else:
             action_summary = f"Proposal to remove {count} alarm(s) ({m_str}) from chain {source_chain_id or ''}".strip()
@@ -297,7 +297,7 @@ def build_deterministic_comparative_explanation(
                 why_better = (
                     f"Cảnh báo {m_str} đóng vai trò là CẦU NỐI (CONNECTOR) then chốt: trong chuỗi hiện tại nó không phát huy tác dụng liên kết, "
                     f"nhưng khi đưa sang chuỗi {target_chain_id}, nó bắc cầu kết nối trực tiếp {target_clause_vi} đang bị tách rời thành một sự cố mạng thống nhất, "
-                    "giúp kỹ sư NOC nhìn rõ đường truyền lỗi và xử lý triệt để nguyên nhân gốc rễ thay vì nhìn nhận thành các sự cố đứt đoạn riêng lẻ."
+                    "giúp kỹ sư NOC nhìn rõ đường lan truyền lỗi và xử lý sự cố toàn diện thay vì nhìn nhận thành các sự cố đứt đoạn riêng lẻ."
                 )
             else:
                 action_summary = f"Proposal to move alarm {m_str} to target chain {target_chain_id or ''} as a structural CONNECTOR".strip()
@@ -307,7 +307,7 @@ def build_deterministic_comparative_explanation(
                     points.append(f"Maintains or improves membership support ({s_b*100:.1f}% → {s_a*100:.1f}%).")
                 why_better = (
                     f"Alarm {m_str} serves as an indispensable structural CONNECTOR: transferring it bridges {target_clause_en} "
-                    f"into a single cohesive fault domain, enabling operators to trace the root-cause propagation path."
+                    f"into a single cohesive fault domain, enabling operators to trace the complete fault propagation path."
                 )
         else:
             target_scope = f"chuỗi đích {target_chain_id} ({', '.join(target_dev_names[:2])})" if target_dev_names else f"chuỗi đích {target_chain_id}"
