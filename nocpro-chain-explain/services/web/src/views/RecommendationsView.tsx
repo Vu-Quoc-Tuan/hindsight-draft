@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { CounterfactualReview } from '../CounterfactualReview'
+
 import { ValidationView } from './ValidationView'
 import type { ChainAnalysis } from '../types'
 import { InfoTip } from '../components/InfoTip'
@@ -18,13 +19,15 @@ export function RecommendationsView({
   onOpenReviewLearning?: () => void
   onThresholdApplied?: () => void
 }) {
+  const [prevInitialSubTab, setPrevInitialSubTab] = useState(initialSubTab)
   const [activeTab, setActiveTab] = useState<'recommendations' | 'validation'>(initialSubTab)
   const [showThresholdModal, setShowThresholdModal] = useState(false)
 
-
-  useEffect(() => {
+  if (initialSubTab !== prevInitialSubTab) {
+    setPrevInitialSubTab(initialSubTab)
     setActiveTab(initialSubTab)
-  }, [initialSubTab])
+  }
+
 
   return (
     <div className="flex w-full flex-col gap-space-md pb-12 animate-fadeIn">

@@ -9,9 +9,9 @@ Focuses on:
 
 from __future__ import annotations
 
-import copy
 import logging
 from typing import Any, Mapping
+
 
 from tier2.counterfactual.explain_clarity_comparator import (
     compare_two_explanations,

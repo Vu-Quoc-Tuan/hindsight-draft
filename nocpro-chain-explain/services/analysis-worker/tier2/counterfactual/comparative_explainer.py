@@ -8,8 +8,9 @@ with optional ADR-0024 grounded LLM narrative polish.
 from __future__ import annotations
 
 import logging
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from typing import Any, Mapping
+
 
 from libs.contracts import IngestedPackage
 
