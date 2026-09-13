@@ -19,6 +19,7 @@ import type {
   SimilarCaseRetrievalResult,
   CandidateDisplayEventItem,
   ManualCorrectionPayload,
+  ReviewLearningStatus,
 } from './types'
 import type { TopologyTreePayload } from './TopologyTree'
 
@@ -361,6 +362,15 @@ export const api = {
   calibrateConfig: (signal?: AbortSignal) =>
     request<CalibrationReport>('/api/v1/config/calibrate', {
       method: 'POST',
+      signal,
+    }),
+  reviewLearningStatus: (signal?: AbortSignal) =>
+    request<ReviewLearningStatus>('/api/v1/review-learning/status', { signal }),
+  trainRanker: (syntheticGroups: number = 30, signal?: AbortSignal) =>
+    request<ReviewLearningStatus>('/api/v1/review-learning/train', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ synthetic_groups: syntheticGroups }),
       signal,
     }),
 }

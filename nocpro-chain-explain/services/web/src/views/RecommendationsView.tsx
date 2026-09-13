@@ -8,10 +8,12 @@ export function RecommendationsView({
   analysis,
   readOnly = false,
   initialSubTab = 'recommendations',
+  onOpenReviewLearning,
 }: {
   analysis: ChainAnalysis
   readOnly?: boolean
   initialSubTab?: 'recommendations' | 'validation'
+  onOpenReviewLearning?: () => void
 }) {
   const [activeTab, setActiveTab] = useState<'recommendations' | 'validation'>(initialSubTab)
 
@@ -105,6 +107,7 @@ export function RecommendationsView({
             chainId={analysis.chain_id}
             readOnly={readOnly}
             onNavigateToValidation={() => setActiveTab('validation')}
+            onOpenReviewLearning={onOpenReviewLearning}
           />
         </div>
       ) : (

@@ -8,6 +8,7 @@ import type {
   CounterfactualMetricVector,
   CounterfactualOperation,
   OperatorFeedback,
+  SimilarCaseRetrievalResult,
 } from './types'
 
 const metricLabels: Array<[keyof CounterfactualMetricVector, string]> = [
@@ -41,11 +42,13 @@ function CandidateCard({
   candidate,
   recommended,
   feedback,
+  jobId,
   onFeedbackSubmit,
 }: {
   candidate: CounterfactualCandidate
   recommended: boolean
   feedback?: OperatorFeedback
+  jobId?: string
   onFeedbackSubmit?: (
     candidateId: string,
     decision: 'APPROVED' | 'REJECTED',
@@ -69,6 +72,28 @@ function CandidateCard({
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+
+  const [showSimilarCases, setShowSimilarCases] = useState(false)
+  const [loadingSimilar, setLoadingSimilar] = useState(false)
+  const [similarResult, setSimilarResult] = useState<SimilarCaseRetrievalResult | null>(null)
+  const [similarError, setSimilarError] = useState<string | null>(null)
+
+  const handleToggleSimilarCases = async () => {
+    const nextState = !showSimilarCases
+    setShowSimilarCases(nextState)
+    if (nextState && !similarResult && jobId) {
+      setLoadingSimilar(true)
+      setSimilarError(null)
+      try {
+        const res = await api.similarCases(jobId, candidate.candidate_id)
+        setSimilarResult(res)
+      } catch (err) {
+        setSimilarError(err instanceof Error ? err.message : 'Không thể tải trường hợp tương tự')
+      } finally {
+        setLoadingSimilar(false)
+      }
+    }
+  }
 
   const handleOpenForm = (decision: 'APPROVED' | 'REJECTED') => {
     setSelectedDecision(decision)
@@ -105,6 +130,38 @@ function CandidateCard({
         </div>
         <span className={`review-state review-state--${status.toLowerCase()}`}>{status}</span>
       </header>
+
+      {candidate.ranking_audit && (
+        <div className="review-ranking-badge-container flex flex-wrap items-center gap-2 mt-2 px-3 py-1.5 rounded-lg bg-surface-container-low border border-surface-container-highest">
+          {candidate.ranking_audit.ranking_status === 'RERANKED' ? (
+            <>
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                <span>🎯 XGBRanker</span>
+                <span className="text-amber-100 font-mono">
+                  Score: {candidate.ranking_audit.model_score !== null && candidate.ranking_audit.model_score !== undefined ? candidate.ranking_audit.model_score.toFixed(4) : 'N/A'}
+                </span>
+              </span>
+              {candidate.displayed_rank !== undefined && candidate.displayed_rank !== null && (
+                <span className="px-2 py-0.5 rounded text-xs font-semibold bg-primary/20 text-primary border border-primary/30 font-mono">
+                  Hạng đề xuất: #{candidate.displayed_rank}
+                </span>
+              )}
+              <span className="text-[11px] text-on-surface-variant font-mono">
+                (Phiên bản: {candidate.ranking_audit.ranker_version ?? 'v1'}, Margin: {(candidate.ranking_audit.margin ?? 0).toFixed(4)})
+              </span>
+            </>
+          ) : candidate.ranking_audit.ranking_status === 'ABSTAINED' ? (
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30">
+              <span>🛡️ Model Abstained: {candidate.ranking_audit.abstention_reason || 'Score under threshold'}</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-surface-container-high text-on-surface-variant">
+              <span>⚙️ Xếp hạng Baseline thuần định thức</span>
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="review-partition" aria-label="Before and after partition">
         <div><small>Current</small>{candidate.partition_delta.before.map(([id, members]) => <p key={id}><strong>{id}</strong><span>{members.length} members</span></p>)}</div>
         <i aria-hidden="true">→</i>
@@ -259,6 +316,102 @@ function CandidateCard({
         </div>
       )}
 
+      {jobId && (
+        <div className="review-similar-cases-section mt-3 pt-2 border-t border-surface-container-highest">
+          <button
+            type="button"
+            onClick={handleToggleSimilarCases}
+            className="flex items-center justify-between w-full text-left py-1.5 px-2.5 rounded bg-surface-container-low hover:bg-surface-container transition-colors text-xs font-semibold text-secondary"
+          >
+            <span className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-[16px]">history_edu</span>
+              <span>Truy xuất trường hợp tương tự trong quá khứ (Similar Cases)</span>
+              {similarResult && (
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-secondary/15 text-secondary border border-secondary/30 font-mono">
+                  {similarResult.cross_incident_cases.length + similarResult.same_lineage_history.length} ca
+                </span>
+              )}
+            </span>
+            <span className="material-symbols-outlined text-[16px]">
+              {showSimilarCases ? 'expand_less' : 'expand_more'}
+            </span>
+          </button>
+          {showSimilarCases && (
+            <div className="similar-cases-panel mt-2 p-3 rounded-lg bg-[#0a101d] border border-[#1a263d] space-y-2">
+              {loadingSimilar ? (
+                <div className="flex items-center gap-2 text-xs text-on-surface-variant py-2">
+                  <span className="material-symbols-outlined animate-spin text-[16px] text-secondary">progress_activity</span>
+                  <span>Đang tính toán độ đo tương đồng đa khối (Deterministic Multi-block Similarity)...</span>
+                </div>
+              ) : similarError ? (
+                <p className="text-xs text-rose-400">{similarError}</p>
+              ) : similarResult ? (
+                <>
+                  <div className="flex items-center justify-between text-[11px] text-on-surface-variant pb-1 border-b border-[#162136]">
+                    <span>Trạng thái: <strong className="text-on-surface">{similarResult.retrieval_status}</strong></span>
+                    <span>Ngưỡng tối thiểu: <strong className="text-on-surface font-mono">{(similarResult.min_similarity * 100).toFixed(0)}%</strong></span>
+                  </div>
+                  
+                  {similarResult.cross_incident_cases.length === 0 && similarResult.same_lineage_history.length === 0 ? (
+                    <p className="text-xs text-on-surface-variant italic py-1">
+                      Chưa có tiền lệ tương đồng đủ tin cậy trong cơ sở tri thức {similarResult.reason ? `(${similarResult.reason})` : ''}.
+                    </p>
+                  ) : (
+                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                      {similarResult.cross_incident_cases.map((sc) => (
+                        <div key={sc.case_id} className="p-2.5 rounded border border-[#1e2d47] bg-[#0d1526] text-xs space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 font-mono text-[11px]">
+                              <span className="text-primary font-bold">{sc.case_id}</span>
+                              <span className="text-on-surface-variant">·</span>
+                              <span className="text-on-surface-variant">{sc.review_id}</span>
+                            </div>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                              sc.decision === 'APPROVE' || sc.decision === 'APPROVED' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                            }`}>
+                              {sc.decision}
+                            </span>
+                          </div>
+                          
+                          <div className="flex items-center gap-3">
+                            <div className="flex-1 bg-surface-container rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className="bg-secondary h-full rounded-full"
+                                style={{ width: `${Math.min(100, Math.round(sc.similarity_score * 100))}%` }}
+                              />
+                            </div>
+                            <span className="font-mono text-[11px] font-bold text-secondary shrink-0">
+                              {(sc.similarity_score * 100).toFixed(1)}% tương đồng
+                            </span>
+                          </div>
+
+                          {sc.block_scores && (
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 text-[10px] text-on-surface-variant font-mono">
+                              {Object.entries(sc.block_scores).map(([bName, bScore]) => {
+                                const numScore = typeof bScore === 'number' ? bScore : (bScore as any)?.score ?? 0
+                                return (
+                                  <span key={bName} className="truncate">
+                                    {bName.replace('_shape', '').replace('_pattern', '')}: {(numScore * 100).toFixed(0)}%
+                                  </span>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  <p className="text-[10px] text-amber-400/90 pt-1 italic">
+                    ⚠️ {similarResult.disclaimer}
+                  </p>
+                </>
+              ) : null}
+            </div>
+          )}
+        </div>
+      )}
+
       <footer>
         <span>Exact bounded evaluation{sourceRef ? ` · ${sourceRef}` : ''}</span>
         {candidate.operation === 'MOVE_MEMBER' && sourceChainId && targetChainId ? <span>Transfer {sourceChainId} → {targetChainId}</span> : null}
@@ -285,11 +438,13 @@ function OperationSection({
   operation,
   recommendationIds,
   feedbacks,
+  jobId,
   onFeedbackSubmit,
 }: {
   operation: CounterfactualOperation
   recommendationIds: Set<string>
   feedbacks: Record<string, OperatorFeedback>
+  jobId?: string
   onFeedbackSubmit?: (
     candidateId: string,
     decision: 'APPROVED' | 'REJECTED',
@@ -324,6 +479,7 @@ function OperationSection({
             candidate={candidate}
             recommended={recommendationIds.has(candidate.candidate_id)}
             feedback={feedbacks[candidate.candidate_id]}
+            jobId={jobId}
             onFeedbackSubmit={onFeedbackSubmit}
           />
         ))}
@@ -339,6 +495,7 @@ export function CounterfactualReview({
   initialFeedbacks = {},
   readOnly = false,
   onNavigateToValidation,
+  onOpenReviewLearning,
 }: {
   chainId: string
   initialJob?: CounterfactualJob | null
@@ -346,6 +503,7 @@ export function CounterfactualReview({
   /** Assistant navigation may only display persisted results; it never starts Review. */
   readOnly?: boolean
   onNavigateToValidation?: () => void
+  onOpenReviewLearning?: () => void
 }) {
   const [job, setJob] = useState<CounterfactualJob | null>(initialJob)
   const [feedbacks, setFeedbacks] = useState<Record<string, OperatorFeedback>>(initialFeedbacks)
@@ -489,8 +647,28 @@ export function CounterfactualReview({
   return (
     <section className="review-shell">
       <header className="review-heading">
-        <div><p className="kicker">Review-only · {result.identity.engine_version}</p><h2>Counterfactual chain review</h2><p>Compare exact, bounded partition alternatives. This analysis does not change the NocPro grouping.</p></div>
-        <div><span className={`review-state review-state--${result.recommendation_status.toLowerCase()}`}>{result.recommendation_status}</span><small>{result.identity.config_version}</small></div>
+        <div>
+          <p className="kicker">Review-only · {result.identity.engine_version}</p>
+          <h2>Counterfactual chain review</h2>
+          <p>Compare exact, bounded partition alternatives. This analysis does not change the NocPro grouping.</p>
+        </div>
+        <div className="flex flex-col items-end gap-1.5">
+          <div className="flex items-center gap-2">
+            {onOpenReviewLearning && (
+              <button
+                type="button"
+                onClick={onOpenReviewLearning}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 transition-colors cursor-pointer"
+                title="Xem bảng quản trị mô hình XGBRanker và active learning"
+              >
+                <span className="material-symbols-outlined text-[15px]">psychology</span>
+                <span>🎯 XGBRanker v1 Model</span>
+              </button>
+            )}
+            <span className={`review-state review-state--${result.recommendation_status.toLowerCase()}`}>{result.recommendation_status}</span>
+          </div>
+          <small>{result.identity.config_version}</small>
+        </div>
       </header>
       <div className="review-safety-notice"><strong>Proposal only</strong><span>NocPro was not changed. No candidate is applied automatically.</span></div>
       {result.reason ? (
@@ -578,6 +756,7 @@ export function CounterfactualReview({
                   candidate={candidate}
                   recommended={true}
                   feedback={feedbacks[candidate.candidate_id]}
+                  jobId={job.job_id}
                   onFeedbackSubmit={readOnly ? undefined : handleFeedbackSubmit}
                 />
               ))}
@@ -602,6 +781,7 @@ export function CounterfactualReview({
             operation={operation}
             recommendationIds={recommendationIds}
             feedbacks={feedbacks}
+            jobId={job.job_id}
             onFeedbackSubmit={readOnly ? undefined : handleFeedbackSubmit}
           />
         ))}

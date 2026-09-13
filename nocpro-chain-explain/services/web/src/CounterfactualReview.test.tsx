@@ -342,5 +342,81 @@ describe('CounterfactualReview', () => {
     expect(html).toContain('Chuỗi có độ gắn kết cao và cấu trúc thuần nhất (Optimal Partition Cohesion)')
     expect(html).toContain('Không phát hiện cảnh báo rời rạc (WEAK) hay thành phần phân mảnh')
   })
+
+  it('renders XGBRanker ranking audit badge and model governance button', () => {
+    const candidateWithLearning: CounterfactualCandidate = {
+      ...job.result!.remove.candidates[0],
+      displayed_rank: 1,
+      ranking_audit: {
+        ranking_status: 'RERANKED',
+        model_score: 0.8842,
+        margin: 0.1250,
+        ranker_version: 'v1',
+        abstention_reason: null,
+      },
+    }
+
+    const rerankedJob: CounterfactualJob = {
+      ...job,
+      result: {
+        ...job.result!,
+        recommendations: [candidateWithLearning],
+        evaluated_candidates: [candidateWithLearning],
+        remove: {
+          ...job.result!.remove,
+          candidates: [candidateWithLearning],
+        },
+      },
+    }
+
+    const html = renderToStaticMarkup(
+      <CounterfactualReview
+        chainId="C1"
+        initialJob={rerankedJob}
+        onOpenReviewLearning={() => {}}
+      />
+    )
+
+    expect(html).toContain('🎯 XGBRanker')
+    expect(html).toContain('Score: 0.8842')
+    expect(html).toContain('Hạng đề xuất: #1')
+    expect(html).toContain('Phiên bản: v1')
+    expect(html).toContain('XGBRanker v1 Model')
+    expect(html).toContain('Truy xuất trường hợp tương tự trong quá khứ')
+  })
+
+  it('renders model abstention badge when ranking audit status is ABSTAINED', () => {
+    const candidateAbstained: CounterfactualCandidate = {
+      ...job.result!.remove.candidates[0],
+      displayed_rank: 1,
+      ranking_audit: {
+        ranking_status: 'ABSTAINED',
+        model_score: null,
+        margin: null,
+        ranker_version: 'v1',
+        abstention_reason: 'Score under margin threshold',
+      },
+    }
+
+    const abstainedJob: CounterfactualJob = {
+      ...job,
+      result: {
+        ...job.result!,
+        recommendations: [candidateAbstained],
+        evaluated_candidates: [candidateAbstained],
+        remove: {
+          ...job.result!.remove,
+          candidates: [candidateAbstained],
+        },
+      },
+    }
+
+    const html = renderToStaticMarkup(
+      <CounterfactualReview chainId="C1" initialJob={abstainedJob} />
+    )
+
+    expect(html).toContain('🛡️ Model Abstained: Score under margin threshold')
+  })
 })
+
 

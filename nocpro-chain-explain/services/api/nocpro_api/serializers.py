@@ -243,10 +243,54 @@ def counterfactual_result_view(result):
     }
 
 
+def _enrich_candidates_with_learning_audit(
+    result_dict: dict[str, Any] | None,
+    job_id: str | None,
+    job_view: Any,
+    package: IngestedPackage | None,
+    review_learning: Any | None,
+) -> None:
+    if not result_dict or not isinstance(result_dict, dict) or review_learning is None or not job_id:
+        return
+    candidates = result_dict.get("evaluated_candidates")
+    if not candidates or not isinstance(candidates, list):
+        return
+
+    rev_id = review_learning.get_review_id_for_job(job_id)
+    exps = review_learning._exposures.get(rev_id)
+    if not exps and review_learning._ranker_model is not None:
+        try:
+            _, exps = review_learning.prepare_review_bundle(
+                job_id=job_id,
+                job_view=job_view,
+                package=package,
+            )
+            review_learning._exposures[rev_id] = exps
+        except Exception:
+            exps = None
+
+    if exps:
+        exp_by_id = {exp.candidate_id: exp for exp in exps}
+        for cand in candidates:
+            if isinstance(cand, dict) and cand.get("candidate_id") in exp_by_id:
+                exp = exp_by_id[cand["candidate_id"]]
+                audit = (
+                    exp.deterministic_context.get("ranking_audit")
+                    or (exp.feature_payload or {}).get("ranking_audit")
+                )
+                if audit:
+                    cand["ranking_audit"] = audit
+                cand["displayed_rank"] = exp.displayed_rank
+
+        if any(isinstance(c, dict) and c.get("displayed_rank") is not None for c in candidates):
+            candidates.sort(key=lambda c: (c.get("displayed_rank") is None, c.get("displayed_rank", 999)))
+
+
 def counterfactual_job_view(
     job,
     package: IngestedPackage | None = None,
     language: str = "vi",
+    review_learning: Any | None = None,
 ) -> CounterfactualJobView:
     def _iso(val):
         if val is None:
@@ -322,6 +366,9 @@ def counterfactual_job_view(
             "result": res,
             "error": _get("error"),
         }
+    _enrich_candidates_with_learning_audit(
+        payload.get("result"), payload.get("job_id"), job, package, review_learning
+    )
     return CounterfactualJobView.model_validate(payload)
 
 

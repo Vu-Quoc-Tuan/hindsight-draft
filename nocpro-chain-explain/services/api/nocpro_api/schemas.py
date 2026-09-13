@@ -514,6 +514,8 @@ class CounterfactualCandidateView(ApiModel):
     move_structural_facts: MoveStructuralFactsView | None
     semantic_effects: list[str]
     comparative_explanation: dict[str, Any] | None = None
+    ranking_audit: dict[str, Any] | None = None
+    displayed_rank: int | None = None
 
 
 class CounterfactualOperationView(ApiModel):

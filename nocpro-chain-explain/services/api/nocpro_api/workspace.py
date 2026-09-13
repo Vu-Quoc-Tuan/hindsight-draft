@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import json
 import hashlib
 import asyncio
@@ -213,6 +214,12 @@ class Workspace:
                 abstention_thresh,
             )
 
+        if not ranker_art_dir and not is_production:
+            default_art = ROOT / "artifacts" / "review_ranker" / "v1"
+            if default_art.exists() and (default_art / "manifest.json").exists():
+                ranker_art_dir = str(default_art)
+                enforce_gov = False
+
         self.review_learning: ReviewLearningService = ReviewLearningService(
             repository=None,
             ranker_artifact_dir=ranker_art_dir,
@@ -220,6 +227,8 @@ class Workspace:
             signing_key=signing_key,
             abstention_threshold=abstention_thresh,
         )
+        if not is_production and len(self.review_learning._review_cases) == 0:
+            self._seed_dev_review_cases()
         self._local_evolution_dag: GlobalEpisodeDag | None = None
 
     def _get_job_persistence_lock(self, job_id: str) -> asyncio.Lock:
@@ -1442,13 +1451,266 @@ class Workspace:
             reason=reason,
         )
 
+    def _seed_dev_review_cases(self) -> None:
+        """Seed representative historical review cases in development mode for similarity retrieval."""
+        try:
+            from review_learning.case_fingerprint import (
+                FINGERPRINT_SCHEMA_VERSION,
+                compute_case_fingerprint_payload,
+            )
+            from review_learning.contracts import ReviewCase, ReviewDecision, TruthTier
+
+            cases_data = [
+                (
+                    "case_hist_vlg106_remove_01",
+                    "rev_hist_vlg106_01",
+                    "fb_hist_01",
+                    "REMOVE_MEMBER",
+                    ReviewDecision.APPROVE,
+                    "lineage_vlg106_ip",
+                    {
+                        "operation_pattern": {"operation": "REMOVE_MEMBER", "removed_alarm_count": 1},
+                        "chain_context": {"alarm_count": 5, "device_count": 3, "unique_alarm_type_count": 3, "failure_domain_count": 1},
+                        "temporal_shape": {"status": "AVAILABLE", "coverage_ratio": 0.85, "mean_positive_score": 0.72},
+                        "evidence_shape": {"channels_available": 3, "channels_total": 3},
+                        "topology_shape": {"status": "AVAILABLE", "relation_type": "SERVICE_DEPENDENCY", "mapping_coverage": 1.0},
+                    },
+                ),
+                (
+                    "case_hist_vlg106_split_02",
+                    "rev_hist_vlg106_02",
+                    "fb_hist_02",
+                    "SPLIT_CHAIN",
+                    ReviewDecision.APPROVE,
+                    "lineage_vlg106_ip",
+                    {
+                        "operation_pattern": {"operation": "SPLIT_CHAIN", "split_partition_count": 2},
+                        "chain_context": {"alarm_count": 8, "device_count": 5, "unique_alarm_type_count": 4, "failure_domain_count": 2},
+                        "temporal_shape": {"status": "AVAILABLE", "coverage_ratio": 0.90, "mean_positive_score": 0.81},
+                        "evidence_shape": {"channels_available": 3, "channels_total": 3},
+                        "topology_shape": {"status": "AVAILABLE", "relation_type": "SERVICE_DEPENDENCY", "mapping_coverage": 0.95},
+                    },
+                ),
+                (
+                    "case_hist_bte0049_move_03",
+                    "rev_hist_bte0049_03",
+                    "fb_hist_03",
+                    "MOVE_MEMBER",
+                    ReviewDecision.REJECT,
+                    "lineage_bte0049_ip",
+                    {
+                        "operation_pattern": {"operation": "MOVE_MEMBER"},
+                        "chain_context": {"alarm_count": 6, "device_count": 4, "unique_alarm_type_count": 3, "failure_domain_count": 1},
+                        "temporal_shape": {"status": "AVAILABLE", "coverage_ratio": 0.70, "mean_positive_score": 0.60},
+                        "evidence_shape": {"channels_available": 2, "channels_total": 3},
+                        "topology_shape": {"status": "AVAILABLE", "relation_type": "SERVICE_DEPENDENCY", "mapping_coverage": 0.80},
+                    },
+                ),
+                (
+                    "case_hist_vlg_merge_04",
+                    "rev_hist_vlg_04",
+                    "fb_hist_04",
+                    "MERGE_CHAINS",
+                    ReviewDecision.APPROVE,
+                    "lineage_vlg_agg_ip",
+                    {
+                        "operation_pattern": {"operation": "MERGE_CHAINS"},
+                        "chain_context": {"alarm_count": 7, "device_count": 4, "unique_alarm_type_count": 3, "failure_domain_count": 2},
+                        "temporal_shape": {"status": "AVAILABLE", "coverage_ratio": 0.80, "mean_positive_score": 0.75},
+                        "evidence_shape": {"channels_available": 3, "channels_total": 3},
+                        "topology_shape": {"status": "AVAILABLE", "relation_type": "SERVICE_DEPENDENCY", "mapping_coverage": 0.90},
+                    },
+                ),
+            ]
+
+            t_base = datetime(2026, 9, 1, 10, 0, tzinfo=timezone.utc)
+            for domain in ("IP_NETWORK", "UNKNOWN_DOMAIN"):
+                for cid, rid, fbid, op, decision, lineage_id, blocks in cases_data:
+                    full_cid = f"{cid}_{domain.lower()}"
+                    payload, f_hash = compute_case_fingerprint_payload(blocks)
+                    rc = ReviewCase(
+                        case_id=full_cid,
+                        review_id=f"{rid}_{domain.lower()}",
+                        feedback_id=f"{fbid}_{domain.lower()}",
+                        case_time=t_base,
+                        lineage_component_id=lineage_id,
+                        operation_pattern=op,
+                        fingerprint_schema_version=FINGERPRINT_SCHEMA_VERSION,
+                        fingerprint_payload=payload,
+                        fingerprint_hash=f_hash,
+                        case_domain=domain,
+                        truth_tier=TruthTier.PO_ASSERTED,
+                        decision=decision,
+                        status="ACTIVE",
+                        created_at=t_base,
+                    )
+                    self.review_learning._review_cases[full_cid] = rc
+        except Exception:
+            logger.exception("Failed to seed development review cases")
+
     async def find_similar_cases_for_candidate(
-        self, job_id: str, candidate_id: str, *, principal: ReviewerPrincipal, top_k: int = 5
+        self,
+        job_id: str,
+        candidate_id: str,
+        *,
+        principal: ReviewerPrincipal,
+        top_k: int = 5,
+        min_common_blocks: int = 2,
     ) -> list[Any]:
+        # Ensure session and exposures are hydrated if job exists in memory or repo
+        rev_id = self.review_learning.get_review_id_for_job(job_id)
+        if rev_id not in self.review_learning._sessions:
+            try:
+                job = self.review_jobs.get(job_id)
+                if job is not None and getattr(job, "result", None) is not None:
+                    session, exposures = self.review_learning.prepare_review_bundle(
+                        job_id=job_id,
+                        job_view=job,
+                        package=self.package,
+                    )
+                    self.review_learning.register_persisted_bundle(session, exposures)
+            except Exception:
+                pass
         return await self.review_learning.find_similar_cases_for_candidate(
             job_id=job_id,
             candidate_id=candidate_id,
             principal=principal,
             top_k=top_k,
+            min_common_blocks=min_common_blocks,
             package=self.package,
         )
+
+    def get_review_learning_status(self) -> dict[str, Any]:
+        manifest = self.review_learning._ranker_manifest
+        model = self.review_learning._ranker_model
+        loaded = model is not None
+
+        # Read data profile if available
+        art_dir = os.environ.get("NOCPRO_REVIEW_RANKER_ARTIFACT_DIR")
+        if not art_dir:
+            default_art = ROOT / "artifacts" / "review_ranker" / "v1"
+            if default_art.exists():
+                art_dir = str(default_art)
+
+        data_profile = None
+        if art_dir:
+            dp_file = Path(art_dir) / "data_profile.json"
+            if dp_file.exists():
+                try:
+                    with open(dp_file, "r", encoding="utf-8") as f:
+                        data_profile = json.load(f)
+                except Exception:
+                    pass
+
+        # Feature importances with domain descriptions
+        feature_importances: list[dict[str, Any]] = []
+        if loaded and hasattr(model, "feature_importances_"):
+            from review_learning import FEATURE_NAMES
+            feature_descriptions = {
+                "delta__component_count": "Số lượng phân mảnh / chain sau thay đổi",
+                "op__remove": "Thao tác loại bỏ cảnh báo ngoại lai (REMOVE_MEMBER)",
+                "delta__audit_verdict_severity": "Mức độ giảm độ nghiêm trọng lỗi audit",
+                "delta__weak_member_count": "Giảm số lượng cảnh báo liên kết yếu",
+                "temporal__delay_score_mean": "Điểm trễ lan truyền thời gian trung bình",
+                "op__move": "Thao tác di chuyển cảnh báo sang chuỗi phù hợp (MOVE_MEMBER)",
+                "op__split": "Thao tác tách chuỗi cảnh báo quá dài (SPLIT_CHAIN)",
+                "op__merge": "Thao tác hợp nhất các cụm cảnh báo liên kết (MERGE_CHAINS)",
+                "delta__conductance": "Độ cô lập cụm cảnh báo (Conductance)",
+                "delta__cut_ratio": "Tỷ lệ cắt liên kết biên ngoài cụm (Cut ratio)",
+                "delta__max_hop": "Đường kính phân tán topology cực đại",
+                "temporal__coverage_ratio": "Tỷ lệ bao phủ quan trắc chuỗi theo thời gian",
+                "topology__mapping_coverage": "Tỷ lệ ánh xạ topology thiết bị hạ tầng",
+                "delta__external_edge_count": "Số lượng cạnh liên kết ngoại lai",
+                "temporal__positive_ratio": "Tỷ lệ tương quan dương theo chuỗi trễ",
+                "temporal__min_p_forward": "Xác suất truyền lan tối thiểu về phía trước",
+            }
+            raw_imps = model.feature_importances_
+            for i, val in enumerate(raw_imps):
+                f_name = FEATURE_NAMES[i] if i < len(FEATURE_NAMES) else f"feature_{i}"
+                if val > 0.0001:
+                    feature_importances.append({
+                        "feature": f_name,
+                        "importance": round(float(val), 4),
+                        "description": feature_descriptions.get(f_name, f_name),
+                    })
+            feature_importances.sort(key=lambda x: x["importance"], reverse=True)
+
+        # Validation Metrics
+        metrics_dict: dict[str, Any] = {}
+        if manifest and getattr(manifest, "metrics", None):
+            m = manifest.metrics
+            if hasattr(m, "__dict__"):
+                metrics_dict = {
+                    k: (round(v, 4) if isinstance(v, float) else v)
+                    for k, v in m.__dict__.items()
+                    if not k.startswith("_")
+                }
+            elif isinstance(m, dict):
+                metrics_dict = m
+
+        # Feedback summary
+        active_fb = self.review_learning._active_feedbacks
+        action_counts: dict[str, int] = {}
+        for fb in active_fb.values():
+            action_name = fb.decision.value if hasattr(fb.decision, "value") else str(fb.decision)
+            action_counts[action_name] = action_counts.get(action_name, 0) + 1
+
+        return {
+            "loaded": loaded,
+            "model_version": getattr(manifest, "model_version", None) if manifest else None,
+            "model_family": getattr(manifest, "model_family", "xgboost-ranker") if manifest else None,
+            "approval_status": getattr(manifest, "approval_status", "DRAFT") if manifest else None,
+            "feature_schema_version": getattr(manifest, "feature_schema_version", None) if manifest else None,
+            "label_policy_version": getattr(manifest, "label_policy_version", None) if manifest else None,
+            "abstention_threshold": float(self.review_learning.abstention_threshold),
+            "artifact_sha256": getattr(manifest, "artifact_sha256", None) if manifest else None,
+            "created_at": getattr(manifest, "created_at", None) if manifest else None,
+            "training_cutoff": getattr(manifest, "training_cutoff", None) if manifest else None,
+            "hyperparameters": getattr(manifest, "hyperparameters", {}) if manifest else {},
+            "metrics": metrics_dict,
+            "feature_importances": feature_importances,
+            "data_profile": data_profile,
+            "feedback_summary": {
+                "active_feedback_count": len(active_fb),
+                "superseded_feedback_count": len(self.review_learning._superseded_feedbacks),
+                "action_counts": action_counts,
+            },
+            "disclaimer": "Historical reference only — not probability or automated recommendation. Model outputs are subject to human operator governance.",
+        }
+
+    async def trigger_ranker_training(self, synthetic_groups: int = 30) -> dict[str, Any]:
+        out_dir = ROOT / "artifacts" / "review_ranker" / "v1"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        script_path = ROOT / "scripts" / "review_learning" / "train_ranker.py"
+        python_bin = sys.executable
+
+        env = dict(os.environ)
+        env["PYTHONPATH"] = f"{ROOT / 'services' / 'analysis-worker'}:{ROOT / 'services' / 'api'}:{env.get('PYTHONPATH', '')}"
+
+        proc = await asyncio.create_subprocess_exec(
+            python_bin,
+            str(script_path),
+            "--synthetic-groups",
+            str(synthetic_groups),
+            "--output-dir",
+            str(out_dir),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
+            cwd=str(ROOT),
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            err_msg = stderr.decode().strip() or stdout.decode().strip()
+            raise RuntimeError(f"Ranker training failed with exit code {proc.returncode}: {err_msg}")
+
+        # Hot reload into review learning service
+        from review_learning import load_ranker_artifact
+        model, manifest = load_ranker_artifact(out_dir)
+        self.review_learning._ranker_model = model
+        self.review_learning._ranker_manifest = manifest
+        self.review_learning.abstention_threshold = getattr(manifest, "abstention_threshold", 0.0)
+
+        status_data = self.get_review_learning_status()
+        status_data["training_stdout"] = stdout.decode().strip()
+        return status_data

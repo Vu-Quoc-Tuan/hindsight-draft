@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 
 from graybox import adapt_graybox_metadata
 from libs.contracts import ContractIngestError
@@ -400,7 +400,9 @@ async def get_review_job(
             pkg = service.current_package()
         except Exception:
             pass
-        return counterfactual_job_view(job, package=pkg, language=lang)
+        return counterfactual_job_view(
+            job, package=pkg, language=lang, review_learning=service.review_learning
+        )
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -420,7 +422,9 @@ async def get_latest_review(
             pkg = service.current_package()
         except Exception:
             pass
-        return counterfactual_job_view(result, package=pkg, language=lang)
+        return counterfactual_job_view(
+            result, package=pkg, language=lang, review_learning=service.review_learning
+        )
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -564,12 +568,17 @@ async def get_candidate_similar_cases(
     candidate_id: str,
     request: Request,
     top_k: int = Query(5, ge=1, le=20),
+    min_common_blocks: int = Query(2, ge=1, le=5),
     principal: ReviewerPrincipal = Depends(get_reviewer_principal),
 ) -> dict[str, Any]:
     try:
         service = workspace(request)
         res = await service.find_similar_cases_for_candidate(
-            job_id, candidate_id, principal=principal, top_k=top_k
+            job_id,
+            candidate_id,
+            principal=principal,
+            top_k=top_k,
+            min_common_blocks=min_common_blocks,
         )
         if isinstance(res, SimilarCaseRetrievalResult):
             return {
@@ -917,3 +926,25 @@ async def get_topology_resolve(
         "p2_mapping_eligible": False,
         "dependency_semantics": "UNAVAILABLE",
     }
+
+
+@router.get("/review-learning/status")
+async def get_review_learning_status(request: Request) -> dict[str, Any]:
+    try:
+        service = workspace(request)
+        return service.get_review_learning_status()
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.post("/review-learning/train")
+async def trigger_review_learning_training(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+) -> dict[str, Any]:
+    try:
+        service = workspace(request)
+        synthetic_groups = int(body.get("synthetic_groups", 30))
+        return await service.trigger_ranker_training(synthetic_groups=synthetic_groups)
+    except Exception as exc:
+        raise translate_error(exc) from exc

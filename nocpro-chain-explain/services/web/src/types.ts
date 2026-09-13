@@ -377,6 +377,65 @@ export type CounterfactualCandidate = {
   pareto_state?: string
   external_validation?: string
   comparative_explanation?: ComparativeExplanation | null
+  ranking_audit?: {
+    ranking_status: 'RERANKED' | 'ABSTAINED' | 'UNAVAILABLE'
+    model_score?: number | null
+    margin?: number | null
+    abstention_threshold?: number | null
+    abstention_reason?: string | null
+    ranker_version?: string | null
+    artifact_fingerprint?: string | null
+  } | null
+  displayed_rank?: number | null
+}
+
+export type FeatureImportance = {
+  feature: string
+  importance: number
+  description: string
+}
+
+export type ReviewLearningStatus = {
+  loaded: boolean
+  model_version: string | null
+  model_family: string | null
+  approval_status: string | null
+  feature_schema_version: string | null
+  label_policy_version: string | null
+  abstention_threshold: number
+  artifact_sha256: string | null
+  created_at: string | null
+  training_cutoff: string | null
+  hyperparameters: Record<string, any>
+  metrics: {
+    ndcg_1?: number
+    ndcg_3?: number
+    ndcg_5?: number
+    top1_approved_recall?: number
+    top3_approved_recall?: number
+    baseline_ndcg_3?: number
+    ndcg_improvement?: number
+    mean_regret?: number
+    confidence_intervals?: Record<string, [number, number]>
+    [key: string]: any
+  }
+  feature_importances: FeatureImportance[]
+  data_profile?: {
+    total_groups?: number
+    total_candidates?: number
+    total_positives?: number
+    total_negatives?: number
+    operation_coverage?: Record<string, number>
+    truth_tier_distribution?: Record<string, number>
+    splits?: Record<string, any>
+  } | null
+  feedback_summary: {
+    active_feedback_count: number
+    superseded_feedback_count: number
+    action_counts: Record<string, number>
+  }
+  disclaimer: string
+  training_stdout?: string
 }
 
 export type CounterfactualOperation = {

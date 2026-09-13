@@ -16,6 +16,7 @@ const EvolutionView = lazy(() => import('./views/EvolutionView').then(m => ({ de
 const TopologyOverlayView = lazy(() => import('./views/TopologyOverlayView').then(m => ({ default: m.TopologyOverlayView })))
 const AIAnalystDrawer = lazy(() => import('./components/AIAnalystDrawer').then(m => ({ default: m.AIAnalystDrawer })))
 const AnalysisSettingsModal = lazy(() => import('./AnalysisSettingsModal').then(m => ({ default: m.AnalysisSettingsModal })))
+const ReviewLearningPanel = lazy(() => import('./ReviewLearningPanel').then(m => ({ default: m.ReviewLearningPanel })))
 import {
   analysisContextKey,
   analysisMatchesContext,
@@ -58,6 +59,7 @@ export default function App() {
     payload: TopologyTreePayload
   } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [isReviewLearningOpen, setIsReviewLearningOpen] = useState(false)
   const [configEpoch, setConfigEpoch] = useState(0)
   const [, setActiveConfigVersion] = useState<string | null>(null)
   const [snapshotsCatalog, setSnapshotsCatalog] = useState<HeaderSnapshotItem[]>([])
@@ -428,6 +430,7 @@ export default function App() {
           }
         }}
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenReviewLearning={() => setIsReviewLearningOpen(true)}
       />
 
       {/* 2. Sub Navigation Bar (Chain-level IA: only when on a chain-level tab and a chain is selected) */}
@@ -559,6 +562,7 @@ export default function App() {
               analysis={analysis}
               readOnly={reviewReadOnly}
               initialSubTab={currentTab === 'validation' ? 'validation' : 'recommendations'}
+              onOpenReviewLearning={() => setIsReviewLearningOpen(true)}
             />
           )}
 
@@ -597,6 +601,11 @@ export default function App() {
             }}
           />
         )}
+
+        <ReviewLearningPanel
+          open={isReviewLearningOpen}
+          onClose={() => setIsReviewLearningOpen(false)}
+        />
       </Suspense>
 
       {/* 7. Footer Status Bar - clean, without redundant snapshot info or mock gateway */}
