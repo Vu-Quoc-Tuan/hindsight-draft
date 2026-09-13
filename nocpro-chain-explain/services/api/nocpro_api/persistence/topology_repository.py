@@ -1002,18 +1002,26 @@ class TopologyRepository:
                     )
                 )
             ).all()
+            def _map_rel_type(raw_type: str | None, profile: str) -> str:
+                if profile == "IP_NETWORK" or raw_type in ("ADJACENT_TO", "IP_ADJACENCY"):
+                    return "IP_ADJACENCY"
+                if raw_type == "SERVICE_DEPENDS_ON":
+                    return "SERVICE_DEPENDS_ON"
+                return "LOGICAL_DEPENDENCY"
+
             edges = [
                 {
                     "edge_id": f"{e.source_id}->{e.target_id}",
                     "source_resource_id": e.source_id,
                     "target_resource_id": e.target_id,
-                    "relation_type": e.relation_type,
+                    "relation_type": _map_rel_type(e.relation_type, profile_id),
                     "directed": (e.direction_kind in ("SOURCE_RELATION", "DIRECTED")),
-                    "source_id": e.source_id,
-                    "source_kind": "SIMULATOR",
-                    "source_table": e.source_table,
+                    "source_id": e.source_table or e.source_id,
+                    "source_kind": "REAL_EXPORT_REPLAY",
                     "source_version": e.source_version,
                     "provenance_class": "EXTERNAL_OPERATIONAL",
+                    "provenance_subtype": "TOPOLOGY_EXTERNAL",
+                    "quality_status": "UNKNOWN",
                 }
                 for e in edge_rows
             ]
@@ -1027,13 +1035,15 @@ class TopologyRepository:
                     )
                 )
             ).all()
+            topo_layer = "IP" if profile_id == "IP_NETWORK" else ("IT" if profile_id == "IT_SERVICES" else None)
             nodes = [
                 {
                     "resource_id": n.resource_id,
-                    "resource_type": n.resource_type,
-                    "display_name": n.display_name,
-                    "source_tables": n.source_tables,
-                    "attributes": n.attributes or {},
+                    "source_id": (n.source_tables[0] if n.source_tables else n.resource_id),
+                    "source_kind": "REAL_EXPORT_REPLAY",
+                    "topology_layer": topo_layer,
+                    "network_class": (n.attributes or {}).get("network_class") if n.attributes else None,
+                    "source_version": topology_version,
                 }
                 for n in node_rows
             ]

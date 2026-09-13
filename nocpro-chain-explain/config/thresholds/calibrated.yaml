@@ -9,8 +9,8 @@ ingest:
 temporal:
   burst:
     gap_seconds:
-      value: 120
-      source: DOCUMENTED_DEFAULT
+      value: 481
+      source: DATA_DRIVEN
   delay:
     bandwidth_seconds:
       value: 5.0
@@ -98,10 +98,10 @@ audit:
     value: 0.2
     source: DOCUMENTED_DEFAULT
   min_side_size:
-    value: 2
+    value: 5
     source: FROZEN_SPEC
   small_chain_threshold:
-    value: 4
+    value: 10
     source: FROZEN_SPEC
   calibration_n_min:
     value: 20
@@ -155,8 +155,10 @@ similar_chains:
     value: 5
     source: DOCUMENTED_DEFAULT
 notes:
-- Calibrated at 2026-09-07T12:25:47.594336+00:00 from PostgreSQL system of record.
-- Evaluated 0 snapshots, 0 chains, 0 alarms.
+- Calibrated at 2026-09-11T13:07:04.480655+00:00 from PostgreSQL system of record.
+- Loaded 6 snapshots containing 548 chains (1106 alarms).
+- Evaluated 148 multi-alarm chains (0 skipped due to member bounds, 12 calculation
+  errors).
 - Calibrated DATA_DRIVEN values preserve empirical distribution evidence; DOCUMENTED_DEFAULT
   indicates fallback.
 - audit.rho and counterfactual thresholds remain heuristic DOCUMENTED_DEFAULT / SYNTHETIC_ONLY

@@ -306,12 +306,14 @@ export function CounterfactualReview({
   const [loading, setLoading] = useState(initialJob == null)
   const [error, setError] = useState<string | null>(null)
   const [noPersistedReview, setNoPersistedReview] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     if (initialJob?.chain_id === chainId) return
     const controller = new AbortController()
     async function load() {
       setNoPersistedReview(false)
+      setError(null)
       try {
         let current: CounterfactualJob
         try {
@@ -331,6 +333,7 @@ export function CounterfactualReview({
             return
           }
           setJob(current)
+          setError(null)
           // Also fetch existing feedbacks for this job
           if (current.job_id) {
             api.reviewFeedback(current.job_id, controller.signal)
@@ -358,7 +361,7 @@ export function CounterfactualReview({
     }
     void load()
     return () => controller.abort()
-  }, [chainId, initialJob, readOnly])
+  }, [chainId, initialJob, readOnly, reloadKey])
 
   useEffect(() => {
     if (!job || !['QUEUED', 'RUNNING'].includes(job.status)) return
@@ -387,7 +390,25 @@ export function CounterfactualReview({
   }
 
   if (loading && !job) return <section className="review-shell review-loading"><span /><p>Evaluating bounded alternatives…</p></section>
-  if (error) return <section className="review-shell review-unavailable" role="alert"><span>UNAVAILABLE</span><h2>Counterfactual review could not be loaded.</h2><p>{error}</p></section>
+  if (error) return (
+    <section className="review-shell review-unavailable" role="alert">
+      <span>UNAVAILABLE</span>
+      <h2>Counterfactual review could not be loaded.</h2>
+      <p>{error}</p>
+      <button
+        type="button"
+        onClick={() => {
+          setError(null)
+          setLoading(true)
+          setReloadKey((k) => k + 1)
+        }}
+        className="mt-3 inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-secondary text-[#070e1d] font-bold text-xs hover:brightness-110 cursor-pointer transition-all shadow-sm"
+      >
+        <span className="material-symbols-outlined text-[16px]">refresh</span>
+        <span>Thử lại (Retry)</span>
+      </button>
+    </section>
+  )
   if (noPersistedReview) return (
     <section className="review-shell review-unavailable">
       <span>NOT_RUN</span>

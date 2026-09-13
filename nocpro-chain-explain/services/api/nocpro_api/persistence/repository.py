@@ -2230,6 +2230,20 @@ class SnapshotRepository:
                 .limit(1)
             )
 
+    async def get_ready_snapshot_payload(
+        self, snapshot_id: str
+    ) -> dict[str, Any] | None:
+        async with self.sessions() as session:
+            return await session.scalar(
+                select(SnapshotIngest.canonical_payload)
+                .where(
+                    SnapshotIngest.snapshot_id == snapshot_id,
+                    SnapshotIngest.tier1a_status == "READY",
+                )
+                .order_by(SnapshotIngest.snapshot_version.desc())
+                .limit(1)
+            )
+
     async def finish_tier1a(
         self,
         snapshot_id: str,
@@ -2953,3 +2967,37 @@ class SnapshotRepository:
             invalid_reason=row.invalid_reason,
             canonical_payload=canonical_payload,
         )
+
+    async def list_live_snapshots(self, limit: int = 200) -> list[dict[str, Any]]:
+        """Return metadata for all tier1a-READY snapshots ingested via Kafka or direct ingest.
+
+        Used by the catalog API to surface live snapshots alongside hardcoded presets.
+        Returns list of dicts with keys: snapshot_id, snapshot_version, alarm_count,
+        chain_count, source_kind, completed_at, topology_profile_id.
+        """
+        async with self.sessions() as session:
+            stmt = (
+                select(SnapshotIngest)
+                .where(SnapshotIngest.tier1a_status == "READY")
+                .order_by(SnapshotIngest.completed_at.desc().nullslast())
+                .limit(limit)
+            )
+            rows = (await session.scalars(stmt)).all()
+
+        results = []
+        for row in rows:
+            payload = row.canonical_payload or {}
+            # Extract counts from canonical payload (standard IngestedPackage structure)
+            alarm_count = payload.get("alarm_count") or len(payload.get("alarms", []))
+            chain_count = payload.get("chain_count") or len(payload.get("chains", []))
+            results.append({
+                "snapshot_id": row.snapshot_id,
+                "snapshot_version": row.snapshot_version,
+                "alarm_count": alarm_count,
+                "chain_count": chain_count,
+                "source_kind": row.source_kind,
+                "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+                "topology_profile_id": row.topology_profile_id,
+            })
+        return results
+

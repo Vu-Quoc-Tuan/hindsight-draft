@@ -270,20 +270,26 @@ def counterfactual_job_view(job) -> CounterfactualJobView:
             "error": job.error,
         }
     else:
+        def _get(key, default=None):
+            if isinstance(job, dict):
+                return job.get(key, default)
+            val = getattr(job, key, default)
+            return default if val is None else val
+
         payload = {
-            "job_id": getattr(job, "job_id", None) or job.get("job_id"),
-            "chain_id": getattr(job, "chain_id", None) or job.get("chain_id"),
-            "status": getattr(job, "status", None) or job.get("status"),
-            "progress_percent": getattr(job, "progress_percent", None) or job.get("progress_percent"),
-            "cache_hit": getattr(job, "cache_hit", None) or job.get("cache_hit"),
-            "cache_fingerprint": getattr(job, "cache_fingerprint", None) or job.get("cache_fingerprint"),
-            "lineage_component_id": getattr(job, "lineage_component_id", None) or (job.get("lineage_component_id") if isinstance(job, dict) else None),
-            "submitted_at": _iso(getattr(job, "submitted_at", None) or (job.get("submitted_at") if isinstance(job, dict) else None)),
-            "started_at": _iso(getattr(job, "started_at", None) or (job.get("started_at") if isinstance(job, dict) else None)),
-            "completed_at": _iso(getattr(job, "completed_at", None) or (job.get("completed_at") if isinstance(job, dict) else None)),
-            "identity": getattr(job, "identity", None) or job.get("identity"),
-            "result": getattr(job, "result", None) or job.get("result"),
-            "error": getattr(job, "error", None) or job.get("error"),
+            "job_id": _get("job_id"),
+            "chain_id": _get("chain_id"),
+            "status": _get("status"),
+            "progress_percent": _get("progress_percent"),
+            "cache_hit": _get("cache_hit", False),
+            "cache_fingerprint": _get("cache_fingerprint"),
+            "lineage_component_id": _get("lineage_component_id"),
+            "submitted_at": _iso(_get("submitted_at")),
+            "started_at": _iso(_get("started_at")),
+            "completed_at": _iso(_get("completed_at")),
+            "identity": _get("identity"),
+            "result": _get("result"),
+            "error": _get("error"),
         }
     return CounterfactualJobView.model_validate(payload)
 

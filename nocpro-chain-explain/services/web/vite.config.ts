@@ -7,9 +7,11 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api': 'http://127.0.0.1:8000',
+      // Defaults preserve `make dev`; dev-demo can run independently by
+      // overriding these two local proxy targets.
+      '/api': process.env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8000',
       '/mock-studio': {
-        target: 'http://127.0.0.1:8085',
+        target: process.env.VITE_MOCK_PROXY_TARGET || 'http://127.0.0.1:8085',
         changeOrigin: true,
       },
     },

@@ -145,3 +145,26 @@ def test_tier1a_passes_explicit_delete_after_ready_policy_only_when_selected():
 
     assert result is not None
     assert repository.finish_kwargs["delete_chunks_after_ready"] is True
+
+
+def test_hydrate_active_preserves_an_explicit_in_process_selection():
+    class HydrationRepository:
+        async def latest_ready_payload(self):
+            return {"snapshot": {"snapshot_id": "stale-golden", "snapshot_version": "1"}}
+
+    class SelectedWorkspace:
+        precompute = object()
+        similarity_index = object()
+        historical_model = object()
+        temporal_delay_model = object()
+
+        def active_identity(self):
+            return "catalog-replay", "1"
+
+        def compute_snapshot(self, payload):
+            raise AssertionError("recovery must not replace an explicit selection")
+
+    workspace = SelectedWorkspace()
+    result = asyncio.run(Tier1ACoordinator(HydrationRepository(), workspace).hydrate_active())
+
+    assert result is workspace.precompute

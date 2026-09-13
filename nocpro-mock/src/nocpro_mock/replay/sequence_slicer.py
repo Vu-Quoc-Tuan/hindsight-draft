@@ -143,7 +143,8 @@ def slice_alarm_sequence(
 
     if profile_id == "IP_NETWORK" and topo_ip_path is not None:
         from ..loaders.topology_ip_csv import TopoIPLoader
-        from ..normalize.resource_mapping import ResourceMapper, TOPOLOGY_LAYER_IP
+        from ..normalize.resource_mapping import ResourceMapper
+        from ..normalize.topology import TOPOLOGY_LAYER_IP
         topo_ip_p = Path(topo_ip_path)
         if topo_ip_p.is_file():
             topo_loader = TopoIPLoader(topo_ip_p)

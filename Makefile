@@ -25,7 +25,7 @@ WEB_PORT    ?= 5173
 MOCK_PORT   ?= 8085
 COMPOSE_FILE := nocpro-chain-explain/docker-compose.yml
 
-.PHONY: help dev dev-infra dev-infra-down dev-no-kafka dev-api dev-web dev-mock ui prod product prod-down down prod-logs logs prod-status status test test-fast test-full test-backend test-mock test-ui test-web lint install clean
+.PHONY: help dev dev-demo dev-demo-guard dev-demo-seed dev-infra dev-infra-down dev-no-kafka dev-api dev-web dev-mock ui prod product prod-down down prod-logs logs prod-status status test test-fast test-full test-backend test-mock test-ui test-web lint install clean
 
 # ==============================================================================
 # 1. Help / Command Dashboard
@@ -41,6 +41,7 @@ help:
 	@echo ""
 	@echo -e "$(BOLD)$(YELLOW)DEVELOPMENT (Infra in Docker, Apps on Host):$(RESET)"
 	@echo -e "  $(GREEN)make dev$(RESET)          $(DIM)→$(RESET) Start Docker infra (Postgres+Kafka) and run local apps with Kafka enabled"
+	@echo -e "  $(GREEN)make dev-demo$(RESET)     $(DIM)→$(RESET) Start local stack with clearly-labelled synthetic review feedback, similar cases, and a DRAFT reranker"
 	@echo -e "  $(GREEN)make dev-infra$(RESET)    $(DIM)→$(RESET) Start Docker dev infrastructure only (Postgres 5432, Kafka 9092)"
 	@echo -e "  $(GREEN)make dev-infra-down$(RESET)$(DIM)→$(RESET) Stop Docker dev infrastructure"
 	@echo -e "  $(GREEN)make dev-no-kafka$(RESET) $(DIM)→$(RESET) Offline fallback: run local stack without Docker/Kafka"
@@ -98,6 +99,53 @@ dev: dev-infra
 		(cd nocpro-mock && uv run python -m nocpro_mock.cli ui --port $(MOCK_PORT) 2>&1 | sed "s/^/[MOCK-$(MOCK_PORT)] /") & \
 		(cd nocpro-chain-explain && PYTHONPATH=.:services/analysis-worker:services/api ANALYSIS_CONFIG_PATH=config/thresholds/calibrated.yaml DATABASE_URL=postgresql+asyncpg://nocpro:nocpro@127.0.0.1:5432/nocpro KAFKA_ENABLED=true KAFKA_BOOTSTRAP_SERVERS=127.0.0.1:9092 uv run uvicorn nocpro_api.app:app --app-dir services/api --host 127.0.0.1 --port $(API_PORT) --reload 2>&1 | sed "s/^/[API-$(API_PORT)] /") & \
 		(cd nocpro-chain-explain/services/web && pnpm dev --port $(WEB_PORT) 2>&1 | sed "s/^/[WEB-$(WEB_PORT)] /") & \
+		wait'
+
+# Explicit local-only demonstration mode.  It appends only demo_synthetic_* records,
+# trains a DRAFT synthetic artifact, and starts the normal host-side stack with that
+# artifact loaded.  It deliberately cannot run under a production environment flag.
+dev-demo-guard:
+	@demo_env="$$(printf '%s' "$${APP_ENV:-$${ENVIRONMENT:-development}}" | tr '[:upper:]' '[:lower:]')"; \
+	case "$$demo_env" in \
+		prod|production) echo "ERROR: make dev-demo is disabled when APP_ENV/ENVIRONMENT is production."; exit 2 ;; \
+		*) : ;; \
+	esac
+
+dev-demo-seed: dev-demo-guard dev-infra
+	@echo -e "$(BOLD)$(YELLOW)Seeding synthetic-only review evidence (no real PO feedback is created)...$(RESET)"
+	@cd nocpro-chain-explain && \
+		APP_ENV=development \
+		PYTHONPATH=.:services/analysis-worker:services/api \
+		DATABASE_URL=postgresql+asyncpg://nocpro:nocpro@127.0.0.1:5432/nocpro \
+		uv run python scripts/review_learning/seed_demo_review_data.py --groups 36
+	@echo -e "$(BOLD)$(YELLOW)Training local DRAFT XGBoost artifact from synthetic fixtures...$(RESET)"
+	@cd nocpro-chain-explain && \
+		PYTHONPATH=.:services/analysis-worker:services/api \
+		uv run python scripts/review_learning/train_ranker.py \
+			--source synthetic \
+			--synthetic-groups 36 \
+			--model-version dev-demo-synthetic-v1 \
+			--abstention-threshold 0.05 \
+			--output-dir artifacts/review_ranker/demo
+
+# Like `make dev`, but deliberately loads the synthetic DRAFT ranker with local
+# governance enforcement disabled.  Never use this command to assess model quality
+# or to promote an artifact.
+dev-demo: dev-demo-seed
+	@echo -e "$(BOLD)$(MAGENTA)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)"
+	@echo -e "$(BOLD)$(YELLOW)🚧 Starting Hindsight DEMO mode — SYNTHETIC_TEST / TEST_FIXTURE only$(RESET)"
+	@echo -e "   $(CYAN)• Explain Studio:$(RESET) http://127.0.0.1:$(WEB_PORT)/"
+	@echo -e "   $(CYAN)• Mock Studio:   $(RESET) http://127.0.0.1:$(WEB_PORT)/mock-studio/"
+	@echo -e "   $(CYAN)• Backend API:   $(RESET) http://127.0.0.1:$(API_PORT)"
+	@echo -e "   $(CYAN)• Review demo:   $(RESET) synthetic feedback + similar cases + DRAFT reranking"
+	@echo -e "   $(RED)• NOT FOR PRODUCTION: governance enforcement is disabled only for this local DRAFT artifact.$(RESET)"
+	@echo -e "   $(YELLOW)Press [Ctrl+C] to stop dev apps (run 'make dev-infra-down' to stop Docker infra).$(RESET)"
+	@echo -e "$(BOLD)$(MAGENTA)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)"
+	@bash -c '\
+		trap "echo -e \"\n$(YELLOW)Shutting down demo apps...$(RESET)\"; kill \$$(jobs -p) 2>/dev/null; exit 0" EXIT SIGINT SIGTERM; \
+		(cd nocpro-mock && uv run python -m nocpro_mock.cli ui --port $(MOCK_PORT) 2>&1 | sed "s/^/[MOCK-$(MOCK_PORT)] /") & \
+		(cd nocpro-chain-explain && APP_ENV=development PYTHONPATH=.:services/analysis-worker:services/api ANALYSIS_CONFIG_PATH=config/thresholds/calibrated.yaml DATABASE_URL=postgresql+asyncpg://nocpro:nocpro@127.0.0.1:5432/nocpro KAFKA_ENABLED=true KAFKA_BOOTSTRAP_SERVERS=127.0.0.1:9092 NOCPRO_INITIAL_SNAPSHOT_ID=real_alarm_ip_demo NOCPRO_REVIEW_RANKER_ARTIFACT_DIR=artifacts/review_ranker/demo NOCPRO_REVIEW_RANKER_ENFORCE_GOVERNANCE=0 uv run uvicorn nocpro_api.app:app --app-dir services/api --host 127.0.0.1 --port $(API_PORT) --reload 2>&1 | sed "s/^/[API-$(API_PORT)] /") & \
+		(cd nocpro-chain-explain/services/web && VITE_API_PROXY_TARGET=http://127.0.0.1:$(API_PORT) VITE_MOCK_PROXY_TARGET=http://127.0.0.1:$(MOCK_PORT) pnpm dev --port $(WEB_PORT) 2>&1 | sed "s/^/[WEB-$(WEB_PORT)] /") & \
 		wait'
 
 # Offline / no-Docker fallback mode

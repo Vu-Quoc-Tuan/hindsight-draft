@@ -131,11 +131,47 @@ async def list_snapshots(request: Request) -> SnapshotCatalogListView:
         pass
 
     presets = list_catalog_presets()
+
+    # Merge live snapshots from DB (Kafka-ingested, tier1a=READY)
+    # so the catalog auto-updates when new snapshots arrive via Kafka
+    if service.repository is not None:
+        try:
+            preset_ids = {p["snapshot_id"] for p in presets}
+            live_rows = await service.repository.list_live_snapshots()
+            _PROFILE_MAP = {
+                "IP_NETWORK": "IP_NETWORK",
+                "ip_network": "IP_NETWORK",
+                "IT_SERVICES": "IT_SERVICES",
+                "it_services": "IT_SERVICES",
+                "ALARM_ONLY": "ALARM_ONLY",
+                "alarm_only": "ALARM_ONLY",
+            }
+            for row in live_rows:
+                sid = row["snapshot_id"]
+                if sid in preset_ids:
+                    continue  # preset takes priority for named snapshots
+                raw_profile = row.get("topology_profile_id") or row.get("source_kind") or ""
+                profile = _PROFILE_MAP.get(raw_profile, "IP_NETWORK")
+                presets.append({
+                    "snapshot_id": sid,
+                    "name": sid,
+                    "profile": profile,
+                    "alarm_count": row["alarm_count"],
+                    "chain_count": row["chain_count"],
+                    "description": f"Live snapshot ingested via Kafka (version {row['snapshot_version']})",
+                    "badge": "Live",
+                    "available": True,
+                    "unavailable_reason": None,
+                })
+        except Exception:
+            pass  # DB unavailable — degrade gracefully, still return presets
+
     return SnapshotCatalogListView(
         active_snapshot_id=active_id,
         active_snapshot_version=active_version,
         snapshots=presets,
     )
+
 
 
 @router.post(
@@ -148,7 +184,15 @@ async def select_snapshot(
 ) -> SnapshotLoadedView:
     service = workspace(request)
     try:
-        payload, _ = load_preset_payload(body.snapshot_id)
+        try:
+            payload, _ = load_preset_payload(body.snapshot_id)
+        except (KeyError, ValueError):
+            if service.repository is not None:
+                payload = await service.repository.get_ready_snapshot_payload(body.snapshot_id)
+                if payload is None:
+                    raise KeyError(f"Unknown snapshot_id: {body.snapshot_id!r}")
+            else:
+                raise
         result = await service.ingest_snapshot(payload)
     except Exception as exc:
         raise translate_error(exc) from exc

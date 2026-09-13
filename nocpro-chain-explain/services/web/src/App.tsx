@@ -116,7 +116,22 @@ export default function App() {
       }
     }
     void connect()
-    return () => controller.abort()
+  }, [])
+
+  // Auto-refresh snapshot catalog when tab is visible to detect newly pushed Kafka snapshots
+  useEffect(() => {
+    const refresh = () => {
+      if (document.hidden) return
+      api.listSnapshots().then(catalog => {
+        setSnapshotsCatalog(catalog.snapshots as HeaderSnapshotItem[])
+      }).catch(() => {})
+    }
+    const timer = window.setInterval(refresh, 6000)
+    window.addEventListener('focus', refresh)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', refresh)
+    }
   }, [])
 
   // Load Analysis when chainId or snapshot changes

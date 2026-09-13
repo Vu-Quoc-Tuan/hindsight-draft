@@ -72,8 +72,8 @@ class Tier1ACoordinator:
                 topology["edges"] = hydrated.get("edges", [])
                 if not topology.get("nodes"):
                     topology["nodes"] = hydrated.get("nodes", [])
-                if not topology.get("alias_resolution"):
-                    topology["alias_resolution"] = hydrated.get("alias_resolution", [])
+                # Contract v1 Topology does not accept alias_resolution
+                topology.pop("alias_resolution", None)
 
     async def run(self, snapshot_id: str, snapshot_version: str):
         """Process logical-oldest jobs until the requested snapshot is READY."""
@@ -150,17 +150,23 @@ class Tier1ACoordinator:
             raise
 
     async def hydrate_active(self):
-        """Serve the latest logical READY immediately after process startup."""
-        payload = await self.repository.latest_ready_payload()
-        if payload is None:
-            return None
-        identity = (
-            payload["snapshot"]["snapshot_id"],
-            payload["snapshot"]["snapshot_version"],
-        )
-        if self.workspace.active_identity() == identity:
+        """Hydrate a snapshot only when this process has no active selection.
+
+        Recovery runs periodically.  It must not replace a snapshot explicitly
+        selected through the catalog merely because another READY snapshot has
+        a later logical time in the durable history.
+        """
+        identity = self.workspace.active_identity()
+        if identity is not None:
             precompute = self.workspace.precompute
         else:
+            payload = await self.repository.latest_ready_payload()
+            if payload is None:
+                return None
+            identity = (
+                payload["snapshot"]["snapshot_id"],
+                payload["snapshot"]["snapshot_version"],
+            )
             if isinstance(payload, dict):
                 await self._hydrate_payload_topology_if_needed(payload)
             package, precompute = self.workspace.compute_snapshot(payload)

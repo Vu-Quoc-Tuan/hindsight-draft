@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..contract import AlarmResourceMapping, MappingMethod, MappingStatus
+from .topology import TOPOLOGY_LAYER_IP
 
 
 @dataclass(frozen=True)

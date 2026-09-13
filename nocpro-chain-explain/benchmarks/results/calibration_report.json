@@ -1,19 +1,22 @@
 {
-  "timestamp": "2026-09-07T12:25:47.602579+00:00",
-  "database_url_masked": "postgresql+asyncpg://nocpro:****@localhost:5432/nocpro",
-  "snapshots_loaded": 0,
-  "chains_evaluated": 0,
-  "alarms_evaluated": 0,
+  "timestamp": "2026-09-11T13:07:04.486973+00:00",
+  "database_url_masked": "postgresql+asyncpg://nocpro:****@127.0.0.1:5432/nocpro",
+  "snapshots_loaded": 6,
+  "chains_evaluated": 148,
+  "alarms_evaluated": 1106,
   "calibrated_parameters": [
     {
       "path": "temporal.burst.gap_seconds",
       "previous_value": 120,
-      "calibrated_value": 120,
-      "source": "DOCUMENTED_DEFAULT",
-      "sample_count": 0,
+      "calibrated_value": 481,
+      "source": "DATA_DRIVEN",
+      "sample_count": 276,
       "metric_details": {
-        "reason": "insufficient_gap_samples",
-        "fallback": 120
+        "p50": 60.5,
+        "p90": 351.5,
+        "p95": 481.25,
+        "min": 1.0,
+        "max": 600.0
       }
     },
     {
@@ -52,7 +55,58 @@
       "sample_count": 0,
       "metric_details": {
         "reason": "insufficient_conductance_samples",
-        "fallback": 0.3
+        "fallback": 0.3,
+        "sample_count": 0,
+        "failed_chains": [
+          {
+            "chain_id": "6892533",
+            "error": "'AuditGraph' object has no attribute 'degree'"
+          },
+          {
+            "chain_id": "6335394",
+            "error": "'AuditGraph' object has no attribute 'degree'"
+          },
+          {
+            "chain_id": "6335571",
+            "error": "'AuditGraph' object has no attribute 'degree'"
+          },
+          {
+            "chain_id": "6335667",
+            "error": "'AuditGraph' object has no attribute 'degree'"
+          },
+          {
+            "chain_id": "6335842",
+            "error": "'AuditGraph' object has no attribute 'degree'"
+          },
+          {
+            "chain_id": "6336016",
+            "error": "'AuditGraph' object has no attribute 'degree'"
+          },
+          {
+            "chain_id": "6336415",
+            "error": "'AuditGraph' object has no attribute 'degree'"
+          },
+          {
+            "chain_id": "6912703",
+            "error": "'AuditGraph' object has no attribute 'degree'"
+          },
+          {
+            "chain_id": "6913140",
+            "error": "'AuditGraph' object has no attribute 'degree'"
+          },
+          {
+            "chain_id": "6913299",
+            "error": "'AuditGraph' object has no attribute 'degree'"
+          },
+          {
+            "chain_id": "6913337",
+            "error": "'AuditGraph' object has no attribute 'degree'"
+          },
+          {
+            "chain_id": "6913556",
+            "error": "'AuditGraph' object has no attribute 'degree'"
+          }
+        ]
       }
     },
     {
@@ -68,5 +122,8 @@
     }
   ],
   "output_config_path": "/home/vqt/UET/Project/hindsight/nocpro-chain-explain/config/thresholds/calibrated.yaml",
-  "status": "baseline_requires_calibration"
+  "status": "baseline_requires_calibration",
+  "chains_loaded": 548,
+  "chains_skipped_large": 0,
+  "chains_failed": 12
 }

@@ -571,7 +571,13 @@ class Workspace:
             and self.package.snapshot.snapshot_version == result.snapshot_version
         ):
             return self.precompute
-        raise RuntimeError("snapshot already persisted but is not active in this process")
+        # An explicit catalog selection is allowed to reactivate an identical
+        # durable snapshot.  ``ingest_direct`` has already checked that the
+        # identity and canonical payload are an exact match, so recomputing
+        # the local Tier-1A view is safe and does not mutate evidence rows.
+        package, precompute = self.compute_snapshot(payload)
+        self.activate_snapshot(package, precompute)
+        return precompute
 
     def require_package(self) -> IngestedPackage:
         if self.package is None:
@@ -599,6 +605,8 @@ class Workspace:
         if isinstance(payload, IngestedPackage):
             package = payload
         else:
+            if isinstance(payload, dict) and isinstance(payload.get("topology"), dict):
+                payload["topology"].pop("alias_resolution", None)
             package = load_validated_package(payload)
         # Production execution stays on the exact full path while the versioned
         # incremental policy is explicitly disabled.
@@ -1308,6 +1316,15 @@ class Workspace:
             for item in pairs:
                 fb = item["feedback"]
                 session = item.get("session")
+                operation = ""
+                if session is not None and fb.candidate_id:
+                    exposures = self.review_learning._exposures.get(session.review_id)
+                    if exposures is None:
+                        exposures = await self.repository.get_candidate_exposures(session.review_id)
+                    operation = next(
+                        (exp.operation for exp in exposures if exp.candidate_id == fb.candidate_id),
+                        "",
+                    )
                 results.append({
                     "feedback_id": fb.feedback_id,
                     "review_id": fb.review_id,
@@ -1316,6 +1333,7 @@ class Workspace:
                     "snapshot_version": session.snapshot_version if session else "1",
                     "chain_id": session.chain_id if session else (chain_id or ""),
                     "candidate_id": fb.candidate_id or "",
+                    "operation": operation,
                     "decision": fb.decision.value if hasattr(fb.decision, "value") else str(fb.decision),
                     "operator_id": fb.reviewer_subject,
                     "confidence": fb.confidence,

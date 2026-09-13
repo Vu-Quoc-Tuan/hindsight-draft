@@ -134,7 +134,20 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
                     coordinator,
                 )
                 await topology_consumer.start()
-        if service.package is None and os.environ.get("AUTO_SEED_DEFAULT_SNAPSHOT", "true").lower() == "true":
+        initial_snapshot_id = os.environ.get("NOCPRO_INITIAL_SNAPSHOT_ID", "").strip()
+        if initial_snapshot_id:
+            try:
+                from .catalog import load_preset_payload
+
+                payload, _ = load_preset_payload(initial_snapshot_id)
+                await service.ingest_snapshot(payload)
+                LOGGER.info("Activated configured initial snapshot: %s", initial_snapshot_id)
+            except Exception:
+                LOGGER.exception(
+                    "Configured initial snapshot activation failed: %s",
+                    initial_snapshot_id,
+                )
+        elif service.package is None and os.environ.get("AUTO_SEED_DEFAULT_SNAPSHOT", "true").lower() == "true":
             try:
                 from .catalog import load_preset_payload
                 payload, _ = load_preset_payload("real_alarm_20260907_demo")

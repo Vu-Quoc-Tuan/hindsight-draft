@@ -899,12 +899,23 @@ class ReviewLearningService:
             "operation": target_exp.operation if target_exp else (decision.value),
             "partition_delta": target_exp.deterministic_context.get("partition_delta", {}) if target_exp else {},
         }
-        case_blocks = extract_candidate_case_blocks(
-            candidate=cand_payload,
-            chain_id=chain_id,
-            chain_alarms=chain_alarms,
-            temporal_shape=target_exp.temporal_context if target_exp else None,
+        persisted_blocks = (
+            (target_exp.case_context or {}).get("case_blocks")
+            if target_exp is not None
+            else None
         )
+        if isinstance(persisted_blocks, dict):
+            # A frozen exposure may carry the exact server-materialized case
+            # blocks.  Reusing those blocks preserves fidelity after restart;
+            # legacy exposures continue through the deterministic fallback.
+            case_blocks = persisted_blocks
+        else:
+            case_blocks = extract_candidate_case_blocks(
+                candidate=cand_payload,
+                chain_id=chain_id,
+                chain_alarms=chain_alarms,
+                temporal_shape=target_exp.temporal_context if target_exp else None,
+            )
         payload, master_hash = compute_case_fingerprint_payload(case_blocks)
 
         lineage_id = session.lineage_component_id
@@ -1078,7 +1089,12 @@ class ReviewLearningService:
             "operation": target_exp.operation if target_exp else (decision.value),
             "partition_delta": target_exp.deterministic_context.get("partition_delta", {}) if target_exp else {},
         }
-        case_blocks = extract_candidate_case_blocks(
+        persisted_blocks = (
+            (target_exp.case_context or {}).get("case_blocks")
+            if target_exp is not None
+            else None
+        )
+        case_blocks = persisted_blocks if isinstance(persisted_blocks, dict) else extract_candidate_case_blocks(
             candidate=cand_payload,
             chain_id=chain_id,
             chain_alarms=chain_alarms,
@@ -1280,7 +1296,12 @@ class ReviewLearningService:
             "operation": target_exp.operation if target_exp else "UNKNOWN",
             "partition_delta": target_exp.deterministic_context.get("partition_delta", {}) if target_exp else {},
         }
-        case_blocks = extract_candidate_case_blocks(
+        persisted_blocks = (
+            (target_exp.case_context or {}).get("case_blocks")
+            if target_exp is not None
+            else None
+        )
+        case_blocks = persisted_blocks if isinstance(persisted_blocks, dict) else extract_candidate_case_blocks(
             candidate=cand_payload,
             chain_id=chain_id,
             chain_alarms=chain_alarms,

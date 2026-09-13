@@ -13,6 +13,7 @@ import httpx2
 from nocpro_api import create_app
 from nocpro_api.workspace import Workspace
 from nocpro_api.persistence import (
+    IngestResult,
     StoredEvolution,
     StoredEvolutionEdge,
     StoredEvolutionNode,
@@ -24,11 +25,11 @@ from tier2 import audit_artifact_from_dict, audit_artifact_to_dict
 T = TypeVar("T")
 
 
-def run_api_test(test: Callable[[httpx2.AsyncClient], Awaitable[T]]) -> T:
+def run_api_test(test: Callable[[httpx2.AsyncClient], Awaitable[T]], *, workspace: Workspace | None = None) -> T:
     """Exercise ASGI in one event loop; the sandbox cannot wake cross-thread loops."""
 
     async def run() -> T:
-        app = create_app()
+        app = create_app(workspace=workspace)
         transport = httpx2.ASGITransport(app=app)
         try:
             async with httpx2.AsyncClient(
@@ -141,6 +142,129 @@ def test_snapshot_ingest_lists_and_explains_chains():
         "INSUFFICIENT_DATA",
     }
     assert body["descriptors"]
+
+
+def test_workspace_activates_an_already_persisted_snapshot_on_explicit_selection():
+    """Catalog selection must not fail merely because its payload was persisted earlier.
+
+    This is the normal dev-demo state: Kafka/startup may have activated another
+    snapshot, while a catalog preset already exists as a READY durable row.
+    """
+
+    class PersistedRepository:
+        async def ingest_direct(self, payload: dict):
+            package = payload["snapshot"]
+            return IngestResult(
+                package["snapshot_id"],
+                package["snapshot_version"],
+                "COMPLETE",
+                duplicate=True,
+                completed_now=False,
+            )
+
+    class Coordinator:
+        async def run(self, snapshot_id: str, snapshot_version: str):
+            raise AssertionError("a duplicate persisted snapshot must not be re-claimed")
+
+    async def exercise():
+        workspace = Workspace()
+        try:
+            workspace.replace_snapshot(_payload())
+            selected = _payload()
+            selected["snapshot"] = {
+                **selected["snapshot"],
+                "snapshot_id": "catalog-persisted",
+            }
+            for alarm in selected["alarms"]:
+                alarm["snapshot_id"] = "catalog-persisted"
+            for chain in selected["chains"]:
+                chain["snapshot_id"] = "catalog-persisted"
+            for membership in selected["memberships"]:
+                membership["snapshot_id"] = "catalog-persisted"
+
+            workspace.repository = PersistedRepository()
+            workspace.coordinator = Coordinator()
+
+            result = await workspace.ingest_snapshot(selected)
+
+            assert result.snapshot_id == "catalog-persisted"
+            assert workspace.require_package().snapshot.snapshot_id == "catalog-persisted"
+        finally:
+            workspace.close()
+
+    asyncio.run(exercise())
+
+
+def test_select_snapshot_falls_back_to_repository_live_snapshot():
+    """Live snapshots pushed through Kafka without a local preset file can be selected."""
+
+    class MockRepo:
+        def __init__(self):
+            payload = _payload()
+            payload["snapshot"]["snapshot_id"] = "live_kafka_snap_001"
+            for alarm in payload["alarms"]:
+                alarm["snapshot_id"] = "live_kafka_snap_001"
+            for chain in payload["chains"]:
+                chain["snapshot_id"] = "live_kafka_snap_001"
+            for membership in payload["memberships"]:
+                membership["snapshot_id"] = "live_kafka_snap_001"
+            self.live_payload = payload
+
+        async def get_ready_snapshot_payload(self, snapshot_id: str):
+            if snapshot_id == "live_kafka_snap_001":
+                return self.live_payload
+            return None
+
+        async def ingest_direct(self, payload: dict):
+            pkg = payload["snapshot"]
+            return IngestResult(pkg["snapshot_id"], pkg["snapshot_version"], "COMPLETE", duplicate=True, completed_now=False)
+
+    class MockCoord:
+        async def run(self, *args):
+            return None
+
+    ws = Workspace()
+    ws.repository = MockRepo()
+    ws.coordinator = MockCoord()
+
+    async def exercise(client: httpx2.AsyncClient):
+        selected = await client.post(
+            "/api/v1/snapshots/select",
+            json={"snapshot_id": "live_kafka_snap_001"},
+        )
+        return selected
+
+    response = run_api_test(exercise, workspace=ws)
+    assert response.status_code == 200
+    assert response.json()["snapshot_id"] == "live_kafka_snap_001"
+
+
+def test_configured_initial_snapshot_overrides_a_stale_startup_snapshot(
+    monkeypatch,
+):
+    """Demo startup must activate its configured full replay, not Kafka's last row."""
+
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("KAFKA_ENABLED", "false")
+    monkeypatch.setenv("NOCPRO_INITIAL_SNAPSHOT_ID", "real_alarm_ip_demo")
+
+    async def exercise():
+        app = create_app()
+        transport = httpx2.ASGITransport(app=app)
+        try:
+            async with app.router.lifespan_context(app):
+                async with httpx2.AsyncClient(
+                    transport=transport, base_url="http://testserver"
+                ) as client:
+                    response = await client.get("/api/v1/chains")
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["snapshot_id"] == "real_alarm_ip_demo"
+            assert len(payload["chains"]) == 258
+        finally:
+            app.state.workspace.close()
+
+    asyncio.run(exercise())
 
 
 def test_evolution_is_unavailable_for_a_single_direct_snapshot():

@@ -301,6 +301,11 @@ def find_similar_review_cases(
     return SimilarCaseRetrievalResult(
         retrieval_status="AVAILABLE",
         min_similarity=min_similarity,
+        common_block_count=max(
+            (match.common_block_count for match in [*top_cross, *top_lineage]),
+            default=0,
+        ),
+        required_common_block_count=min_common_blocks,
         cross_incident_cases=top_cross,
         same_lineage_history=top_lineage,
     )
