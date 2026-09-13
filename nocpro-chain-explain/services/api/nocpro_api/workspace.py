@@ -579,6 +579,9 @@ class Workspace:
         self.activate_snapshot(package, precompute)
         return precompute
 
+    def current_package(self) -> IngestedPackage | None:
+        return self.package
+
     def require_package(self) -> IngestedPackage:
         if self.package is None:
             raise SnapshotNotLoaded("no snapshot loaded")
