@@ -785,6 +785,8 @@ class ProposalClarityComparisonView(ApiModel):
     top_proposal_operation: str | None = None
     head_to_head_comparisons: list[dict[str, Any]] = []
     overall_recommendation_rationale: str
+    ai_model: str = "DETERMINISTIC_EVIDENCE"
+    ai_provider_status: str = "NOT_CONFIGURED"
 
 
 class ThresholdExplainOptimizationView(ApiModel):
@@ -800,6 +802,9 @@ class ThresholdExplainOptimizationView(ApiModel):
     why_clearer: list[str]
     summary_verdict: str
     sweep_results: list[dict[str, Any]] = []
+    ai_model: str = "DETERMINISTIC_EVIDENCE"
+    ai_provider_status: str = "NOT_CONFIGURED"
+
 
 
 class ApplyThresholdInput(ApiModel):

@@ -175,6 +175,30 @@ def find_clearest_explain_threshold(chain_id: str, service: Any) -> dict[str, An
 
     clarity_gain = round(best_score - current_score, 1)
 
+    ai_model = "DETERMINISTIC_EVIDENCE"
+    ai_provider_status = "NOT_CONFIGURED"
+    try:
+        from nocpro_api.grounded_llm import is_provider_configured, render_grounded
+        if is_provider_configured():
+            dev_refs = [str(getattr(a, "device_code", "")) for a in raw_alarms[:4] if getattr(a, "device_code", "")]
+            rendered = render_grounded(
+                draft=best_explanation,
+                facts={
+                    "chain_id": chain_id,
+                    "optimal_parameters": {"role.s_weak": opt_s_weak, "role.c_min": opt_c_min},
+                    "clarity_gain": clarity_gain,
+                    "why_clearer": comp_result.why_clearer,
+                },
+                fact_refs=[chain_id, *dev_refs],
+                purpose="ADVISOR",
+            )
+            ai_model = rendered.model
+            ai_provider_status = rendered.provider_status
+            if rendered.used_provider and rendered.provider_status == "OK":
+                best_explanation = rendered.message
+    except Exception as exc:
+        logger.warning("Optional AI render for threshold explain skipped: %s", exc)
+
     return {
         "chain_id": chain_id,
         "current_parameters": {
@@ -194,7 +218,10 @@ def find_clearest_explain_threshold(chain_id: str, service: Any) -> dict[str, An
         "why_clearer": comp_result.why_clearer,
         "summary_verdict": comp_result.summary_verdict,
         "sweep_results": sweep_results,
+        "ai_model": ai_model,
+        "ai_provider_status": ai_provider_status,
     }
+
 
 
 def apply_explain_threshold(

@@ -883,6 +883,8 @@ export type ProposalClarityComparison = {
   top_proposal_operation: string | null
   head_to_head_comparisons: HeadToHeadComparison[]
   overall_recommendation_rationale: string
+  ai_model?: string
+  ai_provider_status?: string
 }
 
 export type ThresholdSweepResult = {
@@ -907,5 +909,8 @@ export type ThresholdExplainOptimization = {
   why_clearer: string[]
   summary_verdict: string
   sweep_results: ThresholdSweepResult[]
+  ai_model?: string
+  ai_provider_status?: string
 }
+
 

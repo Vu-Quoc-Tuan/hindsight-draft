@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { api } from '../api'
+import { GroundedProviderBadge } from '../GroundedProviderBadge'
 import type {
+
   ProposalClarityComparison,
   ThresholdExplainOptimization,
 } from '../types'
@@ -105,6 +107,9 @@ export function ExplainClarityComparisonModal({
     (p) => p.candidate_id === activeH2H?.target_candidate_id,
   )
 
+  const activeAiModel = mode === 'proposals' ? proposalsData?.ai_model : thresholdData?.ai_model
+  const activeAiStatus = mode === 'proposals' ? proposalsData?.ai_provider_status : thresholdData?.ai_provider_status
+
   return (
     <div
       role="dialog"
@@ -120,7 +125,7 @@ export function ExplainClarityComparisonModal({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 1200,
+        zIndex: 9999,
         padding: '1.5rem',
       }}
       onClick={onClose}
@@ -128,15 +133,15 @@ export function ExplainClarityComparisonModal({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          backgroundColor: '#0f172a',
-          border: '1px solid #334155',
+          backgroundColor: '#0d1527',
+          border: '1px solid #1e293b',
           borderRadius: '16px',
           width: '100%',
-          maxWidth: '960px',
-          maxHeight: '90vh',
+          maxWidth: '1240px',
+          maxHeight: '92vh',
           display: 'flex',
           flexDirection: 'column',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(56, 189, 248, 0.1)',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(56, 189, 248, 0.1)',
           overflow: 'hidden',
           color: '#f8fafc',
           fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
@@ -173,6 +178,12 @@ export function ExplainClarityComparisonModal({
               <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
                 {mode === 'proposals' ? `Job: ${jobId?.slice(0, 8)}` : `Chain: ${chainId}`}
               </span>
+              {activeAiModel && (
+                <GroundedProviderBadge
+                  model={activeAiModel}
+                  providerStatus={activeAiStatus || 'OK'}
+                />
+              )}
             </div>
             <h2 style={{ margin: '0.35rem 0 0', fontSize: '1.25rem', fontWeight: 700, color: '#f1f5f9' }}>
               {mode === 'proposals'

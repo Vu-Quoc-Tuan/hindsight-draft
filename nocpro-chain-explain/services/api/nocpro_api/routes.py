@@ -470,13 +470,39 @@ async def get_review_job_proposals_clarity(
             pub = public_review_result(job.result, package=pkg, language=lang)
             candidates_raw = pub.get("evaluated_candidates") or pub.get("candidates") or []
         comparison_res = compare_proposal_explanations(candidates_raw, package=pkg)
+
+        ai_model = "DETERMINISTIC_EVIDENCE"
+        ai_provider_status = "NOT_CONFIGURED"
+        overall_rationale = comparison_res.overall_recommendation_rationale
+        try:
+            from .grounded_llm import is_provider_configured, render_grounded
+            if is_provider_configured() and overall_rationale:
+                rendered = render_grounded(
+                    draft=overall_rationale,
+                    facts={
+                        "top_proposal": comparison_res.top_proposal_operation,
+                        "top_proposal_id": comparison_res.top_proposal_id,
+                        "candidates_count": len(candidates_raw),
+                    },
+                    fact_refs=[job.chain_id, comparison_res.top_proposal_operation or ""],
+                    purpose="ADVISOR",
+                )
+                ai_model = rendered.model
+                ai_provider_status = rendered.provider_status
+                if rendered.used_provider and rendered.provider_status == "OK":
+                    overall_rationale = rendered.message
+        except Exception as exc:
+            logger.warning("Optional AI render for proposal clarity skipped: %s", exc)
+
         return ProposalClarityComparisonView(
             job_id=job_id,
             proposals=[asdict(p) for p in comparison_res.proposals],
             top_proposal_id=comparison_res.top_proposal_id,
             top_proposal_operation=comparison_res.top_proposal_operation,
             head_to_head_comparisons=comparison_res.head_to_head_comparisons,
-            overall_recommendation_rationale=comparison_res.overall_recommendation_rationale,
+            overall_recommendation_rationale=overall_rationale,
+            ai_model=ai_model,
+            ai_provider_status=ai_provider_status,
         )
     except Exception as exc:
         raise translate_error(exc) from exc
