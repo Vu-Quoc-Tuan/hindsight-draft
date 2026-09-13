@@ -80,7 +80,7 @@ def _descriptor_facts(analysis: Any) -> list[str]:
     return labels
 
 
-def _recommendation_facts(review_result: dict[str, Any] | None) -> list[dict[str, str]]:
+def _recommendation_facts(review_result: dict[str, Any] | None) -> list[dict[str, Any]]:
     if not isinstance(review_result, dict):
         return []
     evaluated = {
@@ -88,15 +88,33 @@ def _recommendation_facts(review_result: dict[str, Any] | None) -> list[dict[str
         for candidate in review_result.get("evaluated_candidates", [])
         if isinstance(candidate, dict) and candidate.get("candidate_id")
     }
-    facts: list[dict[str, str]] = []
+    facts: list[dict[str, Any]] = []
     for reference in review_result.get("recommendations", []):
         if not isinstance(reference, dict):
             continue
         candidate_id = reference.get("candidate_id")
         candidate = evaluated.get(str(candidate_id))
         operation = candidate.get("operation") if candidate else reference.get("operation")
-        if candidate_id and operation:
-            facts.append({"candidate_id": str(candidate_id), "operation": str(operation)})
+        if not (candidate_id and operation):
+            continue
+
+        fact: dict[str, Any] = {
+            "candidate_id": str(candidate_id),
+            "operation": str(operation),
+        }
+        comp = candidate.get("comparative_explanation") if isinstance(candidate, dict) else None
+        if isinstance(comp, dict):
+            if comp.get("summary_action"):
+                fact["summary_action"] = str(comp["summary_action"])
+            if comp.get("why_better"):
+                fact["why_better"] = str(comp["why_better"])
+            if isinstance(comp.get("delta_highlights"), list) and comp["delta_highlights"]:
+                fact["delta_highlights"] = comp["delta_highlights"]
+            if isinstance(comp.get("comparison_points"), list) and comp["comparison_points"]:
+                fact["comparison_points"] = comp["comparison_points"]
+            if comp.get("ai_narrative"):
+                fact["ai_narrative"] = str(comp["ai_narrative"])
+        facts.append(fact)
     return facts
 
 
@@ -139,6 +157,15 @@ def extract_grounded_claims(
             "Operator-facing counterfactual recommendation: "
             f"{proposal['operation']} ({proposal['candidate_id']})."
         )
+        if proposal.get("summary_action"):
+            claims.append(f"Proposal action: {proposal['summary_action']}.")
+        if proposal.get("why_better"):
+            claims.append(f"Proposal rationale: {proposal['why_better']}.")
+        for delta in proposal.get("delta_highlights", []):
+            if isinstance(delta, dict) and delta.get("label") and delta.get("delta"):
+                claims.append(
+                    f"Proposal metric {delta['label']}: {delta.get('before', '')} -> {delta.get('after', '')} ({delta['delta']})."
+                )
 
     structured = {
         "chain_id": chain_id,
@@ -189,12 +216,43 @@ def build_deterministic_narrative(
             )
         elif proposals:
             for proposal in proposals:
-                lines.append(
-                    f"- Phương án {proposal['operation']} ({proposal['candidate_id']}) "
-                    "được đề xuất để người vận hành xem xét."
-                )
+                action = proposal.get("summary_action")
+                if action:
+                    lines.append(
+                        f"- **Đề xuất ({proposal['operation']} - {proposal['candidate_id']})**: {action}"
+                    )
+                else:
+                    lines.append(
+                        f"- Phương án {proposal['operation']} ({proposal['candidate_id']}) "
+                        "được đề xuất để người vận hành xem xét."
+                    )
+                if proposal.get("why_better"):
+                    lines.append(f"  - *Vì sao đề xuất này tốt hơn*: {proposal['why_better']}")
+                deltas = proposal.get("delta_highlights", [])
+                if deltas:
+                    delta_strs = [
+                        f"{d.get('label', d.get('metric_name'))}: {d.get('before', '')} → {d.get('after', '')} ({d.get('delta', '')})"
+                        for d in deltas
+                        if isinstance(d, dict) and d.get("label") and d.get("delta")
+                    ]
+                    if delta_strs:
+                        lines.append(f"  - *Chỉ số cải thiện*: {'; '.join(delta_strs)}.")
+                for pt in proposal.get("comparison_points", [])[:2]:
+                    lines.append(f"  - *Chi tiết*: {pt}")
         else:
-            lines.append("- Không có đề xuất thay đổi cấu trúc nào cho chuỗi này.")
+            if review_status == "AVAILABLE":
+                if not weak_members:
+                    lines.append(
+                        "- **Chuỗi đã đạt độ gắn kết cao và cấu trúc thuần nhất**: "
+                        "Toàn bộ cảnh báo phân tích đều đạt độ hỗ trợ tốt, không có cảnh báo yếu (WEAK) hay phân mảnh tô-pô. "
+                        "Hệ thống không khuyến nghị can thiệp thay đổi cấu trúc chuỗi."
+                    )
+                else:
+                    lines.append(
+                        "- Chưa tìm thấy phương án thay đổi cấu trúc nào vượt trội rõ rệt trên biên Pareto cho chuỗi này."
+                    )
+            else:
+                lines.append("- Không có đề xuất thay đổi cấu trúc nào cho chuỗi này.")
 
         lines.append(
             "\n> Bản tóm tắt này được sinh xác định từ các dữ kiện đã phân tích. "
@@ -235,6 +293,19 @@ def build_deterministic_narrative(
                 f"- {proposal['operation']} ({proposal['candidate_id']}) "
                 "is an operator-facing bounded recommendation."
             )
+            if proposal.get("summary_action"):
+                lines.append(f"  - Action: {proposal['summary_action']}")
+            if proposal.get("why_better"):
+                lines.append(f"  - Rationale: {proposal['why_better']}")
+            deltas = proposal.get("delta_highlights", [])
+            if deltas:
+                delta_strs = [
+                    f"{d.get('label', d.get('metric_name'))}: {d.get('before', '')} -> {d.get('after', '')} ({d.get('delta', '')})"
+                    for d in deltas
+                    if isinstance(d, dict) and d.get("label") and d.get("delta")
+                ]
+                if delta_strs:
+                    lines.append(f"  - Metric deltas: {'; '.join(delta_strs)}")
     else:
         lines.append("- No operator-facing counterfactual recommendation is available.")
 

@@ -550,6 +550,51 @@ export function CounterfactualReview({
           )}
         </div>
       ) : null}
+      {/* Top Recommended Proposals Spotlight */}
+      {result.recommendations.length > 0 ? (
+        <section className="review-recommended-section" aria-label="Top recommended proposals">
+          <header className="review-recommended-header">
+            <div className="review-recommended-title">
+              <span className="material-symbols-outlined review-recommended-star" aria-hidden="true">
+                auto_awesome
+              </span>
+              <div>
+                <h3>⭐ Đề xuất Phân hoạch Được Khuyến nghị (Top Recommended Proposals)</h3>
+                <p>
+                  Phương án tối ưu trên biên Pareto (tính toán chính xác Trước vs Sau). Phản hồi của kỹ sư sẽ được lưu làm căn cứ đánh giá.
+                </p>
+              </div>
+            </div>
+            <span className="review-recommended-count">
+              {result.recommendations.length} đề xuất
+            </span>
+          </header>
+          <div className="review-candidate-list">
+            {(result.evaluated_candidates ?? [])
+              .filter((c) => recommendationIds.has(c.candidate_id))
+              .map((candidate) => (
+                <CandidateCard
+                  key={`top-recommended-${candidate.candidate_id}`}
+                  candidate={candidate}
+                  recommended={true}
+                  feedback={feedbacks[candidate.candidate_id]}
+                  onFeedbackSubmit={readOnly ? undefined : handleFeedbackSubmit}
+                />
+              ))}
+          </div>
+        </section>
+      ) : result.recommendation_status === 'AVAILABLE' ? (
+        <div className="review-optimal-section" role="status" aria-label="Optimal chain cohesion">
+          <div className="review-optimal-icon" aria-hidden="true">✓</div>
+          <div className="review-optimal-text">
+            <h4>Chuỗi có độ gắn kết cao và cấu trúc thuần nhất (Optimal Partition Cohesion)</h4>
+            <p>
+              Toàn bộ các cảnh báo trong chuỗi đều liên kết chặt chẽ qua các mối quan hệ tô-pô mạng và chuỗi kiểm toán sự cố. Không phát hiện cảnh báo rời rạc (WEAK) hay thành phần phân mảnh. Hệ thống không khuyến nghị phân tách, loại bỏ hay di chuyển cảnh báo nào.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
       <div className="review-operation-grid">
         {operations.map((operation) => (
           <OperationSection

@@ -661,8 +661,9 @@ async def get_chain_ai_suggestion(
             latest_review = await service.latest_review(chain_id)
             if latest_review and latest_review.result:
                 from tier2.counterfactual.public_contract import public_review_result
+                package = service.current_package() if hasattr(service, "current_package") else None
                 review_result = (
-                    public_review_result(latest_review.result)
+                    public_review_result(latest_review.result, package=package, language=lang)
                     if hasattr(latest_review.result, "recommendations")
                     else latest_review.result
                 )
@@ -718,8 +719,9 @@ async def get_chain_cohesion_narrative(
             latest_rev = await service.latest_review(chain_id)
             if latest_rev and latest_rev.result:
                 from tier2.counterfactual.public_contract import public_review_result
+                package = service.current_package() if hasattr(service, "current_package") else None
                 review_result = (
-                    public_review_result(latest_rev.result)
+                    public_review_result(latest_rev.result, package=package, language=lang)
                     if hasattr(latest_rev.result, "recommendations")
                     else latest_rev.result
                 )

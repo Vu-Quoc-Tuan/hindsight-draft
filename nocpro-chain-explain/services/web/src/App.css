@@ -2137,6 +2137,106 @@ button.table-row.is-selected {
   font-style: italic;
 }
 
+/* Top Recommended Proposals Spotlight */
+.review-recommended-section {
+  margin: 1rem 1.25rem;
+  padding: 1.25rem;
+  border-radius: var(--radius-md, 8px);
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.08) 0%, rgba(15, 23, 42, 0.6) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  box-shadow: 0 4px 20px -2px rgba(245, 158, 11, 0.1);
+}
+
+.review-recommended-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.review-recommended-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.review-recommended-star {
+  color: #fbbf24;
+  font-size: 1.5rem;
+  margin-top: 0.1rem;
+}
+
+.review-recommended-title h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fde68a;
+  letter-spacing: -0.01em;
+}
+
+.review-recommended-title p {
+  margin: 0.25rem 0 0 0;
+  font-size: 0.75rem;
+  color: var(--text-muted, #94a3b8);
+  line-height: 1.4;
+}
+
+.review-recommended-count {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.65rem;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #070e1d;
+  background: #f59e0b;
+  white-space: nowrap;
+}
+
+/* Optimal Chain Cohesion Banner */
+.review-optimal-section {
+  margin: 1rem 1.25rem;
+  padding: 1.25rem;
+  border-radius: var(--radius-md, 8px);
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.08) 0%, rgba(15, 23, 42, 0.6) 100%);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.review-optimal-icon {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  font-weight: 800;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.review-optimal-text h4 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #6ee7b7;
+}
+
+.review-optimal-text p {
+  margin: 0.35rem 0 0 0;
+  font-size: 0.75rem;
+  color: var(--text-muted, #94a3b8);
+  line-height: 1.5;
+}
+
 .review-ledger {
   background: var(--border-subtle);
 }

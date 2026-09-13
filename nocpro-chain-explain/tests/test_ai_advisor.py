@@ -504,3 +504,80 @@ def test_assistant_fails_closed_for_resource_to_chain_search() -> None:
             app.state.workspace.close()
 
     asyncio.run(exercise())
+
+
+def test_ai_advisor_renders_comparative_explanation_in_vietnamese() -> None:
+    review = {
+        "evaluated_candidates": [
+            {
+                "candidate_id": "rem-1",
+                "operation": "REMOVE_MEMBER",
+                "comparative_explanation": {
+                    "summary_action": "Tách cảnh báo A2 (Device-1 - Link Down) ra khỏi chuỗi",
+                    "why_better": "Loại bỏ cảnh báo có độ hỗ trợ yếu giúp tăng độ tin cậy liên kết từ 12% lên 91% (+79%).",
+                    "delta_highlights": [
+                        {
+                            "metric_name": "minimum_membership_support",
+                            "label": "Min support",
+                            "before": "12.0%",
+                            "after": "91.0%",
+                            "delta": "+79.0%",
+                            "is_improvement": True,
+                        },
+                        {
+                            "metric_name": "weak_member_count",
+                            "label": "Weak members",
+                            "before": "1",
+                            "after": "0",
+                            "delta": "-1",
+                            "is_improvement": True,
+                        },
+                    ],
+                    "comparison_points": [
+                        "Loại bỏ 1 cảnh báo yếu có độ hỗ trợ chỉ 12.0%.",
+                    ],
+                },
+            }
+        ],
+        "recommendations": [{"candidate_id": "rem-1"}],
+    }
+
+    result = generate_ai_suggestion(
+        "C100", _analysis(), review_result=review, review_status="AVAILABLE", language="vi"
+    )
+
+    assert result.status == "AVAILABLE"
+    assert "Tách cảnh báo A2 (Device-1 - Link Down) ra khỏi chuỗi" in result.narrative
+    assert "Loại bỏ cảnh báo có độ hỗ trợ yếu giúp tăng độ tin cậy" in result.narrative
+    assert "Min support: 12.0% → 91.0% (+79.0%)" in result.narrative
+    assert any("Proposal action:" in claim for claim in result.grounded_claims)
+    assert any("Proposal rationale:" in claim for claim in result.grounded_claims)
+
+
+def test_ai_advisor_explains_optimal_chain_when_no_recommendations() -> None:
+    clean_analysis = SimpleNamespace(
+        members={
+            "A1": SimpleNamespace(
+                role=SimpleNamespace(verdict="CORE", support=0.95),
+                representativeness=0.88,
+            ),
+            "A2": SimpleNamespace(
+                role=SimpleNamespace(verdict="CORE", support=0.92),
+                representativeness=0.85,
+            ),
+        },
+        descriptors=[SimpleNamespace(label="same entity", coverage=1.0)],
+    )
+    empty_review = {
+        "evaluated_candidates": [],
+        "recommendations": [],
+    }
+
+    result = generate_ai_suggestion(
+        "C200", clean_analysis, review_result=empty_review, review_status="AVAILABLE", language="vi"
+    )
+
+    assert result.status == "AVAILABLE"
+    assert "Chuỗi đã đạt độ gắn kết cao và cấu trúc thuần nhất" in result.narrative
+    assert "Hệ thống không khuyến nghị can thiệp thay đổi cấu trúc" in result.narrative
+

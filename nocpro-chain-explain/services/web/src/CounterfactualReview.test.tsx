@@ -304,4 +304,43 @@ describe('CounterfactualReview', () => {
     expect(html).toContain('AI Phân tích chuyên sâu:')
     expect(html).toContain('AI đánh giá đề xuất loại bỏ phần tử nhiễu sẽ làm gọn phân vùng lỗi.')
   })
+
+  it('renders top recommended proposals spotlight when recommendations exist', () => {
+    const recommendedJob: CounterfactualJob = {
+      ...job,
+      result: job.result
+        ? {
+            ...job.result,
+            recommendations: [job.result.remove.candidates[0]],
+            evaluated_candidates: [job.result.remove.candidates[0]],
+          }
+        : null,
+    }
+    const html = renderToStaticMarkup(
+      <CounterfactualReview chainId="C1" initialJob={recommendedJob} />
+    )
+
+    expect(html).toContain('⭐ Đề xuất Phân hoạch Được Khuyến nghị (Top Recommended Proposals)')
+    expect(html).toContain('1 đề xuất')
+  })
+
+  it('renders optimal chain cohesion banner when no recommendations are needed', () => {
+    const optimalJob: CounterfactualJob = {
+      ...job,
+      result: job.result
+        ? {
+            ...job.result,
+            recommendation_status: 'AVAILABLE',
+            recommendations: [],
+          }
+        : null,
+    }
+    const html = renderToStaticMarkup(
+      <CounterfactualReview chainId="C1" initialJob={optimalJob} />
+    )
+
+    expect(html).toContain('Chuỗi có độ gắn kết cao và cấu trúc thuần nhất (Optimal Partition Cohesion)')
+    expect(html).toContain('Không phát hiện cảnh báo rời rạc (WEAK) hay thành phần phân mảnh')
+  })
 })
+
