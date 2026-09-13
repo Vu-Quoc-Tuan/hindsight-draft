@@ -563,8 +563,10 @@ export default function App() {
               readOnly={reviewReadOnly}
               initialSubTab={currentTab === 'validation' ? 'validation' : 'recommendations'}
               onOpenReviewLearning={() => setIsReviewLearningOpen(true)}
+              onThresholdApplied={() => setConfigEpoch(e => e + 1)}
             />
           )}
+
 
           {analysis && currentTab === 'evolution' && (
             <EvolutionView analysis={analysis} />

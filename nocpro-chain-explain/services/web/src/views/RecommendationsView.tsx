@@ -10,14 +10,17 @@ export function RecommendationsView({
   readOnly = false,
   initialSubTab = 'recommendations',
   onOpenReviewLearning,
+  onThresholdApplied,
 }: {
   analysis: ChainAnalysis
   readOnly?: boolean
   initialSubTab?: 'recommendations' | 'validation'
   onOpenReviewLearning?: () => void
+  onThresholdApplied?: () => void
 }) {
   const [activeTab, setActiveTab] = useState<'recommendations' | 'validation'>(initialSubTab)
   const [showThresholdModal, setShowThresholdModal] = useState(false)
+
 
   useEffect(() => {
     setActiveTab(initialSubTab)
@@ -131,8 +134,10 @@ export function RecommendationsView({
           onClose={() => setShowThresholdModal(false)}
           mode="threshold"
           chainId={analysis.chain_id}
+          onThresholdApplied={onThresholdApplied}
         />
       )}
+
     </div>
   )
 }
