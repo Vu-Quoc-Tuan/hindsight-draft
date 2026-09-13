@@ -380,7 +380,7 @@ async def submit_review(
 
 @router.get("/review-jobs/{job_id}", response_model=CounterfactualJobView)
 async def get_review_job(
-    job_id: str, request: Request
+    job_id: str, request: Request, lang: str = Query("vi")
 ) -> CounterfactualJobView:
     try:
         service = workspace(request)
@@ -395,14 +395,19 @@ async def get_review_job(
             await service.flush_review_persistence()
             raise
         await service.flush_review_persistence()
-        return counterfactual_job_view(job)
+        pkg = None
+        try:
+            pkg = service.current_package()
+        except Exception:
+            pass
+        return counterfactual_job_view(job, package=pkg, language=lang)
     except Exception as exc:
         raise translate_error(exc) from exc
 
 
 @router.get("/chains/{chain_id}/review", response_model=CounterfactualJobView)
 async def get_latest_review(
-    chain_id: str, request: Request
+    chain_id: str, request: Request, lang: str = Query("vi")
 ) -> CounterfactualJobView:
     try:
         service = workspace(request)
@@ -410,7 +415,12 @@ async def get_latest_review(
         await service.flush_review_persistence()
         if result is None:
             raise KeyError(f"no compatible Counterfactual review for {chain_id!r}")
-        return counterfactual_job_view(result)
+        pkg = None
+        try:
+            pkg = service.current_package()
+        except Exception:
+            pass
+        return counterfactual_job_view(result, package=pkg, language=lang)
     except Exception as exc:
         raise translate_error(exc) from exc
 

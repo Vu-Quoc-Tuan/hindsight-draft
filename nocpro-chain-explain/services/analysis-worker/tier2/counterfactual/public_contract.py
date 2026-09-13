@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+from libs.contracts import IngestedPackage
+from .comparative_explainer import build_deterministic_comparative_explanation
 from .models import CandidateStatus, CounterfactualResult, DomainStatus, Operation
 
 
@@ -59,12 +61,33 @@ def _pareto_state(evaluation, result: CounterfactualResult, selected: set[str]) 
     return "NOT_EVALUATED"
 
 
-def _candidate(evaluation, result: CounterfactualResult, selected: set[str]):
+def _candidate(
+    evaluation,
+    result: CounterfactualResult,
+    selected: set[str],
+    package: IngestedPackage | None = None,
+    language: str = "vi",
+):
     candidate = evaluation.candidate
     hard_gate_passed = evaluation.status not in {
         CandidateStatus.HARD_GATE_REJECTED,
         CandidateStatus.EXTERNALLY_CONTRADICTED,
     }
+    explanation = build_deterministic_comparative_explanation(
+        operation=candidate.operation.value,
+        candidate_id=candidate.candidate_id,
+        partition_delta=candidate.partition_delta,
+        before_metrics=evaluation.before,
+        after_metrics=evaluation.after,
+        metric_deltas=evaluation.metric_deltas,
+        package=package,
+        member_ids=candidate.member_ids,
+        source_chain_id=candidate.source_chain_id,
+        target_chain_id=candidate.target_chain_id,
+        merged_chain_ids=candidate.merged_chain_ids,
+        operation_evidence=candidate.operation_evidence,
+        language=language,
+    )
     return {
         "candidate_id": candidate.candidate_id,
         "operation": candidate.operation.value,
@@ -89,10 +112,15 @@ def _candidate(evaluation, result: CounterfactualResult, selected: set[str]):
         "evaluation_status": evaluation.status.value,
         "evaluation_reason": evaluation.reason,
         "materially_improved_metrics": list(evaluation.materially_improved_metrics),
+        "comparative_explanation": explanation.as_dict(),
     }
 
 
-def public_review_result(result: CounterfactualResult) -> dict[str, object]:
+def public_review_result(
+    result: CounterfactualResult,
+    package: IngestedPackage | None = None,
+    language: str = "vi",
+) -> dict[str, object]:
     """Project one immutable result into v1; used for live and persisted paths."""
     selected_ids = {item.candidate.candidate_id for item in result.recommendations}
     operations = (result.remove, result.split, result.move, result.merge)
@@ -116,7 +144,7 @@ def public_review_result(result: CounterfactualResult) -> dict[str, object]:
             },
         },
         "evaluated_candidates": [
-            _candidate(item, result, selected_ids) for item in evaluations
+            _candidate(item, result, selected_ids, package=package, language=language) for item in evaluations
         ],
         "recommendations": [{"candidate_id": item.candidate.candidate_id} for item in result.recommendations],
         "frontier": {

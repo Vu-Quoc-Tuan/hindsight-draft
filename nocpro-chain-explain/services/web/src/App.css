@@ -2008,6 +2008,135 @@ button.table-row.is-selected {
   font: 500 1.2rem var(--mono);
 }
 
+/* Phase 2: Comparative Explanation */
+.review-comparative {
+  padding: 0.85rem 0.95rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(30, 41, 59, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.review-comparative-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.review-comparative-icon {
+  font-size: 0.95rem;
+}
+
+.review-comparative-deltas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.review-delta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 9999px;
+  font: 500 0.64rem var(--mono);
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid var(--border-subtle);
+  color: #cbd5e1;
+}
+
+.review-delta-chip--better {
+  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+}
+
+.review-delta-chip--better .review-delta-diff {
+  color: #10b981;
+}
+
+.review-delta-chip--worse {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+}
+
+.review-delta-chip--neutral {
+  border-color: rgba(148, 163, 184, 0.2);
+  color: #94a3b8;
+}
+
+.review-delta-name {
+  color: var(--text-muted);
+}
+
+.review-delta-val {
+  color: #f1f5f9;
+}
+
+.review-delta-diff {
+  font-weight: 700;
+}
+
+.review-comparative-rationale {
+  font-size: 0.73rem;
+  line-height: 1.55;
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.5);
+  padding: 0.65rem 0.8rem;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--accent-cyan-light);
+}
+
+.review-comparative-why {
+  margin: 0;
+}
+
+.review-comparative-why strong {
+  color: var(--accent-cyan-light);
+}
+
+.review-comparative-points {
+  margin: 0.4rem 0 0 1.2rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.review-comparative-points li {
+  font-size: 0.7rem;
+  color: #cbd5e1;
+}
+
+.review-comparative-ai {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed rgba(255, 255, 255, 0.12);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: #93c5fd;
+}
+
+.review-comparative-ai-label {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 0.2rem;
+  color: #60a5fa;
+  text-transform: uppercase;
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+}
+
+.review-comparative-ai p {
+  margin: 0;
+  font-style: italic;
+}
+
 .review-ledger {
   background: var(--border-subtle);
 }

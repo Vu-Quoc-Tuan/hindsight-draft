@@ -298,6 +298,25 @@ export type CounterfactualMetricVector = {
   eligible_external_contradiction_count: CounterfactualMetricValue
 }
 
+export type DeltaHighlight = {
+  metric_name: string
+  label: string
+  before: string
+  after: string
+  delta: string
+  direction: 'better' | 'worse' | 'neutral'
+}
+
+export type ComparativeExplanation = {
+  operation: string
+  summary_action: string
+  why_better: string
+  comparison_points: string[]
+  delta_highlights: DeltaHighlight[]
+  ai_narrative?: string | null
+  language?: string
+}
+
 export type CounterfactualCandidate = {
   candidate_id: string
   operation: 'REMOVE_MEMBER' | 'SPLIT_CHAIN' | 'MOVE_MEMBER' | 'MERGE_CHAINS' | 'ADD_MEMBER'
@@ -357,6 +376,7 @@ export type CounterfactualCandidate = {
   hard_gate_passed?: boolean
   pareto_state?: string
   external_validation?: string
+  comparative_explanation?: ComparativeExplanation | null
 }
 
 export type CounterfactualOperation = {

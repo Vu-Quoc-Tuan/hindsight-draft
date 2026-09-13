@@ -513,6 +513,7 @@ class CounterfactualCandidateView(ApiModel):
     materially_improved_metrics: list[str]
     move_structural_facts: MoveStructuralFactsView | None
     semantic_effects: list[str]
+    comparative_explanation: dict[str, Any] | None = None
 
 
 class CounterfactualOperationView(ApiModel):

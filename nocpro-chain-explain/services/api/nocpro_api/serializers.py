@@ -243,7 +243,11 @@ def counterfactual_result_view(result):
     }
 
 
-def counterfactual_job_view(job) -> CounterfactualJobView:
+def counterfactual_job_view(
+    job,
+    package: IngestedPackage | None = None,
+    language: str = "vi",
+) -> CounterfactualJobView:
     def _iso(val):
         if val is None:
             return None
@@ -263,7 +267,7 @@ def counterfactual_job_view(job) -> CounterfactualJobView:
             "completed_at": _iso(job.completed_at),
             "identity": asdict(job.identity),
             "result": (
-                public_review_result(job.result)
+                public_review_result(job.result, package=package, language=language)
                 if job.result is not None
                 else None
             ),
@@ -275,6 +279,33 @@ def counterfactual_job_view(job) -> CounterfactualJobView:
                 return job.get(key, default)
             val = getattr(job, key, default)
             return default if val is None else val
+
+        res = _get("result")
+        if res is not None:
+            if hasattr(res, "recommendations"):
+                res = public_review_result(res, package=package, language=language)
+            elif isinstance(res, dict) and "evaluated_candidates" in res:
+                candidates = res.get("evaluated_candidates", [])
+                for cand in candidates:
+                    if isinstance(cand, dict) and "comparative_explanation" not in cand:
+                        from tier2.counterfactual.comparative_explainer import (
+                            build_deterministic_comparative_explanation,
+                        )
+                        cand["comparative_explanation"] = build_deterministic_comparative_explanation(
+                            operation=cand.get("operation", "UNKNOWN"),
+                            candidate_id=cand.get("candidate_id", ""),
+                            partition_delta=cand.get("partition_delta"),
+                            before_metrics=cand.get("before_metrics") or cand.get("before"),
+                            after_metrics=cand.get("after_metrics") or cand.get("after"),
+                            metric_deltas=cand.get("metric_deltas"),
+                            package=package,
+                            member_ids=cand.get("member_ids", ()),
+                            source_chain_id=cand.get("source_chain_id"),
+                            target_chain_id=cand.get("target_chain_id"),
+                            merged_chain_ids=cand.get("merged_chain_ids"),
+                            operation_evidence=cand.get("operation_specific_evidence"),
+                            language=language,
+                        ).as_dict()
 
         payload = {
             "job_id": _get("job_id"),
@@ -288,7 +319,7 @@ def counterfactual_job_view(job) -> CounterfactualJobView:
             "started_at": _iso(_get("started_at")),
             "completed_at": _iso(_get("completed_at")),
             "identity": _get("identity"),
-            "result": _get("result"),
+            "result": res,
             "error": _get("error"),
         }
     return CounterfactualJobView.model_validate(payload)

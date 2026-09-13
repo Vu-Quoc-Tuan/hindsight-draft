@@ -246,4 +246,62 @@ describe('CounterfactualReview', () => {
     expect(html).toContain('ops_shift_lead')
     expect(html).toContain('Cảnh báo thuộc chung tuyến switch truyền dẫn')
   })
+
+  it('renders comparative explanation block with delta highlights and operational rationale', () => {
+    const jobWithComparative: CounterfactualJob = {
+      ...job,
+      result: job.result ? {
+        ...job.result,
+        remove: {
+          ...job.result.remove,
+          candidates: [{
+            ...job.result.remove.candidates[0],
+            comparative_explanation: {
+              operation: 'REMOVE_MEMBER',
+              summary_action: 'Đề xuất loại bỏ 1 cảnh báo (X) ra khỏi chuỗi C1',
+              why_better: 'Cảnh báo X có mức độ gắn kết yếu với các thành viên còn lại.',
+              comparison_points: [
+                'Giảm số lượng cảnh báo lạc quẻ (WEAK) từ 1 xuống 0 (giảm 1 cảnh báo gây nhiễu).',
+                'Tăng độ hỗ trợ liên kết thành viên tối thiểu từ 41.0% lên 65.0% (+24.0%).',
+              ],
+              delta_highlights: [
+                {
+                  metric_name: 'weak_member_count',
+                  label: 'Cảnh báo lạc quẻ (WEAK)',
+                  before: '1',
+                  after: '0',
+                  delta: '-1',
+                  direction: 'better',
+                },
+                {
+                  metric_name: 'minimum_membership_support',
+                  label: 'Độ hỗ trợ tối thiểu (Min Support)',
+                  before: '41.0%',
+                  after: '65.0%',
+                  delta: '+24.0%',
+                  direction: 'better',
+                },
+              ],
+              ai_narrative: 'AI đánh giá đề xuất loại bỏ phần tử nhiễu sẽ làm gọn phân vùng lỗi.',
+            },
+          }],
+        },
+      } : null,
+    }
+
+    const html = renderToStaticMarkup(
+      <CounterfactualReview chainId="C1" initialJob={jobWithComparative} />
+    )
+
+    expect(html).toContain('Comparative explanation')
+    expect(html).toContain('Đề xuất loại bỏ 1 cảnh báo (X) ra khỏi chuỗi C1')
+    expect(html).toContain('Cảnh báo lạc quẻ (WEAK)')
+    expect(html).toContain('(-1)')
+    expect(html).toContain('review-delta-chip--better')
+    expect(html).toContain('Vì sao đề xuất này tốt hơn:')
+    expect(html).toContain('Cảnh báo X có mức độ gắn kết yếu với các thành viên còn lại.')
+    expect(html).toContain('giảm 1 cảnh báo gây nhiễu')
+    expect(html).toContain('AI Phân tích chuyên sâu:')
+    expect(html).toContain('AI đánh giá đề xuất loại bỏ phần tử nhiễu sẽ làm gọn phân vùng lỗi.')
+  })
 })

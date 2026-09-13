@@ -110,6 +110,52 @@ function CandidateCard({
         <i aria-hidden="true">→</i>
         <div><small>Proposed</small>{candidate.partition_delta.after.map(([id, members]) => <p key={id}><strong>{id}</strong><span>{members.length} members</span></p>)}</div>
       </div>
+
+      {candidate.comparative_explanation ? (
+        <div className="review-comparative" aria-label="Comparative explanation">
+          <div className="review-comparative-summary">
+            <span className="review-comparative-icon" aria-hidden="true">💡</span>
+            <span>{candidate.comparative_explanation.summary_action}</span>
+          </div>
+
+          {candidate.comparative_explanation.delta_highlights && candidate.comparative_explanation.delta_highlights.length > 0 && (
+            <div className="review-comparative-deltas" aria-label="Delta highlights">
+              {candidate.comparative_explanation.delta_highlights.map((d, i) => (
+                <span
+                  key={i}
+                  className={`review-delta-chip review-delta-chip--${d.direction}`}
+                  title={`${d.label}: ${d.before} → ${d.after} (${d.delta})`}
+                >
+                  <span className="review-delta-name">{d.label}:</span>
+                  <span className="review-delta-val">{d.before} → {d.after}</span>
+                  <strong className="review-delta-diff">({d.delta})</strong>
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div className="review-comparative-rationale">
+            <p className="review-comparative-why">
+              <strong>Vì sao đề xuất này tốt hơn: </strong>
+              {candidate.comparative_explanation.why_better}
+            </p>
+            {candidate.comparative_explanation.comparison_points && candidate.comparative_explanation.comparison_points.length > 0 && (
+              <ul className="review-comparative-points">
+                {candidate.comparative_explanation.comparison_points.map((pt, i) => (
+                  <li key={i}>{pt}</li>
+                ))}
+              </ul>
+            )}
+            {candidate.comparative_explanation.ai_narrative && (
+              <div className="review-comparative-ai">
+                <span className="review-comparative-ai-label">🤖 AI Phân tích chuyên sâu:</span>
+                <p>{candidate.comparative_explanation.ai_narrative}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
+
       <div className="review-ledger" role="table" aria-label="Exact before and after metrics">
         <div className="review-ledger-head" role="row"><span>Metric</span><span>Before</span><span>After</span></div>
         {metricLabels.map(([name, label]) => (
