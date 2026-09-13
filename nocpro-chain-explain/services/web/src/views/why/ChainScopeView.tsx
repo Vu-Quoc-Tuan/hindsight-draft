@@ -122,12 +122,11 @@ export function ChainScopeView({
   // Derived dimensional metrics
   const descriptors = useMemo(() => analysis.descriptors || [], [analysis.descriptors])
   const unavailableCaps = useMemo(() => (analysis.graybox?.unavailable_capabilities || []).map(c => c.toUpperCase()), [analysis.graybox])
-
-  // Fail-closed capabilities
-  const isHistAvailable = descriptors.length > 0 && !unavailableCaps.some(c => c.includes('HISTORICAL'))
-  const isDelayUnavailable = unavailableCaps.some(c => c.includes('DELAY') || c.includes('TEMPORAL'))
-  const isTopoUnavailable = unavailableCaps.some(c => c.includes('TOPOLOGY'))
-  const isDepUnavailable = unavailableCaps.some(c => c.includes('DEPENDENCY'))
+  const availability = analysis.evidence_availability || {}
+  const isHistAvailable = availability.historical?.state === 'AVAILABLE'
+  const isDelayUnavailable = availability.temporal_delay?.state !== 'AVAILABLE'
+  const isTopoUnavailable = availability.topology?.state !== 'AVAILABLE'
+  const isDepUnavailable = availability.dependency?.state !== 'AVAILABLE'
 
   // DIM 02: Burst arrivals (computed from real timestamps)
   const { burstCount, burstPct, arrivalRate } = useMemo(() => {
@@ -156,7 +155,7 @@ export function ChainScopeView({
 
   // DIM 04: Historical Lift
   const { histLift, histConfidence } = useMemo(() => {
-    if (descriptors.length > 0) {
+    if (isHistAvailable && descriptors.length > 0) {
       const maxL = Math.max(...descriptors.map(d => d.lift || 0))
       const conf = descriptors[0].precision_global ? (descriptors[0].precision_global * 100).toFixed(1) : null
       return {
@@ -165,7 +164,7 @@ export function ChainScopeView({
       }
     }
     return { histLift: null, histConfidence: null }
-  }, [descriptors])
+  }, [descriptors, isHistAvailable])
 
   // Evaluated dimensions count (truthful telemetry channels with observations)
   const evaluatedCount = [

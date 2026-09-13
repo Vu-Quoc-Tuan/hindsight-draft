@@ -201,6 +201,12 @@ def evaluate_explain_clarity(
         caus_score += 0.1
         caus_strengths.append("Xác định trực diện nguyên nhân gốc của sự cố")
 
+    # A fluent causal sentence is not causal evidence.  Callers that provide
+    # structured context must explicitly mark the evidence channel AVAILABLE.
+    if context is not None and str(context.get("causal_status", "UNAVAILABLE")).upper() != "AVAILABLE":
+        caus_score = 0.0
+        caus_strengths = []
+        caus_shortcomings.append("Bằng chứng nhân quả không khả dụng cho so sánh này")
     caus_score = min(1.0, max(0.0, caus_score))
 
     # 3. Actionability Dimension (20% weight)
@@ -215,6 +221,10 @@ def evaluate_explain_clarity(
     else:
         act_shortcomings.append("Chưa đưa ra khuyến nghị hành động cụ thể cho kỹ sư")
 
+    if context is not None and not context.get("allowed_actions"):
+        act_score = 0.0
+        act_strengths = []
+        act_shortcomings.append("Không có thao tác đã được xác thực trong ngữ cảnh")
     act_score = min(1.0, max(0.0, act_score))
 
     # 4. Conciseness & Structure Dimension (15% weight)
@@ -371,18 +381,30 @@ def compare_proposal_explanations(
     Identifies the proposal with the clearest, most grounded rationale and generates
     head-to-head comparative critique between proposals.
     """
-    if not candidates:
+    def is_eligible(candidate: Mapping[str, Any]) -> bool:
+        hard_gate = candidate.get("hard_gate_result") or {}
+        hard_gate_status = str(hard_gate.get("status") or candidate.get("hard_gate_status") or "").upper()
+        pareto_state = str(candidate.get("pareto_state") or "").upper()
+        evaluation = str(candidate.get("evaluation_status") or "").upper()
+        return (
+            hard_gate_status == "PASSED"
+            and pareto_state in {"FRONTIER_SELECTED", "FRONTIER_TRUNCATED"}
+            and evaluation not in {"REJECTED", "CONTRADICTED", "UNAVAILABLE", ""}
+        )
+
+    eligible_candidates = [candidate for candidate in candidates if is_eligible(candidate)]
+    if not eligible_candidates:
         return ProposalClarityComparisonResult(
             proposals=[],
             top_proposal_id=None,
             top_proposal_operation=None,
             head_to_head_comparisons=[],
-            overall_recommendation_rationale="Không có đề xuất nào trên biên Pareto để so sánh.",
+            overall_recommendation_rationale="Không có đề xuất nào đủ hard gate và trạng thái Pareto để so sánh cách trình bày.",
         )
 
     evaluated_items: list[tuple[float, ProposalClarityItem, Mapping[str, Any]]] = []
 
-    for c in candidates:
+    for c in eligible_candidates:
         cand_id = str(c.get("candidate_id", ""))
         op = str(c.get("operation", "UNKNOWN"))
         comp_exp = c.get("comparative_explanation") or {}
@@ -394,7 +416,14 @@ def compare_proposal_explanations(
 
         full_text = f"{summary_action}. {why_better}. {points_text}. {ai_narrative}".strip()
 
-        score, dims = evaluate_explain_clarity(full_text)
+        score, dims = evaluate_explain_clarity(
+            full_text,
+            {
+                "observed_facts": [cand_id, op],
+                "causal_status": "UNAVAILABLE",
+                "allowed_actions": [op],
+            },
+        )
         caus_dim = next((d for d in dims if d.name == "causality"), None)
         act_dim = next((d for d in dims if d.name == "actionability"), None)
 
@@ -462,9 +491,9 @@ def compare_proposal_explanations(
         })
 
     overall_rationale = (
-        f"Trong số {len(candidates)} phương án trên biên Pareto, Đề xuất '{top_item.operation}' ({top_item.candidate_id[:8]}) "
-        f"có lời giải thích rõ ràng và thuyết phục nhất ({top_item.clarity_score:.1f}/100 điểm). "
-        f"Phương án này chỉ rõ bản chất sự cố, có căn cứ bóc tách dứt khoát và giảm thiểu rủi ro vận hành so với các phương án còn lại."
+        f"Trong số {len(eligible_candidates)} phương án đủ điều kiện trên biên Pareto, Đề xuất '{top_item.operation}' ({top_item.candidate_id[:8]}) "
+        f"có cách trình bày rõ nhất ({top_item.clarity_score:.1f}/100 điểm). "
+        "Điểm này chỉ so sánh cách diễn đạt dựa trên dữ liệu đã công bố; không xác nhận quan hệ nhân quả hay an toàn vận hành."
     )
 
     return ProposalClarityComparisonResult(

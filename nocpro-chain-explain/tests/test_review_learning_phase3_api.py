@@ -25,11 +25,11 @@ def test_review_learning_status_endpoint():
     res = client.get("/api/v1/review-learning/status")
     assert res.status_code == 200
     data = res.json()
-    assert data["loaded"] is True
-    assert data["model_version"] == "v1"
-    assert data["model_family"] in ("XGBRanker", "xgboost-ranker")
-    assert "ndcg_3" in data["metrics"]
-    assert len(data["feature_importances"]) > 0
+    assert data["loaded"] is False
+    assert data["model_version"] is None
+    assert data["metrics"] == {}
+    assert data["training_available"] is False
+    assert "ONLINE_TRAINING_DISABLED" in data["training_reason"]
     assert "disclaimer" in data
     assert "Historical reference" in data.get("disclaimer", "")
 
@@ -128,9 +128,5 @@ async def test_similar_cases_integration():
         principal=p,
         min_common_blocks=2,
     )
-    assert sim_res.retrieval_status == "AVAILABLE"
-    assert len(sim_res.cross_incident_cases) > 0
-    top = sim_res.cross_incident_cases[0]
-    assert top.similarity_score > 0.65
-    assert top.decision in ("APPROVE", "REJECT")
-    assert "Historical reference" in top.disclaimer
+    assert sim_res.retrieval_status == "UNAVAILABLE"
+    assert sim_res.cross_incident_cases == []

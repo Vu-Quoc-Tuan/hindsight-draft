@@ -112,6 +112,11 @@ class GrayBoxView(ApiModel):
     unavailable_capabilities: list[str]
 
 
+class EvidenceAvailabilityView(ApiModel):
+    state: str
+    reason: str | None
+
+
 class ChainAnalysisView(ApiModel):
     chain_id: str
     title: str
@@ -122,6 +127,7 @@ class ChainAnalysisView(ApiModel):
     pair_materialization: str
     config_version: str
     graybox: GrayBoxView
+    evidence_availability: dict[str, EvidenceAvailabilityView]
     descriptors: list[DescriptorView]
     members: list[MemberView]
     role_counts: dict[str, int]
@@ -809,4 +815,3 @@ class ThresholdExplainOptimizationView(ApiModel):
 
 class ApplyThresholdInput(ApiModel):
     parameters: dict[str, float]
-

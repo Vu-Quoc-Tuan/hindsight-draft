@@ -116,6 +116,48 @@ class ReviewLearningService:
         if not exposures:
             return exposures
 
+        # Never let a learned score override deterministic safety eligibility.
+        # Keep rejected/dominated records for audit, but exclude them from both
+        # prediction and the serving rank space.
+        eligible = [
+            exp for exp in exposures
+            if str(exp.hard_gate_status).upper() == "PASSED"
+            and str(exp.deterministic_eligibility).upper() == "HARD_GATES_PASSED"
+        ]
+        if len(eligible) != len(exposures):
+            reranked_eligible = self.rerank_candidate_exposures(eligible) if eligible else []
+            by_id = {exp.candidate_id: exp for exp in reranked_eligible}
+            result: list[CandidateExposure] = []
+            for exp in exposures:
+                if exp.candidate_id in by_id:
+                    result.append(by_id[exp.candidate_id])
+                    continue
+                det_ctx = dict(exp.deterministic_context or {})
+                feat_payload = dict(exp.feature_payload or {})
+                audit_entry = {
+                    "ranking_status": "INELIGIBLE_NOT_RERANKED",
+                    "model_score": None,
+                    "margin": None,
+                    "abstention_threshold": float(self.abstention_threshold),
+                    "abstention_reason": "DETERMINISTIC_ELIGIBILITY_REQUIRED",
+                    "ranker_version": None,
+                    "artifact_fingerprint": None,
+                }
+                det_ctx["ranking_audit"] = audit_entry
+                det_ctx["ranking_status"] = audit_entry["ranking_status"]
+                feat_payload["ranking_audit"] = audit_entry
+                bound_fp = compute_candidate_fingerprint(
+                    candidate_id=exp.candidate_id,
+                    operation=exp.operation,
+                    feature_fingerprint=exp.feature_fingerprint,
+                    displayed_rank=exp.displayed_rank,
+                    ranking_audit=audit_entry,
+                    original_rank=exp.original_rank,
+                    delta=det_ctx.get("partition_delta"),
+                )
+                result.append(dataclasses.replace(exp, candidate_fingerprint=bound_fp, deterministic_context=det_ctx, feature_payload=feat_payload))
+            return result
+
         if self._ranker_model is None:
             unavailable_exposures = []
             for exp in exposures:
@@ -442,7 +484,11 @@ class ReviewLearningService:
             delta = cand_dict.get("partition_delta", {})
 
             # Deterministic eligibility & hard gate
-            hard_gate_passed = cand_dict.get("hard_gate_passed", True)
+            public_gate = cand_dict.get("hard_gate_result") or {}
+            hard_gate_passed = cand_dict.get(
+                "hard_gate_passed",
+                str(public_gate.get("status", "PASSED")).upper() == "PASSED",
+            )
             recommended = cid in rec_ids or cand_dict.get("recommended", False)
             if not hard_gate_passed:
                 eligibility = "HARD_GATE_REJECTED"

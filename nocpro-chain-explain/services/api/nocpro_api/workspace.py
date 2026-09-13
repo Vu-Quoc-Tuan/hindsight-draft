@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import sys
 import json
 import hashlib
 import asyncio
@@ -214,12 +213,6 @@ class Workspace:
                 abstention_thresh,
             )
 
-        if not ranker_art_dir and not is_production:
-            default_art = ROOT / "artifacts" / "review_ranker" / "v1"
-            if default_art.exists() and (default_art / "manifest.json").exists():
-                ranker_art_dir = str(default_art)
-                enforce_gov = False
-
         self.review_learning: ReviewLearningService = ReviewLearningService(
             repository=None,
             ranker_artifact_dir=ranker_art_dir,
@@ -227,7 +220,11 @@ class Workspace:
             signing_key=signing_key,
             abstention_threshold=abstention_thresh,
         )
-        if not is_production and len(self.review_learning._review_cases) == 0:
+        if (
+            not is_production
+            and os.environ.get("NOCPRO_ENABLE_DEMO_FIXTURES", "").lower() in {"1", "true", "yes"}
+            and len(self.review_learning._review_cases) == 0
+        ):
             self._seed_dev_review_cases()
         self._local_evolution_dag: GlobalEpisodeDag | None = None
 
@@ -311,7 +308,9 @@ class Workspace:
             "parameters_detail": details,
         }
 
-    def update_parameters(self, overrides: dict[str, float | int]) -> dict[str, Any]:
+    def _normalize_parameter_overrides(
+        self, overrides: dict[str, float | int]
+    ) -> dict[str, float | int]:
         normalized_overrides: dict[str, float | int] = {}
         for raw_key, raw_val in overrides.items():
             path = KEY_TO_PATH.get(raw_key, raw_key)
@@ -326,6 +325,30 @@ class Workspace:
         cur_s_weak = normalized_overrides.get("role.s_weak", self.config.value("role.s_weak"))
         if cur_s_weak > cur_s_min:
             raise ValueError(f"role.s_weak ({cur_s_weak}) must be <= role.s_min ({cur_s_min})")
+        return normalized_overrides
+
+    def _config_with_overrides(
+        self,
+        overrides: dict[str, float | int],
+        *,
+        config_version: str,
+    ) -> AnalysisConfig:
+        normalized_overrides = self._normalize_parameter_overrides(overrides)
+        new_parameters = dict(self.config.parameters)
+        for path, val in normalized_overrides.items():
+            new_parameters[path] = ConfiguredValue(
+                path=path,
+                value=val,
+                source=ParameterSource.SYSTEM_PROVIDED,
+            )
+        return replace(
+            self.config,
+            config_version=config_version,
+            parameters=new_parameters,
+        )
+
+    def update_parameters(self, overrides: dict[str, float | int]) -> dict[str, Any]:
+        normalized_overrides = self._normalize_parameter_overrides(overrides)
 
         with self._lock:
             self._custom_config_counter += 1
@@ -337,18 +360,8 @@ class Workspace:
             base_ver = self.config.config_version.split("-custom-")[0]
             new_version = f"{base_ver}-custom-{self._custom_config_counter}-{param_hash}"
 
-            new_parameters = dict(self.config.parameters)
-            for path, val in normalized_overrides.items():
-                new_parameters[path] = ConfiguredValue(
-                    path=path,
-                    value=val,
-                    source=ParameterSource.SYSTEM_PROVIDED,
-                )
-
-            self.config = replace(
-                self.config,
-                config_version=new_version,
-                parameters=new_parameters,
+            self.config = self._config_with_overrides(
+                normalized_overrides, config_version=new_version
             )
             self.cache.entries.clear()
             self.jobs.cache.entries.clear()
@@ -722,6 +735,30 @@ class Workspace:
         )
         self.cache.put(key, analysis, snapshot_chain_id=chain_id)
         return analysis
+
+    def analyze_with_parameters(self, chain_id: str, overrides: dict[str, float | int]):
+        """Analyze a chain using a validated, non-persistent configuration override.
+
+        Threshold exploration must not mutate the active workspace configuration or
+        poison the normal Tier-1B cache.  The returned analysis is produced by the
+        same configured engine as ``analyze`` but is intentionally not cached.
+        """
+        package = self.require_package()
+        if self.precompute is None:
+            raise SnapshotNotLoaded("snapshot precompute unavailable")
+        normalized = self._normalize_parameter_overrides(overrides)
+        encoded = json.dumps(sorted(normalized.items()), separators=(",", ":"))
+        suffix = hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:10]
+        trial_config = self._config_with_overrides(
+            normalized,
+            config_version=f"{self.config.config_version}-trial-{suffix}",
+        )
+        return analyze_chain_configured(
+            package,
+            chain_id,
+            analysis_config=trial_config,
+            predicate_index=self.precompute.predicate_index,
+        )
 
     def pair_why(self, chain_id: str, alarm_a: str, alarm_b: str):
         package = self.require_package()
@@ -1587,10 +1624,6 @@ class Workspace:
 
         # Read data profile if available
         art_dir = os.environ.get("NOCPRO_REVIEW_RANKER_ARTIFACT_DIR")
-        if not art_dir:
-            default_art = ROOT / "artifacts" / "review_ranker" / "v1"
-            if default_art.exists():
-                art_dir = str(default_art)
 
         data_profile = None
         if art_dir:
@@ -1670,6 +1703,10 @@ class Workspace:
             "metrics": metrics_dict,
             "feature_importances": feature_importances,
             "data_profile": data_profile,
+            "training_available": False,
+            "training_reason": "ONLINE_TRAINING_DISABLED: use the audited PostgreSQL batch pipeline after operator-confirmed feedback passes readiness checks.",
+            "artifact_source_kind_mix": (data_profile or {}).get("source_kind_mix", {}),
+            "artifact_truth_tier_distribution": (data_profile or {}).get("truth_tier_distribution", {}),
             "feedback_summary": {
                 "active_feedback_count": len(active_fb),
                 "superseded_feedback_count": len(self.review_learning._superseded_feedbacks),
@@ -1678,39 +1715,8 @@ class Workspace:
             "disclaimer": "Historical reference only — not probability or automated recommendation. Model outputs are subject to human operator governance.",
         }
 
-    async def trigger_ranker_training(self, synthetic_groups: int = 30) -> dict[str, Any]:
-        out_dir = ROOT / "artifacts" / "review_ranker" / "v1"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        script_path = ROOT / "scripts" / "review_learning" / "train_ranker.py"
-        python_bin = sys.executable
-
-        env = dict(os.environ)
-        env["PYTHONPATH"] = f"{ROOT / 'services' / 'analysis-worker'}:{ROOT / 'services' / 'api'}:{env.get('PYTHONPATH', '')}"
-
-        proc = await asyncio.create_subprocess_exec(
-            python_bin,
-            str(script_path),
-            "--synthetic-groups",
-            str(synthetic_groups),
-            "--output-dir",
-            str(out_dir),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
-            cwd=str(ROOT),
+    async def trigger_ranker_training(self) -> dict[str, Any]:
+        """Online API training is intentionally disabled to prevent synthetic labels."""
+        raise RuntimeError(
+            "ONLINE_TRAINING_DISABLED: run the audited PostgreSQL batch pipeline only after confirmed feedback passes readiness checks."
         )
-        stdout, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            err_msg = stderr.decode().strip() or stdout.decode().strip()
-            raise RuntimeError(f"Ranker training failed with exit code {proc.returncode}: {err_msg}")
-
-        # Hot reload into review learning service
-        from review_learning import load_ranker_artifact
-        model, manifest = load_ranker_artifact(out_dir)
-        self.review_learning._ranker_model = model
-        self.review_learning._ranker_manifest = manifest
-        self.review_learning.abstention_threshold = getattr(manifest, "abstention_threshold", 0.0)
-
-        status_data = self.get_review_learning_status()
-        status_data["training_stdout"] = stdout.decode().strip()
-        return status_data

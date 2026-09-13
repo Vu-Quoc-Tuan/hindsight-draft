@@ -87,6 +87,9 @@ def test_compare_proposal_explanations_ranking() -> None:
         {
             "candidate_id": "cand_split_001",
             "operation": "SPLIT",
+            "hard_gate_result": {"status": "PASSED"},
+            "pareto_state": "FRONTIER_SELECTED",
+            "evaluation_status": "BETTER_SUPPORTED",
             "comparative_explanation": {
                 "summary_action": "Tách chuỗi làm đôi theo mốc thời gian",
                 "why_better": "Giảm độ dài của chuỗi",
@@ -97,6 +100,9 @@ def test_compare_proposal_explanations_ranking() -> None:
         {
             "candidate_id": "cand_remove_002",
             "operation": "REMOVE",
+            "hard_gate_result": {"status": "PASSED"},
+            "pareto_state": "FRONTIER_SELECTED",
+            "evaluation_status": "BETTER_SUPPORTED",
             "comparative_explanation": {
                 "summary_action": "Loại bỏ cảnh báo POWER_ALARM tại trạm BLU0006",
                 "why_better": "Bóc tách sự cố nguồn độc lập khỏi luồng truyền dẫn quang chính trên switch CMU0009AGG01",
@@ -147,10 +153,14 @@ def test_find_clearest_explain_threshold_and_apply() -> None:
             self.params = {
                 "role.s_weak": SimpleNamespace(value=0.30),
                 "role.c_min": SimpleNamespace(value=0.50),
+                "role.s_min": SimpleNamespace(value=0.70),
             }
 
         def parameter(self, name: str) -> Any:
             return self.params.get(name, SimpleNamespace(value=0.5))
+
+        def value(self, name: str) -> float:
+            return float(self.parameter(name).value)
 
         def set_parameter(self, name: str, val: float, source: str = "") -> None:
             self.params[name] = SimpleNamespace(value=val)
@@ -169,6 +179,13 @@ def test_find_clearest_explain_threshold_and_apply() -> None:
 
         def analyze(self, chain_id: str) -> Any:
             return mock_analysis
+
+        def analyze_with_parameters(self, chain_id: str, parameters: dict[str, float]) -> Any:
+            return mock_analysis
+
+        def update_parameters(self, parameters: dict[str, float]) -> None:
+            for key, value in parameters.items():
+                self.config.set_parameter(key, value)
 
     service = MockService()
     opt_data = find_clearest_explain_threshold("chain_123", service)

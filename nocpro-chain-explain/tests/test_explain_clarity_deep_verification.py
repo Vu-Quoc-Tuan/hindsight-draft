@@ -63,6 +63,9 @@ def test_compare_proposal_explanations_empty_and_single() -> None:
     single = [{
         "candidate_id": "cand_single_001",
         "operation": "REMOVE",
+        "hard_gate_result": {"status": "PASSED"},
+        "pareto_state": "FRONTIER_SELECTED",
+        "evaluation_status": "BETTER_SUPPORTED",
         "comparative_explanation": {
             "summary_action": "Bóc tách cảnh báo nhiễu tại trạm AGG01",
             "why_better": "Bảo toàn luồng truyền dẫn chính",
@@ -90,10 +93,9 @@ def test_compare_proposal_explanations_missing_or_none_fields() -> None:
         }},
     ]
     res = compare_proposal_explanations(corrupted_candidates)
-    assert len(res.proposals) == 3
-    assert res.top_proposal_id is not None
-    # None of them crash, ranks are populated
-    assert set(p.clarity_rank for p in res.proposals) == {1, 2, 3}
+    assert res.proposals == []
+    assert res.top_proposal_id is None
+    assert "Không có đề xuất nào" in res.overall_recommendation_rationale
 
 
 def test_threshold_optimizer_singleton_chain() -> None:
@@ -121,6 +123,8 @@ def test_threshold_optimizer_singleton_chain() -> None:
             return MockPackage()
         def analyze(self, chain_id: str) -> Any:
             return singleton_analysis
+        def analyze_with_parameters(self, chain_id: str, parameters: dict[str, float]) -> Any:
+            return singleton_analysis
 
     service = MockService()
     res = find_clearest_explain_threshold("chain_singleton", service)
@@ -137,10 +141,8 @@ def test_apply_explain_threshold_error_handling() -> None:
             raise ValueError("role.s_weak (0.8) must be <= role.s_min (0.5)")
 
     service = FailingService()
-    # Should safely catch exception and return status
-    res = apply_explain_threshold("chain_test", service, {"role.s_weak": 0.8})
-    assert res["status"] == "APPLIED"
-    assert res["chain_id"] == "chain_test"
+    with pytest.raises(ValueError, match="must be <="):
+        apply_explain_threshold("chain_test", service, {"role.s_weak": 0.8})
 
 
 def test_multi_preset_e2e_clarity_flow(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -248,4 +250,3 @@ def test_real_replay_chain_optimization_and_clarity() -> None:
     apply_res = apply_explain_threshold(real_chain_id, ws, opt["optimal_parameters"])
     assert apply_res["status"] == "APPLIED"
     assert ws.config.value("role.s_weak") == opt["optimal_parameters"]["role.s_weak"]
-

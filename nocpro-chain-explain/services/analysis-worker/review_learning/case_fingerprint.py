@@ -16,6 +16,22 @@ from review_learning.contracts import canonical_json_hash
 FINGERPRINT_SCHEMA_VERSION = "cf-case-v1"
 
 
+def _partition_members(delta: Mapping[str, Any], side: str) -> dict[str, set[str]]:
+    """Normalize the public contract's ordered ``(chain_id, member_ids)`` form."""
+    partitions = delta.get(side) or []
+    normalized: dict[str, set[str]] = {}
+    if not isinstance(partitions, (list, tuple)):
+        return normalized
+    for item in partitions:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            continue
+        chain, members = item
+        if not isinstance(members, (list, tuple, set)):
+            continue
+        normalized[str(chain)] = {str(member) for member in members}
+    return normalized
+
+
 def extract_candidate_case_blocks(
     *,
     candidate: Mapping[str, Any],
@@ -73,15 +89,27 @@ def extract_candidate_case_blocks(
     # 5. Operation Pattern Block
     op = candidate.get("operation", "UNKNOWN")
     delta = candidate.get("partition_delta") or {}
-    removed_count = len(delta.get("removed_alarms", []))
-    partitions = delta.get("partitions") or delta.get("split_partitions") or []
-    split_count = len(partitions) if isinstance(partitions, list) else 0
+    before = _partition_members(delta, "before") if isinstance(delta, Mapping) else {}
+    after = _partition_members(delta, "after") if isinstance(delta, Mapping) else {}
+    before_members = set().union(*before.values()) if before else set()
+    after_members = set().union(*after.values()) if after else set()
+    removed_count = len(before_members - after_members)
+    before_owner = {member: chain for chain, members in before.items() for member in members}
+    after_owner = {member: chain for chain, members in after.items() for member in members}
+    moved_count = sum(1 for member in before_members & after_members if before_owner.get(member) != after_owner.get(member))
+    created_chain_count = len(set(after) - set(before))
+    removed_chain_count = len(set(before) - set(after))
+    # For SPLIT, count resulting partitions that originate from a changed source.
+    split_count = len(after) if str(op).upper() in {"SPLIT", "SPLIT_CHAIN"} and before and after else 0
 
     operation_pattern = {
         "operation": op,
         "removed_alarm_count": removed_count,
+        "moved_alarm_count": moved_count,
         "split_partition_count": split_count,
-        "relative_size_ratio": round((alarm_count - removed_count) / alarm_count, 4) if alarm_count > 0 else 1.0,
+        "created_chain_count": created_chain_count,
+        "removed_chain_count": removed_chain_count,
+        "relative_size_ratio": round(len(after_members) / len(before_members), 4) if before_members else 1.0,
     }
 
     return {

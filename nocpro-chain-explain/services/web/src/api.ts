@@ -368,13 +368,6 @@ export const api = {
     }),
   reviewLearningStatus: (signal?: AbortSignal) =>
     request<ReviewLearningStatus>('/api/v1/review-learning/status', { signal }),
-  trainRanker: (syntheticGroups: number = 30, signal?: AbortSignal) =>
-    request<ReviewLearningStatus>('/api/v1/review-learning/train', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ synthetic_groups: syntheticGroups }),
-      signal,
-    }),
   getProposalClarityComparison: (jobId: string, lang: string = 'vi', signal?: AbortSignal) =>
     request<ProposalClarityComparison>(
       `/api/v1/review-jobs/${encodeURIComponent(jobId)}/compare-proposals-clarity?lang=${encodeURIComponent(lang)}`,

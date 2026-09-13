@@ -10,8 +10,6 @@ interface ReviewLearningPanelProps {
 export function ReviewLearningPanel({ open, onClose }: ReviewLearningPanelProps) {
   const [status, setStatus] = useState<ReviewLearningStatus | null>(null)
   const [loading, setLoading] = useState(false)
-  const [training, setTraining] = useState(false)
-  const [syntheticGroups, setSyntheticGroups] = useState(30)
   const [trainingLog, setTrainingLog] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -37,31 +35,16 @@ export function ReviewLearningPanel({ open, onClose }: ReviewLearningPanelProps)
     }
   }, [open])
 
-  const handleRetrain = async () => {
-    setTraining(true)
-    setError(null)
-    setTrainingLog(null)
-    try {
-      const result = await api.trainRanker(syntheticGroups)
-      setStatus(result)
-      if (result.training_stdout) {
-        setTrainingLog(result.training_stdout)
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Huấn luyện lại thất bại')
-    } finally {
-      setTraining(false)
-    }
-  }
-
   if (!open) return null
 
   const metrics = status?.metrics || {}
-  const ndcg3 = metrics.ndcg_3 ?? 0
-  const baselineNdcg3 = metrics.baseline_ndcg_3 ?? 0.8262
-  const ndcgImprovement = metrics.ndcg_improvement ?? (ndcg3 - baselineNdcg3)
-  const top1Recall = metrics.top1_approved_recall ?? 0
-  const meanRegret = metrics.mean_regret ?? 0
+  const ndcg3 = metrics.ndcg_3
+  const baselineNdcg3 = metrics.baseline_ndcg_3
+  const ndcgImprovement = metrics.ndcg_improvement
+  const top1Recall = metrics.top1_approved_recall
+  const meanRegret = metrics.mean_regret
+  const metricText = (value: number | undefined, digits: number) =>
+    typeof value === 'number' ? value.toFixed(digits) : '—'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-200">
@@ -132,19 +115,19 @@ export function ReviewLearningPanel({ open, onClose }: ReviewLearningPanelProps)
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-on-surface-variant font-medium">NDCG@3 Score</span>
                     <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/30">
-                      +{(ndcgImprovement * 100).toFixed(1)}% vs Baseline
+                      {typeof ndcgImprovement === 'number' ? `+${(ndcgImprovement * 100).toFixed(1)}% vs Baseline` : 'Chưa có dữ liệu'}
                     </span>
                   </div>
                   <div className="mt-2 flex items-baseline gap-2">
                     <span className="text-2xl font-black text-on-surface font-mono">
-                      {ndcg3.toFixed(4)}
+                      {metricText(ndcg3, 4)}
                     </span>
                     <span className="text-xs text-on-surface-variant font-mono">
-                      (Base: {baselineNdcg3.toFixed(4)})
+                      (Base: {metricText(baselineNdcg3, 4)})
                     </span>
                   </div>
                   <div className="mt-2 w-full bg-[#16233a] rounded-full h-1.5 overflow-hidden">
-                    <div className="bg-emerald-400 h-full rounded-full" style={{ width: `${Math.min(100, ndcg3 * 100)}%` }} />
+                    <div className="bg-emerald-400 h-full rounded-full" style={{ width: `${Math.min(100, (ndcg3 ?? 0) * 100)}%` }} />
                   </div>
                 </div>
 
@@ -157,14 +140,14 @@ export function ReviewLearningPanel({ open, onClose }: ReviewLearningPanelProps)
                   </div>
                   <div className="mt-2 flex items-baseline gap-2">
                     <span className="text-2xl font-black text-on-surface font-mono">
-                      {(top1Recall * 100).toFixed(0)}%
+                      {typeof top1Recall === 'number' ? `${(top1Recall * 100).toFixed(0)}%` : '—'}
                     </span>
                     <span className="text-xs text-on-surface-variant">
                       Chính xác đề xuất #1
                     </span>
                   </div>
                   <div className="mt-2 w-full bg-[#16233a] rounded-full h-1.5 overflow-hidden">
-                    <div className="bg-primary h-full rounded-full" style={{ width: `${Math.min(100, top1Recall * 100)}%` }} />
+                    <div className="bg-primary h-full rounded-full" style={{ width: `${Math.min(100, (top1Recall ?? 0) * 100)}%` }} />
                   </div>
                 </div>
 
@@ -177,7 +160,7 @@ export function ReviewLearningPanel({ open, onClose }: ReviewLearningPanelProps)
                   </div>
                   <div className="mt-2 flex items-baseline gap-2">
                     <span className="text-2xl font-black text-on-surface font-mono">
-                      {meanRegret.toFixed(4)}
+                      {metricText(meanRegret, 4)}
                     </span>
                     <span className="text-xs text-on-surface-variant">
                       Tổn thất xếp hạng
@@ -309,10 +292,10 @@ export function ReviewLearningPanel({ open, onClose }: ReviewLearningPanelProps)
                   <div className="pt-2 border-t border-[#182640] space-y-1 text-xs">
                     <span className="text-[11px] text-on-surface-variant block">Chứng chỉ liêm chính mô hình:</span>
                     <p className="font-mono text-[10px] text-secondary truncate" title={status?.artifact_sha256 ?? ''}>
-                      SHA-256: {status?.artifact_sha256 ?? 'c30b8219292b8312f9e636cd0329...'}
+                      SHA-256: {status?.artifact_sha256 ?? 'Chưa nạp artifact'}
                     </p>
                     <p className="text-[11px] text-on-surface-variant">
-                      Thời điểm chốt dữ liệu (Cutoff): <span className="font-mono text-on-surface">{status?.training_cutoff ?? '2026-09-10T00:00:00Z'}</span>
+                      Thời điểm chốt dữ liệu (Cutoff): <span className="font-mono text-on-surface">{status?.training_cutoff ?? 'Chưa có artifact đã xác thực'}</span>
                     </p>
                   </div>
                 </div>
@@ -326,39 +309,18 @@ export function ReviewLearningPanel({ open, onClose }: ReviewLearningPanelProps)
                     <span>Huấn luyện lại mô hình (Re-train Ranker Pipeline)</span>
                   </h3>
                   <p className="text-xs text-on-surface-variant mt-1 max-w-xl">
-                    Chạy lại chu trình sinh đặc trưng 18-chiều, tối ưu siêu tham số XGBRanker qua Grid Search và ký số SHA-256 đóng gói Fail-Closed tự động.
+                    {status?.training_reason ?? 'Chỉ cho phép batch PostgreSQL đã kiểm toán sau khi feedback được chuyên viên xác nhận.'}
                   </p>
                 </div>
 
                 <div className="flex items-center gap-3 shrink-0">
-                  <div className="flex items-center gap-1.5 text-xs font-mono">
-                    <span className="text-on-surface-variant">Groups:</span>
-                    <input
-                      type="number"
-                      min={10}
-                      max={100}
-                      value={syntheticGroups}
-                      onChange={(e) => setSyntheticGroups(Math.max(10, parseInt(e.target.value) || 30))}
-                      className="w-16 px-2 py-1 rounded bg-[#090e1a] border border-[#25395c] text-on-surface text-center"
-                      disabled={training}
-                    />
-                  </div>
                   <button
-                    onClick={handleRetrain}
-                    disabled={training}
+                    disabled
+                    title={status?.training_reason}
                     className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary hover:bg-secondary/90 text-on-secondary font-bold text-xs transition-all shadow-md disabled:opacity-50"
                   >
-                    {training ? (
-                      <>
-                        <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span>
-                        <span>Đang huấn luyện...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="material-symbols-outlined text-[16px]">refresh</span>
-                        <span>Huấn luyện lại</span>
-                      </>
-                    )}
+                    <span className="material-symbols-outlined text-[16px]">lock</span>
+                    <span>Huấn luyện qua batch đã kiểm toán</span>
                   </button>
                 </div>
               </div>

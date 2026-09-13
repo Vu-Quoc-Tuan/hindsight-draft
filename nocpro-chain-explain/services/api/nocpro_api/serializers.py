@@ -258,7 +258,7 @@ def _enrich_candidates_with_learning_audit(
 
     rev_id = review_learning.get_review_id_for_job(job_id)
     exps = review_learning._exposures.get(rev_id)
-    if not exps and review_learning._ranker_model is not None:
+    if not exps:
         try:
             _, exps = review_learning.prepare_review_bundle(
                 job_id=job_id,
@@ -283,7 +283,13 @@ def _enrich_candidates_with_learning_audit(
                 cand["displayed_rank"] = exp.displayed_rank
 
         if any(isinstance(c, dict) and c.get("displayed_rank") is not None for c in candidates):
-            candidates.sort(key=lambda c: (c.get("displayed_rank") is None, c.get("displayed_rank", 999)))
+            def sort_key(candidate: Any) -> tuple[bool, int]:
+                if not isinstance(candidate, dict):
+                    return (True, 999)
+                gate = candidate.get("hard_gate_result") or {}
+                eligible = str(gate.get("status", "")).upper() == "PASSED"
+                return (not eligible, int(candidate.get("displayed_rank", 999)))
+            candidates.sort(key=sort_key)
 
 
 def counterfactual_job_view(
@@ -387,6 +393,12 @@ def descriptor_view(descriptor) -> DescriptorView:
 
 
 def chain_analysis_view(analysis: ChainAnalysis, package) -> ChainAnalysisView:
+    unavailable = {str(item).upper() for item in analysis.graybox.unavailable_capabilities}
+    def availability(name: str, tokens: tuple[str, ...], *, fail_closed: bool = False) -> dict[str, str | None]:
+        if fail_closed:
+            return {"state": "UNAVAILABLE", "reason": "No frozen historical model is attached to this chain-analysis response."}
+        reason = next((item for item in unavailable if any(token in item for token in tokens)), None)
+        return {"state": "UNAVAILABLE", "reason": reason} if reason else {"state": "AVAILABLE", "reason": None}
     members = []
     for alarm_id, item in analysis.members.items():
         alarm = package.alarms[alarm_id]
@@ -450,6 +462,12 @@ def chain_analysis_view(analysis: ChainAnalysis, package) -> ChainAnalysisView:
                 analysis.graybox.unavailable_capabilities
             ),
         ),
+        evidence_availability={
+            "historical": availability("historical", ("HISTORICAL",), fail_closed=True),
+            "temporal_delay": availability("temporal_delay", ("DELAY", "TEMPORAL")),
+            "topology": availability("topology", ("TOPOLOGY",)),
+            "dependency": availability("dependency", ("DEPENDENCY",)),
+        },
         descriptors=[
             descriptor_view(item)
             for item in (*analysis.descriptors.identity, *analysis.descriptors.contrastive)

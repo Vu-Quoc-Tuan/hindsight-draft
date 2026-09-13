@@ -1047,11 +1047,11 @@ async def get_review_learning_status(request: Request) -> dict[str, Any]:
 @router.post("/review-learning/train")
 async def trigger_review_learning_training(
     request: Request,
-    body: dict[str, Any] = Body(default_factory=dict),
 ) -> dict[str, Any]:
     try:
         service = workspace(request)
-        synthetic_groups = int(body.get("synthetic_groups", 30))
-        return await service.trigger_ranker_training(synthetic_groups=synthetic_groups)
+        return await service.trigger_ranker_training()
     except Exception as exc:
+        if "ONLINE_TRAINING_DISABLED" in str(exc):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         raise translate_error(exc) from exc

@@ -110,6 +110,7 @@ export type ChainAnalysis = {
     pair_facts: number
     unavailable_capabilities: string[]
   }
+  evidence_availability?: Record<string, { state: string; reason: string | null }>
   descriptors: Descriptor[]
   members: Member[]
   role_counts: Record<string, number>
@@ -429,6 +430,10 @@ export type ReviewLearningStatus = {
     truth_tier_distribution?: Record<string, number>
     splits?: Record<string, any>
   } | null
+  training_available: boolean
+  training_reason: string
+  artifact_source_kind_mix: Record<string, number>
+  artifact_truth_tier_distribution: Record<string, number>
   feedback_summary: {
     active_feedback_count: number
     superseded_feedback_count: number
@@ -912,5 +917,3 @@ export type ThresholdExplainOptimization = {
   ai_model?: string
   ai_provider_status?: string
 }
-
-
