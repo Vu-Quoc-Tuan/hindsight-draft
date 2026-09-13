@@ -358,9 +358,9 @@ async def enrich_comparative_explanation_with_ai(
     }
 
     try:
-        from nocpro_api.grounded_llm import render_grounded_text
+        from nocpro_api.grounded_llm import render_grounded
 
-        result = await render_grounded_text(
+        result = render_grounded(
             draft=draft,
             facts=facts,
             fact_refs=fact_refs,
