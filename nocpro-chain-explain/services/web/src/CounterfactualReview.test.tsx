@@ -322,6 +322,7 @@ describe('CounterfactualReview', () => {
 
     expect(html).toContain('⭐ Đề xuất Phân hoạch Được Khuyến nghị (Top Recommended Proposals)')
     expect(html).toContain('1 đề xuất')
+    expect(html).toContain('⚖️ So Sánh Lời Giải Thích Giữa Các Đề Xuất')
   })
 
   it('renders optimal chain cohesion banner when no recommendations are needed', () => {

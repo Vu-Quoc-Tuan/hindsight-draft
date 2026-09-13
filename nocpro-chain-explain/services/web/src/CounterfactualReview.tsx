@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { api, ApiError } from './api'
+import { ExplainClarityComparisonModal } from './components/ExplainClarityComparisonModal'
 import { percent } from './format'
 import type {
   CounterfactualCandidate,
@@ -511,6 +512,7 @@ export function CounterfactualReview({
   const [error, setError] = useState<string | null>(null)
   const [noPersistedReview, setNoPersistedReview] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
+  const [showClarityModal, setShowClarityModal] = useState(false)
 
   useEffect(() => {
     if (initialJob?.chain_id === chainId) return
@@ -743,9 +745,33 @@ export function CounterfactualReview({
                 </p>
               </div>
             </div>
-            <span className="review-recommended-count">
-              {result.recommendations.length} đề xuất
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <button
+                type="button"
+                className="action-btn"
+                onClick={() => setShowClarityModal(true)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                  border: '1px solid rgba(56, 189, 248, 0.4)',
+                  color: '#38bdf8',
+                  padding: '0.35rem 0.85rem',
+                  borderRadius: '6px',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+                title="So sánh trực tiếp lời giải thích giữa các đề xuất để xem đề xuất nào rõ ràng và thuyết phục hơn"
+              >
+                ⚖️ So Sánh Lời Giải Thích Giữa Các Đề Xuất
+              </button>
+              <span className="review-recommended-count">
+                {result.recommendations.length} đề xuất
+              </span>
+            </div>
           </header>
           <div className="review-candidate-list">
             {(result.evaluated_candidates ?? [])
@@ -791,6 +817,14 @@ export function CounterfactualReview({
         <span>{result.frontier?.count_before_limit ?? result.frontier_count_before_limit} frontier candidates{(result.frontier?.truncated ?? result.frontier_truncated) ? ' · bounded for display' : ''}</span>
         <span>Artifact {job.cache_fingerprint.slice(0, 12)}</span>
       </footer>
+      {showClarityModal && job && (
+        <ExplainClarityComparisonModal
+          isOpen={showClarityModal}
+          onClose={() => setShowClarityModal(false)}
+          mode="proposals"
+          jobId={job.job_id}
+        />
+      )}
     </section>
   )
 }

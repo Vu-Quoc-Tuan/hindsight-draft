@@ -20,6 +20,8 @@ import type {
   CandidateDisplayEventItem,
   ManualCorrectionPayload,
   ReviewLearningStatus,
+  ProposalClarityComparison,
+  ThresholdExplainOptimization,
 } from './types'
 import type { TopologyTreePayload } from './TopologyTree'
 
@@ -373,4 +375,27 @@ export const api = {
       body: JSON.stringify({ synthetic_groups: syntheticGroups }),
       signal,
     }),
+  getProposalClarityComparison: (jobId: string, lang: string = 'vi', signal?: AbortSignal) =>
+    request<ProposalClarityComparison>(
+      `/api/v1/review-jobs/${encodeURIComponent(jobId)}/compare-proposals-clarity?lang=${encodeURIComponent(lang)}`,
+      { signal },
+    ),
+  optimizeExplainThreshold: (chainId: string, signal?: AbortSignal) =>
+    request<ThresholdExplainOptimization>(
+      `/api/v1/chains/${encodeURIComponent(chainId)}/optimize-explain-threshold`,
+      {
+        method: 'POST',
+        signal,
+      },
+    ),
+  applyExplainThreshold: (chainId: string, parameters: Record<string, number>, signal?: AbortSignal) =>
+    request<{ chain_id: string; status: string; applied_parameters: Record<string, number>; message: string }>(
+      `/api/v1/chains/${encodeURIComponent(chainId)}/apply-explain-threshold`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parameters }),
+        signal,
+      },
+    ),
 }

@@ -850,3 +850,62 @@ export type CalibrationReport = {
   chains_skipped_large?: number
   chains_failed?: number
 }
+
+export type ProposalClarityItem = {
+  candidate_id: string
+  operation: string
+  summary_action: string
+  explanation_text: string
+  clarity_score: number
+  causal_grounding: number
+  operational_safety: number
+  clarity_rank: number
+  is_top_pick: boolean
+  key_strengths: string[]
+}
+
+export type HeadToHeadComparison = {
+  target_candidate_id: string
+  target_operation: string
+  target_clarity_score: number
+  top_candidate_id: string
+  top_operation: string
+  top_clarity_score: number
+  score_advantage: number
+  why_top_is_clearer: string[]
+  summary_verdict: string
+}
+
+export type ProposalClarityComparison = {
+  job_id: string
+  proposals: ProposalClarityItem[]
+  top_proposal_id: string | null
+  top_proposal_operation: string | null
+  head_to_head_comparisons: HeadToHeadComparison[]
+  overall_recommendation_rationale: string
+}
+
+export type ThresholdSweepResult = {
+  parameters: Record<string, number>
+  label: string
+  explanation: string
+  clarity_score: number
+  weak_count: number
+  core_count: number
+}
+
+export type ThresholdExplainOptimization = {
+  chain_id: string
+  current_parameters: Record<string, number>
+  optimal_parameters: Record<string, number>
+  current_clarity_score: number
+  optimal_clarity_score: number
+  clarity_gain: number
+  current_explanation: string
+  optimal_explanation: string
+  winner: string
+  why_clearer: string[]
+  summary_verdict: string
+  sweep_results: ThresholdSweepResult[]
+}
+

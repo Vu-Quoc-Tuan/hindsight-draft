@@ -3,6 +3,7 @@ import { CounterfactualReview } from '../CounterfactualReview'
 import { ValidationView } from './ValidationView'
 import type { ChainAnalysis } from '../types'
 import { InfoTip } from '../components/InfoTip'
+import { ExplainClarityComparisonModal } from '../components/ExplainClarityComparisonModal'
 
 export function RecommendationsView({
   analysis,
@@ -16,6 +17,7 @@ export function RecommendationsView({
   onOpenReviewLearning?: () => void
 }) {
   const [activeTab, setActiveTab] = useState<'recommendations' | 'validation'>(initialSubTab)
+  const [showThresholdModal, setShowThresholdModal] = useState(false)
 
   useEffect(() => {
     setActiveTab(initialSubTab)
@@ -36,6 +38,15 @@ export function RecommendationsView({
             </h1>
           </div>
           <div className="flex flex-wrap items-center gap-space-xs shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowThresholdModal(true)}
+              className="inline-flex items-center gap-space-xs rounded-full border border-sky-500/40 bg-sky-500/15 px-space-sm py-0.5 font-code-sm text-xs text-sky-300 hover:bg-sky-500/25 transition-all cursor-pointer font-medium"
+              title="Tìm ngưỡng phân định cho lời giải thích rõ ràng và sắc nét nhất"
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-[14px]">tune</span>
+              🎯 Tối Ưu Lời Giải Thích (Tìm Ngưỡng Rõ Nhất)
+            </button>
             <div className="inline-flex items-center gap-space-xs rounded-full border border-tertiary/30 bg-tertiary-container/15 px-space-sm py-0.5 font-code-sm text-xs text-tertiary">
               <span aria-hidden="true" className="material-symbols-outlined text-[14px]">shield</span>
               Proposal-only
@@ -112,6 +123,15 @@ export function RecommendationsView({
         </div>
       ) : (
         <ValidationView analysis={analysis} />
+      )}
+
+      {showThresholdModal && (
+        <ExplainClarityComparisonModal
+          isOpen={showThresholdModal}
+          onClose={() => setShowThresholdModal(false)}
+          mode="threshold"
+          chainId={analysis.chain_id}
+        />
       )}
     </div>
   )

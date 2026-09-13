@@ -759,3 +759,49 @@ class CalibrationReportView(ApiModel):
     chains_loaded: int | None = None
     chains_skipped_large: int = 0
     chains_failed: int = 0
+
+
+# -------------------------------------------------------------------------
+# Explain Clarity & Comparative Evaluation Schemas
+# -------------------------------------------------------------------------
+
+class ProposalClarityItemView(ApiModel):
+    candidate_id: str
+    operation: str
+    summary_action: str
+    explanation_text: str
+    clarity_score: float
+    causal_grounding: float
+    operational_safety: float
+    clarity_rank: int
+    is_top_pick: bool
+    key_strengths: list[str] = []
+
+
+class ProposalClarityComparisonView(ApiModel):
+    job_id: str
+    proposals: list[ProposalClarityItemView]
+    top_proposal_id: str | None = None
+    top_proposal_operation: str | None = None
+    head_to_head_comparisons: list[dict[str, Any]] = []
+    overall_recommendation_rationale: str
+
+
+class ThresholdExplainOptimizationView(ApiModel):
+    chain_id: str
+    current_parameters: dict[str, float]
+    optimal_parameters: dict[str, float]
+    current_clarity_score: float
+    optimal_clarity_score: float
+    clarity_gain: float
+    current_explanation: str
+    optimal_explanation: str
+    winner: str
+    why_clearer: list[str]
+    summary_verdict: str
+    sweep_results: list[dict[str, Any]] = []
+
+
+class ApplyThresholdInput(ApiModel):
+    parameters: dict[str, float]
+

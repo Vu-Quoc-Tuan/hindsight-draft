@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict
 from functools import partial
 from typing import Any
 
@@ -39,8 +40,18 @@ from .schemas import (
     SnapshotCatalogListView,
     SnapshotLoadedView,
     SystemPairFactView,
+    ApplyThresholdInput,
+    ProposalClarityComparisonView,
+    ThresholdExplainOptimizationView,
 )
 from .catalog import list_catalog_presets, load_preset_payload
+from .threshold_explain_optimizer import (
+    apply_explain_threshold,
+    find_clearest_explain_threshold,
+)
+from tier2.counterfactual.explain_clarity_comparator import (
+    compare_proposal_explanations,
+)
 from .serializers import (
     chain_analysis_view,
     counterfactual_job_view,
@@ -430,6 +441,48 @@ async def get_latest_review(
 
 
 @router.get(
+    "/review-jobs/{job_id}/compare-proposals-clarity",
+    response_model=ProposalClarityComparisonView,
+)
+async def get_review_job_proposals_clarity(
+    job_id: str, request: Request, lang: str = Query("vi")
+) -> ProposalClarityComparisonView:
+    try:
+        service = workspace(request)
+        try:
+            job = service.review_jobs.get(job_id)
+        except KeyError:
+            await service.flush_review_persistence()
+            raise
+        await service.flush_review_persistence()
+        pkg = None
+        try:
+            pkg = service.current_package()
+        except Exception:
+            pass
+        view = counterfactual_job_view(
+            job, package=pkg, language=lang, review_learning=service.review_learning
+        )
+        res_dict = view.result if isinstance(view.result, dict) else {}
+        candidates_raw = res_dict.get("evaluated_candidates") or res_dict.get("candidates") or []
+        if not candidates_raw and isinstance(job.result, dict):
+            from tier2.counterfactual.public_contract import public_review_result
+            pub = public_review_result(job.result, package=pkg, language=lang)
+            candidates_raw = pub.get("evaluated_candidates") or pub.get("candidates") or []
+        comparison_res = compare_proposal_explanations(candidates_raw, package=pkg)
+        return ProposalClarityComparisonView(
+            job_id=job_id,
+            proposals=[asdict(p) for p in comparison_res.proposals],
+            top_proposal_id=comparison_res.top_proposal_id,
+            top_proposal_operation=comparison_res.top_proposal_operation,
+            head_to_head_comparisons=comparison_res.head_to_head_comparisons,
+            overall_recommendation_rationale=comparison_res.overall_recommendation_rationale,
+        )
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.get(
     "/review-reasons",
     response_model=ReasonPolicyView,
 )
@@ -756,6 +809,34 @@ async def get_chain_cohesion_narrative(
             provider_status=result.provider_status,
             context=result.context,
         )
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.post(
+    "/chains/{chain_id}/optimize-explain-threshold",
+    response_model=ThresholdExplainOptimizationView,
+)
+async def post_optimize_explain_threshold(
+    chain_id: str, request: Request
+) -> ThresholdExplainOptimizationView:
+    try:
+        service = workspace(request)
+        opt_data = find_clearest_explain_threshold(chain_id, service)
+        return ThresholdExplainOptimizationView(**opt_data)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.post("/chains/{chain_id}/apply-explain-threshold")
+async def post_apply_explain_threshold(
+    chain_id: str,
+    payload: ApplyThresholdInput,
+    request: Request,
+) -> dict[str, Any]:
+    try:
+        service = workspace(request)
+        return apply_explain_threshold(chain_id, service, payload.parameters)
     except Exception as exc:
         raise translate_error(exc) from exc
 
