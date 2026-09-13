@@ -166,9 +166,48 @@ def build_deterministic_comparative_explanation(
             if alm:
                 alm_name = alm.alarm_name or "Unknown Alarm"
                 dev = alm.device_code or "Unknown Device"
-                affected_details.append(f"{m_id} ({alm_name} trên {dev})" if is_vi else f"{m_id} ({alm_name} on {dev})")
+                extra: list[str] = []
+                if isinstance(alm.raw, dict):
+                    raw_loc = alm.raw.get("location_code")
+                    if isinstance(raw_loc, list) and raw_loc:
+                        extra.append(f"trạm {raw_loc[-1]}")
+                    elif isinstance(raw_loc, str) and raw_loc:
+                        extra.append(f"trạm {raw_loc}")
+                    raw_port = alm.raw.get("port") or alm.raw.get("component")
+                    if raw_port:
+                        extra.append(f"cổng {raw_port}")
+                    raw_link = alm.raw.get("link_name")
+                    if raw_link:
+                        extra.append(f"link {raw_link}")
+                extra_str = f" - {', '.join(extra)}" if extra else ""
+                affected_details.append(
+                    f"{m_id} ({alm_name} trên {dev}{extra_str})"
+                    if is_vi
+                    else f"{m_id} ({alm_name} on {dev}{extra_str})"
+                )
             else:
                 affected_details.append(m_id)
+
+    # Gather target chain device and location context if available
+    target_dev_names: list[str] = []
+    target_alms: list[str] = []
+    target_locs: list[str] = []
+    if package and target_chain_id and target_chain_id in package.chains:
+        for tm_id in package.members_of(target_chain_id):
+            talm = package.alarms.get(tm_id)
+            if talm:
+                if talm.device_code and talm.device_code not in target_dev_names:
+                    target_dev_names.append(talm.device_code)
+                if talm.alarm_name and talm.alarm_name not in target_alms:
+                    target_alms.append(talm.alarm_name)
+                if isinstance(talm.raw, dict):
+                    tloc = talm.raw.get("location_code")
+                    if isinstance(tloc, list) and tloc:
+                        loc_val = str(tloc[-1])
+                        if loc_val not in target_locs:
+                            target_locs.append(loc_val)
+                    elif isinstance(tloc, str) and tloc and tloc not in target_locs:
+                        target_locs.append(tloc)
 
     points: list[str] = []
     action_summary = ""
@@ -234,37 +273,51 @@ def build_deterministic_comparative_explanation(
         blocks = structural_facts.get("after_blocks_supported") if structural_facts else None
         blocks_text_vi = f"{blocks} phân đoạn mạng" if blocks else "các phân đoạn mạng"
         blocks_text_en = f"{blocks} network blocks" if blocks else "network blocks"
+        loc_clause_vi = f" tại trạm {', '.join(target_locs[:2])}" if target_locs else ""
+        target_clause_vi = (
+            f"giữa các thiết bị ({', '.join(target_dev_names[:3])}{loc_clause_vi}) đang gặp cảnh báo '{target_alms[0]}' trong chuỗi đích {target_chain_id}"
+            if (target_dev_names and target_alms)
+            else f"giữa các thiết bị ({', '.join(target_dev_names[:3])}{loc_clause_vi}) trong chuỗi đích {target_chain_id}"
+            if target_dev_names
+            else f"giữa {blocks_text_vi} trong chuỗi đích {target_chain_id}"
+        )
+        target_clause_en = (
+            f"between devices ({', '.join(target_dev_names[:3])}) in target chain {target_chain_id}"
+            if target_dev_names
+            else f"between {blocks_text_en} in target chain {target_chain_id}"
+        )
 
         if is_connector:
             if is_vi:
                 action_summary = f"Đề xuất di chuyển cảnh báo {m_str} sang chuỗi {target_chain_id or ''} để làm CẦU NỐI (CONNECTOR) liên kết".strip()
-                points.append(f"Cảnh báo sau khi di chuyển đóng vai trò là CẦU NỐI (Articulation Point) liên kết trực tiếp giữa {blocks_text_vi} trong chuỗi đích.")
+                points.append(f"Cảnh báo sau khi di chuyển đóng vai trò là CẦU NỐI (Articulation Point) liên kết trực tiếp {target_clause_vi}.")
                 points.append("Khắc phục phân mảnh tô-pô, giúp chuỗi sự cố đạt tính liên thông cấu trúc toàn diện.")
                 if s_a is not None and s_b is not None and s_a >= s_b:
                     points.append(f"Duy trì hoặc cải thiện độ hỗ trợ thành viên ({s_b*100:.1f}% → {s_a*100:.1f}%).")
                 why_better = (
                     f"Cảnh báo {m_str} đóng vai trò là CẦU NỐI (CONNECTOR) then chốt: trong chuỗi hiện tại nó không phát huy tác dụng liên kết, "
-                    f"nhưng khi đưa sang chuỗi {target_chain_id}, nó bắc cầu kết nối trực tiếp giữa {blocks_text_vi} bị tách rời thành một sự cố mạng thống nhất, "
-                    "giúp kỹ sư NOC nhìn rõ đường truyền lỗi và xử lý triệt để nguyên nhân gốc rễ."
+                    f"nhưng khi đưa sang chuỗi {target_chain_id}, nó bắc cầu kết nối trực tiếp {target_clause_vi} đang bị tách rời thành một sự cố mạng thống nhất, "
+                    "giúp kỹ sư NOC nhìn rõ đường truyền lỗi và xử lý triệt để nguyên nhân gốc rễ thay vì nhìn nhận thành các sự cố đứt đoạn riêng lẻ."
                 )
             else:
                 action_summary = f"Proposal to move alarm {m_str} to target chain {target_chain_id or ''} as a structural CONNECTOR".strip()
-                points.append(f"Member becomes a CONNECTOR (articulation point) bridging {blocks_text_en} in target chain {target_chain_id}.")
+                points.append(f"Member becomes a CONNECTOR (articulation point) bridging {target_clause_en}.")
                 points.append("Eliminates topological fragmentation and restores end-to-end incident continuity.")
                 if s_a is not None and s_b is not None and s_a >= s_b:
                     points.append(f"Maintains or improves membership support ({s_b*100:.1f}% → {s_a*100:.1f}%).")
                 why_better = (
-                    f"Alarm {m_str} serves as an indispensable structural CONNECTOR: transferring it bridges {blocks_text_en} "
-                    f"in chain {target_chain_id} into a single cohesive fault domain, enabling operators to trace the root-cause propagation path."
+                    f"Alarm {m_str} serves as an indispensable structural CONNECTOR: transferring it bridges {target_clause_en} "
+                    f"into a single cohesive fault domain, enabling operators to trace the root-cause propagation path."
                 )
         else:
+            target_scope = f"chuỗi đích {target_chain_id} ({', '.join(target_dev_names[:2])})" if target_dev_names else f"chuỗi đích {target_chain_id}"
             if is_vi:
                 action_summary = f"Đề xuất di chuyển cảnh báo {m_str} từ chuỗi {source_chain_id or ''} sang chuỗi đích {target_chain_id or ''}".strip()
-                points.append(f"Cảnh báo có biên độ liên kết (Margin) ưu tiên nghiêng về chuỗi đích {target_chain_id}.")
+                points.append(f"Cảnh báo có biên độ liên kết (Margin) ưu tiên nghiêng về {target_scope}.")
                 if s_a is not None and s_b is not None and s_a >= s_b:
                     points.append(f"Duy trì hoặc cải thiện độ hỗ trợ thành viên tối thiểu ({s_b*100:.1f}% → {s_a*100:.1f}%).")
                 why_better = (
-                    f"Cảnh báo {m_str} có mức độ tương đồng bằng chứng và vị trí topo gần gũi với chuỗi {target_chain_id} hơn so với chuỗi hiện tại. "
+                    f"Cảnh báo {m_str} có mức độ tương đồng bằng chứng và vị trí topo gần gũi với {target_scope} hơn so với chuỗi hiện tại. "
                     "Việc chuyển giao giúp cảnh báo nằm đúng vào chuỗi sự cố gốc của nó."
                 )
             else:
@@ -298,13 +351,26 @@ def build_deterministic_comparative_explanation(
         pair_str = " + ".join(merged_chain_ids) if merged_chain_ids else f"{source_chain_id} + candidate"
         cross_ev = op_ev.get("cross_chain_evidence", {})
         edges = cross_ev.get("cross_audit_edge_count", 0)
+        c_details: list[str] = []
+        if package and merged_chain_ids:
+            for cid in merged_chain_ids[:2]:
+                c_devs = []
+                for m in package.members_of(cid):
+                    a = package.alarms.get(m)
+                    if a and a.device_code and a.device_code not in c_devs:
+                        c_devs.append(a.device_code)
+                desc = f"chuỗi {cid}"
+                if c_devs:
+                    desc += f" (thiết bị {', '.join(c_devs[:2])})"
+                c_details.append(desc)
+        pair_desc_vi = f"{c_details[0]} và {c_details[1]}" if len(c_details) >= 2 else f"Hai chuỗi {pair_str}"
         if is_vi:
             action_summary = f"Đề xuất hợp nhất 2 chuỗi sự cố {pair_str} thành 1 chuỗi tổng thể".strip()
             if edges:
                 points.append(f"Xác nhận {edges} liên kết kề topo và thời gian đồng bộ trực tiếp giữa 2 chuỗi.")
             points.append("Hợp nhất 2 chuỗi bị phân mảnh thuộc về cùng một sự cố lan truyền mạng.")
             why_better = (
-                f"Hai chuỗi {pair_str} có bằng chứng kết nối mạnh mẽ qua các liên kết mạng và xảy ra cùng thời điểm. "
+                f"{pair_desc_vi} có bằng chứng kết nối mạnh mẽ qua các liên kết mạng và xảy ra cùng thời điểm. "
                 "Hợp nhất giúp kỹ sư NOC có cái nhìn toàn cảnh về sự cố thay vì phải theo dõi nhiều chuỗi rời rạc."
             )
         else:
