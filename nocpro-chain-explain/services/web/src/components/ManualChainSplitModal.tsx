@@ -227,6 +227,27 @@ export function ManualChainSplitModal({
     )
   }, [alarms, searchTerm])
 
+  const [displayLimit, setDisplayLimit] = useState<number>(100)
+
+  // Reset displayLimit on search or tab change
+  useEffect(() => {
+    setDisplayLimit(100)
+  }, [searchTerm, operation])
+
+  // Accessibility: close on Escape key
+  useEffect(() => {
+    if (!isOpen) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, onClose])
+
+  const displayedAlarms = useMemo(() => {
+    return filteredAlarms.slice(0, displayLimit)
+  }, [filteredAlarms, displayLimit])
+
   if (!isOpen) return null
 
   const allAlarmIds = alarms.map((a) => a.alarm_id)
@@ -1160,78 +1181,101 @@ export function ManualChainSplitModal({
                             </td>
                           </tr>
                         ) : (
-                          filteredAlarms.map((alarm) => {
-                            const isSelected = selectedIds.has(alarm.alarm_id)
-                            const isWeak =
-                              alarm.role === 'WEAK' ||
-                              (alarm.membership_support != null && alarm.membership_support < 0.6)
-                            return (
-                              <tr
-                                key={alarm.alarm_id}
-                                draggable={true}
-                                onDragStart={(e) => {
-                                  e.dataTransfer.setData('text/plain', alarm.alarm_id)
-                                  e.dataTransfer.effectAllowed = 'move'
-                                  setDraggedAlarmId(alarm.alarm_id)
-                                }}
-                                onDragEnd={() => setDraggedAlarmId(null)}
-                                onClick={() => handleToggleAlarm(alarm.alarm_id)}
-                                className={`cursor-pointer transition-colors ${
-                                  draggedAlarmId === alarm.alarm_id ? 'opacity-40' : ''
-                                } ${
-                                  isSelected
-                                    ? 'bg-cyan-950/40 text-white font-medium hover:bg-cyan-950/60'
-                                    : 'hover:bg-slate-800/50'
-                                }`}
-                              >
-                                <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
-                                  <div className="flex items-center justify-center gap-1">
-                                    <span
-                                      className="material-symbols-outlined text-[13px] text-slate-500 cursor-grab active:cursor-grabbing hover:text-slate-300"
-                                      title="Kéo cảnh báo này thả vào vùng phân vùng đích ở trên"
-                                    >
-                                      drag_indicator
-                                    </span>
-                                    <input
-                                      type="checkbox"
-                                      checked={isSelected}
-                                      onChange={() => handleToggleAlarm(alarm.alarm_id)}
-                                      className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-cyan-500 cursor-pointer"
-                                    />
-                                  </div>
-                                </td>
-                                <td className="px-3 py-2 font-mono text-[11px] text-slate-200">
-                                  {alarm.device_code || '—'}
-                                </td>
-                                <td className="px-3 py-2 font-medium truncate max-w-xs" title={alarm.alarm_name ?? alarm.alarm_id}>
-                                  {alarm.alarm_name || alarm.alarm_id}
-                                </td>
-                                <td className="px-3 py-2">
-                                  <span
-                                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                      isWeak
-                                        ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
-                                        : alarm.role === 'PRIMARY' || alarm.role === 'ROOT'
-                                        ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
-                                        : 'bg-slate-700/60 text-slate-300'
-                                    }`}
-                                  >
-                                    {alarm.role || 'MEMBER'}
-                                    {alarm.membership_support != null && (
-                                      <span className="font-mono">
-                                        ({(alarm.membership_support * 100).toFixed(0)}%)
+                          <>
+                            {displayedAlarms.map((alarm) => {
+                              const isSelected = selectedIds.has(alarm.alarm_id)
+                              const isWeak =
+                                alarm.role === 'WEAK' ||
+                                (alarm.membership_support != null && alarm.membership_support < 0.6)
+                              return (
+                                <tr
+                                  key={alarm.alarm_id}
+                                  draggable={true}
+                                  onDragStart={(e) => {
+                                    e.dataTransfer.setData('text/plain', alarm.alarm_id)
+                                    e.dataTransfer.effectAllowed = 'move'
+                                    setDraggedAlarmId(alarm.alarm_id)
+                                  }}
+                                  onDragEnd={() => setDraggedAlarmId(null)}
+                                  onClick={() => handleToggleAlarm(alarm.alarm_id)}
+                                  className={`cursor-pointer transition-colors ${
+                                    draggedAlarmId === alarm.alarm_id ? 'opacity-40' : ''
+                                  } ${
+                                    isSelected
+                                      ? 'bg-cyan-950/40 text-white font-medium hover:bg-cyan-950/60'
+                                      : 'hover:bg-slate-800/50'
+                                  }`}
+                                >
+                                  <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                                    <div className="flex items-center justify-center gap-1">
+                                      <span
+                                        className="material-symbols-outlined text-[13px] text-slate-500 cursor-grab active:cursor-grabbing hover:text-slate-300"
+                                        title="Kéo cảnh báo này thả vào vùng phân vùng đích ở trên"
+                                      >
+                                        drag_indicator
                                       </span>
-                                    )}
-                                  </span>
-                                </td>
-                                <td className="px-3 py-2 text-slate-400 font-mono text-[11px] whitespace-nowrap">
-                                  {alarm.canonical_start_time
-                                    ? new Date(alarm.canonical_start_time).toLocaleTimeString()
-                                    : '—'}
+                                      <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={() => handleToggleAlarm(alarm.alarm_id)}
+                                        className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-cyan-500 cursor-pointer"
+                                      />
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2 font-mono text-[11px] text-slate-200">
+                                    {alarm.device_code || '—'}
+                                  </td>
+                                  <td className="px-3 py-2 font-medium truncate max-w-xs" title={alarm.alarm_name ?? alarm.alarm_id}>
+                                    {alarm.alarm_name || alarm.alarm_id}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <span
+                                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                        isWeak
+                                          ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
+                                          : alarm.role === 'PRIMARY' || alarm.role === 'ROOT'
+                                          ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                                          : 'bg-slate-700/60 text-slate-300'
+                                      }`}
+                                    >
+                                      {alarm.role || 'MEMBER'}
+                                      {alarm.membership_support != null && (
+                                        <span className="font-mono">
+                                          ({(alarm.membership_support * 100).toFixed(0)}%)
+                                        </span>
+                                      )}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2 text-slate-400 font-mono text-[11px] whitespace-nowrap">
+                                    {alarm.canonical_start_time
+                                      ? new Date(alarm.canonical_start_time).toLocaleTimeString()
+                                      : '—'}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                            {filteredAlarms.length > displayLimit && (
+                              <tr>
+                                <td colSpan={5} className="px-4 py-2 text-center bg-[#070e1d] border-t border-slate-800 text-[11px] text-slate-400">
+                                  Đang hiển thị <strong>{displayLimit}</strong> / <strong>{filteredAlarms.length}</strong> cảnh báo.
+                                  <button
+                                    type="button"
+                                    onClick={() => setDisplayLimit((prev) => prev + 100)}
+                                    className="ml-2 px-2.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 font-semibold cursor-pointer border border-cyan-500/30 transition-colors"
+                                  >
+                                    Xem thêm 100
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setDisplayLimit(filteredAlarms.length)}
+                                    className="ml-1.5 px-2.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold cursor-pointer border border-slate-700 transition-colors"
+                                  >
+                                    Hiển thị tất cả ({filteredAlarms.length})
+                                  </button>
                                 </td>
                               </tr>
-                            )
-                          })
+                            )}
+                          </>
                         )}
                       </tbody>
                     </table>
