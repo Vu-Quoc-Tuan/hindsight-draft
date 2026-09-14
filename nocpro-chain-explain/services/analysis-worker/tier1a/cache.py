@@ -84,6 +84,7 @@ class Tier1Cache:
     )
     hits: int = 0
     misses: int = 0
+    max_entries: int = 5000
 
     def key_for(
         self,
@@ -113,7 +114,14 @@ class Tier1Cache:
     def put(
         self, key: CacheKey, value: Any, *, snapshot_chain_id: str | None = None
     ) -> None:
-        self.entries[key.as_tuple()] = CacheEntry(
+        tup = key.as_tuple()
+        if tup not in self.entries and len(self.entries) >= self.max_entries:
+            evict_count = max(1, self.max_entries // 10)
+            for _ in range(evict_count):
+                if self.entries:
+                    oldest = next(iter(self.entries))
+                    del self.entries[oldest]
+        self.entries[tup] = CacheEntry(
             key=key, value=value, snapshot_chain_id=snapshot_chain_id
         )
 

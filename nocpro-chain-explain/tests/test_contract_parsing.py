@@ -113,3 +113,14 @@ def test_topology_derived_records_keep_source_version_separate_from_generator():
     assert package.topology.active_paths[0].source_version == "syn-topo-v7"
     assert package.topology.failure_domains[0].source_version == "syn-topo-v7"
     assert package.topology.active_paths[0].generation.generator_version == "mockgen-2"
+
+
+def test_all_contract_models_have_resolvable_type_hints():
+    import inspect
+    import typing
+    import contracts.v1.models as models_mod
+
+    for name, cls in inspect.getmembers(models_mod, inspect.isclass):
+        if cls.__module__ == models_mod.__name__:
+            hints = typing.get_type_hints(cls)
+            assert isinstance(hints, dict)

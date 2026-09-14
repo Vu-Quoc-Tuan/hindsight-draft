@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Any, Sequence
 
 from .fingerprint import ChainFingerprint, FingerprintModel
 
@@ -187,3 +188,38 @@ def previous_states_of_chain(
         top_k=top_k,
         exclude_same_lineage=False,
     )
+
+
+def hybrid_topology_similarity(
+    left: ChainFingerprint,
+    right: ChainFingerprint,
+    *,
+    model: FingerprintModel,
+    topo_model: Any | None = None,
+    left_resources: Sequence[str] | None = None,
+    right_resources: Sequence[str] | None = None,
+    topo_weight: float = 0.3,
+) -> tuple[float, float, float]:
+    """Compute hybrid similarity combining semantic fingerprint and latent topology structure (§8.3, ADR-0022).
+
+    Returns:
+        tuple of (hybrid_score, semantic_score, topo_affinity_score)
+    """
+    import numpy as np
+
+    sem_score = cosine_similarity(left, right, model=model)
+    if topo_model is None or not left_resources or not right_resources:
+        return sem_score, sem_score, 0.0
+
+    emb_left = topo_model.compute_chain_structural_embedding(left_resources)
+    emb_right = topo_model.compute_chain_structural_embedding(right_resources)
+    if emb_left is None or emb_right is None:
+        return sem_score, sem_score, 0.0
+
+    cos_topo = float(np.dot(emb_left, emb_right))
+    norm_topo = float(np.clip((cos_topo + 1.0) / 2.0, 0.0, 1.0))
+
+    w = max(0.0, min(1.0, topo_weight))
+    hybrid = (1.0 - w) * sem_score + w * norm_topo
+    return round(hybrid, 4), round(sem_score, 4), round(norm_topo, 4)
+

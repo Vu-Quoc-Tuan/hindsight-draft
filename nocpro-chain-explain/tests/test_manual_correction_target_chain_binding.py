@@ -377,4 +377,30 @@ async def test_manual_correction_http_api_validation(monkeypatch: pytest.MonkeyP
         assert data["has_manual_correction"] is True
         assert data["partition_delta"]["after"]["chain_tgt_2"] == ["a2", "b1", "b2"]
 
+        # D. Success (201) on manual split without specifying candidate_id
+        resp_split = await client.post(
+            f"/api/v1/review-jobs/{session.job_id}/feedback",
+            json={
+                "decision": "MANUAL_CORRECTION",
+                "reason_code": "MANUAL_TOPOLOGY_SPLIT",
+                "manual_correction": {
+                    "operation": "MANUAL_SPLIT",
+                    "partition_delta": {
+                        "before": [["chain_src_1", ["a1", "a2"]]],
+                        "after": [
+                            ["chain_src_1", ["a1"]],
+                            ["chain_src_1::partition_custom", ["a2"]],
+                        ],
+                    },
+                    "edit_summary": "Manual split of a2 into new partition",
+                },
+            },
+            headers={"X-Dev-Operator-Id": "expert_reviewer_1", "X-Dev-Operator-Role": "PRODUCT_OWNER", "X-Dev-Domain-Scope": "IP_NETWORK"},
+        )
+        assert resp_split.status_code == 201
+        split_data = resp_split.json()
+        assert split_data["decision"] in ("MANUAL_CORRECTION", "MANUAL")
+        assert split_data["has_manual_correction"] is True
+        assert split_data["operation"] == "MANUAL_SPLIT"
+
     ws.close()

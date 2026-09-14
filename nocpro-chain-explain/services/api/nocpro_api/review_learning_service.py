@@ -763,6 +763,7 @@ class ReviewLearningService:
         all_codes: list[str],
         decision: ReviewDecision,
         now: datetime,
+        package: Any | None = None,
     ) -> ManualCorrection:
         mc_delta = mc_sub.get("partition_delta", {})
         op = mc_sub.get("operation", "MANUAL_SPLIT")
@@ -779,6 +780,13 @@ class ReviewLearningService:
             frozen_source_alarms = [a.alarm_id for a in chain_alarms]
 
         if not frozen_source_alarms:
+            for exp in self._exposures.get(session.review_id, []):
+                s_alarms = (exp.deterministic_context.get("frozen_universe") or {}).get("source_alarm_ids")
+                if s_alarms:
+                    frozen_source_alarms = s_alarms
+                    break
+
+        if not frozen_source_alarms:
             raise ValueError("Cannot validate manual correction: frozen alarm universe for review session is missing or empty")
 
         if op in {"MANUAL_SPLIT", "MANUAL_REMOVE"}:
@@ -787,8 +795,12 @@ class ReviewLearningService:
             resolved_target_chain_id = None
             resolved_target_alarms = None
         else:
+            if not fu_target_chain_id and client_target_chain_id and package:
+                fu_target_chain_id = client_target_chain_id
+                if hasattr(package, "members_of"):
+                    frozen_target_alarms = [str(aid) for aid in package.members_of(client_target_chain_id)]
             if not fu_target_chain_id or not frozen_target_alarms:
-                raise ValueError(f"Candidate exposure does not define a valid frozen target chain for {op}")
+                raise ValueError(f"Target chain {client_target_chain_id or 'unknown'} does not have valid frozen alarms for {op}")
             if client_target_chain_id and client_target_chain_id != fu_target_chain_id:
                 raise ImmutableReviewConflict(
                     f"Submitted target_chain_id {client_target_chain_id!r} conflicts with frozen target_chain_id {fu_target_chain_id!r}"
@@ -841,7 +853,7 @@ class ReviewLearningService:
         decision = normalize_review_decision(submission["decision"])
         candidate_id = submission.get("candidate_id")
 
-        if decision == ReviewDecision.NONE_ACCEPTABLE:
+        if decision in (ReviewDecision.NONE_ACCEPTABLE, ReviewDecision.MANUAL_CORRECTION) and not candidate_id:
             candidate_id = None
         elif not candidate_id:
             raise ValueError(f"candidate_id is required for decision {decision.value}")
@@ -926,6 +938,7 @@ class ReviewLearningService:
                 all_codes=all_codes,
                 decision=decision,
                 now=now,
+                package=package,
             )
 
         resolved_truth_tier = self._feedback_truth_tier()
@@ -1027,7 +1040,7 @@ class ReviewLearningService:
         decision = normalize_review_decision(submission["decision"])
         candidate_id = submission.get("candidate_id")
 
-        if decision == ReviewDecision.NONE_ACCEPTABLE:
+        if decision in (ReviewDecision.NONE_ACCEPTABLE, ReviewDecision.MANUAL_CORRECTION) and not candidate_id:
             candidate_id = None
         elif not candidate_id:
             raise ValueError(f"candidate_id is required for decision {decision.value}")
@@ -1114,6 +1127,7 @@ class ReviewLearningService:
                 all_codes=all_codes,
                 decision=decision,
                 now=now,
+                package=package,
             )
 
         resolved_truth_tier = self._feedback_truth_tier()

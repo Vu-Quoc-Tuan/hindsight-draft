@@ -9,29 +9,29 @@ interface ReviewLearningPanelProps {
 
 export function ReviewLearningPanel({ open, onClose }: ReviewLearningPanelProps) {
   const [status, setStatus] = useState<ReviewLearningStatus | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [loading] = useState(false)
   const [trainingLog, setTrainingLog] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchStatus = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const data = await api.reviewLearningStatus()
-      setStatus(data)
-      if (data.training_stdout) {
-        setTrainingLog(data.training_stdout)
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không thể tải trạng thái học máy')
-    } finally {
-      setLoading(false)
-    }
-  }
-
   useEffect(() => {
-    if (open) {
-      fetchStatus()
+    if (!open) return
+    let active = true
+
+    api.reviewLearningStatus()
+      .then((res) => {
+        if (!active) return
+        setStatus(res)
+        if (res.training_stdout) {
+          setTrainingLog(res.training_stdout)
+        }
+      })
+      .catch((err: unknown) => {
+        if (!active) return
+        setError(err instanceof Error ? err.message : 'Không thể tải trạng thái học máy')
+      })
+
+    return () => {
+      active = false
     }
   }, [open])
 
@@ -114,8 +114,16 @@ export function ReviewLearningPanel({ open, onClose }: ReviewLearningPanelProps)
                 <div className="p-4 rounded-xl bg-[#0e192e] border border-[#1e2e4a]">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-on-surface-variant font-medium">NDCG@3 Score</span>
-                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/30">
-                      {typeof ndcgImprovement === 'number' ? `+${(ndcgImprovement * 100).toFixed(1)}% vs Baseline` : 'Chưa có dữ liệu'}
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                      typeof ndcgImprovement === 'number' && ndcgImprovement >= 0
+                        ? 'text-emerald-400 bg-emerald-500/15 border-emerald-500/30'
+                        : typeof ndcgImprovement === 'number'
+                        ? 'text-rose-400 bg-rose-500/15 border-rose-500/30'
+                        : 'text-slate-400 bg-slate-500/15 border-slate-500/30'
+                    }`}>
+                      {typeof ndcgImprovement === 'number'
+                        ? `${ndcgImprovement >= 0 ? '+' : ''}${(ndcgImprovement * 100).toFixed(1)}% vs Baseline`
+                        : 'Chưa có dữ liệu'}
                     </span>
                   </div>
                   <div className="mt-2 flex items-baseline gap-2">
@@ -127,15 +135,21 @@ export function ReviewLearningPanel({ open, onClose }: ReviewLearningPanelProps)
                     </span>
                   </div>
                   <div className="mt-2 w-full bg-[#16233a] rounded-full h-1.5 overflow-hidden">
-                    <div className="bg-emerald-400 h-full rounded-full" style={{ width: `${Math.min(100, (ndcg3 ?? 0) * 100)}%` }} />
+                    <div className="bg-emerald-400 h-full rounded-full" style={{ width: `${Math.min(100, Math.max(0, (ndcg3 ?? 0) * 100))}%` }} />
                   </div>
                 </div>
 
                 <div className="p-4 rounded-xl bg-[#0e192e] border border-[#1e2e4a]">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-on-surface-variant font-medium">Top-1 Recall</span>
-                    <span className="text-[10px] font-bold text-primary bg-primary/15 px-1.5 py-0.5 rounded border border-primary/30">
-                      Optimal
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                      typeof top1Recall === 'number' && top1Recall >= 0.999
+                        ? 'text-primary bg-primary/15 border-primary/30'
+                        : typeof top1Recall === 'number'
+                        ? 'text-sky-400 bg-sky-500/15 border-sky-500/30'
+                        : 'text-slate-400 bg-slate-500/15 border-slate-500/30'
+                    }`}>
+                      {typeof top1Recall === 'number' ? (top1Recall >= 0.999 ? 'Optimal' : 'Evaluated') : 'Chưa có'}
                     </span>
                   </div>
                   <div className="mt-2 flex items-baseline gap-2">
@@ -147,15 +161,21 @@ export function ReviewLearningPanel({ open, onClose }: ReviewLearningPanelProps)
                     </span>
                   </div>
                   <div className="mt-2 w-full bg-[#16233a] rounded-full h-1.5 overflow-hidden">
-                    <div className="bg-primary h-full rounded-full" style={{ width: `${Math.min(100, (top1Recall ?? 0) * 100)}%` }} />
+                    <div className="bg-primary h-full rounded-full" style={{ width: `${Math.min(100, Math.max(0, (top1Recall ?? 0) * 100))}%` }} />
                   </div>
                 </div>
 
                 <div className="p-4 rounded-xl bg-[#0e192e] border border-[#1e2e4a]">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-on-surface-variant font-medium">Mean Regret</span>
-                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/30">
-                      Zero Regret
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                      typeof meanRegret === 'number' && meanRegret === 0
+                        ? 'text-emerald-400 bg-emerald-500/15 border-emerald-500/30'
+                        : typeof meanRegret === 'number'
+                        ? 'text-amber-300 bg-amber-500/15 border-amber-500/30'
+                        : 'text-slate-400 bg-slate-500/15 border-slate-500/30'
+                    }`}>
+                      {typeof meanRegret === 'number' ? (meanRegret === 0 ? 'Zero Regret' : 'Evaluated') : 'Chưa có'}
                     </span>
                   </div>
                   <div className="mt-2 flex items-baseline gap-2">
@@ -167,7 +187,12 @@ export function ReviewLearningPanel({ open, onClose }: ReviewLearningPanelProps)
                     </span>
                   </div>
                   <div className="mt-2 w-full bg-[#16233a] rounded-full h-1.5 overflow-hidden">
-                    <div className="bg-emerald-400 h-full rounded-full" style={{ width: `100%` }} />
+                    <div
+                      className="bg-emerald-400 h-full rounded-full"
+                      style={{
+                        width: typeof meanRegret === 'number' ? `${Math.max(0, Math.min(100, (1 - meanRegret) * 100))}%` : '0%',
+                      }}
+                    />
                   </div>
                 </div>
 
@@ -187,7 +212,7 @@ export function ReviewLearningPanel({ open, onClose }: ReviewLearningPanelProps)
                     </span>
                   </div>
                   <p className="mt-2 text-[10px] text-on-surface-variant font-mono truncate">
-                    Schema: {status?.feature_schema_version ?? 'cf-features-v1'}
+                    Schema: {status?.feature_schema_version || 'Chưa xác định'}
                   </p>
                 </div>
               </div>
@@ -242,19 +267,19 @@ export function ReviewLearningPanel({ open, onClose }: ReviewLearningPanelProps)
                   <div className="grid grid-cols-2 gap-2 text-xs font-mono">
                     <div className="p-2.5 rounded-lg bg-[#121d33] border border-[#1a2947]">
                       <span className="text-on-surface-variant text-[11px] block">Tổng số nhóm Incident</span>
-                      <strong className="text-on-surface text-base">{status?.data_profile?.total_groups ?? 25}</strong>
+                      <strong className="text-on-surface text-base">{status?.data_profile?.total_groups ?? '—'}</strong>
                     </div>
                     <div className="p-2.5 rounded-lg bg-[#121d33] border border-[#1a2947]">
                       <span className="text-on-surface-variant text-[11px] block">Tổng ứng viên đánh giá</span>
-                      <strong className="text-on-surface text-base">{status?.data_profile?.total_candidates ?? 70}</strong>
+                      <strong className="text-on-surface text-base">{status?.data_profile?.total_candidates ?? '—'}</strong>
                     </div>
                     <div className="p-2.5 rounded-lg bg-[#121d33] border border-[#1a2947]">
                       <span className="text-on-surface-variant text-[11px] block">Mẫu duyệt (Positive)</span>
-                      <strong className="text-emerald-400 text-base">{status?.data_profile?.total_positives ?? 25}</strong>
+                      <strong className="text-emerald-400 text-base">{status?.data_profile?.total_positives ?? '—'}</strong>
                     </div>
                     <div className="p-2.5 rounded-lg bg-[#121d33] border border-[#1a2947]">
                       <span className="text-on-surface-variant text-[11px] block">Mẫu bác (Negative)</span>
-                      <strong className="text-rose-400 text-base">{status?.data_profile?.total_negatives ?? 45}</strong>
+                      <strong className="text-rose-400 text-base">{status?.data_profile?.total_negatives ?? '—'}</strong>
                     </div>
                   </div>
 

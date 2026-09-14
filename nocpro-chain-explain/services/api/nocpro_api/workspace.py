@@ -229,11 +229,20 @@ class Workspace:
         self._local_evolution_dag: GlobalEpisodeDag | None = None
 
     def _get_job_persistence_lock(self, job_id: str) -> asyncio.Lock:
-        lock = self._job_persistence_locks.get(job_id)
-        if lock is None:
-            lock = asyncio.Lock()
-            self._job_persistence_locks[job_id] = lock
-        return lock
+        with self._lock:
+            lock = self._job_persistence_locks.get(job_id)
+            if lock is None:
+                if len(self._job_persistence_locks) > 1000:
+                    oldest_keys = list(self._job_persistence_locks.keys())[:200]
+                    for k in oldest_keys:
+                        del self._job_persistence_locks[k]
+                lock = asyncio.Lock()
+                self._job_persistence_locks[job_id] = lock
+            return lock
+
+    def _release_job_persistence_lock(self, job_id: str) -> None:
+        with self._lock:
+            self._job_persistence_locks.pop(job_id, None)
 
     def _get_or_build_local_evolution_dag(self) -> GlobalEpisodeDag | None:
         if self._local_evolution_dag is not None:
@@ -511,11 +520,14 @@ class Workspace:
                 )
 
                 async def _persist_atomic() -> None:
-                    async with self._get_job_persistence_lock(view.job_id):
-                        await repository.persist_succeeded_job_and_review_bundle(
-                            view.persistence_payload(), session, exposures
-                        )
-                        self.review_learning.register_persisted_bundle(session, exposures)
+                    try:
+                        async with self._get_job_persistence_lock(view.job_id):
+                            await repository.persist_succeeded_job_and_review_bundle(
+                                view.persistence_payload(), session, exposures
+                            )
+                            self.review_learning.register_persisted_bundle(session, exposures)
+                    finally:
+                        self._release_job_persistence_lock(view.job_id)
 
                 loop = self._persistence_loop
                 if loop is None or loop.is_closed():
@@ -533,8 +545,12 @@ class Workspace:
                     raise RuntimeError("Persistence event loop is not attached or is closed")
 
                 async def _persist_non_terminal() -> None:
-                    async with self._get_job_persistence_lock(view.job_id):
-                        await repository.persist_counterfactual_job(view.persistence_payload())
+                    try:
+                        async with self._get_job_persistence_lock(view.job_id):
+                            await repository.persist_counterfactual_job(view.persistence_payload())
+                    finally:
+                        if status_val in {"FAILED", "INTERRUPTED"}:
+                            self._release_job_persistence_lock(view.job_id)
 
                 future = asyncio.run_coroutine_threadsafe(
                     _persist_non_terminal(),
@@ -650,6 +666,9 @@ class Workspace:
     ) -> None:
         """Promote a fully computed READY snapshot for API reads."""
         with self._lock:
+            old_package = self.package
+            if old_package is not None and old_package.snapshot.snapshot_id != package.snapshot.snapshot_id:
+                self.cache.invalidate_snapshot(old_package.snapshot.snapshot_id)
             self.package = package
             self.precompute = result
             self.similarity_index = None
@@ -1260,6 +1279,9 @@ class Workspace:
         if decision == ReviewDecision.NONE_ACCEPTABLE:
             candidate_id = None
             candidate = {}
+        elif decision == ReviewDecision.MANUAL_CORRECTION and not candidate_id:
+            candidate_id = None
+            candidate = {}
         else:
             if not candidate_id or (candidate_id not in recommendation_ids and candidate_id not in evaluated):
                 raise ValueError(
@@ -1268,8 +1290,9 @@ class Workspace:
                 )
             candidate = evaluated.get(candidate_id, {})
 
-        operation = candidate.get("operation", "UNKNOWN")
-        partition_delta = candidate.get("partition_delta", {})
+        mc_dict = payload.get("manual_correction") or {}
+        operation = mc_dict.get("operation") or candidate.get("operation", "UNKNOWN")
+        partition_delta = mc_dict.get("partition_delta") or candidate.get("partition_delta", {})
 
         chain_id = getattr(job, "chain_id", None) or result_dict.get("identity", {}).get("chain_id")
         snapshot_id = result_dict.get("identity", {}).get("snapshot_id") or (

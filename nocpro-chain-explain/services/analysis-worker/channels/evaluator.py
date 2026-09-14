@@ -60,6 +60,7 @@ from history import HistoricalEvidenceModel, HistoricalTaxonomy
 from history.channel import evaluate_historical_channel
 from temporal_delay import FrozenDelayModel
 from temporal_delay.channel import evaluate_temporal_delay_channel
+from .topology_embedding import TopologyEmbeddingModel, evaluate_topo_embedding_channel
 
 #: Default cap on **stored pair detail**, not on statistics.
 DEFAULT_PAIR_DETAIL_LIMIT = 20_000
@@ -247,6 +248,9 @@ def evaluate_pair_channels(
     temporal_delay_unavailable_reason: str | None = None,
     temporal_delay_threshold_source: str | None = None,
     include_temporal_delay: bool = False,
+    topo_embedding_model: TopologyEmbeddingModel | None = None,
+    topo_embedding_threshold: float = 0.5,
+    include_topo_embedding: bool = False,
 ) -> list[ChannelValue]:
     """Evaluate the full WHY detail for one explicitly requested chain pair."""
     members = set(package.members_of(chain_id))
@@ -302,6 +306,16 @@ def evaluate_pair_channels(
             threshold_source=temporal_delay_threshold_source,
             unavailable_reason=temporal_delay_unavailable_reason,
         ))
+    if include_topo_embedding:
+        values.append(
+            evaluate_topo_embedding_channel(
+                package.alarms[alarm_a],
+                package.alarms[alarm_b],
+                model=topo_embedding_model,
+                resolver=resolver,
+                threshold=topo_embedding_threshold,
+            )
+        )
     return values
 
 

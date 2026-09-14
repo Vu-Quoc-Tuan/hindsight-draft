@@ -89,33 +89,49 @@ function CaseCard({ c }: { c: SimilarReviewCase }) {
 }
 
 export function SimilarReviewCases({ jobId, candidateId }: SimilarReviewCasesProps) {
-  const [retrievalResult, setRetrievalResult] = useState<SimilarCaseRetrievalResult | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [state, setState] = useState<{
+    key: string
+    result: SimilarCaseRetrievalResult | null
+    loading: boolean
+    error: string | null
+  }>({
+    key: '',
+    result: null,
+    loading: false,
+    error: null,
+  })
+
+  const currentKey = `${jobId ?? ''}:${candidateId ?? ''}`
+  const isStale = state.key !== currentKey
+  const retrievalResult = isStale ? null : state.result
+  const loading = isStale ? Boolean(jobId && candidateId) : state.loading
+  const error = isStale ? null : state.error
 
   useEffect(() => {
-    if (!jobId || !candidateId) {
-      setRetrievalResult(null)
-      return
-    }
+    if (!jobId || !candidateId) return
 
     const controller = new AbortController()
-    setLoading(true)
-    setError(null)
-
     api.similarCases(jobId, candidateId, 5, controller.signal)
       .then((data) => {
-        setRetrievalResult(data)
-        setLoading(false)
+        setState({
+          key: currentKey,
+          result: data,
+          loading: false,
+          error: null,
+        })
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return
-        setError(err instanceof Error ? err.message : 'Failed to retrieve similar cases')
-        setLoading(false)
+        setState({
+          key: currentKey,
+          result: null,
+          loading: false,
+          error: err instanceof Error ? err.message : 'Failed to retrieve similar cases',
+        })
       })
 
     return () => controller.abort()
-  }, [jobId, candidateId])
+  }, [jobId, candidateId, currentKey])
 
   if (!candidateId) return null
 

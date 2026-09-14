@@ -497,6 +497,7 @@ export function CounterfactualReview({
   readOnly = false,
   onNavigateToValidation,
   onOpenReviewLearning,
+  onOpenManualSplit,
 }: {
   chainId: string
   initialJob?: CounterfactualJob | null
@@ -505,9 +506,11 @@ export function CounterfactualReview({
   readOnly?: boolean
   onNavigateToValidation?: () => void
   onOpenReviewLearning?: () => void
+  onOpenManualSplit?: () => void
 }) {
   const [job, setJob] = useState<CounterfactualJob | null>(initialJob)
   const [feedbacks, setFeedbacks] = useState<Record<string, OperatorFeedback>>(initialFeedbacks)
+  const [manualFeedbacks, setManualFeedbacks] = useState<OperatorFeedback[]>([])
   const [loading, setLoading] = useState(initialJob == null)
   const [error, setError] = useState<string | null>(null)
   const [noPersistedReview, setNoPersistedReview] = useState(false)
@@ -546,12 +549,17 @@ export function CounterfactualReview({
               .then((list) => {
                 if (!controller.signal.aborted) {
                   const map: Record<string, OperatorFeedback> = {}
+                  const manuals: OperatorFeedback[] = []
                   for (const fb of list) {
                     if (fb.candidate_id) {
                       map[fb.candidate_id] = fb
                     }
+                    if (fb.decision === 'MANUAL_CORRECTION' || fb.has_manual_correction) {
+                      manuals.push(fb)
+                    }
                   }
                   setFeedbacks(map)
+                  setManualFeedbacks(manuals)
                 }
               })
               .catch(() => {
@@ -656,6 +664,17 @@ export function CounterfactualReview({
         </div>
         <div className="flex flex-col items-end gap-1.5">
           <div className="flex items-center gap-2">
+            {onOpenManualSplit && !readOnly && (
+              <button
+                type="button"
+                onClick={onOpenManualSplit}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 transition-colors cursor-pointer"
+                title="Tự định nghĩa phương án phân tách chuỗi sự cố thủ công"
+              >
+                <span className="material-symbols-outlined text-[15px]">alt_route</span>
+                <span>✂️ Tự Tách Chuỗi</span>
+              </button>
+            )}
             {onOpenReviewLearning && (
               <button
                 type="button"
@@ -746,6 +765,30 @@ export function CounterfactualReview({
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              {onOpenManualSplit && !readOnly && (
+                <button
+                  type="button"
+                  className="action-btn"
+                  onClick={onOpenManualSplit}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                    border: '1px solid rgba(6, 182, 212, 0.4)',
+                    color: '#22d3ee',
+                    padding: '0.35rem 0.85rem',
+                    borderRadius: '6px',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  title="Kỹ sư tự chọn các cảnh báo và định nghĩa chuỗi phân tách mới theo ý muốn"
+                >
+                  ✂️ Tự Tách Chuỗi Thủ Công
+                </button>
+              )}
               <button
                 type="button"
                 className="action-btn"
@@ -796,9 +839,141 @@ export function CounterfactualReview({
             <p>
               Toàn bộ các cảnh báo trong chuỗi đều liên kết chặt chẽ qua các mối quan hệ tô-pô mạng và chuỗi kiểm toán sự cố. Không phát hiện cảnh báo rời rạc (WEAK) hay thành phần phân mảnh. Hệ thống không khuyến nghị phân tách, loại bỏ hay di chuyển cảnh báo nào.
             </p>
+            {onOpenManualSplit && !readOnly && (
+              <div style={{ marginTop: '0.6rem' }}>
+                <button
+                  type="button"
+                  onClick={onOpenManualSplit}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                    border: '1px solid rgba(6, 182, 212, 0.4)',
+                    color: '#22d3ee',
+                    padding: '0.35rem 0.75rem',
+                    borderRadius: '6px',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                  title="Tự định nghĩa phân hoạch tách chuỗi theo nhận định kỹ sư"
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>alt_route</span>
+                  <span>✂️ Thiết lập phương án tách thủ công theo nhận định kỹ sư</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       ) : null}
+
+      {/* Manual Corrections Section */}
+      {manualFeedbacks.length > 0 && (
+        <section
+          className="review-manual-corrections-section"
+          style={{
+            margin: '1.25rem 0',
+            padding: '1rem 1.25rem',
+            borderRadius: '10px',
+            background: 'rgba(6, 182, 212, 0.07)',
+            border: '1px solid rgba(6, 182, 212, 0.35)',
+          }}
+          aria-label="Manual partitions by operators"
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span className="material-symbols-outlined" style={{ color: '#22d3ee', fontSize: '20px' }}>
+                alt_route
+              </span>
+              <strong style={{ color: '#e2e8f0', fontSize: '0.95rem' }}>
+                Phân Hoạch Do Kỹ Sư Tự Định Nghĩa ({manualFeedbacks.length} phương án đã lưu)
+              </strong>
+            </div>
+            <span style={{ fontSize: '0.75rem', color: '#22d3ee', fontWeight: 600 }}>
+              ✓ PO-asserted Ground Truth
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {manualFeedbacks.map((fb) => (
+              <div
+                key={fb.feedback_id}
+                style={{
+                  padding: '0.75rem 1rem',
+                  borderRadius: '8px',
+                  background: '#070e1d',
+                  border: '1px solid #1e293b',
+                  fontSize: '0.8rem',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span
+                      style={{
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        background: 'rgba(6, 182, 212, 0.2)',
+                        color: '#22d3ee',
+                        fontWeight: 700,
+                        fontSize: '0.75rem',
+                        border: '1px solid rgba(6, 182, 212, 0.4)',
+                      }}
+                    >
+                      {fb.operation || 'MANUAL_SPLIT'}
+                    </span>
+                    <span style={{ color: '#94a3b8' }}>
+                      Kỹ sư: <strong style={{ color: '#f8fafc' }}>{fb.operator_id}</strong>
+                    </span>
+                  </div>
+                  <span style={{ color: '#64748b', fontSize: '0.75rem', fontFamily: 'monospace' }}>
+                    {fb.created_at ? new Date(fb.created_at).toLocaleString() : ''}
+                  </span>
+                </div>
+                {fb.reason && (
+                  <p style={{ margin: '0.35rem 0', color: '#cbd5e1', fontStyle: 'italic' }}>
+                    “{fb.reason}”
+                  </p>
+                )}
+                {fb.partition_delta?.after && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    {Array.isArray(fb.partition_delta.after)
+                      ? fb.partition_delta.after.map(([pId, alarms]) => (
+                          <div
+                            key={pId}
+                            style={{
+                              padding: '0.3rem 0.6rem',
+                              borderRadius: '4px',
+                              background: '#0f172a',
+                              border: '1px solid #334155',
+                              fontFamily: 'monospace',
+                              fontSize: '0.75rem',
+                            }}
+                          >
+                            <span style={{ color: '#38bdf8' }}>{pId}</span>: <strong>{alarms.length} cảnh báo</strong>
+                          </div>
+                        ))
+                      : Object.entries(fb.partition_delta.after).map(([pId, alarms]) => (
+                          <div
+                            key={pId}
+                            style={{
+                              padding: '0.3rem 0.6rem',
+                              borderRadius: '4px',
+                              background: '#0f172a',
+                              border: '1px solid #334155',
+                              fontFamily: 'monospace',
+                              fontSize: '0.75rem',
+                            }}
+                          >
+                            <span style={{ color: '#38bdf8' }}>{pId}</span>: <strong>{(alarms as unknown[]).length} cảnh báo</strong>
+                          </div>
+                        ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="review-operation-grid">
         {operations.map((operation) => (

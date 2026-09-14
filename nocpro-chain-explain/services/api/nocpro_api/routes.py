@@ -272,7 +272,7 @@ async def list_chains(request: Request) -> ChainListView:
 async def explain_chain(chain_id: str, request: Request):
     service = workspace(request)
     try:
-        result = service.analyze(chain_id)
+        result = await asyncio.to_thread(service.analyze, chain_id)
         return chain_analysis_view(
             result,
             service.require_package(),
@@ -296,7 +296,7 @@ async def explain_pair(
 ) -> PairWhyView:
     service = workspace(request)
     try:
-        values = service.pair_why(chain_id, alarm_a, alarm_b)
+        values = await asyncio.to_thread(service.pair_why, chain_id, alarm_a, alarm_b)
         graybox = adapt_graybox_metadata(service.require_package(), chain_id)
     except Exception as exc:
         raise translate_error(exc) from exc

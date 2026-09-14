@@ -21,6 +21,7 @@ from .similarity import (
     SimilarChainResult,
     cosine_similarity,
     find_similar_chains,
+    hybrid_topology_similarity,
     previous_states_of_chain,
 )
 from .temporal import (
@@ -57,6 +58,7 @@ __all__ = [
     "duration_bin",
     "find_similar_chains",
     "fit_fingerprint_model",
+    "hybrid_topology_similarity",
     "materialize_similarity_index",
     "fingerprint_from_dict",
     "fingerprint_to_dict",

@@ -9,6 +9,7 @@ from typing import Any, Mapping
 
 from audit import StructuralAuditResult
 from channels import exact_cross_chain_evidence
+from channels.semantic import EMPTY_TAXONOMY
 
 from .config import CounterfactualConfig
 from .models import (
@@ -297,6 +298,7 @@ def generate_merge_candidates(
     local_candidates: tuple[Any, ...],
     package,
     config: CounterfactualConfig,
+    taxonomy: Any = None,
 ) -> CandidateBatch:
     """Generate bounded unordered MERGE candidates from local retrieval only.
 
@@ -332,7 +334,26 @@ def generate_merge_candidates(
         if len(merged_members) > config.max_chain_members:
             continue
 
-        evidence = exact_cross_chain_evidence(package, left_chain_id, right_chain_id)
+        effective_taxonomy = taxonomy
+        if effective_taxonomy is None and hasattr(package, "alarms"):
+            try:
+                from channels.real_taxonomy import build_real_alarm_taxonomy
+                effective_taxonomy = build_real_alarm_taxonomy(package.alarms.values())
+            except Exception:
+                effective_taxonomy = None
+
+        if effective_taxonomy is not None:
+            try:
+                evidence = exact_cross_chain_evidence(
+                    package,
+                    left_chain_id,
+                    right_chain_id,
+                    taxonomy=effective_taxonomy,
+                )
+            except TypeError:
+                evidence = exact_cross_chain_evidence(package, left_chain_id, right_chain_id)
+        else:
+            evidence = exact_cross_chain_evidence(package, left_chain_id, right_chain_id)
         if evidence.cross_audit_edge_count < 1:
             continue
         merged_chain_id = f"CF-MERGE-{_candidate_id_for_merge(identity, pair)}"

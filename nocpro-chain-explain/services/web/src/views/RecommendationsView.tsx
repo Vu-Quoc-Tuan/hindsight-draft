@@ -5,6 +5,7 @@ import { ValidationView } from './ValidationView'
 import type { ChainAnalysis } from '../types'
 import { InfoTip } from '../components/InfoTip'
 import { ExplainClarityComparisonModal } from '../components/ExplainClarityComparisonModal'
+import { ManualChainSplitModal } from '../components/ManualChainSplitModal'
 
 export function RecommendationsView({
   analysis,
@@ -22,6 +23,8 @@ export function RecommendationsView({
   const [prevInitialSubTab, setPrevInitialSubTab] = useState(initialSubTab)
   const [activeTab, setActiveTab] = useState<'recommendations' | 'validation'>(initialSubTab)
   const [showThresholdModal, setShowThresholdModal] = useState(false)
+  const [showManualSplitModal, setShowManualSplitModal] = useState(false)
+  const [reviewReloadKey, setReviewReloadKey] = useState(0)
 
   if (initialSubTab !== prevInitialSubTab) {
     setPrevInitialSubTab(initialSubTab)
@@ -44,6 +47,17 @@ export function RecommendationsView({
             </h1>
           </div>
           <div className="flex flex-wrap items-center gap-space-xs shrink-0">
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={() => setShowManualSplitModal(true)}
+                className="inline-flex items-center gap-space-xs rounded-full border border-cyan-500/40 bg-cyan-500/15 px-space-sm py-0.5 font-code-sm text-xs text-cyan-300 hover:bg-cyan-500/25 transition-all cursor-pointer font-medium"
+                title="Tự định nghĩa phân hoạch tách chuỗi sự cố theo nhận định của kỹ sư vận hành"
+              >
+                <span aria-hidden="true" className="material-symbols-outlined text-[14px]">alt_route</span>
+                ✂️ Tự Tách Chuỗi Thủ Công
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setShowThresholdModal(true)}
@@ -59,7 +73,7 @@ export function RecommendationsView({
             </div>
             <div className="inline-flex items-center gap-space-xs rounded-full border border-emerald-500/30 bg-emerald-500/15 px-space-sm py-0.5 font-code-sm text-xs text-emerald-300">
               <span aria-hidden="true" className="material-symbols-outlined text-[14px]">verified</span>
-              Guardrails: Pass
+              Hard Gates: Enforced
             </div>
           </div>
         </div>
@@ -74,8 +88,8 @@ export function RecommendationsView({
             <strong className="font-code-sm text-secondary">Persisted Review v1</strong>
           </div>
           <div className="border-b border-surface-container-high px-space-md py-space-sm sm:border-b-0 sm:border-r">
-            <small className="block uppercase tracking-wider text-on-surface-variant text-[10px] font-bold">Audit Safety Check</small>
-            <strong className="font-code-sm text-emerald-400">P1 SLA Impact: None</strong>
+            <small className="block uppercase tracking-wider text-on-surface-variant text-[10px] font-bold">Execution Boundary</small>
+            <strong className="font-code-sm text-emerald-400">Zero Live Mutation</strong>
           </div>
           <div className="px-space-md py-space-sm">
             <small className="block uppercase tracking-wider text-on-surface-variant text-[10px] font-bold">Analysis config</small>
@@ -120,11 +134,12 @@ export function RecommendationsView({
       {activeTab === 'recommendations' ? (
         <div className="overflow-hidden rounded-xl border border-surface-container-high bg-surface-container shadow-md">
           <CounterfactualReview
-            key={analysis.chain_id}
+            key={`${analysis.chain_id}-${reviewReloadKey}`}
             chainId={analysis.chain_id}
             readOnly={readOnly}
             onNavigateToValidation={() => setActiveTab('validation')}
             onOpenReviewLearning={onOpenReviewLearning}
+            onOpenManualSplit={() => setShowManualSplitModal(true)}
           />
         </div>
       ) : (
@@ -138,6 +153,16 @@ export function RecommendationsView({
           mode="threshold"
           chainId={analysis.chain_id}
           onThresholdApplied={onThresholdApplied}
+        />
+      )}
+
+      {showManualSplitModal && (
+        <ManualChainSplitModal
+          isOpen={showManualSplitModal}
+          onClose={() => setShowManualSplitModal(false)}
+          chainId={analysis.chain_id}
+          alarms={analysis.members}
+          onSaved={() => setReviewReloadKey((k) => k + 1)}
         />
       )}
 

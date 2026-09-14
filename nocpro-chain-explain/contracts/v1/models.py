@@ -26,6 +26,7 @@ from .enums import (
     SnapshotStatus,
     SourceKind,
     SystemPairStatus,
+    SystemSemantic,
 )
 
 

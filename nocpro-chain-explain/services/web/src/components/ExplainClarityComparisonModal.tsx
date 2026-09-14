@@ -24,65 +24,98 @@ export function ExplainClarityComparisonModal({
   chainId,
   onThresholdApplied,
 }: ExplainClarityComparisonModalProps) {
-  const [proposalsData, setProposalsData] = useState<ProposalClarityComparison | null>(null)
-  const [thresholdData, setThresholdData] = useState<ThresholdExplainOptimization | null>(null)
-  const [selectedTargetCandId, setSelectedTargetCandId] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const currentKey = `${isOpen ? '1' : '0'}:${mode}:${jobId ?? ''}:${chainId ?? ''}`
+  const [dataState, setDataState] = useState<{
+    key: string
+    proposalsData: ProposalClarityComparison | null
+    thresholdData: ThresholdExplainOptimization | null
+    selectedTargetCandId: string | null
+    error: string | null
+  }>({
+    key: '',
+    proposalsData: null,
+    thresholdData: null,
+    selectedTargetCandId: null,
+    error: null,
+  })
+
   const [applying, setApplying] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [applyError, setApplyError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
+
+  const hasRequest = (mode === 'proposals' && Boolean(jobId)) || (mode === 'threshold' && Boolean(chainId))
+  const isStale = isOpen && hasRequest && dataState.key !== currentKey
+  const loading = isStale
+  const proposalsData = isStale ? null : dataState.proposalsData
+  const thresholdData = isStale ? null : dataState.thresholdData
+  const selectedTargetCandId = isStale ? null : dataState.selectedTargetCandId
+  const error = isStale ? null : (dataState.error || applyError)
+
+  const setSelectedTargetCandId = (id: string | null) => {
+    setDataState((prev) => ({ ...prev, selectedTargetCandId: id }))
+  }
 
   useEffect(() => {
     if (!isOpen) return
     let active = true
-    setLoading(true)
-    setError(null)
-    setSuccessMsg(null)
 
     if (mode === 'proposals' && jobId) {
       api.getProposalClarityComparison(jobId)
         .then((res) => {
           if (!active) return
-          setProposalsData(res)
-          if (res.head_to_head_comparisons.length > 0) {
-            setSelectedTargetCandId(res.head_to_head_comparisons[0].target_candidate_id)
-          }
+          setDataState({
+            key: currentKey,
+            proposalsData: res,
+            thresholdData: null,
+            selectedTargetCandId: res.head_to_head_comparisons[0]?.target_candidate_id ?? null,
+            error: null,
+          })
         })
         .catch((err: unknown) => {
           if (!active) return
-          setError(err instanceof Error ? err.message : 'Không thể tải so sánh độ rõ ràng đề xuất.')
-        })
-        .finally(() => {
-          if (active) setLoading(false)
+          setDataState({
+            key: currentKey,
+            proposalsData: null,
+            thresholdData: null,
+            selectedTargetCandId: null,
+            error: err instanceof Error ? err.message : 'Không thể tải so sánh độ rõ ràng đề xuất.',
+          })
         })
     } else if (mode === 'threshold' && chainId) {
       api.optimizeExplainThreshold(chainId)
         .then((res) => {
           if (!active) return
-          setThresholdData(res)
+          setDataState({
+            key: currentKey,
+            proposalsData: null,
+            thresholdData: res,
+            selectedTargetCandId: null,
+            error: null,
+          })
         })
         .catch((err: unknown) => {
           if (!active) return
-          setError(err instanceof Error ? err.message : 'Không thể quét ngưỡng tối ưu giải thích.')
+          setDataState({
+            key: currentKey,
+            proposalsData: null,
+            thresholdData: null,
+            selectedTargetCandId: null,
+            error: err instanceof Error ? err.message : 'Không thể quét ngưỡng tối ưu giải thích.',
+          })
         })
-        .finally(() => {
-          if (active) setLoading(false)
-        })
-    } else {
-      setLoading(false)
     }
 
     return () => {
       active = false
     }
-  }, [isOpen, mode, jobId, chainId])
+  }, [isOpen, mode, jobId, chainId, currentKey])
 
   if (!isOpen) return null
 
   const handleApplyThreshold = async () => {
     if (!thresholdData || !chainId) return
     setApplying(true)
-    setError(null)
+    setApplyError(null)
     setSuccessMsg(null)
     try {
       const res = await api.applyExplainThreshold(chainId, thresholdData.optimal_parameters)
@@ -91,7 +124,7 @@ export function ExplainClarityComparisonModal({
         onThresholdApplied()
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Lỗi khi áp dụng ngưỡng.')
+      setApplyError(err instanceof Error ? err.message : 'Lỗi khi áp dụng ngưỡng.')
     } finally {
       setApplying(false)
     }

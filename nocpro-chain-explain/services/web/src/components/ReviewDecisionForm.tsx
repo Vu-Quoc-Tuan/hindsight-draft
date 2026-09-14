@@ -72,7 +72,7 @@ export function ReviewDecisionForm({
 }: ReviewDecisionFormProps) {
   const [policy, setPolicy] = useState<ReasonPolicy | null>(null)
   const [selectedDecision, setSelectedDecision] = useState<ReviewDecision>('APPROVE')
-  const [selectedReasonCode, setSelectedReasonCode] = useState<string>('')
+  const [userReasonCode, setUserReasonCode] = useState<string | null>(null)
   const [confidence, setConfidence] = useState<number>(1.0)
   const [notes, setNotes] = useState<string>('')
   const [isSuperseding, setIsSuperseding] = useState<boolean>(false)
@@ -102,17 +102,11 @@ export function ReviewDecisionForm({
     return () => controller.abort()
   }, [])
 
-  // Auto-select first reason code when decision changes
-  useEffect(() => {
-    if (policy && policy.reasons_by_decision[selectedDecision]) {
-      const available = policy.reasons_by_decision[selectedDecision]
-      if (available.length > 0) {
-        setSelectedReasonCode(available[0].code)
-      }
-    }
-  }, [selectedDecision, policy])
-
   const availableReasons = policy?.reasons_by_decision[selectedDecision] ?? []
+  const selectedReasonCode =
+    userReasonCode && availableReasons.some((r) => r.code === userReasonCode)
+      ? userReasonCode
+      : (availableReasons[0]?.code ?? '')
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -341,7 +335,10 @@ export function ReviewDecisionForm({
                   <button
                     key={d.value}
                     type="button"
-                    onClick={() => setSelectedDecision(d.value)}
+                    onClick={() => {
+                      setSelectedDecision(d.value)
+                      setUserReasonCode(null)
+                    }}
                     className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
                       isSelected
                         ? `${d.badgeClass} ring-2 ring-cyan-500/50 scale-[1.01]`
@@ -366,7 +363,7 @@ export function ReviewDecisionForm({
               </label>
               <select
                 value={selectedReasonCode}
-                onChange={(e) => setSelectedReasonCode(e.target.value)}
+                onChange={(e) => setUserReasonCode(e.target.value)}
                 className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-cyan-500"
               >
                 {availableReasons.map((r) => (

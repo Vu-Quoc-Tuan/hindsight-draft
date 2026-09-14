@@ -9,6 +9,7 @@ class ChannelFamily(str, Enum):
     """Stable public family names; provider IDs remain internal."""
 
     DEP_UPSTREAM = "DEP_UPSTREAM"
+    DEP_EMBEDDING = "DEP_EMBEDDING"
 
 
 class DependencySemantic(str, Enum):

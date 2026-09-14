@@ -27,6 +27,10 @@ from .dependency import (
     build_topology_graph,
     evaluate_dep_hop_channel,
 )
+from .topology_embedding import (
+    TopologyEmbeddingModel,
+    evaluate_topo_embedding_channel,
+)
 from .entity import (
     ENTITY_CHANNELS,
     REMOTE_CHANNEL,
@@ -109,6 +113,7 @@ __all__ = [
     "PairChannelMatrix",
     "ResourceResolver",
     "TopologyGraph",
+    "TopologyEmbeddingModel",
     "VerifiedPath",
     "build_active_path_index",
     "build_dep_upstream_providers",
@@ -128,6 +133,7 @@ __all__ = [
     "build_indexed_statistics",
     "evaluate_delay_channel",
     "evaluate_dep_hop_channel",
+    "evaluate_topo_embedding_channel",
     "evaluate_entity_channels",
     "evaluate_remote_channel",
     "evaluate_semantic_channel",
