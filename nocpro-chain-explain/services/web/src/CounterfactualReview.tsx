@@ -3,6 +3,11 @@ import { useEffect, useState } from 'react'
 import { api, ApiError } from './api'
 import { ExplainClarityComparisonModal } from './components/ExplainClarityComparisonModal'
 import { percent } from './format'
+import {
+  generatePartitionTicketReport,
+  downloadPartitionDiffJson,
+  copyToClipboard,
+} from './partitionExport'
 import type {
   CounterfactualCandidate,
   CounterfactualJob,
@@ -516,6 +521,66 @@ export function CounterfactualReview({
   const [noPersistedReview, setNoPersistedReview] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   const [showClarityModal, setShowClarityModal] = useState(false)
+  const [retractingFeedbackId, setRetractingFeedbackId] = useState<string | null>(null)
+  const [copiedFeedbackId, setCopiedFeedbackId] = useState<string | null>(null)
+  const [retractStatusMsg, setRetractStatusMsg] = useState<string | null>(null)
+
+  const handleUndoManualCorrection = async (feedbackId: string) => {
+    if (!job?.job_id) return
+    if (!window.confirm('Bạn có chắc chắn muốn hủy (Undo / Retract) phương án phân hoạch này?')) {
+      return
+    }
+    try {
+      setRetractingFeedbackId(feedbackId)
+      setRetractStatusMsg(null)
+      await api.retractFeedback(job.job_id, feedbackId, 'Kỹ sư hủy phương án phân hoạch thủ công', {
+        'X-Dev-Operator-Id': 'viettel_operator',
+        'X-Dev-Operator-Role': 'PRODUCT_OWNER',
+        'X-Dev-Domain-Scope': 'IP_NETWORK',
+      })
+      setManualFeedbacks((prev) => prev.filter((fb) => fb.feedback_id !== feedbackId))
+      setFeedbacks((prev) => {
+        const next = { ...prev }
+        delete next[feedbackId]
+        return next
+      })
+      setRetractStatusMsg('Đã hủy thành công phương án phân hoạch.')
+      setTimeout(() => setRetractStatusMsg(null), 3500)
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Không thể hủy phương án phân hoạch')
+    } finally {
+      setRetractingFeedbackId(null)
+    }
+  }
+
+  const handleCopyReport = async (fb: OperatorFeedback) => {
+    const report = generatePartitionTicketReport({
+      chainId,
+      operation: fb.operation || 'MANUAL_SPLIT',
+      operatorId: fb.operator_id || 'operator',
+      createdAt: fb.created_at || undefined,
+      reasonCode: fb.reason_codes?.[0] || fb.reason || 'MANUAL_TOPOLOGY_SPLIT',
+      notes: fb.reason || undefined,
+      partitionDelta: fb.partition_delta,
+    })
+    const success = await copyToClipboard(report)
+    if (success) {
+      setCopiedFeedbackId(fb.feedback_id)
+      setTimeout(() => setCopiedFeedbackId(null), 2500)
+    }
+  }
+
+  const handleDownloadJson = (fb: OperatorFeedback) => {
+    downloadPartitionDiffJson({
+      chainId,
+      operation: fb.operation || 'MANUAL_SPLIT',
+      operatorId: fb.operator_id || 'operator',
+      createdAt: fb.created_at || undefined,
+      reasonCode: fb.reason_codes?.[0] || fb.reason || 'MANUAL_TOPOLOGY_SPLIT',
+      notes: fb.reason || undefined,
+      partitionDelta: fb.partition_delta,
+    })
+  }
 
   useEffect(() => {
     if (initialJob?.chain_id === chainId) return
@@ -969,9 +1034,86 @@ export function CounterfactualReview({
                         ))}
                   </div>
                 )}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid #1e293b' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyReport(fb)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        padding: '0.25rem 0.6rem',
+                        borderRadius: '5px',
+                        background: copiedFeedbackId === fb.feedback_id ? 'rgba(16, 185, 129, 0.2)' : 'rgba(56, 189, 248, 0.12)',
+                        border: copiedFeedbackId === fb.feedback_id ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(56, 189, 248, 0.3)',
+                        color: copiedFeedbackId === fb.feedback_id ? '#34d399' : '#38bdf8',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                      title="Sao chép nội dung báo cáo phân hoạch để dán vào Ticket NOC (Jira/ITSM)"
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
+                        {copiedFeedbackId === fb.feedback_id ? 'check' : 'content_copy'}
+                      </span>
+                      <span>{copiedFeedbackId === fb.feedback_id ? 'Đã sao chép Ticket!' : '📋 Sao chép Ticket'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadJson(fb)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        padding: '0.25rem 0.6rem',
+                        borderRadius: '5px',
+                        background: 'rgba(148, 163, 184, 0.12)',
+                        border: '1px solid rgba(148, 163, 184, 0.3)',
+                        color: '#cbd5e1',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                      }}
+                      title="Tải file JSON diff đính kèm ticket"
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>download</span>
+                      <span>📥 Tải JSON Diff</span>
+                    </button>
+                  </div>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      onClick={() => handleUndoManualCorrection(fb.feedback_id)}
+                      disabled={retractingFeedbackId === fb.feedback_id}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        padding: '0.25rem 0.6rem',
+                        borderRadius: '5px',
+                        background: 'rgba(244, 63, 94, 0.12)',
+                        border: '1px solid rgba(244, 63, 94, 0.35)',
+                        color: '#fb7185',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        cursor: retractingFeedbackId === fb.feedback_id ? 'not-allowed' : 'pointer',
+                      }}
+                      title="Hủy phương án này và rút lại khỏi danh sách nhãn duyệt"
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>undo</span>
+                      <span>{retractingFeedbackId === fb.feedback_id ? 'Đang hủy...' : '↺ Hủy phương án (Undo)'}</span>
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
+          {retractStatusMsg && (
+            <div style={{ marginTop: '0.75rem', padding: '0.5rem 0.75rem', borderRadius: '6px', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.35)', color: '#34d399', fontSize: '0.8rem' }}>
+              ✓ {retractStatusMsg}
+            </div>
+          )}
         </section>
       )}
 

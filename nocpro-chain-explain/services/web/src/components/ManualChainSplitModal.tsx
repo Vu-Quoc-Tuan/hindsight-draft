@@ -1,5 +1,10 @@
 import { useState, useMemo, useEffect } from 'react'
 import { api } from '../api'
+import {
+  generatePartitionTicketReport,
+  downloadPartitionDiffJson,
+  copyToClipboard,
+} from '../partitionExport'
 import type { OperatorFeedback, ReviewDecision, ChainSummary } from '../types'
 
 export interface AlarmItem {
@@ -294,6 +299,93 @@ export function ManualChainSplitModal({
     setSelectedIds(next)
   }
 
+  const [isDragOverTarget, setIsDragOverTarget] = useState(false)
+  const [isDragOverSource, setIsDragOverSource] = useState(false)
+  const [draggedAlarmId, setDraggedAlarmId] = useState<string | null>(null)
+  const [copiedReportMsg, setCopiedReportMsg] = useState(false)
+
+  const currentPartitionDelta = useMemo(() => {
+    const splitList = Array.from(selectedIds)
+    const remainingList = allAlarmIds.filter((id) => !selectedIds.has(id))
+    const target = targetChainId.trim()
+    if (operation === 'SPLIT') {
+      return {
+        before: [[chainId, allAlarmIds] as [string, string[]]],
+        after: [
+          [chainId, remainingList] as [string, string[]],
+          [target, splitList] as [string, string[]],
+        ],
+      }
+    } else if (operation === 'MERGE') {
+      return {
+        before: [
+          [chainId, allAlarmIds] as [string, string[]],
+          [selectedMergeTargetChainId, targetChainAlarms] as [string, string[]],
+        ],
+        after: [
+          [selectedMergeTargetChainId, allAlarmIds.concat(targetChainAlarms)] as [string, string[]],
+        ],
+      }
+    } else if (operation === 'MOVE') {
+      return {
+        before: [
+          [chainId, allAlarmIds] as [string, string[]],
+          [selectedMergeTargetChainId, targetChainAlarms] as [string, string[]],
+        ],
+        after: [
+          [chainId, remainingList] as [string, string[]],
+          [selectedMergeTargetChainId, targetChainAlarms.concat(splitList)] as [string, string[]],
+        ],
+      }
+    } else {
+      return {
+        before: [[chainId, allAlarmIds] as [string, string[]]],
+        after: [
+          [chainId, remainingList] as [string, string[]],
+          ['UNASSIGNED', splitList] as [string, string[]],
+        ],
+      }
+    }
+  }, [allAlarmIds, chainId, operation, selectedIds, selectedMergeTargetChainId, targetChainAlarms, targetChainId])
+
+  const alarmMap = useMemo(() => {
+    const map: Record<string, { alarm_name?: string | null; device_code?: string | null; role?: string | null }> = {}
+    for (const a of alarms) {
+      map[a.alarm_id] = { alarm_name: a.alarm_name, device_code: a.device_code, role: a.role }
+    }
+    return map
+  }, [alarms])
+
+  const handleCopyTicketReport = async () => {
+    const report = generatePartitionTicketReport({
+      chainId,
+      operation: `MANUAL_${operation}`,
+      operatorId,
+      createdAt: new Date().toISOString(),
+      reasonCode: selectedReasonCode,
+      notes: notes || undefined,
+      partitionDelta: currentPartitionDelta,
+      alarmMap,
+    })
+    const success = await copyToClipboard(report)
+    if (success) {
+      setCopiedReportMsg(true)
+      setTimeout(() => setCopiedReportMsg(false), 2500)
+    }
+  }
+
+  const handleDownloadDiffJson = () => {
+    downloadPartitionDiffJson({
+      chainId,
+      operation: `MANUAL_${operation}`,
+      operatorId,
+      createdAt: new Date().toISOString(),
+      reasonCode: selectedReasonCode,
+      notes: notes || undefined,
+      partitionDelta: currentPartitionDelta,
+    })
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!isCurrentOpValid) return
@@ -506,6 +598,28 @@ export function ManualChainSplitModal({
                 <div>Quyết định: <strong className="text-emerald-400">{successResult.decision}</strong></div>
                 <div>Thao tác: <strong className="text-amber-300">{successResult.operation}</strong></div>
                 <div>Kỹ sư: <strong className="text-slate-200">{successResult.operator_id}</strong></div>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleCopyTicketReport}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-sky-500/20 border border-sky-400/40 text-sky-200 text-xs font-semibold hover:bg-sky-500/30 transition-colors cursor-pointer"
+                  title="Sao chép nội dung báo cáo phân hoạch để dán vào Ticket NOC"
+                >
+                  <span className="material-symbols-outlined text-[15px]">
+                    {copiedReportMsg ? 'check' : 'content_copy'}
+                  </span>
+                  <span>{copiedReportMsg ? 'Đã sao chép Ticket!' : '📋 Sao Chép Ticket NOC'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadDiffJson}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-xs font-semibold hover:bg-slate-700 transition-colors cursor-pointer"
+                  title="Tải file JSON diff để lưu trữ hoặc đính kèm"
+                >
+                  <span className="material-symbols-outlined text-[15px]">download</span>
+                  <span>📥 Tải File JSON Diff</span>
+                </button>
               </div>
               <div className="pt-2 flex justify-center gap-3">
                 <button
@@ -899,6 +1013,94 @@ export function ManualChainSplitModal({
                     </div>
                   </div>
 
+                  {/* Interactive Drag & Drop Target Drop Zone */}
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault()
+                      e.dataTransfer.dropEffect = 'move'
+                      setIsDragOverTarget(true)
+                    }}
+                    onDragLeave={() => setIsDragOverTarget(false)}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      setIsDragOverTarget(false)
+                      const aid = e.dataTransfer.getData('text/plain')
+                      if (aid) {
+                        setSelectedIds((prev) => new Set(prev).add(aid))
+                      }
+                    }}
+                    className={`p-2.5 rounded-xl border transition-all ${
+                      isDragOverTarget
+                        ? 'border-cyan-400 bg-cyan-950/60 shadow-[0_0_15px_rgba(6,182,212,0.4)] ring-2 ring-cyan-400'
+                        : selectedCount > 0
+                        ? 'border-cyan-700/60 bg-[#070e1d]'
+                        : 'border-dashed border-cyan-800/60 bg-[#070e1d]/70'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-cyan-300">
+                        <span className="material-symbols-outlined text-[15px]">drive_file_move</span>
+                        <span>
+                          {operation === 'SPLIT'
+                            ? `Phân vùng mới: ${targetChainId || '...'}`
+                            : operation === 'MOVE'
+                            ? `Chuỗi tiếp nhận: ${selectedMergeTargetChainId || '...'}`
+                            : 'Phân vùng loại bỏ: UNASSIGNED'}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-normal italic">
+                          (Kéo thả cảnh báo vào đây hoặc dùng checkbox bên dưới)
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-cyan-400 font-mono font-bold">
+                        {selectedCount} cảnh báo
+                      </span>
+                    </div>
+
+                    {selectedCount === 0 ? (
+                      <div className="py-2.5 text-center text-xs text-slate-400 border border-dashed border-slate-700/60 rounded-lg bg-slate-950/40">
+                        <span className="material-symbols-outlined text-[18px] text-cyan-400/80 inline-block align-middle mr-1">
+                          drag_indicator
+                        </span>
+                        <span className="align-middle">
+                          Kéo cảnh báo từ danh sách dưới và <strong>thả vào đây</strong> để chuyển
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-1 rounded-lg bg-slate-950/50 border border-slate-800">
+                        {Array.from(selectedIds).map((aid) => {
+                          const item = alarms.find((a) => a.alarm_id === aid)
+                          return (
+                            <span
+                              key={aid}
+                              draggable={true}
+                              onDragStart={(e) => {
+                                e.dataTransfer.setData('text/plain', aid)
+                                e.dataTransfer.effectAllowed = 'move'
+                                setDraggedAlarmId(aid)
+                              }}
+                              onDragEnd={() => setDraggedAlarmId(null)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-950/80 border border-cyan-500/40 text-cyan-200 cursor-grab active:cursor-grabbing hover:border-cyan-400 transition-colors"
+                              title="Kéo thả ngược lại bảng để bỏ gán"
+                            >
+                              <span className="material-symbols-outlined text-[11px] text-slate-400">drag_indicator</span>
+                              <strong className="truncate max-w-[140px]">
+                                {item?.device_code ? `[${item.device_code}] ` : ''}{item?.alarm_name || aid}
+                              </strong>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleAlarm(aid)}
+                                className="ml-0.5 text-cyan-400 hover:text-rose-400 transition-colors cursor-pointer"
+                                title="Bỏ gán khỏi phân vùng đích"
+                              >
+                                ✕
+                              </button>
+                            </span>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+
                   {/* Search Bar */}
                   <div className="relative">
                     <span className="material-symbols-outlined absolute left-2.5 top-2 text-[16px] text-slate-400 pointer-events-none">
@@ -914,11 +1116,35 @@ export function ManualChainSplitModal({
                   </div>
 
                   {/* Alarms Table */}
-                  <div className="max-h-52 overflow-y-auto rounded-xl border border-slate-700/70 bg-[#070e1d]">
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault()
+                      e.dataTransfer.dropEffect = 'move'
+                      setIsDragOverSource(true)
+                    }}
+                    onDragLeave={() => setIsDragOverSource(false)}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      setIsDragOverSource(false)
+                      const aid = e.dataTransfer.getData('text/plain')
+                      if (aid) {
+                        setSelectedIds((prev) => {
+                          const next = new Set(prev)
+                          next.delete(aid)
+                          return next
+                        })
+                      }
+                    }}
+                    className={`max-h-52 overflow-y-auto rounded-xl border transition-all ${
+                      isDragOverSource
+                        ? 'border-cyan-400 bg-slate-900 ring-2 ring-cyan-500/40'
+                        : 'border-slate-700/70 bg-[#070e1d]'
+                    }`}
+                  >
                     <table className="w-full text-left text-xs text-slate-300 border-collapse">
                       <thead className="sticky top-0 bg-[#0e172a] text-[11px] font-semibold text-slate-400 border-b border-slate-700 uppercase tracking-wider">
                         <tr>
-                          <th className="w-10 px-3 py-2 text-center">Chọn</th>
+                          <th className="w-12 px-3 py-2 text-center">Chọn</th>
                           <th className="px-3 py-2">Thiết bị</th>
                           <th className="px-3 py-2">Tên Cảnh Báo</th>
                           <th className="px-3 py-2">Vai trò / Hỗ trợ</th>
@@ -941,20 +1167,37 @@ export function ManualChainSplitModal({
                             return (
                               <tr
                                 key={alarm.alarm_id}
+                                draggable={true}
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData('text/plain', alarm.alarm_id)
+                                  e.dataTransfer.effectAllowed = 'move'
+                                  setDraggedAlarmId(alarm.alarm_id)
+                                }}
+                                onDragEnd={() => setDraggedAlarmId(null)}
                                 onClick={() => handleToggleAlarm(alarm.alarm_id)}
                                 className={`cursor-pointer transition-colors ${
+                                  draggedAlarmId === alarm.alarm_id ? 'opacity-40' : ''
+                                } ${
                                   isSelected
                                     ? 'bg-cyan-950/40 text-white font-medium hover:bg-cyan-950/60'
                                     : 'hover:bg-slate-800/50'
                                 }`}
                               >
                                 <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
-                                  <input
-                                    type="checkbox"
-                                    checked={isSelected}
-                                    onChange={() => handleToggleAlarm(alarm.alarm_id)}
-                                    className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-cyan-500 cursor-pointer"
-                                  />
+                                  <div className="flex items-center justify-center gap-1">
+                                    <span
+                                      className="material-symbols-outlined text-[13px] text-slate-500 cursor-grab active:cursor-grabbing hover:text-slate-300"
+                                      title="Kéo cảnh báo này thả vào vùng phân vùng đích ở trên"
+                                    >
+                                      drag_indicator
+                                    </span>
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => handleToggleAlarm(alarm.alarm_id)}
+                                      className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-cyan-500 cursor-pointer"
+                                    />
+                                  </div>
                                 </td>
                                 <td className="px-3 py-2 font-mono text-[11px] text-slate-200">
                                   {alarm.device_code || '—'}
@@ -1089,6 +1332,28 @@ export function ManualChainSplitModal({
               )}
             </div>
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCopyTicketReport}
+                disabled={!isCurrentOpValid}
+                className="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-medium transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Sao chép bản tóm tắt phân hoạch hiện tại vào clipboard để dán Ticket"
+              >
+                <span className="material-symbols-outlined text-[14px]">
+                  {copiedReportMsg ? 'check' : 'content_copy'}
+                </span>
+                <span>{copiedReportMsg ? 'Đã sao chép!' : '📋 Copy Ticket'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadDiffJson}
+                disabled={!isCurrentOpValid}
+                className="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-medium transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Tải cấu hình phân hoạch dưới dạng file JSON diff"
+              >
+                <span className="material-symbols-outlined text-[14px]">download</span>
+                <span>JSON</span>
+              </button>
               <button
                 type="button"
                 onClick={onClose}

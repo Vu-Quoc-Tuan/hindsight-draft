@@ -131,4 +131,22 @@ describe('ManualChainSplitModal', () => {
     const html = renderToStaticMarkup(<RecommendationsView analysis={mockAnalysis} />)
     expect(html).toContain('✂️ Tự Tách Chuỗi Thủ Công')
   })
+
+  it('renders interactive drag-and-drop zone and ticket export buttons', () => {
+    const html = renderToStaticMarkup(
+      <ManualChainSplitModal
+        isOpen={true}
+        onClose={() => {}}
+        chainId="chain_test_01"
+        alarms={mockAlarms}
+        initialOperation="SPLIT"
+      />
+    )
+
+    expect(html).toContain('drive_file_move')
+    expect(html).toContain('Kéo thả cảnh báo vào đây')
+    expect(html).toContain('drag_indicator')
+    expect(html).toContain('📋 Copy Ticket')
+    expect(html).toContain('JSON')
+  })
 })
