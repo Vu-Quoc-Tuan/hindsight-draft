@@ -251,6 +251,7 @@ export function ManualChainSplitModal({
     remainingCount > 0 &&
     selectedMergeTargetChainId.trim().length > 0 &&
     selectedMergeTargetChainId !== chainId &&
+    targetChainAlarms.length > 0 &&
     !loadingTargetChain
 
   const isValidRemove = selectedCount > 0 && remainingCount > 0
