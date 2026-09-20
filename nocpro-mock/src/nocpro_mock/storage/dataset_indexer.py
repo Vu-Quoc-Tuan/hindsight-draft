@@ -16,8 +16,6 @@ import os
 from pathlib import Path
 import sqlite3
 from typing import Any, Callable
-
-from ..data_profiles import resolve_dataset_profile
 from ..loaders.alarm_csv import AlarmCsvLoader
 from ..loaders.topology_ip_csv import TopoIPLoader
 from ..normalize.resource_mapping import ResourceMapper

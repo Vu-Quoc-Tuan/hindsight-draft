@@ -14,7 +14,7 @@ import csv
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, Literal, TypeAlias
+from typing import Any, Iterator, Literal, TypeAlias
 
 from .alarm_csv import ENCODING, _configure_csv_limits
 

@@ -6,7 +6,6 @@ Core rule: raw values are preserved and dirty data is flagged, never repaired.
 from __future__ import annotations
 
 import csv
-from datetime import datetime
 
 import pytest
 

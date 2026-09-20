@@ -14,16 +14,14 @@ import queue
 import threading
 import time
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Generator
+from typing import Any, Callable
 
 from aiokafka import AIOKafkaProducer
 
 from ..contract import (
-    canonical_topology_version,
-    package_to_json,
     parse_package,
 )
 from ..producer.kafka_snapshot import (
@@ -36,7 +34,6 @@ from ..producer.kafka_topology import (
     build_ip_topology_payload,
     build_it_topology_payload,
     build_topology_wire_batch,
-    publish_topology_batch,
 )
 from ..replay.sequence_slicer import slice_alarm_sequence
 from ..scenarios.sequence import load_sequence_manifest

@@ -20,7 +20,6 @@ from nocpro_mock.contract import (
     CoverageScope,
     PairMetadata,
     ProvenanceClass,
-    SourceKind,
     SystemPairStatus,
     SystemSemantic,
 )

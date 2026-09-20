@@ -5,26 +5,22 @@ Zero external dependencies: uses Python stdlib (http.server + asyncio).
 
 from __future__ import annotations
 
-import asyncio
-from dataclasses import asdict
 import functools
 import json
 import logging
 import mimetypes
-import os
 import queue
 import socket
 import threading
 import time
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import parse_qs, urlparse
 
 from ..config import load_config
 from ..data_profiles import dataset_profiles
-from .topology_api import projection_payload, resolve_navigation_payload, search_payload
 from .topology_api import (
     projection_payload,
     resolve_navigation_payload,
@@ -34,7 +30,6 @@ from .topology_api import (
 from ..contract import (
     ContractViolation,
     MockSnapshotPackage,
-    canonical_topology_version,
     package_to_json,
     parse_package,
     validate_package,
@@ -42,23 +37,17 @@ from ..contract import (
 from ..fixtures.golden import load_golden_fixture
 from ..jobs.job_manager import (
     ConflictError,
-    JobManager,
     JobStatus,
-    JobType,
     get_job_manager,
 )
 from ..loaders.topology_ip_csv import TopoIPLoader
-from ..producer.kafka_snapshot import KafkaSnapshotConfig, publish_snapshot
 from ..producer.kafka_topology import (
-    _content_version,
     build_ip_topology_payload,
     build_it_topology_payload,
 )
-from ..replay.sequence_slicer import slice_alarm_sequence
 from ..replay.snapshot import build_golden_snapshot, build_real_replay_snapshot
 from ..scenarios.sequence import load_sequence_manifest
 from ..storage.dataset_indexer import (
-    DatasetIndexer,
     get_dataset_indexer,
     get_state_dir,
     _topo_signature,
@@ -1323,12 +1312,12 @@ def run_server(
 ) -> None:
     server = create_server(host, port, default_kafka=default_kafka, source_root=source_root)
     url = f"http://{('127.0.0.1' if host == '0.0.0.0' else host)}:{port}"
-    print(f"==================================================")
-    print(f"🚀 NocPro Mock Web UI running at:")
+    print("==================================================")
+    print("🚀 NocPro Mock Web UI running at:")
     print(f"   👉 {url}")
     print(f"   Default Kafka bootstrap: {default_kafka}")
-    print(f"   Press Ctrl+C to stop.")
-    print(f"==================================================")
+    print("   Press Ctrl+C to stop.")
+    print("==================================================")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

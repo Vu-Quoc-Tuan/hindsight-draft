@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from nocpro_mock.producer.kafka_topology import (
@@ -10,7 +9,6 @@ from nocpro_mock.producer.kafka_topology import (
     build_ip_topology_payload,
     build_it_topology_payload,
     build_topology_wire_batch,
-    sha256_hex,
 )
 
 

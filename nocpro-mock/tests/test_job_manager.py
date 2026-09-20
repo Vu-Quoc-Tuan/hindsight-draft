@@ -11,9 +11,6 @@ from nocpro_mock.jobs.job_manager import (
     JobManager,
     JobStatus,
     JobType,
-    LANE_SNAPSHOT,
-    LANE_TOPOLOGY,
-    LANE_SLICE,
 )
 
 

@@ -11,7 +11,6 @@ from nocpro_mock.storage.dataset_indexer import (
     DatasetIndexer,
     encode_cursor,
     decode_cursor,
-    compute_composite_fingerprint,
 )
 from nocpro_mock.storage.active_alarm_fields import (
     ACTIVE_ALARM_FIELDS,

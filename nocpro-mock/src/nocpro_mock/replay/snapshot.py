@@ -148,8 +148,12 @@ def build_real_replay_snapshot(
             source_version=topology_source_version,
         )
         mappings = tuple(
-            mapper.map_alarm(
-                a.alarm_id, device_code=a.device_code, node_reference=a.node_reference
+            mapper.map_real_alarm(
+                a.alarm_id,
+                device_code=a.device_code,
+                node_reference=a.node_reference,
+                device_ip=(a.raw or {}).get("device_ip") or (a.raw or {}).get("ip"),
+                component=(a.raw or {}).get("component") or (a.raw or {}).get("port"),
             )
             for a in alarms
         )
@@ -188,10 +192,12 @@ def build_real_replay_snapshot(
             )
         it_mapper = build_it_resource_mapper(it_dir)
         mappings = tuple(
-            it_mapper.map_alarm(
+            it_mapper.map_real_alarm(
                 a.alarm_id,
                 device_code=a.device_code,
                 node_reference=a.node_reference,
+                device_ip=(a.raw or {}).get("device_ip") or (a.raw or {}).get("ip"),
+                component=(a.raw or {}).get("component") or (a.raw or {}).get("port"),
             )
             for a in alarms
         )

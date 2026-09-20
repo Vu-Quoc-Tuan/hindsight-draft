@@ -20,7 +20,7 @@ def extract_bounded_ip_subgraph(
     seed_device_codes: Iterable[str | None],
     *,
     max_hops: int = 1,
-    max_relations: int = 500,
+    max_relations: int | None = None,
 ) -> tuple[TopoIPRelation, ...]:
     """Extract 1-hop (or k-hop) neighborhood of relations around seed devices.
 
@@ -28,7 +28,8 @@ def extract_bounded_ip_subgraph(
         relations: Full list/sequence of TopoIPRelation from TopoIPLoader.
         seed_device_codes: Device codes of interest (e.g. from alarms).
         max_hops: Maximum graph distance from seed devices (default: 1).
-        max_relations: Safety ceiling to prevent unbounded explosion in dense core.
+        max_relations: Optional safety ceiling to prevent unbounded explosion.
+            Defaults to None (extract all reachable relations within max_hops).
 
     Returns:
         tuple of TopoIPRelation containing only seed devices and their neighbors.
@@ -61,11 +62,11 @@ def extract_bounded_ip_subgraph(
                     if d2:
                         next_devices.add(d2)
 
-                if len(selected_relations) >= max_relations:
+                if max_relations is not None and len(selected_relations) >= max_relations:
                     break
 
         current_devices.update(next_devices)
-        if len(selected_relations) >= max_relations:
+        if max_relations is not None and len(selected_relations) >= max_relations:
             break
 
     return tuple(selected_relations)
