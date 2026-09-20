@@ -65,6 +65,7 @@ def _review() -> dict[str, object]:
             }
         ],
         "recommendations": [{"candidate_id": "cf-1"}],
+        "recommendation_status": "AVAILABLE",
     }
 
 
@@ -103,11 +104,34 @@ def test_ai_advisor_never_converts_absence_of_weak_into_high_fit() -> None:
     assert "causal direction is" not in narrative.lower()
 
 
+def test_ai_advisor_fail_closes_missing_and_bounded_review_states() -> None:
+    structured, _ = extract_grounded_claims("C1", _analysis())
+
+    missing = build_deterministic_narrative(
+        "C1", structured, review_status="NOT_AVAILABLE", language="vi"
+    )
+    assert "chưa được thực hiện" in missing
+    assert "không ghi nhận phương án" not in missing
+    assert "Pareto" not in missing
+
+    bounded = build_deterministic_narrative(
+        "C1",
+        {**structured, "recommendation_status": "NO_CLEAR_ALTERNATIVE"},
+        review_status="AVAILABLE",
+        language="vi",
+    )
+    assert "không gian tìm kiếm hữu hạn đã đánh giá" in bounded
+    assert "tối ưu" not in bounded.lower()
+    assert "thuần nhất" not in bounded.lower()
+
+
 def test_ai_advisor_uses_recommendation_refs_to_find_evaluated_detail(
     monkeypatch,
 ) -> None:
     monkeypatch.delenv("AI_API_KEY", raising=False)
-    result = generate_ai_suggestion("C1", _analysis(), _review())
+    result = generate_ai_suggestion(
+        "C1", _analysis(), _review(), review_status="AVAILABLE"
+    )
 
     assert result.status == "AVAILABLE"
     assert result.model == "DETERMINISTIC_EVIDENCE"
@@ -540,6 +564,7 @@ def test_ai_advisor_renders_comparative_explanation_in_vietnamese() -> None:
             }
         ],
         "recommendations": [{"candidate_id": "rem-1"}],
+        "recommendation_status": "AVAILABLE",
     }
 
     result = generate_ai_suggestion(
@@ -554,7 +579,7 @@ def test_ai_advisor_renders_comparative_explanation_in_vietnamese() -> None:
     assert any("Proposal rationale:" in claim for claim in result.grounded_claims)
 
 
-def test_ai_advisor_explains_optimal_chain_when_no_recommendations() -> None:
+def test_ai_advisor_does_not_infer_optimality_when_review_status_is_missing() -> None:
     clean_analysis = SimpleNamespace(
         members={
             "A1": SimpleNamespace(
@@ -578,6 +603,67 @@ def test_ai_advisor_explains_optimal_chain_when_no_recommendations() -> None:
     )
 
     assert result.status == "AVAILABLE"
-    assert "Chuỗi đã đạt độ gắn kết cao và cấu trúc thuần nhất" in result.narrative
-    assert "Hệ thống không khuyến nghị can thiệp thay đổi cấu trúc" in result.narrative
+    assert "Trạng thái recommendation chưa được cung cấp" in result.narrative
+    assert "Xác thực Pareto" not in result.narrative
+    assert "cấu trúc thuần nhất" not in result.narrative
+    assert "phân mảnh tô-pô" not in result.narrative
+
+
+def test_ai_advisor_extracts_and_renders_operational_facts() -> None:
+    pkg = SimpleNamespace(
+        alarms=[
+            SimpleNamespace(
+                alarm_id="A1",
+                device_code="node-81",
+                alarm_name="OpenstackServiceStatus",
+                severity_name="Major",
+                canonical_start_time="2024-03-29 09:27:59",
+                raw={"content": "Service nova-compute is DOWN", "site": "SITE: HANOI-DC"},
+            ),
+            SimpleNamespace(
+                alarm_id="A2",
+                device_code="node-82",
+                alarm_name="OpenstackServiceStatus",
+                severity_name="Major",
+                canonical_start_time="2024-03-29 09:32:13",
+                raw={"content": "Service neutron-server is DOWN", "site": "HANOI-DC"},
+            ),
+        ]
+    )
+    analysis = SimpleNamespace(
+        members={
+            "A1": SimpleNamespace(
+                role=SimpleNamespace(verdict="CORE", support=0.92),
+                representativeness=0.88,
+            ),
+            "A2": SimpleNamespace(
+                role=SimpleNamespace(verdict="WEAK", support=0.15),
+                representativeness=0.20,
+            ),
+        },
+        descriptors=[SimpleNamespace(label="same entity", coverage=0.9)],
+    )
+
+    structured, claims = extract_grounded_claims("C300", analysis, package=pkg)
+    assert structured["operational_facts"]["has_package_data"] is True
+    assert structured["operational_facts"]["device_names"] == ["node-81", "node-82"]
+    assert structured["operational_facts"]["locations"] == ["HANOI-DC"]
+    assert structured["operational_facts"]["duration_seconds"] == 254
+    assert len(structured["operational_facts"]["delayed_alarms"]) == 1
+    assert structured["operational_facts"]["delayed_alarms"][0]["alarm_id"] == "A2"
+    assert any("node-81" in c for c in claims)
+    assert any("HANOI-DC" in c for c in claims)
+    assert any("duration 254s" in c for c in claims)
+    assert any("Delayed alarm A2" in c for c in claims)
+
+    narrative_vi = build_deterministic_narrative("C300", structured, language="vi")
+    assert "node-81" in narrative_vi
+    assert "HANOI-DC" in narrative_vi
+    assert "254 giây" in narrative_vi
+    assert "Đợt bùng phát trễ" in narrative_vi
+    assert "A2" in narrative_vi
+
+    result = generate_ai_suggestion("C300", analysis, package=pkg, language="vi")
+    assert result.status == "AVAILABLE"
+    assert "node-81" in result.narrative
 

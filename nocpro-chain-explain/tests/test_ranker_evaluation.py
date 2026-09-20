@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
-
 from review_learning import (
     GroupedRankingDataset,
     dcg_at_k,
-    evaluate_deterministic_baseline,
     evaluate_predictions,
     generate_synthetic_review_corpus,
     materialize_training_corpus,

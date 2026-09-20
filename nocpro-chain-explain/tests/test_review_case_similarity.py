@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import pytest
 
 from review_learning.case_fingerprint import extract_candidate_case_blocks, compute_case_fingerprint_payload
 from review_learning.case_similarity import find_similar_review_cases, score_case_similarity

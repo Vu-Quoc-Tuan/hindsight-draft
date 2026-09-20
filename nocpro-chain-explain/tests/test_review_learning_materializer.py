@@ -1,4 +1,3 @@
-import datetime
 from review_learning import (
     generate_synthetic_review_group,
     materialize_training_corpus,
@@ -153,6 +152,8 @@ def test_materializer_strict_temporal_holdout_embargoes_straddling_lineage():
     assert "rev-strict-5" not in train_qids
     assert "rev-strict-1" not in val_qids
     assert "rev-strict-5" not in val_qids
+    assert "rev-strict-1" not in test_qids
+    assert "rev-strict-5" not in test_qids
 
     embargoed = [g for g in corpus.excluded_groups if g.reason == "STRADDLING_LINEAGE_EMBARGO"]
     assert len(embargoed) == 2

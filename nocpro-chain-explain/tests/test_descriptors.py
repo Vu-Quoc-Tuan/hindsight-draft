@@ -15,7 +15,6 @@ from descriptor import (
     Predicate,
     build_predicate_index,
     bitmap_of_members,
-    evaluate_extent,
     filter_redundant,
     jaccard,
     mine_descriptors,

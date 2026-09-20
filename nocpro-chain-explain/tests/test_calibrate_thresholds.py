@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import pytest
 
 from benchmarks.calibrate_thresholds import (
     _quantile,
-    calculate_temporal_gaps,
     load_packages_from_directory,
     run_calibration,
 )

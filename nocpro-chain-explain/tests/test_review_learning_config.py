@@ -1,10 +1,8 @@
 from pathlib import Path
 
-import pytest
 from review_learning import (
     MutationMode,
     RankerMode,
-    ReviewLearningConfig,
     ReviewLearningMode,
     assess_data_readiness,
     load_review_learning_config,

@@ -1,11 +1,7 @@
 import pytest
 from review_learning import (
-    CandidateExposure,
-    FeedbackStatus,
     ReviewDecision,
     ReviewFeedback,
-    ReviewSession,
-    TruthTier,
     canonical_fingerprint,
     normalize_operation_pattern,
     normalize_review_decision,

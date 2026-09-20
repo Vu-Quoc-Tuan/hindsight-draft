@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import tempfile
 import pytest
 
 from review_learning import (
     FEATURE_SCHEMA_VERSION,
     LABEL_POLICY_VERSION,
     RankerArtifactManifest,
-    RankerMetrics,
     generate_synthetic_review_corpus,
     load_production_ranker_artifact,
     materialize_training_corpus,

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 from libs.contracts import load_package
 from descriptor.contrastive import blocking_candidates
 from tier2.counterfactual import ReviewIdentity, Operation

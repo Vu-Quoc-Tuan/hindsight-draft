@@ -9,7 +9,6 @@ Verifies complete public HTTP lifecycle across simulated process restart:
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 import httpx2
@@ -20,11 +19,9 @@ from nocpro_api import create_app
 from nocpro_api.persistence.models import Base
 from nocpro_api.persistence.repository import SnapshotRepository
 from nocpro_api.review_learning_service import ReviewLearningService
-from nocpro_api.review_principal import ReviewerPrincipal
 from nocpro_api.workspace import Workspace
 from review_learning.contracts import (
     CandidateExposure,
-    ReviewDecision,
     ReviewSession,
 )
 

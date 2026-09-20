@@ -8,14 +8,11 @@ from pydantic import ValidationError
 from review_learning.contracts import (
     validate_manual_correction,
     ReviewDecision,
-    TruthTier,
-    CandidateExposure,
     ImmutableReviewSnapshotContext,
     ImmutableReviewConflict,
     UnknownExposureCandidate,
 )
 from nocpro_api.review_principal import (
-    ReviewIdentityMode,
     ReviewerPrincipal,
     get_reviewer_principal,
 )

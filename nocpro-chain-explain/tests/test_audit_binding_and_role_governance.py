@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from fastapi import HTTPException
@@ -19,12 +17,9 @@ from nocpro_api.review_principal import (
     load_reason_policy,
 )
 from review_learning import (
-    CandidateExposure,
     ReviewDecision,
     TruthTier,
     compute_candidate_fingerprint,
-    compute_candidate_set_fingerprint,
-    canonical_fingerprint,
 )
 from review_learning.contracts import ImmutableReviewConflict, ReviewDomainForbidden
 

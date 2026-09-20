@@ -23,7 +23,6 @@ from channels import (
     DepUpstreamAncestor,
     DependencySemantic,
     DirectedHierarchy,
-    VerifiedPath,
     build_active_path_index,
     build_dep_upstream_providers,
     build_directed_hierarchy,

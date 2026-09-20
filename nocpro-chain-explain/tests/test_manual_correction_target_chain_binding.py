@@ -5,7 +5,6 @@ from pathlib import Path
 import httpx2
 import pytest
 
-from configuration import load_analysis_config
 from nocpro_api import create_app
 from nocpro_api.review_learning_service import ReviewLearningService
 from nocpro_api.review_principal import ReviewerPrincipal
@@ -13,8 +12,6 @@ from nocpro_api.workspace import Workspace
 from review_learning.contracts import (
     CandidateExposure,
     ImmutableReviewConflict,
-    ManualCorrection,
-    ReviewDecision,
     ReviewSession,
     validate_manual_correction,
 )

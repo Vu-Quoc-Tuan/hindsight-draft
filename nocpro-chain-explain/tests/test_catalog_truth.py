@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-import pytest
 
 from nocpro_api.catalog import _CATALOG, _resolve_preset_path
 

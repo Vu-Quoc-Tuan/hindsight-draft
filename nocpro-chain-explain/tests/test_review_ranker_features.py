@@ -1,6 +1,5 @@
 from review_learning import (
     FEATURE_NAMES,
-    FEATURE_SCHEMA_VERSION,
     features_to_vector,
     materialize_candidate_features,
 )

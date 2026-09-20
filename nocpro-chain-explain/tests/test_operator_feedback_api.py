@@ -12,7 +12,6 @@ from nocpro_api.persistence.models import Base
 from nocpro_api.persistence.repository import SnapshotRepository
 from nocpro_api.review_learning_service import ReviewLearningService
 from nocpro_api.workspace import Workspace
-from tests.test_api import _payload
 from tests.test_counterfactual_analysis import _metric_computer, _tier1b
 from tests.test_counterfactual_evaluator import _package
 from tier2.counterfactual import CounterfactualJobManager
@@ -225,7 +224,7 @@ async def test_feedback_api_end_to_end_persistence_and_restart(monkeypatch: pyte
 
     # Persist job and review bundle to database
     await repo.persist_counterfactual_job(job_view.persistence_payload())
-    sess = await ws1.review_learning.freeze_review_bundle(
+    await ws1.review_learning.freeze_review_bundle(
         job_id=sub.job_id,
         job_view=job_view,
         package=ws1.package,

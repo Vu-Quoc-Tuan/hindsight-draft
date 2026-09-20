@@ -6,14 +6,7 @@ are safely received by Agent 2's materializer and correctly excluded from protec
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-import pytest
-
 from review_learning.contracts import (
-    CandidateExposure,
-    ReviewDecision,
-    ReviewFeedback,
-    ReviewSession,
     TruthTier,
 )
 from review_learning.materializer import (

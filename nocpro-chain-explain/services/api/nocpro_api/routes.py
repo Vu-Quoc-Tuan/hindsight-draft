@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from functools import partial
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 
 from graybox import adapt_graybox_metadata
 from libs.contracts import ContractIngestError
@@ -63,6 +64,7 @@ from .serializers import (
     pair_evidence_view,
 )
 from .workspace import SnapshotNotLoaded, Workspace
+from .entity_resolver import AlarmEntityResolver
 from .review_principal import (
     ReviewReasonPolicyUnavailable,
     ReviewerPrincipal,
@@ -70,6 +72,8 @@ from .review_principal import (
     load_reason_policy,
 )
 from review_learning.contracts import SimilarCaseRetrievalResult
+from sqlalchemy import select
+from .persistence.models import CohesionNarrativeCache
 
 
 router = APIRouter(prefix="/api/v1")
@@ -79,6 +83,10 @@ logger = logging.getLogger(__name__)
 
 def workspace(request: Request) -> Workspace:
     return request.app.state.workspace
+
+
+def topology_repo(request: Request):
+    return getattr(request.app.state, "topology_repository", None)
 
 
 async def _run_grounded_provider(function: Any, **kwargs: Any) -> Any:
@@ -245,9 +253,11 @@ async def load_snapshot(
 
 
 @router.get("/chains", response_model=ChainListView)
-async def list_chains(request: Request) -> ChainListView:
+async def list_chains(request: Request, background_tasks: BackgroundTasks) -> ChainListView:
     try:
-        result = workspace(request).list_chains()
+        service = workspace(request)
+        result = service.list_chains()
+        background_tasks.add_task(service.precompute_snapshot_deep_dive)
     except Exception as exc:
         raise translate_error(exc) from exc
     return ChainListView(
@@ -268,15 +278,120 @@ async def list_chains(request: Request) -> ChainListView:
     )
 
 
+@router.post("/snapshots/precompute-deep-dive")
+async def trigger_precompute_deep_dive(
+    request: Request, background_tasks: BackgroundTasks
+) -> dict[str, Any]:
+    try:
+        service = workspace(request)
+        background_tasks.add_task(service.precompute_snapshot_deep_dive)
+        return {"status": "QUEUED"}
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
 @router.get("/chains/{chain_id}")
 async def explain_chain(chain_id: str, request: Request):
     service = workspace(request)
     try:
         result = await asyncio.to_thread(service.analyze, chain_id)
+        pkg = service.require_package()
+
+        entity_resolutions_by_alarm = {}
+        repo = topology_repo(request)
+        chain_alarm_ids = list(result.members.keys())
+        resolver: AlarmEntityResolver | None = None
+        new_resolutions = []
+
+        topo_ref = getattr(getattr(pkg, "snapshot", None), "topology_ref", None) or getattr(pkg, "topology_ref", None)
+        profile_id = getattr(topo_ref, "profile_id", None)
+        target_topo_ver = getattr(topo_ref, "topology_version", None)
+        if not profile_id:
+            snap_id = getattr(getattr(pkg, "snapshot", None), "snapshot_id", "") or ""
+            if "ip" in snap_id.lower():
+                profile_id = "IP_NETWORK"
+            else:
+                profile_id = "IT_SERVICES"
+
+        topo_ver = target_topo_ver
+        persisted_by_alarm: dict[str, list[AlarmEntityResolution]] = {}
+
+        if repo is not None:
+            active = await repo.get_active_version(profile_id)
+            if active is not None:
+                topo_ver = target_topo_ver or active.topology_version
+                host_mod_map, host_can_map = await repo.get_host_modules_map(
+                    profile_id, topology_version=topo_ver
+                )
+                resolver = AlarmEntityResolver(
+                    profile_id=profile_id,
+                    topology_version=topo_ver,
+                    host_modules_map=host_mod_map,
+                    host_canonical_id_map=host_can_map,
+                )
+
+            if topo_ver:
+                try:
+                    persisted = await repo.get_alarm_entity_resolutions(
+                        chain_alarm_ids, profile_id, topo_ver
+                    )
+                    for r in persisted:
+                        persisted_by_alarm.setdefault(r.alarm_id, []).append(r)
+                except Exception as e:
+                    logger.warning("Failed to fetch persisted entity resolutions: %s", e)
+
+        if resolver is None:
+            resolver = AlarmEntityResolver.from_package(pkg)
+            if not topo_ver:
+                topo_ver = resolver.topology_version
+
+        # 1. Use persisted resolutions for alarms already resolved
+        for alarm_id in chain_alarm_ids:
+            if alarm_id in persisted_by_alarm:
+                res_list = persisted_by_alarm[alarm_id]
+                observed_host = next(
+                    (r.resource_id for r in res_list if r.entity_role == "OBSERVED_HOST" and r.resource_id),
+                    None,
+                )
+                entity_resolutions_by_alarm[alarm_id] = (observed_host, res_list)
+
+        # 2. Only resolve alarms not already in persistence
+        missing_alarm_ids = [aid for aid in chain_alarm_ids if aid not in persisted_by_alarm]
+        for alarm_id in missing_alarm_ids:
+            if alarm_id in pkg.alarms:
+                alarm = pkg.alarms[alarm_id]
+                raw_dict = (
+                    alarm.raw
+                    if hasattr(alarm, "raw") and isinstance(alarm.raw, dict)
+                    else {}
+                )
+                raw_content = (
+                    raw_dict.get("content")
+                    or getattr(alarm, "raw_content", None)
+                    or raw_dict.get("addition_info")
+                )
+                observed_host, resolutions = resolver.resolve_alarm(
+                    alarm_id,
+                    raw_content=raw_content,
+                    alarm_name=alarm.alarm_name,
+                    device_code=alarm.device_code,
+                    node_reference=alarm.node_reference,
+                    raw_fields=raw_dict,
+                )
+                entity_resolutions_by_alarm[alarm_id] = (observed_host, resolutions)
+                new_resolutions.extend(resolutions)
+
+        if repo is not None and new_resolutions:
+            try:
+                await repo.save_alarm_entity_resolutions(new_resolutions)
+            except Exception as e:
+                logger.warning("Failed to persist entity resolutions: %s", e)
+
         return chain_analysis_view(
             result,
-            service.require_package(),
+            pkg,
             evidence_availability=service.chain_evidence_availability(result),
+            entity_resolutions_by_alarm=entity_resolutions_by_alarm,
         )
     except Exception as exc:
         raise translate_error(exc) from exc
@@ -402,13 +517,15 @@ async def get_review_job(
         # The manager sets a terminal state and enqueues its persistence future
         # under one lock.  Read the state first so a terminal response cannot
         # flush an older future list and race a subsequent API restart.
+        job = None
         try:
             job = service.review_jobs.get(job_id)
         except KeyError:
-            # Preserve the read-boundary flush even for an unknown in-memory
-            # job: another request may have pending durable state to release.
-            await service.flush_review_persistence()
-            raise
+            if service.repository is not None:
+                job = await service.repository.counterfactual_job(job_id)
+            if job is None:
+                await service.flush_review_persistence()
+                raise
         await service.flush_review_persistence()
         pkg = None
         try:
@@ -437,9 +554,47 @@ async def get_latest_review(
             pkg = service.current_package()
         except Exception:
             pass
-        return counterfactual_job_view(
+        view = counterfactual_job_view(
             result, package=pkg, language=lang, review_learning=service.review_learning
         )
+        if os.environ.get("AI_API_KEY") or os.environ.get("AI_BASE_URL"):
+            if isinstance(view.result, dict) and "evaluated_candidates" in view.result:
+                from tier2.counterfactual.comparative_explainer import (
+                    ComparativeExplanation,
+                    enrich_comparative_explanation_with_ai,
+                )
+                for cand in view.result.get("evaluated_candidates", []):
+                    if (
+                        isinstance(cand, dict)
+                        and cand.get("hard_gate_result", {}).get("status") == "PASSED"
+                        and cand.get("comparative_explanation")
+                        and not cand["comparative_explanation"].get("ai_narrative")
+                    ):
+                        c_exp = cand["comparative_explanation"]
+                        obj_exp = ComparativeExplanation(
+                            operation=c_exp.get("operation", "UNKNOWN"),
+                            summary_action=c_exp.get("summary_action", ""),
+                            why_better=c_exp.get("why_better", ""),
+                            comparison_points=c_exp.get("comparison_points", []),
+                            delta_highlights=c_exp.get("delta_highlights", []),
+                            language=c_exp.get("language", lang),
+                            context_facts=c_exp.get("context_facts"),
+                        )
+                        enriched_exp = await enrich_comparative_explanation_with_ai(
+                            obj_exp,
+                            candidate_id=cand.get("candidate_id", ""),
+                            operation=cand.get("operation", "UNKNOWN"),
+                            before_metrics=cand.get("before_metrics"),
+                            after_metrics=cand.get("after_metrics"),
+                            package=pkg,
+                            language=lang,
+                            target_chain_id=cand.get("target_chain_id"),
+                            source_chain_id=cand.get("source_chain_id"),
+                            member_ids=cand.get("member_ids"),
+                            structural_facts=cand.get("structural_facts"),
+                        )
+                        cand["comparative_explanation"] = enriched_exp.as_dict()
+        return view
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -453,11 +608,15 @@ async def get_review_job_proposals_clarity(
 ) -> ProposalClarityComparisonView:
     try:
         service = workspace(request)
+        job = None
         try:
             job = service.review_jobs.get(job_id)
         except KeyError:
-            await service.flush_review_persistence()
-            raise
+            if service.repository is not None:
+                job = await service.repository.counterfactual_job(job_id)
+            if job is None:
+                await service.flush_review_persistence()
+                raise
         await service.flush_review_persistence()
         pkg = None
         try:
@@ -749,17 +908,67 @@ async def get_chain_ai_suggestion(
         review_result = None
         review_status = "NOT_AVAILABLE"
         review_reason = None
+        package = service.current_package() if hasattr(service, "current_package") else None
         try:
             latest_review = await service.latest_review(chain_id)
             if latest_review and latest_review.result:
                 from tier2.counterfactual.public_contract import public_review_result
-                package = service.current_package() if hasattr(service, "current_package") else None
-                review_result = (
-                    public_review_result(latest_review.result, package=package, language=lang)
-                    if hasattr(latest_review.result, "recommendations")
-                    else latest_review.result
-                )
+                if hasattr(latest_review.result, "recommendations"):
+                    review_result = public_review_result(latest_review.result, package=package, language=lang)
+                elif isinstance(latest_review.result, dict):
+                    review_result = dict(latest_review.result)
+                    if "evaluated_candidates" in review_result:
+                        from tier2.counterfactual.comparative_explainer import (
+                            build_deterministic_comparative_explanation,
+                        )
+                        cands = []
+                        for cand in review_result.get("evaluated_candidates", []):
+                            if isinstance(cand, dict):
+                                cand_copy = dict(cand)
+                                cand_m_ids = cand.get("member_ids")
+                                if not cand_m_ids:
+                                    ev = cand.get("operation_specific_evidence") or {}
+                                    if ev.get("alarm_id"):
+                                        cand_m_ids = [str(ev["alarm_id"])]
+                                    elif cand.get("partition_delta"):
+                                        p_delta = cand.get("partition_delta") or {}
+                                        b_list = p_delta.get("before") or []
+                                        a_list = p_delta.get("after") or []
+                                        if b_list and a_list:
+                                            b_m = set(b_list[0][1]) if len(b_list) > 0 and len(b_list[0]) > 1 else set()
+                                            a_m = set(a_list[0][1]) if len(a_list) > 0 and len(a_list[0]) > 1 else set()
+                                            diff = b_m - a_m
+                                            if diff:
+                                                cand_m_ids = list(sorted(diff))
+                                cand_copy["member_ids"] = cand_m_ids or []
+                                cand_copy["comparative_explanation"] = build_deterministic_comparative_explanation(
+                                    operation=cand.get("operation", "UNKNOWN"),
+                                    candidate_id=cand.get("candidate_id", ""),
+                                    partition_delta=cand.get("partition_delta"),
+                                    before_metrics=cand.get("before_metrics") or cand.get("before"),
+                                    after_metrics=cand.get("after_metrics") or cand.get("after"),
+                                    metric_deltas=cand.get("metric_deltas"),
+                                    package=package,
+                                    member_ids=cand_m_ids or (),
+                                    source_chain_id=cand.get("source_chain_id") or chain_id,
+                                    target_chain_id=cand.get("target_chain_id"),
+                                    merged_chain_ids=cand.get("merged_chain_ids"),
+                                    operation_evidence=cand.get("operation_specific_evidence"),
+                                    semantic_effects=cand.get("semantic_effects"),
+                                    structural_facts=cand.get("structural_facts"),
+                                    language=lang,
+                                ).as_dict()
+                                cands.append(cand_copy)
+                            else:
+                                cands.append(cand)
+                        review_result["evaluated_candidates"] = cands
+                else:
+                    review_result = latest_review.result
                 review_status = "AVAILABLE"
+                if isinstance(review_result, dict):
+                    review_reason = review_result.get("reason")
+                    if not review_reason and review_result.get("recommendation_status") == "UNAVAILABLE":
+                        review_reason = "RECOMMENDATION_UNAVAILABLE"
         except Exception:
             logger.exception("Could not load Review artifact for AI suggestion chain=%s", chain_id)
             review_status = "UNAVAILABLE"
@@ -773,6 +982,7 @@ async def get_chain_ai_suggestion(
             review_result=review_result,
             review_status=review_status,
             review_reason=review_reason,
+            package=package,
             language=lang,
         )
         return ai_suggestion_view(suggestion)
@@ -789,10 +999,17 @@ async def get_chain_ai_suggestion(
     response_model=CohesionNarrativeView,
 )
 async def get_chain_cohesion_narrative(
-    chain_id: str, request: Request, lang: str = Query("en")
+    chain_id: str,
+    request: Request,
+    lang: str = Query("en"),
+    force_refresh: bool = Query(False),
 ) -> CohesionNarrativeView:
     try:
         service = workspace(request)
+        active_id = service.active_identity() if hasattr(service, "active_identity") else None
+        snapshot_id = active_id[0] if active_id else "default_snapshot"
+        snapshot_version = active_id[1] if active_id else "v1"
+
         audit_artifact = None
         audit_error_reason: str | None = None
         try:
@@ -806,12 +1023,49 @@ async def get_chain_cohesion_narrative(
             logger.exception("Failed to retrieve latest audit visualization for chain %s", chain_id)
             audit_error_reason = "AUDIT_LOOKUP_FAILED"
 
+        deep_dive_analysis = None
+        try:
+            deep_dive_job = await service.latest_deep_dive(chain_id)
+            if (
+                deep_dive_job
+                and getattr(deep_dive_job, "status", None)
+                and getattr(deep_dive_job.status, "value", str(deep_dive_job.status)) == "SUCCEEDED"
+            ):
+                deep_dive_analysis = deep_dive_job.result
+                if audit_artifact is None and getattr(deep_dive_job, "audit_artifact", None):
+                    audit_artifact = deep_dive_job.audit_artifact
+        except Exception:
+            logger.debug("Failed to retrieve latest deep dive job for chain %s", chain_id, exc_info=True)
+
+        # Check DB cache if available and not force_refresh
+        if service.repository is not None and not force_refresh:
+            try:
+                async with service.repository.sessions() as session:
+                    cache_stmt = select(CohesionNarrativeCache).where(
+                        CohesionNarrativeCache.snapshot_id == snapshot_id,
+                        CohesionNarrativeCache.snapshot_version == snapshot_version,
+                        CohesionNarrativeCache.chain_id == chain_id,
+                        CohesionNarrativeCache.language == lang,
+                    )
+                    cached_row = (await session.scalars(cache_stmt)).first()
+                    if cached_row is not None:
+                        # If cached has P2, OR if P2 is still not completed (audit_artifact and deep_dive_analysis are None):
+                        if cached_row.has_p2 or (audit_artifact is None and deep_dive_analysis is None):
+                            return CohesionNarrativeView(
+                                chain_id=cached_row.chain_id,
+                                narrative=cached_row.narrative,
+                                model=cached_row.model,
+                                provider_status=cached_row.provider_status,
+                                context=cached_row.context,
+                            )
+            except Exception:
+                logger.debug("Cohesion narrative DB cache lookup failed", exc_info=True)
+
         review_result = None
         try:
             latest_rev = await service.latest_review(chain_id)
             if latest_rev and latest_rev.result:
                 from tier2.counterfactual.public_contract import public_review_result
-                package = service.current_package() if hasattr(service, "current_package") else None
                 review_result = (
                     public_review_result(latest_rev.result, package=package, language=lang)
                     if hasattr(latest_rev.result, "recommendations")
@@ -830,8 +1084,35 @@ async def get_chain_cohesion_narrative(
             audit_artifact=audit_artifact,
             review_result=review_result,
             audit_error_reason=audit_error_reason,
+            deep_dive_analysis=deep_dive_analysis,
             language=lang,
         )
+
+        has_p2 = (audit_artifact is not None) or (deep_dive_analysis is not None)
+        if isinstance(result.context, dict):
+            result.context["has_p2"] = has_p2
+
+        # Save to DB cache
+        if service.repository is not None:
+            try:
+                async with service.repository.sessions() as session:
+                    cache_record = CohesionNarrativeCache(
+                        snapshot_id=snapshot_id,
+                        snapshot_version=snapshot_version,
+                        chain_id=chain_id,
+                        language=lang,
+                        has_p2=has_p2,
+                        narrative=result.narrative,
+                        analytical_findings=result.context.get("analytical_findings", []) if isinstance(result.context, dict) else [],
+                        context=result.context if isinstance(result.context, dict) else {},
+                        model=result.model,
+                        provider_status=result.provider_status,
+                    )
+                    await session.merge(cache_record)
+                    await session.commit()
+            except Exception:
+                logger.debug("Failed to persist cohesion narrative to DB cache", exc_info=True)
+
         return CohesionNarrativeView(
             chain_id=result.chain_id,
             narrative=result.narrative,
@@ -1036,6 +1317,36 @@ async def get_topology_resolve(
         "navigation_eligible": False,
         "p2_mapping_eligible": False,
         "dependency_semantics": "UNAVAILABLE",
+    }
+
+
+@router.get("/topology/subgraph")
+async def get_topology_subgraph(
+    request: Request,
+    profile_id: str | None = None,
+    profile: str | None = None,
+    seeds: str = "",
+    hops: int = Query(default=2, ge=1, le=5),
+    limit: int = Query(default=150, ge=1, le=500),
+    version: str | None = None,
+) -> dict[str, Any]:
+    selected_profile = profile_id or profile or "ALARM_ONLY"
+    repo = topology_repo(request)
+    seed_list = [s.strip() for s in seeds.split(",") if s.strip()]
+    if repo is not None:
+        return await repo.get_subgraph(
+            selected_profile,
+            seeds=seed_list,
+            max_hops=hops,
+            max_nodes=limit,
+            topology_version=version,
+        )
+    return {
+        "status": "UNAVAILABLE",
+        "reason": "TOPOLOGY_PERSISTENCE_NOT_INITIALIZED",
+        "profile_id": selected_profile,
+        "nodes": [],
+        "edges": [],
     }
 
 

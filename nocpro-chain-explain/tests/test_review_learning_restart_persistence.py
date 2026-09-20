@@ -15,7 +15,6 @@ from review_learning.contracts import (
     ReviewDecision,
     ReviewSession,
     ReviewSessionNotFound,
-    TruthTier,
     UnknownExposureCandidate,
 )
 from review_learning.temporal_features import sample_bipartite_pairs, sample_chain_pairs

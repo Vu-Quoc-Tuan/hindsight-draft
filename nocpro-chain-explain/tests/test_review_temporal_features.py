@@ -1,12 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
-import pytest
-
 from review_learning.temporal_features import summarize_candidate_delay_features
 from temporal_delay import (
-    CURRENT_DELAY_MODEL_IMPLEMENTATION_VERSION,
     DelayEstimator,
     DelayModelConfig,
     DelayObservation,

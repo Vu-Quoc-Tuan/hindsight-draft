@@ -6,18 +6,15 @@ from dataclasses import replace
 
 import pytest
 
-from configuration import ConfiguredValue, DependencyScopeConfig, ParameterSource, PropagationConfig
+from configuration import ConfiguredValue, DependencyScopeConfig, ParameterSource
 from libs.contracts import IngestedAlarm, IngestedChain, IngestedPackage, IngestedSnapshot
 from libs.provenance import ProvenanceClass, ProvenanceSubtype
 from tier2.topology_hypotheses import (
-    DependencyScopeResult,
     DirectedUniverse,
     DominatorResult,
     HypothesisStatus,
-    ResourceDetails,
     TopologyHypothesesResult,
     TopologyHypothesisReason,
-    analyze_common_dominator,
     analyze_dependency_scope,
     analyze_topology_hypotheses,
 )

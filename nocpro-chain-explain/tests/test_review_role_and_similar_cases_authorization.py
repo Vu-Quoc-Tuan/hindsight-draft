@@ -1,40 +1,24 @@
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 from fastapi import HTTPException
 import httpx2
 import pytest
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from configuration import load_analysis_config
 from nocpro_api import create_app
-from nocpro_api.persistence.models import (
-    Base,
-    FeedbackLifecycleEventModel,
-    ReviewCaseModel,
-    ReviewFeedbackModel,
-)
+from nocpro_api.persistence.models import Base
 from nocpro_api.persistence.repository import SnapshotRepository
 from nocpro_api.review_learning_service import ReviewLearningService
 from nocpro_api.review_principal import (
-    ReviewIdentityMode,
-    ReviewerPrincipal,
     get_reviewer_principal,
 )
 from nocpro_api.workspace import Workspace
 from review_learning.contracts import (
-    AUTHORIZED_PO_ROLES,
-    CandidateExposure,
     ImmutableReviewSnapshotContext,
-    ReviewDecision,
-    ReviewSession,
-    ReviewerRoleForbidden,
-    ReviewDomainForbidden,
 )
 from tier2.counterfactual.jobs import CounterfactualJobManager
 

@@ -4,12 +4,11 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from nocpro_api.persistence.models import Base, ReviewSessionModel, ReviewFeedbackModel, FeedbackLifecycleEventModel
+from nocpro_api.persistence.models import Base
 from nocpro_api.persistence.repository import SnapshotRepository
 from review_learning.contracts import (
     CandidateDisplayEvent,
     CandidateExposure,
-    FeedbackLifecycleType,
     ManualCorrection,
     ReviewCase,
     ReviewDecision,

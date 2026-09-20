@@ -1,4 +1,3 @@
-import pytest
 from review_learning import (
     ReviewDecision,
     TruthTier,

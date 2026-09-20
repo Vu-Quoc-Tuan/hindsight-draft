@@ -1,7 +1,5 @@
-import asyncio
 from types import SimpleNamespace
 from dataclasses import asdict
-from pathlib import Path
 import httpx2
 import pytest
 from nocpro_api.app import create_app

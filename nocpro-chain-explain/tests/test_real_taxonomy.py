@@ -8,10 +8,9 @@ from channels.real_taxonomy import (
     extract_taxonomy_tokens_from_alarm,
 )
 from channels.semantic import evaluate_semantic_channel, SCORE_SAME_FAMILY
-from history.evidence import HistoricalTaxonomy, TaxonomyLevel, TaxonomyTokens
+from history.evidence import TaxonomyLevel
 from libs.contracts import IngestedAlarm
 from similar_chains.fingerprint import (
-    TaxonomyStatus,
     build_fingerprint,
 )
 

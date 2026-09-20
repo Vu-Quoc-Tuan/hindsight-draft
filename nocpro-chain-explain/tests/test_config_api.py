@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import os
-from pathlib import Path
 import httpx2
 import pytest
 
 from nocpro_api import create_app
-from nocpro_api.workspace import Workspace
 
 
 @pytest.fixture

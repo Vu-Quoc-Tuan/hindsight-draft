@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any
-from fastapi import HTTPException
 import pytest
 
 from nocpro_api.review_learning_service import ReviewLearningService

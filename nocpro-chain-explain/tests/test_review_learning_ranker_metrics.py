@@ -2,9 +2,7 @@ import math
 from review_learning import (
     RankerArtifactManifest,
     RankerMetrics,
-    dcg_at_k,
     evaluate_deterministic_baseline,
-    evaluate_predictions,
     generate_synthetic_review_group,
     materialize_training_corpus,
     ndcg_at_k,

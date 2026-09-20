@@ -8,21 +8,12 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from nocpro_api.persistence.models import (
-    Base,
-    CounterfactualJobRecord,
-    ReviewFeedbackModel,
-    ReviewSessionModel,
-    CandidateExposureModel,
-    FeedbackLifecycleEventModel,
-)
+from nocpro_api.persistence.models import Base
 from nocpro_api.persistence.repository import SnapshotRepository
 from nocpro_api.review_learning_service import ReviewLearningService
 from nocpro_api.review_principal import ReviewerPrincipal
 from review_learning.contracts import (
-    CandidateDisplayEvent,
     CandidateExposure,
-    FeedbackLifecycleType,
     ManualCorrection,
     ReviewCase,
     ReviewDecision,
@@ -443,13 +434,11 @@ async def test_production_governance_simulation_and_restart(
     8. Load and verify production artifact with fail-closed governance
     9. Verify re-ranking on serving path in ReviewLearningService
     """
-    import tempfile
     import httpx2
     from dataclasses import replace
     from nocpro_api import create_app
     from nocpro_api.workspace import Workspace
     from review_learning import (
-        FEATURE_NAMES,
         FEATURE_SCHEMA_VERSION,
         LABEL_POLICY_VERSION,
         RankerArtifactManifest,

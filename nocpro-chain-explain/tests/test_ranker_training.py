@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import tempfile
-from pathlib import Path
 import pytest
 
 from review_learning import (
-    FEATURE_NAMES,
     FEATURE_SCHEMA_VERSION,
     LABEL_POLICY_VERSION,
     RankerArtifactManifest,
-    RankerMetrics,
     generate_synthetic_review_corpus,
     load_ranker_artifact,
     materialize_training_corpus,
