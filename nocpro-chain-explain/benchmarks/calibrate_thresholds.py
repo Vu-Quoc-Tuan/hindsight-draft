@@ -562,6 +562,34 @@ def run_calibration(
     elif isinstance(base_raw["counterfactual"], dict):
         base_raw["counterfactual"]["calibration_status"] = base_raw["counterfactual"].get("calibration_status", "SYNTHETIC_ONLY")
 
+    if "propagation" not in base_raw:
+        base_raw["propagation"] = {
+            "config_version": "propagation-calibrated-v1",
+            "rwr": {
+                "restart_probability": {"value": 0.2, "source": "FROZEN_SPEC"},
+                "convergence_tolerance": {"value": 0.001, "source": "FROZEN_SPEC"},
+                "max_iterations": {"value": 100, "source": "FROZEN_SPEC"},
+            },
+            "temporal": {
+                "decay_type": "exponential",
+                "decay_parameter": {"value": 30.0, "source": "FROZEN_SPEC"},
+            },
+            "acceptance": {
+                "score_threshold": {"value": 0.0, "source": "FROZEN_SPEC"},
+            },
+            "limits": {
+                "max_candidate_edges": {"value": 1000, "source": "FROZEN_SPEC"},
+            },
+        }
+
+    if "dependency_scope" not in base_raw:
+        base_raw["dependency_scope"] = {
+            "limits": {
+                "max_scope_resources": {"value": 1000, "source": "FROZEN_SPEC"},
+                "max_materialized_resources": {"value": 100, "source": "FROZEN_SPEC"},
+            },
+        }
+
     chains_loaded = sum(len(p.chains) for p in packages)
     evaluated_chain_ids = set()
     for package in packages:

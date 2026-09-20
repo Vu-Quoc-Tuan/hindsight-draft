@@ -56,6 +56,7 @@ services:
 
   migrate:
     image: ${API_IMAGE:-nocpro-chain-explain-api:latest}
+    pull_policy: build
     build:
       context: .
       dockerfile: services/api/Dockerfile
@@ -68,6 +69,7 @@ services:
 
   topology-seed:
     image: ${MOCK_IMAGE:-nocpro-mock:latest}
+    pull_policy: build
     build:
       context: ..
       dockerfile: nocpro-mock/Dockerfile
@@ -89,6 +91,7 @@ services:
 
   api:
     image: ${API_IMAGE:-nocpro-chain-explain-api:latest}
+    pull_policy: build
     build:
       context: .
       dockerfile: services/api/Dockerfile
@@ -125,6 +128,7 @@ services:
 
   web:
     image: ${WEB_IMAGE:-nocpro-chain-explain-web:latest}
+    pull_policy: build
     build:
       context: services/web
     ports: ["${WEB_HOST_PORT:-3000}:80"]
@@ -132,6 +136,7 @@ services:
 
   mock-producer:
     profiles: ["replay"]
+    pull_policy: build
     build:
       context: ..
       dockerfile: nocpro-mock/Dockerfile
@@ -161,6 +166,7 @@ services:
   # undirected adjacency. It must not promote topology to directed P2/RCA.
   mock-producer-ip:
     profiles: ["replay-ip"]
+    pull_policy: build
     build:
       context: ..
       dockerfile: nocpro-mock/Dockerfile
@@ -193,6 +199,7 @@ services:
 
   mock-ui:
     image: ${MOCK_IMAGE:-nocpro-mock:latest}
+    pull_policy: build
     build:
       context: ..
       dockerfile: nocpro-mock/Dockerfile

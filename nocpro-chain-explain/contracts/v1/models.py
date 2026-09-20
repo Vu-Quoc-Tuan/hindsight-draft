@@ -323,6 +323,25 @@ class AlarmResourceMapping:
 
 
 @dataclass(frozen=True)
+class AlarmEntityResolution:
+    """Topology-aware entity resolution for alarms (observed host or candidate components)."""
+
+    alarm_id: str
+    entity_role: str  # OBSERVED_HOST, AFFECTED_COMPONENT_CANDIDATE, MENTIONED_DEPENDENCY, PORT, SERVICE
+    raw_value: str
+    resource_id: str | None = None
+    status: MappingStatus = MappingStatus.UNMAPPED
+    method: MappingMethod = MappingMethod.NONE
+    source_field: str | None = None
+    confidence: float | None = None
+    topology_profile_id: str | None = None
+    topology_version: str | None = None
+    candidate_resource_ids: tuple[str, ...] = ()
+    matched_text: str | None = None
+    resolver_version: str = "v1"
+
+
+@dataclass(frozen=True)
 class Topology:
     nodes: tuple[TopologyNode, ...] = ()
     edges: tuple[TopologyEdge, ...] = ()

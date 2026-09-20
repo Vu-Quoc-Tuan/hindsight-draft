@@ -25,7 +25,7 @@ dev = [
 ml = [
     "numpy>=2.5.3",
     "scikit-learn>=1.6.0",
-    "xgboost>=3.4.1",
+    "xgboost-cpu>=3.4.1",
 ]
 
 [tool.pytest.ini_options]

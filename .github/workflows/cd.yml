@@ -104,7 +104,7 @@ jobs:
           export MOCK_IMAGE="ghcr.io/${OWNER_LC}/hindsight-mock:latest"
 
           echo "Pulling pre-built images from GHCR..."
-          docker compose -f nocpro-chain-explain/docker-compose.yml pull api migrate web mock-ui
+          docker compose -f nocpro-chain-explain/docker-compose.yml pull --policy always api migrate web mock-ui
 
           echo "Starting containers (Explain UI, Mock UI, API, Kafka, Postgres)..."
           docker compose -f nocpro-chain-explain/docker-compose.yml up -d --no-build
@@ -161,4 +161,3 @@ jobs:
           echo "$MOCK_STATUS" | grep -q '"ok":true' || { echo "ERROR: Mock Studio status not ok"; exit 1; }
 
           echo "✓ Unified Gateway on port 3000 is running securely with Explain API, Mock Studio, and pure Kafka topology pipeline!"
-

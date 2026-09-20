@@ -75,7 +75,9 @@ help:
 
 dev-infra:
 	@echo -e "$(BOLD)$(CYAN)Starting local dev infra (PostgreSQL on 5432, Kafka on 9092)...$(RESET)"
-	docker compose -f $(COMPOSE_FILE) -f nocpro-chain-explain/docker-compose.dev.yml up -d postgres kafka kafka-init migrate topology-seed
+	docker compose -f $(COMPOSE_FILE) -f nocpro-chain-explain/docker-compose.dev.yml up -d postgres kafka
+	docker compose -f $(COMPOSE_FILE) -f nocpro-chain-explain/docker-compose.dev.yml run --rm migrate
+	docker compose -f $(COMPOSE_FILE) -f nocpro-chain-explain/docker-compose.dev.yml up -d kafka-init topology-seed
 	@echo -e "$(BOLD)$(GREEN)✓ Dev infra running!$(RESET)"
 
 dev-infra-down:
@@ -123,6 +125,7 @@ dev-demo-seed: dev-demo-guard dev-infra
 		PYTHONPATH=.:services/analysis-worker:services/api \
 		uv run python scripts/review_learning/train_ranker.py \
 			--source synthetic \
+			--allow-synthetic \
 			--synthetic-groups 36 \
 			--model-version dev-demo-synthetic-v1 \
 			--abstention-threshold 0.05 \
@@ -312,7 +315,7 @@ install:
 	@echo -e "$(BLUE)1. Syncing nocpro-mock (uv)...$(RESET)"
 	@cd nocpro-mock && uv sync --all-extras
 	@echo -e "$(BLUE)2. Syncing nocpro-chain-explain (uv)...$(RESET)"
-	@cd nocpro-chain-explain && uv sync --all-extras
+	@cd nocpro-chain-explain && uv sync --all-extras --all-groups
 	@echo -e "$(BLUE)3. Installing web packages (pnpm)...$(RESET)"
 	@cd nocpro-chain-explain/services/web && pnpm install
 	@echo -e "$(BOLD)$(GREEN)✓ All dependencies installed successfully!$(RESET)"

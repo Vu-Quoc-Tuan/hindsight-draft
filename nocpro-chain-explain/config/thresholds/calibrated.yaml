@@ -9,7 +9,7 @@ ingest:
 temporal:
   burst:
     gap_seconds:
-      value: 481
+      value: 483
       source: DATA_DRIVEN
   delay:
     bandwidth_seconds:
@@ -155,9 +155,9 @@ similar_chains:
     value: 5
     source: DOCUMENTED_DEFAULT
 notes:
-- Calibrated at 2026-09-11T13:07:04.480655+00:00 from PostgreSQL system of record.
-- Loaded 6 snapshots containing 548 chains (1106 alarms).
-- Evaluated 148 multi-alarm chains (0 skipped due to member bounds, 12 calculation
+- Calibrated at 2026-09-19T02:57:16.911147+00:00 from PostgreSQL system of record.
+- Loaded 4 snapshots containing 512 chains (1050 alarms).
+- Evaluated 140 multi-alarm chains (0 skipped due to member bounds, 11 calculation
   errors).
 - Calibrated DATA_DRIVEN values preserve empirical distribution evidence; DOCUMENTED_DEFAULT
   indicates fallback.
@@ -184,3 +184,36 @@ counterfactual:
     minimum_coverage_improvement: 0.05
     minimum_conductance_improvement: 0.05
     pareto_tolerance: 0.0
+propagation:
+  config_version: propagation-calibrated-v1
+  rwr:
+    restart_probability:
+      value: 0.2
+      source: FROZEN_SPEC
+    convergence_tolerance:
+      value: 0.001
+      source: FROZEN_SPEC
+    max_iterations:
+      value: 100
+      source: FROZEN_SPEC
+  temporal:
+    decay_type: exponential
+    decay_parameter:
+      value: 30.0
+      source: FROZEN_SPEC
+  acceptance:
+    score_threshold:
+      value: 0.0
+      source: FROZEN_SPEC
+  limits:
+    max_candidate_edges:
+      value: 1000
+      source: FROZEN_SPEC
+dependency_scope:
+  limits:
+    max_scope_resources:
+      value: 1000
+      source: FROZEN_SPEC
+    max_materialized_resources:
+      value: 100
+      source: FROZEN_SPEC

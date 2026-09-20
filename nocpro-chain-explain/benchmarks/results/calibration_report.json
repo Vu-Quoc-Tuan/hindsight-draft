@@ -1,20 +1,20 @@
 {
-  "timestamp": "2026-09-11T13:07:04.486973+00:00",
+  "timestamp": "2026-09-19T02:57:16.915463+00:00",
   "database_url_masked": "postgresql+asyncpg://nocpro:****@127.0.0.1:5432/nocpro",
-  "snapshots_loaded": 6,
-  "chains_evaluated": 148,
-  "alarms_evaluated": 1106,
+  "snapshots_loaded": 4,
+  "chains_evaluated": 140,
+  "alarms_evaluated": 1050,
   "calibrated_parameters": [
     {
       "path": "temporal.burst.gap_seconds",
       "previous_value": 120,
-      "calibrated_value": 481,
+      "calibrated_value": 483,
       "source": "DATA_DRIVEN",
-      "sample_count": 276,
+      "sample_count": 273,
       "metric_details": {
-        "p50": 60.5,
-        "p90": 351.5,
-        "p95": 481.25,
+        "p50": 61.0,
+        "p90": 351.8,
+        "p95": 482.6,
         "min": 1.0,
         "max": 600.0
       }
@@ -58,10 +58,6 @@
         "fallback": 0.3,
         "sample_count": 0,
         "failed_chains": [
-          {
-            "chain_id": "6892533",
-            "error": "'AuditGraph' object has no attribute 'degree'"
-          },
           {
             "chain_id": "6335394",
             "error": "'AuditGraph' object has no attribute 'degree'"
@@ -123,7 +119,7 @@
   ],
   "output_config_path": "/home/vqt/UET/Project/hindsight/nocpro-chain-explain/config/thresholds/calibrated.yaml",
   "status": "baseline_requires_calibration",
-  "chains_loaded": 548,
+  "chains_loaded": 512,
   "chains_skipped_large": 0,
-  "chains_failed": 12
+  "chains_failed": 11
 }
