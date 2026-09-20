@@ -6,7 +6,6 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
-import pytest
 
 from channels import (
     ChannelFamily,
@@ -19,14 +18,10 @@ from channels import (
 )
 from channels.topology_embedding import (
     CHANNEL_ID,
-    DEFAULT_SUPPORT_THRESHOLD,
-    DERIVATION_TAG,
 )
 from libs.contracts import IngestedAlarm, IngestedPackage, IngestedSnapshot
-from libs.provenance import ProvenanceClass
 from similar_chains import (
     ChainFingerprint,
-    FingerprintModel,
     TermVector,
     fit_fingerprint_model,
     hybrid_topology_similarity,

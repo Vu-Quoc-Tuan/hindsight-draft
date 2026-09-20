@@ -7,7 +7,6 @@ from sqlalchemy import (
     BigInteger,
     DateTime,
     Float,
-    ForeignKey,
     ForeignKeyConstraint,
     Index,
     Integer,
@@ -600,6 +599,30 @@ class TopologyAliasResolutionRecord(Base):
     verified_by: Mapped[str | None] = mapped_column(String(128))
 
 
+class AlarmEntityResolutionRecord(Base):
+    __tablename__ = "alarm_entity_resolutions"
+    __table_args__ = (
+        Index("ix_alarm_entity_resolutions_alarm_id", "alarm_id"),
+        Index("ix_alarm_entity_resolutions_topo_ver", "profile_id", "topology_version"),
+    )
+
+    resolution_id: Mapped[str] = mapped_column(String(256), primary_key=True)
+    alarm_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    profile_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    topology_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    resolver_version: Mapped[str] = mapped_column(String(32), default="v1")
+    entity_role: Mapped[str] = mapped_column(String(64), nullable=False)
+    raw_value: Mapped[str] = mapped_column(String(256), nullable=False)
+    resource_id: Mapped[str | None] = mapped_column(String(256))
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    method: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_field: Mapped[str | None] = mapped_column(String(64))
+    confidence: Mapped[float | None] = mapped_column(Float)
+    candidate_resource_ids: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    matched_text: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
+
+
 class ReviewSessionModel(Base):
     __tablename__ = "review_session"
     __table_args__ = (
@@ -827,3 +850,45 @@ class ReviewCaseModel(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class CohesionNarrativeCache(Base):
+    __tablename__ = "cohesion_narrative_cache"
+
+    snapshot_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    snapshot_version: Mapped[str] = mapped_column(String(255), primary_key=True)
+    chain_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    language: Mapped[str] = mapped_column(String(16), primary_key=True, default="en")
+    has_p2: Mapped[bool] = mapped_column(nullable=False, default=False)
+    narrative: Mapped[str] = mapped_column(Text, nullable=False)
+    analytical_findings: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    context: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    model: Mapped[str] = mapped_column(String(128), nullable=False, default="deterministic")
+    provider_status: Mapped[str] = mapped_column(String(64), nullable=False, default="GROUNDED_DETERMINISTIC")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_cohesion_narrative_cache_chain", "snapshot_id", "chain_id"),
+    )
+
+
+class TopologySubgraphCache(Base):
+    __tablename__ = "topology_subgraph_cache"
+
+    cache_key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    profile_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    topology_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    subgraph_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_topology_subgraph_cache_profile", "profile_id", "topology_version"),
+    )
+

@@ -293,3 +293,95 @@ async def test_topology_repository_projection_and_resolution(repo: TopologyRepos
     assert hydrated is not None
     assert len(hydrated["nodes"]) == 2
     assert len(hydrated["edges"]) == 1
+
+    # 7. Subgraph extraction around seeds
+    subgraph = await repo.get_subgraph("IP_NETWORK", seeds=["ROUTER_A"], max_hops=1)
+    assert subgraph["status"] == "AVAILABLE"
+    assert len(subgraph["nodes"]) == 2
+    assert len(subgraph["edges"]) == 1
+    seed_node = next(n for n in subgraph["nodes"] if n["id"] == "ROUTER_A")
+    assert seed_node["is_seed"] is True
+
+
+async def test_alarm_entity_resolution_persistence(repo: TopologyRepository):
+    from contracts.v1.enums import MappingMethod, MappingStatus
+    from contracts.v1.models import AlarmEntityResolution
+
+    res1 = AlarmEntityResolution(
+        alarm_id="ALM_101",
+        entity_role="OBSERVED_HOST",
+        raw_value="10.210.48.81",
+        resource_id="it:instance:724822",
+        status=MappingStatus.EXACT,
+        method=MappingMethod.EXACT_IDENTITY,
+        source_field="device_ip",
+        confidence=1.0,
+        topology_profile_id="IT_SERVICES",
+        topology_version="it-test-v1",
+        candidate_resource_ids=("it:instance:724822",),
+        matched_text="10.210.48.81",
+        resolver_version="v1",
+    )
+    res2 = AlarmEntityResolution(
+        alarm_id="ALM_101",
+        entity_role="AFFECTED_COMPONENT_CANDIDATE",
+        raw_value="neutron-openvswitch-agent",
+        resource_id="it:module:93645",
+        status=MappingStatus.STRUCTURED_FIELD_UNIQUE,
+        method=MappingMethod.STRUCTURED_FIELD_EXACT,
+        source_field="component",
+        confidence=0.85,
+        topology_profile_id="IT_SERVICES",
+        topology_version="it-test-v1",
+        candidate_resource_ids=("it:module:93645",),
+        matched_text="neutron-openvswitch-agent",
+        resolver_version="v1",
+    )
+
+    # 1. Save
+    await repo.save_alarm_entity_resolutions([res1, res2])
+
+    # 2. Fetch
+    fetched = await repo.get_alarm_entity_resolutions(
+        ["ALM_101"], profile_id="IT_SERVICES", topology_version="it-test-v1"
+    )
+    assert len(fetched) == 2
+    roles = {r.entity_role for r in fetched}
+    assert roles == {"OBSERVED_HOST", "AFFECTED_COMPONENT_CANDIDATE"}
+
+    # Check mapping status preserved
+    host = next(r for r in fetched if r.entity_role == "OBSERVED_HOST")
+    assert host.status == MappingStatus.EXACT
+    assert host.resource_id == "it:instance:724822"
+    assert host.confidence == 1.0
+
+    comp = next(r for r in fetched if r.entity_role == "AFFECTED_COMPONENT_CANDIDATE")
+    assert comp.status == MappingStatus.STRUCTURED_FIELD_UNIQUE
+    assert comp.confidence == 0.85
+
+    # 3. Update existing with new confidence and ensure composite key doesn't insert duplicate
+    res2_updated = AlarmEntityResolution(
+        alarm_id="ALM_101",
+        entity_role="AFFECTED_COMPONENT_CANDIDATE",
+        raw_value="neutron-openvswitch-agent",
+        resource_id="it:module:93645",
+        status=MappingStatus.STRUCTURED_FIELD_UNIQUE,
+        method=MappingMethod.STRUCTURED_FIELD_EXACT,
+        source_field="component",
+        confidence=0.90,
+        topology_profile_id="IT_SERVICES",
+        topology_version="it-test-v1",
+        candidate_resource_ids=("it:module:93645",),
+        matched_text="neutron-openvswitch-agent",
+        resolver_version="v1",
+    )
+    await repo.save_alarm_entity_resolutions([res2_updated])
+
+    fetched_after = await repo.get_alarm_entity_resolutions(
+        ["ALM_101"], profile_id="IT_SERVICES", topology_version="it-test-v1"
+    )
+    assert len(fetched_after) == 2
+    comp_updated = next(r for r in fetched_after if r.entity_role == "AFFECTED_COMPONENT_CANDIDATE")
+    assert comp_updated.confidence == 0.90
+
+

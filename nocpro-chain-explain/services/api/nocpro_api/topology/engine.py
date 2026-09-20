@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Iterable, Literal, Mapping
 
 ReferenceKind = Literal["CYCLE", "MULTI_PARENT"]

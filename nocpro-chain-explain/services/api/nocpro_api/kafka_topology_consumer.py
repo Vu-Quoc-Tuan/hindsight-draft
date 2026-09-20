@@ -6,7 +6,6 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass
-from typing import Any
 
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer, TopicPartition
 

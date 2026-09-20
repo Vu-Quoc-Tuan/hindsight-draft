@@ -69,6 +69,20 @@ def app() -> FastAPI:
             "dependency_semantics": "UNVERIFIED",
         }
     )
+    repo.get_subgraph = AsyncMock(
+        return_value={
+            "status": "AVAILABLE",
+            "profile_id": "IT_SERVICES",
+            "topology_version": "v1",
+            "nodes": [
+                {"id": "svc1", "name": "Order Service", "type": "SERVICE", "is_seed": False},
+                {"id": "host1", "name": "10.210.48.136", "type": "INSTANCE", "is_seed": True},
+            ],
+            "edges": [
+                {"id": "edge-1", "source": "svc1", "target": "host1", "relation": "SERVICE_HAS_MODULE"},
+            ],
+        }
+    )
     app.state.topology_repository = repo
     return app
 
@@ -123,3 +137,15 @@ async def test_topology_resolve(app: FastAPI):
     assert data["resource_id"] == "svc1"
     assert data["p2_mapping_eligible"] is False
     assert data["dependency_semantics"] == "UNVERIFIED"
+
+
+@pytest.mark.anyio
+async def test_topology_subgraph(app: FastAPI):
+    res = await _get(app, "/api/v1/topology/subgraph?profile_id=IT_SERVICES&seeds=10.210.48.136&hops=2")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "AVAILABLE"
+    assert len(data["nodes"]) == 2
+    assert len(data["edges"]) == 1
+    assert data["nodes"][1]["is_seed"] is True
+

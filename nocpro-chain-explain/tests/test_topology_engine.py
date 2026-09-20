@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from nocpro_api.topology.engine import (
     NavigationRelationEdge,

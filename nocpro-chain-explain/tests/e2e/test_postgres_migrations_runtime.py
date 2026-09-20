@@ -243,3 +243,80 @@ def test_0010_keeps_legacy_delay_models_immutable_and_allows_v2() -> None:
             await _drop_database(database)
 
     asyncio.run(exercise())
+
+
+def test_0015_reconciles_preexisting_orm_resolution_table_without_data_loss() -> None:
+    async def exercise() -> None:
+        database = f"nocpro_migration_resolution_{uuid4().hex[:12]}"
+        await _create_database(database)
+        try:
+            _migrate(database, "0014")
+            connection = await asyncpg.connect(_database_url(database))
+            try:
+                # Match the legacy table emitted by SQLAlchemy metadata: the
+                # columns and indexes exist, but server-side defaults do not.
+                await connection.execute(
+                    """
+                    CREATE TABLE alarm_entity_resolutions (
+                      resolution_id VARCHAR(256) PRIMARY KEY,
+                      alarm_id VARCHAR(64) NOT NULL,
+                      profile_id VARCHAR(64) NOT NULL,
+                      topology_version VARCHAR(128) NOT NULL,
+                      resolver_version VARCHAR(32) NOT NULL,
+                      entity_role VARCHAR(64) NOT NULL,
+                      raw_value VARCHAR(256) NOT NULL,
+                      resource_id VARCHAR(256),
+                      status VARCHAR(32) NOT NULL,
+                      method VARCHAR(64) NOT NULL,
+                      source_field VARCHAR(64),
+                      confidence DOUBLE PRECISION,
+                      candidate_resource_ids JSONB NOT NULL,
+                      matched_text TEXT,
+                      created_at TIMESTAMP WITH TIME ZONE NOT NULL
+                    )
+                    """
+                )
+                await connection.execute(
+                    "CREATE INDEX ix_alarm_entity_resolutions_alarm_id "
+                    "ON alarm_entity_resolutions (alarm_id)"
+                )
+                await connection.execute(
+                    "CREATE INDEX ix_alarm_entity_resolutions_topo_ver "
+                    "ON alarm_entity_resolutions (profile_id, topology_version)"
+                )
+                await connection.execute(
+                    """
+                    INSERT INTO alarm_entity_resolutions (
+                      resolution_id, alarm_id, profile_id, topology_version,
+                      resolver_version, entity_role, raw_value, status, method,
+                      candidate_resource_ids, created_at
+                    ) VALUES (
+                      'resolution-1', 'alarm-1', 'IP', 'topology-v1', 'v1',
+                      'DEVICE', 'router-a', 'RESOLVED', 'EXACT', '[]'::jsonb, now()
+                    )
+                    """
+                )
+            finally:
+                await connection.close()
+
+            _migrate(database, "head")
+            connection = await asyncpg.connect(_database_url(database))
+            try:
+                assert await connection.fetchval(
+                    "SELECT count(*) FROM alarm_entity_resolutions"
+                ) == 1
+                assert await connection.fetchval(
+                    "SELECT column_default FROM information_schema.columns "
+                    "WHERE table_schema = 'public' "
+                    "AND table_name = 'alarm_entity_resolutions' "
+                    "AND column_name = 'resolver_version'"
+                ) == "'v1'::character varying"
+                assert await connection.fetchval(
+                    "SELECT version_num FROM alembic_version"
+                ) == "0015"
+            finally:
+                await connection.close()
+        finally:
+            await _drop_database(database)
+
+    asyncio.run(exercise())

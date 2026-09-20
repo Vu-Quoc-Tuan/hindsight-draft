@@ -7,7 +7,6 @@ import binascii
 import hashlib
 import re
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any, Literal
 
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")

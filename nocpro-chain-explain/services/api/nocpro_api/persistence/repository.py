@@ -6,7 +6,7 @@ import json
 from dataclasses import replace
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Mapping, Sequence
 import uuid
 
 import zstandard
@@ -83,9 +83,7 @@ from .models import (
 from review_learning.contracts import (
     CandidateDisplayEvent,
     CandidateExposure,
-    FeedbackLifecycleEvent,
     FeedbackLifecycleType,
-    FeedbackStatus,
     ManualCorrection,
     ReviewCase,
     ReviewDecision,
@@ -786,6 +784,27 @@ class SnapshotRepository:
             )
             return self._stored_counterfactual(row) if row is not None else None
 
+    async def latest_counterfactual_job(
+        self,
+        *,
+        snapshot_id: str,
+        snapshot_version: str,
+        chain_id: str,
+    ) -> StoredCounterfactualJob | None:
+        async with self.sessions() as session:
+            row = await session.scalar(
+                select(CounterfactualJobRecord)
+                .where(
+                    CounterfactualJobRecord.snapshot_id == snapshot_id,
+                    CounterfactualJobRecord.snapshot_version == snapshot_version,
+                    CounterfactualJobRecord.chain_id == chain_id,
+                    CounterfactualJobRecord.status == "SUCCEEDED",
+                )
+                .order_by(CounterfactualJobRecord.updated_at.desc())
+                .limit(1)
+            )
+            return self._stored_counterfactual(row) if row is not None else None
+
     async def persist_operator_feedback(
         self, payload: dict[str, Any]
     ) -> StoredOperatorFeedback:
@@ -895,6 +914,14 @@ class SnapshotRepository:
                 pass
         return datetime.now(timezone.utc)
 
+    @staticmethod
+    def _make_exposure_id(review_id: str, candidate_id: str) -> str:
+        raw = f"exp_{review_id}_{candidate_id}"
+        if len(raw) <= 64:
+            return raw
+        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+        return f"exp_{digest[:60]}"
+
     async def persist_succeeded_job_and_review_bundle(
         self,
         job_payload: Mapping[str, Any],
@@ -1000,7 +1027,7 @@ class SnapshotRepository:
                 await db_session.flush()
                 for exp in exposures:
                     exposure_row = CandidateExposureModel(
-                        exposure_id=f"exp_{exp.review_id}_{exp.candidate_id}",
+                        exposure_id=self._make_exposure_id(exp.review_id, exp.candidate_id),
                         review_id=exp.review_id,
                         candidate_id=exp.candidate_id,
                         candidate_fingerprint=exp.candidate_fingerprint,
@@ -1076,7 +1103,7 @@ class SnapshotRepository:
             await db_session.flush()
             for exp in exposures:
                 exposure_row = CandidateExposureModel(
-                    exposure_id=f"exp_{exp.review_id}_{exp.candidate_id}",
+                    exposure_id=self._make_exposure_id(exp.review_id, exp.candidate_id),
                     review_id=exp.review_id,
                     candidate_id=exp.candidate_id,
                     candidate_fingerprint=exp.candidate_fingerprint,
