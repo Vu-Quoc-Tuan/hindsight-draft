@@ -67,7 +67,7 @@ from descriptor.contrastive import (
     top_contrastive_candidates,
 )
 from graybox import GrayBoxMetadata, adapt_graybox_metadata
-from graybox.singleton import MembershipVerdict, build_singleton_report
+from graybox.singleton import build_singleton_report
 from groups import (
     ChannelStatistics,
     GateResult,
@@ -77,7 +77,6 @@ from groups import (
     classify_membership,
     membership_support_from_index,
 )
-from groups.fit import group_fits
 from groups.redundancy import (
     DEFAULT_SMALL_DT_SECONDS,
     RedundancyResult,

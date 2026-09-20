@@ -7,7 +7,7 @@ from collections import Counter
 from datetime import datetime
 
 from libs.contracts import IngestedAlarm, IngestedPackage
-from libs.provenance import ProvenanceClass, ProvenanceSubtype
+from libs.provenance import ProvenanceClass
 
 from groups.indexed_statistics import (
     ChannelFitFromIndex,
@@ -26,7 +26,6 @@ from .dependency import (
     DEFAULT_D_MAX,
     PHYSICAL_RELATIONS,
     ResourceResolver,
-    TopologyGraph,
     build_topology_graph,
 )
 

@@ -86,6 +86,21 @@ class MarginView(ApiModel):
     computable_groups: int
 
 
+class EntityResolutionView(ApiModel):
+    entity_role: str
+    raw_value: str
+    resource_id: str | None = None
+    status: str
+    method: str
+    source_field: str | None = None
+    confidence: float | None = None
+    topology_profile_id: str | None = None
+    topology_version: str | None = None
+    candidate_resource_ids: list[str] = Field(default_factory=list)
+    matched_text: str | None = None
+    resolver_version: str = "v1"
+
+
 class MemberView(ApiModel):
     alarm_id: str
     alarm_name: str | None
@@ -101,6 +116,10 @@ class MemberView(ApiModel):
     margins: list[MarginView]
     redundancy_role: str | None
     failure_domains: list[str]
+    raw_content: str | None = None
+    content: str | None = None
+    observed_resource_id: str | None = None
+    entity_resolutions: list[EntityResolutionView] = Field(default_factory=list)
 
 
 class GrayBoxView(ApiModel):
@@ -321,6 +340,14 @@ class PropagationView(ApiModel):
     source_kind: str | None
     config_version: str | None
     parameter_provenance: dict[str, str]
+    candidate_node_count: int | None = None
+    candidate_edge_count: int | None = None
+    iterations: int | None = None
+    final_l1_distance: float | None = None
+    convergence_tolerance: float | None = None
+    restart_probability: float | None = None
+    seed_policy: str | None = None
+    dangling_policy: str | None = None
     diagnostics: PropagationDiagnosticsView
     node_scores: list[PropagationNodeScoreView]
     hypotheses: list[PropagationEdgeHypothesisView]
@@ -656,6 +683,18 @@ class AISuggestionView(ApiModel):
     provider_status: str | None = None
     review_status: str
     review_reason: str | None = None
+    recommendation_status: str
+
+
+class AnalyticalFindingView(ApiModel):
+    finding_id: str
+    kind: Literal["OBSERVED", "DERIVED", "HYPOTHESIS", "LIMITATION"]
+    status: Literal["AVAILABLE", "UNAVAILABLE"]
+    title: str
+    claim: str
+    evidence: list[str]
+    limitations: list[str]
+    confidence_basis: str
 
 
 class CohesionNarrativeView(ApiModel):
@@ -801,6 +840,10 @@ class ThresholdExplainOptimizationView(ApiModel):
     optimal_parameters: dict[str, float]
     current_clarity_score: float
     optimal_clarity_score: float
+    current_llm_score: float | None = None
+    optimal_llm_score: float | None = None
+    current_hybrid_score: float | None = None
+    optimal_hybrid_score: float | None = None
     clarity_gain: float
     current_explanation: str
     optimal_explanation: str
@@ -810,6 +853,7 @@ class ThresholdExplainOptimizationView(ApiModel):
     sweep_results: list[dict[str, Any]] = []
     ai_model: str = "DETERMINISTIC_EVIDENCE"
     ai_provider_status: str = "NOT_CONFIGURED"
+    is_already_optimal: bool = False
 
 
 

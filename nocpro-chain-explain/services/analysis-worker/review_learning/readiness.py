@@ -48,7 +48,6 @@ def assess_data_readiness(
 
     # Taxonomy & Lineage
     tax_ready = taxonomy_status.upper() in {"VERIFIED", "READY", "PASS"}
-    lineage_ready = lineage_status.upper() in {"VERIFIED", "READY", "PASS"}
 
     # Exposure status
     if exposure_count > 0:

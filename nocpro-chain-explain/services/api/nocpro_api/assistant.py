@@ -622,6 +622,8 @@ async def _handle_inspect_chart(
         "delta_vs_random_auc": delta_vs_random_auc,
         "delta_vs_reverse_auc": delta_vs_reverse_auc,
         "primary_curve": primary_curve,
+        "reverse_curve": reverse_curve,
+        "random_mean_curve": random_mean_curve,
         "drop_points": drops,
         "top_evidence_contributions": top_contributions,
     }

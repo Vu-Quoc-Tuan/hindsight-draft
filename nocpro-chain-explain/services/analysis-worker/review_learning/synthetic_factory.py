@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
-from typing import Any
 
 from .contracts import (
     CandidateExposure,

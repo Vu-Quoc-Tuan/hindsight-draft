@@ -9,14 +9,12 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 import uuid
 
-from fastapi import HTTPException, status
 from libs.contracts import IngestedPackage
 from review_learning.case_fingerprint import (
     extract_candidate_case_blocks,
     compute_case_fingerprint_payload,
 )
 from review_learning.case_similarity import (
-    SimilarCaseMatch,
     find_similar_review_cases,
 )
 from review_learning.contracts import (
@@ -30,8 +28,6 @@ from review_learning.contracts import (
     TruthTier,
     ReviewSessionNotFound,
     ReviewFeedbackNotFound,
-    ReviewDomainForbidden,
-    ReviewerRoleForbidden,
     UnknownExposureCandidate,
     ImmutableReviewConflict,
     InactiveFeedbackConflict,

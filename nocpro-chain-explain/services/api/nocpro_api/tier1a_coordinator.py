@@ -61,18 +61,86 @@ class Tier1ACoordinator:
         if not isinstance(raw_snapshot, dict):
             return
         topo_ref = raw_snapshot.get("topology_ref")
-        if not topo_ref:
-            return
         profile_id = topo_ref.get("profile_id") if isinstance(topo_ref, dict) else getattr(topo_ref, "profile_id", None)
         version = topo_ref.get("topology_version") if isinstance(topo_ref, dict) else getattr(topo_ref, "topology_version", None)
+        
+        # If topology_ref missing, auto-detect profile from snapshot_id
+        if not profile_id:
+            snap_id = raw_snapshot.get("snapshot_id", "")
+            if "_it_" in snap_id:
+                profile_id = "IT_SERVICES"
+            elif "_ip_" in snap_id:
+                profile_id = "IP_NETWORK"
+
+        if profile_id and not version:
+            active_rec = await self.topology_repository.get_active_version(profile_id)
+            if active_rec:
+                version = active_rec.topology_version
+                raw_snapshot["topology_ref"] = {
+                    "profile_id": profile_id,
+                    "topology_version": version,
+                    "source_version": getattr(active_rec, "source_version", ""),
+                }
+
+        if not profile_id or not version:
+            return
+
         topology = payload.setdefault("topology", {})
-        if profile_id and version and not topology.get("edges"):
-            hydrated = await self.topology_repository.hydrate_graph_for_analysis(profile_id, version)
+        alarms = payload.get("alarms") or []
+
+        # Ensure canonical_start_time is UTC timezone-qualified
+        for a in alarms:
+            if isinstance(a, dict):
+                cst = a.get("canonical_start_time")
+                if cst and isinstance(cst, str) and not cst.endswith("Z") and "+" not in cst:
+                    a["canonical_start_time"] = f"{cst}Z"
+
+        # Resolve alarm devices to canonical resource IDs
+        existing_mappings: list[dict[str, Any]] = list(topology.get("mappings") or [])
+        mapped_alarm_ids = {m.get("alarm_id") for m in existing_mappings if isinstance(m, dict)}
+        seed_resources: set[str] = set()
+
+        for a in alarms:
+            if not isinstance(a, dict):
+                continue
+            alarm_id = a.get("alarm_id")
+            dev = a.get("device_code") or a.get("device")
+            if not alarm_id or not dev:
+                continue
+            
+            if alarm_id not in mapped_alarm_ids:
+                res = await self.topology_repository.resolve_identifier(profile_id, str(dev).strip())
+                if res and res.get("resource_id"):
+                    rid = res["resource_id"]
+                    seed_resources.add(rid)
+                    existing_mappings.append({
+                        "alarm_id": alarm_id,
+                        "resource_id": rid,
+                        "mapping_status": "VERIFIED_ALIAS",
+                        "mapping_method": "VERIFIED_ALIAS_TABLE",
+                        "topology_layer": "IT",
+                        "source_version": version,
+                    })
+                    mapped_alarm_ids.add(alarm_id)
+                else:
+                    seed_resources.add(str(dev).strip().upper())
+            else:
+                for m in existing_mappings:
+                    if isinstance(m, dict) and m.get("alarm_id") == alarm_id and m.get("resource_id"):
+                        seed_resources.add(m["resource_id"])
+
+        topology["mappings"] = existing_mappings
+
+        if not topology.get("edges"):
+            hydrated = await self.topology_repository.hydrate_graph_for_analysis(
+                profile_id,
+                version,
+                resource_ids=seed_resources or None,
+            )
             if hydrated:
                 topology["edges"] = hydrated.get("edges", [])
                 if not topology.get("nodes"):
                     topology["nodes"] = hydrated.get("nodes", [])
-                # Contract v1 Topology does not accept alias_resolution
                 topology.pop("alias_resolution", None)
 
     async def run(self, snapshot_id: str, snapshot_version: str):

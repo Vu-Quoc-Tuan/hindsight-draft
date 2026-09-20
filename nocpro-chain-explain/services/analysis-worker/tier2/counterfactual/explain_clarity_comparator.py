@@ -267,10 +267,15 @@ def compare_two_explanations(
     label_b: str = "Lời giải thích B",
     context_a: Mapping[str, Any] | None = None,
     context_b: Mapping[str, Any] | None = None,
+    custom_score_a: float | None = None,
+    custom_score_b: float | None = None,
 ) -> ExplainComparisonResult:
     """Directly compares two explanations and explains why one is clearer than the other."""
-    score_a, dims_a = evaluate_explain_clarity(exp_a, context_a)
-    score_b, dims_b = evaluate_explain_clarity(exp_b, context_b)
+    eval_a, dims_a = evaluate_explain_clarity(exp_a, context_a)
+    eval_b, dims_b = evaluate_explain_clarity(exp_b, context_b)
+
+    score_a = float(custom_score_a) if custom_score_a is not None else eval_a
+    score_b = float(custom_score_b) if custom_score_b is not None else eval_b
 
     dim_a_spec = next(d for d in dims_a if d.name == "specificity")
     dim_b_spec = next(d for d in dims_b if d.name == "specificity")
@@ -280,7 +285,7 @@ def compare_two_explanations(
     dim_b_act = next(d for d in dims_b if d.name == "actionability")
 
     score_delta = round(score_b - score_a, 1)
-    if abs(score_delta) < 1.0:
+    if abs(score_delta) < 0.5:
         winner = "TIE"
     elif score_delta > 0:
         winner = "B"

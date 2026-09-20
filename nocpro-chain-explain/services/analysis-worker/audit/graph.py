@@ -16,7 +16,7 @@ already define as ``G_audit``.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from itertools import combinations
+
 
 from channels.base import ChannelValue
 from libs.provenance import (

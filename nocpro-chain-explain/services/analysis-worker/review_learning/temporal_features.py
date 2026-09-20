@@ -10,7 +10,6 @@ import hashlib
 import math
 import random
 from typing import Any, Mapping, Sequence
-from datetime import datetime
 
 from temporal_delay.model import (
     DelayLookup,

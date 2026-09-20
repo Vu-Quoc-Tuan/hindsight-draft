@@ -18,7 +18,7 @@ from enum import Enum
 from itertools import combinations
 
 from descriptor.mining import Descriptor
-from descriptor.predicates import Predicate, read_field
+from descriptor.predicates import read_field
 from libs.contracts import IngestedAlarm
 
 

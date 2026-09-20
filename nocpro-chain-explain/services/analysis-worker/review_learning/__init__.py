@@ -110,6 +110,7 @@ __all__ = [
     "assess_data_readiness",
     "build_data_profile",
     "canonical_fingerprint",
+    "canonical_json_hash",
     "compute_candidate_fingerprint",
     "compute_candidate_set_fingerprint",
     "compute_metric_confidence_intervals",

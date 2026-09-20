@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
+from typing import Any
 
+from libs.contracts import IngestedPackage
 from channels import ChannelValue
 from tier1b import ChainAnalysis
 from tier2 import Tier2JobView
@@ -30,6 +32,7 @@ from .schemas import (
     AuditVisualizationView,
     DeepDiveView,
     DescriptorView,
+    EntityResolutionView,
     EvidenceCoverageAttributionView,
     EvolutionView,
     GrayBoxView,
@@ -337,10 +340,26 @@ def counterfactual_job_view(
             elif isinstance(res, dict) and "evaluated_candidates" in res:
                 candidates = res.get("evaluated_candidates", [])
                 for cand in candidates:
-                    if isinstance(cand, dict) and "comparative_explanation" not in cand:
+                    if isinstance(cand, dict):
                         from tier2.counterfactual.comparative_explainer import (
                             build_deterministic_comparative_explanation,
                         )
+                        cand_m_ids = cand.get("member_ids")
+                        if not cand_m_ids:
+                            ev = cand.get("operation_specific_evidence") or {}
+                            if ev.get("alarm_id"):
+                                cand_m_ids = [str(ev["alarm_id"])]
+                            elif cand.get("partition_delta"):
+                                p_delta = cand.get("partition_delta") or {}
+                                b_list = p_delta.get("before") or []
+                                a_list = p_delta.get("after") or []
+                                if b_list and a_list:
+                                    b_m = set(b_list[0][1]) if len(b_list) > 0 and len(b_list[0]) > 1 else set()
+                                    a_m = set(a_list[0][1]) if len(a_list) > 0 and len(a_list[0]) > 1 else set()
+                                    diff = b_m - a_m
+                                    if diff:
+                                        cand_m_ids = list(sorted(diff))
+                        cand["member_ids"] = cand_m_ids or []
                         cand["comparative_explanation"] = build_deterministic_comparative_explanation(
                             operation=cand.get("operation", "UNKNOWN"),
                             candidate_id=cand.get("candidate_id", ""),
@@ -349,11 +368,13 @@ def counterfactual_job_view(
                             after_metrics=cand.get("after_metrics") or cand.get("after"),
                             metric_deltas=cand.get("metric_deltas"),
                             package=package,
-                            member_ids=cand.get("member_ids", ()),
+                            member_ids=cand_m_ids or (),
                             source_chain_id=cand.get("source_chain_id"),
                             target_chain_id=cand.get("target_chain_id"),
                             merged_chain_ids=cand.get("merged_chain_ids"),
                             operation_evidence=cand.get("operation_specific_evidence"),
+                            semantic_effects=cand.get("semantic_effects"),
+                            structural_facts=cand.get("structural_facts"),
                             language=language,
                         ).as_dict()
 
@@ -397,6 +418,7 @@ def chain_analysis_view(
     package,
     *,
     evidence_availability: dict[str, dict[str, str | None]] | None = None,
+    entity_resolutions_by_alarm: dict[str, tuple[str | None, list[Any]]] | None = None,
 ) -> ChainAnalysisView:
     availability = evidence_availability or {
         key: {"state": "UNAVAILABLE", "reason": "EVIDENCE_AVAILABILITY_NOT_PROVIDED"}
@@ -405,6 +427,11 @@ def chain_analysis_view(
     members = []
     for alarm_id, item in analysis.members.items():
         alarm = package.alarms[alarm_id]
+        observed_host, ent_res = (
+            entity_resolutions_by_alarm.get(alarm_id, (None, []))
+            if entity_resolutions_by_alarm
+            else (None, [])
+        )
         members.append(
             MemberView(
                 alarm_id=alarm_id,
@@ -443,6 +470,26 @@ def chain_analysis_view(
                 ),
                 failure_domains=[
                     domain.failure_domain_id for domain in item.failure_domains
+                ],
+                raw_content=(alarm.raw or {}).get("content") or (alarm.raw or {}).get("cah.alarm_text") or (alarm.raw or {}).get("alarm_text") if hasattr(alarm, "raw") and isinstance(alarm.raw, dict) else getattr(alarm, "alarm_text", None),
+                content=(alarm.raw or {}).get("content") or (alarm.raw or {}).get("cah.alarm_text") or (alarm.raw or {}).get("alarm_text") if hasattr(alarm, "raw") and isinstance(alarm.raw, dict) else getattr(alarm, "alarm_text", None),
+                observed_resource_id=observed_host,
+                entity_resolutions=[
+                    EntityResolutionView(
+                        entity_role=r.entity_role,
+                        raw_value=r.raw_value,
+                        resource_id=r.resource_id,
+                        status=r.status.value if hasattr(r.status, "value") else str(r.status),
+                        method=r.method.value if hasattr(r.method, "value") else str(r.method),
+                        source_field=r.source_field,
+                        confidence=r.confidence,
+                        topology_profile_id=r.topology_profile_id,
+                        topology_version=r.topology_version,
+                        candidate_resource_ids=list(r.candidate_resource_ids),
+                        matched_text=r.matched_text,
+                        resolver_version=r.resolver_version,
+                    )
+                    for r in ent_res
                 ],
             )
         )
@@ -687,6 +734,14 @@ def propagation_view(result: PropagationResult) -> PropagationView:
         source_kind=result.source_kind,
         config_version=result.config_version,
         parameter_provenance=dict(result.parameter_provenance),
+        candidate_node_count=result.candidate_node_count,
+        candidate_edge_count=result.candidate_edge_count,
+        iterations=result.iterations,
+        final_l1_distance=result.final_l1_distance,
+        convergence_tolerance=result.convergence_tolerance,
+        restart_probability=result.restart_probability,
+        seed_policy=result.seed_policy,
+        dangling_policy=result.dangling_policy,
         diagnostics=PropagationDiagnosticsView(
             candidate_node_count=result.candidate_node_count,
             candidate_edge_count=result.candidate_edge_count,
@@ -862,4 +917,5 @@ def ai_suggestion_view(result: Any) -> AISuggestionView:
         provider_status=d.get("provider_status"),
         review_status=d.get("review_status", "NOT_AVAILABLE"),
         review_reason=d.get("review_reason"),
+        recommendation_status=d.get("recommendation_status", "UNAVAILABLE"),
     )

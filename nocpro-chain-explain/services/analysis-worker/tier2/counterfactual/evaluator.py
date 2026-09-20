@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Callable, Iterable
+from typing import Callable
 
 from audit import (
     AuditVerdict,

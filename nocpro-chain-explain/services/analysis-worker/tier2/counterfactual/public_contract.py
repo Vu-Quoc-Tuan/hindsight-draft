@@ -6,7 +6,7 @@ from dataclasses import asdict
 
 from libs.contracts import IngestedPackage
 from .comparative_explainer import build_deterministic_comparative_explanation
-from .models import CandidateStatus, CounterfactualResult, DomainStatus, Operation
+from .models import CandidateStatus, CounterfactualResult, Operation
 
 
 CONTRACT_VERSION = "counterfactual-review-v1"
@@ -93,6 +93,10 @@ def _candidate(
     return {
         "candidate_id": candidate.candidate_id,
         "operation": candidate.operation.value,
+        "member_ids": list(candidate.member_ids) if candidate.member_ids else [],
+        "source_chain_id": candidate.source_chain_id,
+        "target_chain_id": candidate.target_chain_id,
+        "merged_chain_ids": list(candidate.merged_chain_ids) if candidate.merged_chain_ids else None,
         "partition_delta": {
             "before": [(chain_id, list(members)) for chain_id, members in candidate.partition_delta.before],
             "after": [(chain_id, list(members)) for chain_id, members in candidate.partition_delta.after],

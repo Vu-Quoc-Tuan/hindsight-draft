@@ -18,7 +18,7 @@ explicitly out of scope for Tier-1.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 
 from .metrics import DescriptorMetrics, evaluate_extent

@@ -155,6 +155,18 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
                 LOGGER.info("Auto-seeded default snapshot: real_alarm_20260907_demo")
             except Exception:
                 LOGGER.warning("Auto-seed default snapshot skipped or failed")
+
+        if database_url and os.environ.get("AUTO_CALIBRATE_ON_STARTUP", "true").lower() in {"1", "true", "yes"}:
+            try:
+                LOGGER.info("Starting background auto-calibration from PostgreSQL...")
+                report = await service.calibrate_from_database(include_fixtures=True)
+                LOGGER.info(
+                    "Auto-calibration from PostgreSQL completed: status=%s, version=%s",
+                    report.get("status"),
+                    service.config.config_version,
+                )
+            except Exception as e:
+                LOGGER.warning("Background auto-calibration skipped or failed: %s", e)
         try:
             yield
         finally:
@@ -181,12 +193,24 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
     app.state.workspace = service
     app.state.topology_repository = None
 
+    cors_env = os.environ.get("CORS_ORIGINS", "").strip()
+    allow_origins = (
+        [o.strip() for o in cors_env.split(",") if o.strip()]
+        if cors_env
+        else [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ]
+    )
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_origins=allow_origins,
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Content-Type"],
+        allow_headers=["*"],
     )
     app.include_router(router)
     return app

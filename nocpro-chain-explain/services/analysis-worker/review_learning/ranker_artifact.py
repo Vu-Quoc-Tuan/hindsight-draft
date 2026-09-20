@@ -7,10 +7,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
 from typing import Any
-
-from .contracts import canonical_fingerprint
 
 
 @dataclass(frozen=True)

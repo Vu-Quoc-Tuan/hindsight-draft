@@ -21,7 +21,7 @@ Three separate identifiers are kept (ADR-0020):
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 #: Minimum shared alarms for a standard lineage edge.
 DEFAULT_M_MIN = 3

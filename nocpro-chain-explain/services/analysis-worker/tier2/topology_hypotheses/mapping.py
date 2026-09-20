@@ -15,7 +15,9 @@ from libs.contracts import IngestedPackage
 
 
 _IDENTITY_KEYS = frozenset({"alarm_id"})
-_RESOLVED_STATUSES = frozenset({"EXACT", "VERIFIED_ALIAS"})
+_RESOLVED_STATUSES = frozenset(
+    {"EXACT", "VERIFIED_ALIAS", "EXACT_RESOURCE_ID", "UNIQUE_SOURCE_FIELD_MATCH"}
+)
 _UNRESOLVED_STATUSES = frozenset({"AMBIGUOUS", "UNMAPPED"})
 
 

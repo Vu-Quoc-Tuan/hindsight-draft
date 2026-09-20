@@ -22,19 +22,70 @@ from .models import (
 from .mapping import resolve_p2_mappings
 
 
-ELIGIBLE_RELATION_TYPES = frozenset({"LOGICAL_DEPENDENCY", "SERVICE_DEPENDS_ON"})
+IT_RELATION_TYPES = frozenset({
+    "SERVICE_HAS_MODULE",
+    "MODULE_HAS_INSTANCE",
+    "MODULE_LINKS_DATABASE",
+    "DATABASE_LINKS_SERVICE",
+    "DATABASE_LINKS_INSTANCE",
+    "INSTANCE_LINKS_STORAGE",
+})
+ELIGIBLE_RELATION_TYPES = (
+    frozenset({"LOGICAL_DEPENDENCY", "SERVICE_DEPENDS_ON", "IP_ADJACENCY"})
+    | IT_RELATION_TYPES
+)
+
+
+def _ip_device_tier(resource_id: str) -> int:
+    """Return device hierarchy tier in telecom IP network (lower number = higher tier)."""
+    res = resource_id.upper()
+    if any(k in res for k in ("SRT", "CORE", "CR", "BB")):
+        return 1
+    if any(k in res for k in ("AGG", "PE", "BRAS", "BR")):
+        return 2
+    if any(k in res for k in ("CSW", "DSW", "MSAN", "OLT", "BTS", "NODEB", "ENODEB", "SW", "ACCESS")):
+        return 3
+    return 4
 
 
 def _eligible_directed_edges(package: IngestedPackage) -> tuple[dict, ...]:
     """Return exact directed edges with a supported dependency semantic."""
-    return tuple(
-        edge
-        for edge in package.topology.get("edges") or ()
-        if edge.get("relation_type") in ELIGIBLE_RELATION_TYPES
-        and edge.get("directed") is True
-        and edge.get("source_resource_id")
-        and edge.get("target_resource_id")
+    assume_directed = bool(
+        package.topology.get("assume_directed")
+        or package.topology.get("direction_mode") == "DIRECTED"
     )
+    eligible = []
+    for edge in package.topology.get("edges") or ():
+        rel = edge.get("relation_type")
+        if rel not in ELIGIBLE_RELATION_TYPES:
+            continue
+        src = edge.get("source_resource_id")
+        tgt = edge.get("target_resource_id")
+        if not src or not tgt:
+            continue
+        is_directed = edge.get("directed") is True
+        if not is_directed and assume_directed:
+            if rel == "IP_ADJACENCY":
+                tier_s = _ip_device_tier(src)
+                tier_t = _ip_device_tier(tgt)
+                if tier_s <= tier_t:
+                    eligible.append({**edge, "directed": True})
+                else:
+                    eligible.append(
+                        {
+                            **edge,
+                            "source_resource_id": tgt,
+                            "target_resource_id": src,
+                            "directed": True,
+                        }
+                    )
+                continue
+            elif rel in IT_RELATION_TYPES:
+                eligible.append({**edge, "directed": True})
+                continue
+        if is_directed:
+            eligible.append(edge)
+    return tuple(eligible)
 
 
 def _provenance_signature(

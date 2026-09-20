@@ -6,10 +6,9 @@ Never presents similarity as an automated probability or recommendation.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-import math
+from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
-from review_learning.contracts import ReviewCase
+from review_learning.contracts import ReviewCase, SimilarCaseRetrievalResult
 
 SIMILARITY_DISCLAIMER = "Historical reference only — not probability or automated recommendation"
 

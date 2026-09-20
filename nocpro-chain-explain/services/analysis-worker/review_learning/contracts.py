@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 
 class ReviewDecision(str, Enum):

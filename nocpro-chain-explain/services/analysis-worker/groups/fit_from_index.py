@@ -12,13 +12,12 @@ reference implementation for correctness checks on small chains).
 from __future__ import annotations
 
 from libs.provenance import (
-    DerivationGroup,
     NormalizedChannel,
     build_derivation_groups,
 )
 
 from .fit import ChannelFit, GroupFit, MembershipSupport
-from .indexed_statistics import ChannelFitFromIndex, IndexedChainStatistics
+from .indexed_statistics import IndexedChainStatistics
 
 
 def channel_fit_from_index(

@@ -6,14 +6,16 @@ import os
 import json
 import hashlib
 import asyncio
-import uuid
+import logging
 from concurrent.futures import Future
 from dataclasses import asdict, dataclass, replace
 
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock
-from typing import Any
+from typing import Any, Sequence
+
+logger = logging.getLogger(__name__)
 
 from channels import evaluate_pair_channels
 from evolution import GlobalEpisodeDag, LineageConfig, LineageNodeKey
@@ -164,10 +166,12 @@ class Workspace:
         self._custom_config_counter = 0
         self.config: AnalysisConfig = load_analysis_config(selected_config)
         self.cache = Tier1Cache()
-        self.jobs = Tier2JobManager(cache=self.cache)
+        tier2_workers = int(os.environ.get("TIER2_MAX_WORKERS", "3"))
+        self.jobs = Tier2JobManager(cache=self.cache, max_workers=tier2_workers)
         self.review_jobs = CounterfactualJobManager()
         self.package: IngestedPackage | None = None
         self.precompute: SnapshotPrecompute | None = None
+        self._precomputed_snapshots: set[tuple[str, str]] = set()
         self._lock = RLock()
         self.repository = None
         self.coordinator = None
@@ -607,12 +611,17 @@ class Workspace:
             and self.package is not None
             and self.package.snapshot.snapshot_id == result.snapshot_id
             and self.package.snapshot.snapshot_version == result.snapshot_version
+            and bool(self.package.topology.get("edges"))
         ):
             return self.precompute
         # An explicit catalog selection is allowed to reactivate an identical
         # durable snapshot.  ``ingest_direct`` has already checked that the
         # identity and canonical payload are an exact match, so recomputing
         # the local Tier-1A view is safe and does not mutate evidence rows.
+        if self.coordinator is not None and hasattr(
+            self.coordinator, "_hydrate_payload_topology_if_needed"
+        ):
+            await self.coordinator._hydrate_payload_topology_if_needed(payload)
         package, precompute = self.compute_snapshot(payload)
         self.activate_snapshot(package, precompute)
         return precompute
@@ -872,6 +881,44 @@ class Workspace:
             similarity_context=similarity_context,
         )
 
+    def precompute_snapshot_deep_dive(self) -> dict[str, Any]:
+        """Precompute Tier-2 Deep Dive in parallel for all multi-member chains in background."""
+        with self._lock:
+            package = self.package
+            if package is None:
+                return {"status": "NO_SNAPSHOT", "submitted": 0, "total": 0}
+            snap_key = (package.snapshot.snapshot_id, package.snapshot.snapshot_version)
+            if snap_key in self._precomputed_snapshots:
+                return {"status": "ALREADY_PRECOMPUTED", "snapshot": snap_key}
+            self._precomputed_snapshots.add(snap_key)
+
+        multi_member_chains = [
+            cid for cid in package.chains
+            if len(package.members_of(cid)) > 1
+        ]
+        # Sort so that chains with smaller member counts complete first (quick wins),
+        # while larger chains continue computing in background worker pool
+        multi_member_chains.sort(key=lambda cid: len(package.members_of(cid)))
+
+        submitted = 0
+        cache_hits = 0
+        for cid in multi_member_chains:
+            try:
+                sub = self.submit_deep_dive(cid)
+                if getattr(sub, "cache_hit", False):
+                    cache_hits += 1
+                else:
+                    submitted += 1
+            except Exception:
+                logger.debug("Failed to submit background deep dive for chain %s", cid, exc_info=True)
+
+        return {
+            "status": "QUEUED",
+            "total_multi_member": len(multi_member_chains),
+            "submitted": submitted,
+            "cache_hits": cache_hits,
+        }
+
     async def deep_dive_job(self, job_id: str):
         try:
             return self.jobs.get(job_id)
@@ -1038,13 +1085,27 @@ class Workspace:
     async def latest_review(self, chain_id: str):
         _, _, _, identity = await self._review_context(chain_id)
         in_memory = self.review_jobs.latest_compatible(identity)
-        if in_memory is not None or self.repository is None:
+        if in_memory is not None:
             return in_memory
-        return await self.repository.latest_compatible_counterfactual_job(
+        in_memory_latest = self.review_jobs.latest(
+            identity.snapshot_id, identity.snapshot_version, chain_id
+        )
+        if in_memory_latest is not None:
+            return in_memory_latest
+        if self.repository is None:
+            return None
+        compatible = await self.repository.latest_compatible_counterfactual_job(
             snapshot_id=identity.snapshot_id,
             snapshot_version=identity.snapshot_version,
             chain_id=chain_id,
             cache_fingerprint=artifact_fingerprint(identity.cache_tuple()),
+        )
+        if compatible is not None:
+            return compatible
+        return await self.repository.latest_counterfactual_job(
+            snapshot_id=identity.snapshot_id,
+            snapshot_version=identity.snapshot_version,
+            chain_id=chain_id,
         )
 
     async def evolution(self, chain_id: str):
@@ -1073,7 +1134,7 @@ class Workspace:
                         for (p_k, c_k), e in dag.edges.items()
                         if p_k in member_keys and c_k in member_keys
                     ]
-                    if member_edges:
+                    if member_nodes:
                         nodes = tuple(
                             StoredEvolutionNode(
                                 snapshot_id=n.key.snapshot_id,

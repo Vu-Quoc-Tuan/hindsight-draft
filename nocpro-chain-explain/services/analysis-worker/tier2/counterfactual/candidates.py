@@ -9,7 +9,6 @@ from typing import Any, Mapping
 
 from audit import StructuralAuditResult
 from channels import exact_cross_chain_evidence
-from channels.semantic import EMPTY_TAXONOMY
 
 from .config import CounterfactualConfig
 from .models import (
