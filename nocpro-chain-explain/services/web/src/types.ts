@@ -72,6 +72,21 @@ export type GroupFit = {
   unavailable_reasons: Record<string, string>
 }
 
+export type EntityResolution = {
+  entity_role: string
+  raw_value: string
+  resource_id: string | null
+  status: 'EXACT' | 'VERIFIED_ALIAS' | 'STRUCTURED_FIELD_UNIQUE' | 'TEXT_MATCH_CANDIDATE' | 'AMBIGUOUS' | 'UNMAPPED'
+  method: string
+  source_field?: string | null
+  confidence?: number | null
+  topology_profile_id?: string | null
+  topology_version?: string | null
+  candidate_resource_ids?: string[]
+  matched_text?: string | null
+  resolver_version?: string
+}
+
 export type Member = {
   alarm_id: string
   alarm_name: string | null
@@ -91,6 +106,16 @@ export type Member = {
   }>
   redundancy_role: string | null
   failure_domains: string[]
+  raw_content?: string | null
+  content?: string | null
+  start_time?: string | null
+  end_time?: string | null
+  duration_seconds?: number | null
+  cleared?: boolean | null
+  severity?: string | null
+  extra_fields?: Record<string, any>
+  observed_resource_id?: string | null
+  entity_resolutions?: EntityResolution[]
 }
 
 export type ChainAnalysis = {
@@ -721,6 +746,19 @@ export type AISuggestion = {
   provider_status?: string | null
   review_status: 'AVAILABLE' | 'NOT_AVAILABLE' | 'UNAVAILABLE'
   review_reason?: string | null
+  recommendation_status: 'AVAILABLE' | 'UNAVAILABLE' | 'NO_CLEAR_ALTERNATIVE'
+}
+
+export type AnalyticalFinding = {
+  finding_id: string
+  kind: 'OBSERVED' | 'DERIVED' | 'HYPOTHESIS' | 'LIMITATION'
+  status: 'AVAILABLE' | 'UNAVAILABLE'
+  title: string
+  claim: string
+  evidence: string[]
+  limitations: string[]
+  confidence_basis: string
+  confidence?: 'HIGH' | 'MEDIUM' | 'LOW'
 }
 
 export type CohesionNarrativeView = {
@@ -733,6 +771,9 @@ export type CohesionNarrativeView = {
       chain_id: string
       alarm_count: number
       duration_seconds: number
+      duration_desc?: string | null
+      start_time?: string | null
+      end_time?: string | null
       is_singleton: boolean
     }
     alarm_summary: {
@@ -751,14 +792,104 @@ export type CohesionNarrativeView = {
       total: number
       resource_types: string[]
       dependency_verified: boolean
+      connected_pair_count?: number
+      pair_total?: number
+      max_path_hops?: number | null
     }
     audit: {
       status: string
       candidate_cut: boolean
       conductance: number | null
+      epsilon?: number | null
+      verdict?: string | null
+      reason?: string | null
+      best_cut_label?: string | null
     }
     recommendations: {
       split_recommended: boolean
+    }
+    cohesion_factors?: string[]
+    temporal_progression?: {
+      status: 'AVAILABLE' | 'UNAVAILABLE'
+      t0?: {
+        device: string
+        start_time: string
+        offset_seconds: number
+        alarm_name: string
+      }
+      first_later_offset_seconds?: number | null
+      device_onsets: Array<{
+        device: string
+        start_time: string
+        offset_seconds: number
+        alarm_name: string
+      }>
+      waves: Array<{
+        start_time: string
+        offset_seconds: number
+        devices: string[]
+        alarm_names: string[]
+      }>
+    }
+    structural_insights?: Array<{
+      type: string
+      icon?: string
+      label: string
+      detail: string
+      en_detail?: string
+    }>
+    analytical_findings?: AnalyticalFinding[]
+    has_p2?: boolean
+    tier2_p2?: {
+      dominator?: {
+        status: string
+        witness_resource_id?: string | null
+        covered_resource_ids?: string[]
+        semantic?: string | null
+        relation_type?: string | null
+      } | null
+      propagation?: {
+        status: string
+        candidate_node_count: number
+        candidate_edge_count: number
+        top_node_scores?: Array<{ alarm_id: string; score: number }>
+        hypotheses?: Array<{
+          source: string
+          target: string
+          score: number
+          prob: number
+          delta_seconds: number
+        }>
+      } | null
+      evidence_attribution?: {
+        status: string
+        total_coverage?: number | null
+        contributions?: Array<{
+          group_id: string
+          derivation_tag?: string
+          attribution: number
+          supported_pairs: number
+        }>
+      } | null
+      over_merge?: {
+        structural_separation: boolean
+        cross_evidence_agreement: boolean
+        strength: string
+        narrative: string
+        driving_evidence: string[]
+      } | null
+    }
+    operational_insights?: {
+      primary_focus?: string
+      t0_trigger?: {
+        alarm_id?: string
+        alarm_name: string
+        device_code: string
+        start_time: string
+      } | null
+      cohesion_verdict?: 'STRONG' | 'SEPARABLE' | 'PRELIMINARY' | string
+      over_merge_alert?: boolean
+      actionable_takeaway?: string
     }
   }
 }
@@ -897,8 +1028,14 @@ export type ThresholdSweepResult = {
   label: string
   explanation: string
   clarity_score: number
+  llm_score?: number | null
+  hybrid_score?: number | null
   weak_count: number
   core_count: number
+  evidence_quality?: {
+    insufficient_count?: number
+    computable_count?: number
+  } | null
 }
 
 export type ThresholdExplainOptimization = {
@@ -907,6 +1044,10 @@ export type ThresholdExplainOptimization = {
   optimal_parameters: Record<string, number>
   current_clarity_score: number
   optimal_clarity_score: number
+  current_llm_score?: number | null
+  optimal_llm_score?: number | null
+  current_hybrid_score?: number | null
+  optimal_hybrid_score?: number | null
   clarity_gain: number
   current_explanation: string
   optimal_explanation: string
@@ -916,4 +1057,5 @@ export type ThresholdExplainOptimization = {
   sweep_results: ThresholdSweepResult[]
   ai_model?: string
   ai_provider_status?: string
+  is_already_optimal?: boolean
 }

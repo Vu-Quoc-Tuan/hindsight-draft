@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react'
 
-import { api, ApiError } from './api'
+import { api, ApiError, clearCohesionCache } from './api'
 import type { TopologyTreePayload } from './TopologyTree'
 import { NocHeader, type HeaderSnapshotItem } from './components/NocHeader'
 import { SubNavBar, type SubNavTab } from './components/SubNavBar'
@@ -8,15 +8,13 @@ import { SubNavBar, type SubNavTab } from './components/SubNavBar'
 const SnapshotOverviewView = lazy(() => import('./views/SnapshotOverviewView').then(m => ({ default: m.SnapshotOverviewView })))
 const ChainsExplorerView = lazy(() => import('./views/ChainsExplorerView').then(m => ({ default: m.ChainsExplorerView })))
 const MultiChainTimelineView = lazy(() => import('./views/MultiChainTimelineView').then(m => ({ default: m.MultiChainTimelineView })))
-const CompareChainsView = lazy(() => import('./views/CompareChainsView').then(m => ({ default: m.CompareChainsView })))
 const ChainDetailView = lazy(() => import('./views/ChainDetailView').then(m => ({ default: m.ChainDetailView })))
 const AuditStructureView = lazy(() => import('./views/AuditStructureView').then(m => ({ default: m.AuditStructureView })))
 const RecommendationsView = lazy(() => import('./views/RecommendationsView').then(m => ({ default: m.RecommendationsView })))
 const EvolutionView = lazy(() => import('./views/EvolutionView').then(m => ({ default: m.EvolutionView })))
 const TopologyOverlayView = lazy(() => import('./views/TopologyOverlayView').then(m => ({ default: m.TopologyOverlayView })))
 const AIAnalystDrawer = lazy(() => import('./components/AIAnalystDrawer').then(m => ({ default: m.AIAnalystDrawer })))
-const AnalysisSettingsModal = lazy(() => import('./AnalysisSettingsModal').then(m => ({ default: m.AnalysisSettingsModal })))
-const ReviewLearningPanel = lazy(() => import('./ReviewLearningPanel').then(m => ({ default: m.ReviewLearningPanel })))
+const LearningModal = lazy(() => import('./components/LearningModal').then(m => ({ default: m.LearningModal })))
 import {
   analysisContextKey,
   analysisMatchesContext,
@@ -29,14 +27,12 @@ import type {
   AuditVisualizationArtifact,
   ChainList,
   Job,
-  PairWhy,
 } from './types'
 import './App.css'
 
 export default function App() {
   const [chainList, setChainList] = useState<ChainList | null>(null)
   const [chainId, setChainId] = useState<string>('')
-  const [, setLoadingSnapshot] = useState(false)
   const [apiStatus, setApiStatus] = useState<'online' | 'offline' | 'checking'>('checking')
   const [analysisState, setAnalysisState] = useState<AnalysisState | null>(null)
   const [analysisError, setAnalysisError] = useState<{ requestKey: string; message: string } | null>(null)
@@ -47,10 +43,6 @@ export default function App() {
     requestKey: string
     payload: AuditVisualizationArtifact
   } | null>(null)
-  const [, setPairWhyState] = useState<{
-    snapshotKey: string
-    payload: PairWhy
-  } | null>(null)
   const [topologyProfile, setTopologyProfile] = useState<'ALARM_ONLY' | 'IP_NETWORK' | 'IT_SERVICES'>('IP_NETWORK')
   const [topologyRootId, setTopologyRootId] = useState<string | undefined>(undefined)
   const topologyRequestKey = `${topologyProfile}\u0000${topologyRootId ?? ''}`
@@ -58,15 +50,20 @@ export default function App() {
     requestKey: string
     payload: TopologyTreePayload
   } | null>(null)
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [isReviewLearningOpen, setIsReviewLearningOpen] = useState(false)
+  const [learningModalOpen, setLearningModalOpen] = useState(false)
+  const [learningModalTab, setLearningModalTab] = useState<'engine' | 'ranker'>('engine')
+
+  const handleOpenLearning = (tab: 'engine' | 'ranker' = 'engine') => {
+    setLearningModalTab(tab)
+    setLearningModalOpen(true)
+  }
+
   const [configEpoch, setConfigEpoch] = useState(0)
   const [, setActiveConfigVersion] = useState<string | null>(null)
   const [snapshotsCatalog, setSnapshotsCatalog] = useState<HeaderSnapshotItem[]>([])
 
   // Navigation & Drawer UI states
   const [currentTab, setCurrentTab] = useState<SubNavTab>('snapshot-overview')
-  const [comparePair, setComparePair] = useState<[string, string]>(['', ''])
   const [isDrawerOpen, setDrawerOpen] = useState(false)
   const [assistantPair, setAssistantPair] = useState<[string, string] | null>(null)
   const [reviewReadOnly, setReviewReadOnly] = useState(false)
@@ -78,14 +75,6 @@ export default function App() {
   const analysis = analysisMatchesContext(analysisState, currentAnalysisKey, chainId)
     ? analysisState!.payload
     : null
-  const availableChainIds = chainList?.chains.map(chain => chain.chain_id) ?? []
-  const resolvedComparePair: [string, string] = (
-    availableChainIds.includes(comparePair[0])
-    && availableChainIds.includes(comparePair[1])
-    && comparePair[0] !== comparePair[1]
-  )
-    ? comparePair
-    : [availableChainIds[0] ?? '', availableChainIds[1] ?? '']
 
   // Initial Connect & API Health Check
   useEffect(() => {
@@ -136,6 +125,18 @@ export default function App() {
     }
   }, [])
 
+  // Auto-detect topology profile when snapshot or analysis changes
+  useEffect(() => {
+    const snapId = chainList?.snapshot_id?.toLowerCase() || ''
+    if (snapId.includes('it')) {
+      setTopologyProfile('IT_SERVICES')
+    } else if (snapId.includes('ip')) {
+      setTopologyProfile('IP_NETWORK')
+    } else if (analysis?.members?.some(m => /^\d+\.\d+\.\d+\.\d+/.test(m.device_code || m.node_reference || ''))) {
+      setTopologyProfile('IT_SERVICES')
+    }
+  }, [chainList?.snapshot_id, analysis])
+
   // Load Analysis when chainId or snapshot changes
   useEffect(() => {
     if (!chainId || !snapshotKey || !currentAnalysisKey) return
@@ -175,7 +176,7 @@ export default function App() {
   // Reattach to the latest compatible Deep Dive after a browser reload. This
   // is read-only: opening the tab never submits new Tier-2 work.
   useEffect(() => {
-    if (currentTab !== 'structure' || !chainId || !currentAnalysisKey) return
+    if ((currentTab !== 'structure' && currentTab !== 'topology') || !chainId || !currentAnalysisKey) return
     const controller = new AbortController()
     const requestedChainId = chainId
     const requestedGeneration = deepDiveSubmissionGeneration.current
@@ -254,7 +255,6 @@ export default function App() {
 
   // Upload Snapshot
   async function uploadSnapshot(file: File) {
-    setLoadingSnapshot(true)
     setError(null)
     try {
       const payload = JSON.parse(await file.text()) as unknown
@@ -265,21 +265,18 @@ export default function App() {
       setCurrentTab('snapshot-overview')
       setAnalysisState(null)
       setAnalysisError(null)
-      setPairWhyState(null)
       setAssistantPair(null)
       setJob(null)
       setAuditVisualizationState(null)
+      clearCohesionCache()
       setApiStatus('online')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Snapshot load failed')
-    } finally {
-      setLoadingSnapshot(false)
     }
   }
 
   // Preset Snapshot selection handler
   const handleSelectSnapshot = async (id: string, profile: 'IP_NETWORK' | 'IT_SERVICES' | 'ALARM_ONLY') => {
-    setLoadingSnapshot(true)
     setError(null)
     try {
       await api.selectSnapshot(id)
@@ -291,18 +288,16 @@ export default function App() {
       setCurrentTab('snapshot-overview')
       setAnalysisState(null)
       setAnalysisError(null)
-      setPairWhyState(null)
       setAssistantPair(null)
       setJob(null)
       setAuditVisualizationState(null)
+      clearCohesionCache()
       setApiStatus('online')
       void api.listSnapshots().then(catalog => {
         setSnapshotsCatalog(catalog.snapshots as HeaderSnapshotItem[])
       }).catch(() => {})
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Snapshot selection failed')
-    } finally {
-      setLoadingSnapshot(false)
     }
   }
 
@@ -321,15 +316,6 @@ export default function App() {
     setReviewReadOnly(false)
     setChainId('')
     setCurrentTab('chains-explorer')
-  }
-
-  // Compare 2 chains
-  const handleCompareChains = (chainA: string, chainB: string) => {
-    setAssistantPair(null)
-    setReviewReadOnly(false)
-    setComparePair([chainA, chainB])
-    setChainId('')
-    setCurrentTab('compare-chains')
   }
 
   async function runDeepDive() {
@@ -422,19 +408,15 @@ export default function App() {
           } else if (tabName === 'Timeline' || tabName === 'multi-chain-timeline' || tabName === 'timeline' || tabName === 'TIMELINE') {
             setChainId('')
             setCurrentTab('multi-chain-timeline')
-          } else if (tabName === 'Compare' || tabName === 'compare-chains' || tabName === 'compare') {
-            setChainId('')
-            setCurrentTab('compare-chains')
           } else {
             setCurrentTab(tabName as SubNavTab)
           }
         }}
-        onOpenSettings={() => setSettingsOpen(true)}
-        onOpenReviewLearning={() => setIsReviewLearningOpen(true)}
+        onOpenLearning={handleOpenLearning}
       />
 
       {/* 2. Sub Navigation Bar (Chain-level IA: only when on a chain-level tab and a chain is selected) */}
-      {!['snapshot-overview', 'chains-explorer', 'multi-chain-timeline', 'compare-chains'].includes(currentTab) && Boolean(chainId) && (
+      {!['snapshot-overview', 'chains-explorer', 'multi-chain-timeline'].includes(currentTab) && Boolean(chainId) && (
         <SubNavBar
           currentTab={currentTab}
           onSelectTab={tab => {
@@ -492,7 +474,6 @@ export default function App() {
               onNavigate={view => {
                 if (view === 'CHAINS' || view === 'chains-explorer') setCurrentTab('chains-explorer')
                 else if (view === 'TIMELINE' || view === 'multi-chain-timeline') setCurrentTab('multi-chain-timeline')
-                else if (view === 'COMPARE' || view === 'compare-chains') setCurrentTab('compare-chains')
                 else setCurrentTab(view as SubNavTab)
               }}
             />
@@ -502,9 +483,6 @@ export default function App() {
             <ChainsExplorerView
               chainList={chainList}
               onSelectChain={handleSelectChain}
-              onCompareChains={ids => {
-                if (ids.length >= 2) handleCompareChains(ids[0], ids[1])
-              }}
             />
           )}
 
@@ -512,18 +490,7 @@ export default function App() {
             <MultiChainTimelineView
               chains={chainList?.chains ?? []}
               onSelectChain={handleSelectChain}
-              onCompareChains={handleCompareChains}
               selectedChainId={chainId}
-            />
-          )}
-
-          {currentTab === 'compare-chains' && (
-            <CompareChainsView
-              chainAId={resolvedComparePair[0]}
-              chainBId={resolvedComparePair[1]}
-              chains={chainList?.chains ?? []}
-              onSelectChain={handleSelectChain}
-              onChangeSelection={() => setCurrentTab('chains-explorer')}
             />
           )}
 
@@ -532,6 +499,7 @@ export default function App() {
             <ChainDetailView
               key={analysis.chain_id}
               analysis={analysis}
+              job={job}
               activeSubTab={
                 currentTab === 'chain-overview'
                   ? 'OVERVIEW'
@@ -544,6 +512,7 @@ export default function App() {
                 else if (tab === 'WHY') setCurrentTab('why')
                 else if (tab === 'MEMBERS') setCurrentTab('members')
               }}
+              onNavigateTab={setCurrentTab}
               onPairContextChange={setAssistantPair}
             />
           )}
@@ -562,7 +531,7 @@ export default function App() {
               analysis={analysis}
               readOnly={reviewReadOnly}
               initialSubTab={currentTab === 'validation' ? 'validation' : 'recommendations'}
-              onOpenReviewLearning={() => setIsReviewLearningOpen(true)}
+              onOpenReviewLearning={() => handleOpenLearning('ranker')}
               onThresholdApplied={() => setConfigEpoch(e => e + 1)}
             />
           )}
@@ -578,6 +547,8 @@ export default function App() {
               topologyPayload={topologyPayload}
               topologyHypotheses={job?.chain_id === analysis.chain_id && job?.status === 'SUCCEEDED' ? job.result?.topology_hypotheses : null}
               onRootChange={setTopologyRootId}
+              onRunDeepDive={() => void runDeepDive()}
+              isDeepDiveRunning={job?.status === 'QUEUED' || job?.status === 'RUNNING'}
             />
           )}
         </Suspense>
@@ -593,21 +564,17 @@ export default function App() {
           onNavigate={handleAssistantNavigation}
         />
 
-        {settingsOpen && (
-          <AnalysisSettingsModal
+        {learningModalOpen && (
+          <LearningModal
             isOpen
-            onClose={() => setSettingsOpen(false)}
+            onClose={() => setLearningModalOpen(false)}
+            defaultTab={learningModalTab}
             onConfigChanged={cfg => {
               setActiveConfigVersion(cfg.config_version)
               setConfigEpoch(e => e + 1)
             }}
           />
         )}
-
-        <ReviewLearningPanel
-          open={isReviewLearningOpen}
-          onClose={() => setIsReviewLearningOpen(false)}
-        />
       </Suspense>
 
       {/* 7. Footer Status Bar - clean, without redundant snapshot info or mock gateway */}

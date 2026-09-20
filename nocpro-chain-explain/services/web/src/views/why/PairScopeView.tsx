@@ -19,7 +19,7 @@ export function PairScopeView({
   pairWhy,
   pairWhyState,
   pairWhyReason,
-  onSwitchScope,
+  onSwitchScope: _onSwitchScope,
 }: PairScopeViewProps) {
   // Auto-select first two members if not already selected
   useEffect(() => {
@@ -52,26 +52,18 @@ export function PairScopeView({
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-secondary text-[20px]">compare_arrows</span>
             <h3 className="font-headline-md text-sm font-bold text-on-surface">
-              Pairwise Evidence Grounding (Pair Scope)
+              Đối sánh chứng cứ theo cặp (Pair WHY)
             </h3>
             <InfoTip text="Đối sánh trực tiếp 2 cảnh báo A và B. Hệ thống sẽ bóc tách tất cả các kênh bằng chứng: Trễ thời gian, Topology, Phần cứng và Ngữ nghĩa để giải thích vì sao 2 cảnh báo này được xâu chuỗi." />
           </div>
-          {members.length >= 2 && (
-            <button
-              onClick={() => handleQuickCompare(members[0].alarm_id, members[1].alarm_id)}
-              className="px-2.5 py-1 rounded bg-secondary/15 hover:bg-secondary/25 text-secondary border border-secondary/30 font-code-sm text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[14px]">auto_awesome</span>
-              Compare Core Pair ({members[0].alarm_id} ↔ {members[1].alarm_id})
-            </button>
-          )}
+
         </div>
 
         {/* Endpoint Selectors Form */}
         <div className="grid grid-cols-1 sm:grid-cols-11 gap-space-sm items-center bg-[#080d17] p-space-sm rounded border border-[#1b273e]/60">
           <div className="sm:col-span-5 flex flex-col gap-1">
             <label className="font-label-caps text-[10px] uppercase text-on-surface-variant font-bold flex items-center gap-1">
-              Endpoint Alarm A (Source)
+              Cảnh báo nguồn A (Source)
               <InfoTip text="Cảnh báo đầu tiên được chọn trong cặp đối sánh." />
             </label>
             <select
@@ -80,7 +72,7 @@ export function PairScopeView({
               onChange={e => setSelectedMemberIds([e.target.value, idB].filter(Boolean))}
               className="w-full h-8 px-2.5 bg-[#0e1728] text-on-surface font-code-sm text-xs rounded border border-[#1b273e] outline-none focus:border-secondary"
             >
-              <option value="">-- Select Alarm A --</option>
+              <option value="">-- Chọn cảnh báo A --</option>
               {members.map(m => (
                 <option key={m.alarm_id} value={m.alarm_id} disabled={m.alarm_id === idB}>
                   {m.alarm_id} · {m.alarm_name || 'Unnamed'} ({m.device_code ?? m.node_reference ?? 'N/A'})
@@ -95,6 +87,7 @@ export function PairScopeView({
               onClick={handleSwap}
               disabled={!idA || !idB}
               aria-label="Swap A and B"
+              title="Đổi vị trí A và B"
               className="w-8 h-8 rounded-full bg-surface-container-high hover:bg-secondary/20 hover:text-secondary text-on-surface-variant flex items-center justify-center transition-colors border border-[#1b273e] disabled:opacity-30 cursor-pointer"
             >
               <span className="material-symbols-outlined text-[16px]">sync_alt</span>
@@ -103,7 +96,7 @@ export function PairScopeView({
 
           <div className="sm:col-span-5 flex flex-col gap-1">
             <label className="font-label-caps text-[10px] uppercase text-on-surface-variant font-bold flex items-center gap-1">
-              Endpoint Alarm B (Target)
+              Cảnh báo đích B (Target)
               <InfoTip text="Cảnh báo thứ hai được chọn trong cặp đối sánh." />
             </label>
             <select
@@ -112,7 +105,7 @@ export function PairScopeView({
               onChange={e => setSelectedMemberIds([idA, e.target.value].filter(Boolean))}
               className="w-full h-8 px-2.5 bg-[#0e1728] text-on-surface font-code-sm text-xs rounded border border-[#1b273e] outline-none focus:border-secondary"
             >
-              <option value="">-- Select Alarm B --</option>
+              <option value="">-- Chọn cảnh báo B --</option>
               {members.map(m => (
                 <option key={m.alarm_id} value={m.alarm_id} disabled={m.alarm_id === idA}>
                   {m.alarm_id} · {m.alarm_name || 'Unnamed'} ({m.device_code ?? m.node_reference ?? 'N/A'})
@@ -130,11 +123,11 @@ export function PairScopeView({
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-secondary text-[18px]">grid_view</span>
               <h4 className="font-label-caps text-xs uppercase text-on-surface-variant font-bold">
-                Pairwise Trajectory Matrix ({topMembers.length} Core Nodes)
+                Ma trận tương quan &amp; Độ trễ ({topMembers.length} nút cốt lõi)
               </h4>
               <InfoTip text="Ma trận đối sánh nhanh giữa các cảnh báo. Nhấp vào ô bất kỳ để gửi truy vấn trực tiếp lên backend giải thích cặp cảnh báo đó." />
             </div>
-            <span className="text-[11px] font-code-sm text-on-surface-variant">Click any cell to query pair channels</span>
+            <span className="text-[11px] font-code-sm text-on-surface-variant">Nhấp vào ô để đối sánh cặp cảnh báo</span>
           </div>
 
           <div className="overflow-x-auto mt-1">
@@ -210,9 +203,9 @@ export function PairScopeView({
       {pairWhyState === 'IDLE' && (
         <div className="rounded-lg border border-dashed border-[#1b273e] p-space-xl text-center bg-surface-container flex flex-col items-center justify-center">
           <span className="material-symbols-outlined text-4xl text-secondary opacity-70">compare_arrows</span>
-          <p className="mt-2 font-body-md text-on-surface font-semibold">Select two distinct alarms to query pairwise evidence.</p>
+          <p className="mt-2 font-body-md text-on-surface font-semibold">Chọn 2 cảnh báo bất kỳ để truy vấn chứng cứ theo cặp.</p>
           <p className="mt-1 text-xs text-on-surface-variant max-w-md">
-            Evaluates multi-channel support: topology adjacency, temporal delay, semantic similarity, and burst correlations.
+            Đánh giá đa kênh hỗ trợ: kề cận topology, độ trễ thời gian, tương đồng ngữ nghĩa và cụm bùng nổ (burst).
           </p>
         </div>
       )}
@@ -220,14 +213,14 @@ export function PairScopeView({
       {pairWhyState === 'LOADING' && (
         <div className="rounded-lg border border-[#1b273e] bg-[#080d17] p-space-xl text-center font-code-sm text-sm text-secondary animate-pulse" role="status">
           <span className="material-symbols-outlined text-3xl animate-spin text-secondary mb-2">autorenew</span>
-          <p>Querying exact pairwise evidence channels from backend API…</p>
+          <p>Đang truy vấn các kênh chứng cứ theo cặp từ backend API…</p>
         </div>
       )}
 
       {pairWhyState === 'UNAVAILABLE' && (
         <div className="rounded-lg border border-error/30 bg-error/10 p-space-md text-center text-error font-code-sm text-xs" role="alert">
           <span className="material-symbols-outlined text-[20px] text-error mb-1">warning</span>
-          <p>UNAVAILABLE · {pairWhyReason || 'Could not resolve pairwise evidence for the selected alarms.'}</p>
+          <p>CHƯA KHẢ DỤNG · {pairWhyReason || 'Không thể xác định chứng cứ theo cặp cho các cảnh báo đã chọn.'}</p>
         </div>
       )}
 
@@ -240,24 +233,24 @@ export function PairScopeView({
               <span className="text-on-surface-variant">↔</span>
               <strong className="text-secondary">{pairWhy.alarm_id_b}</strong>
               <span className="ml-2 rounded bg-secondary/15 px-2 py-0.5 text-[11px] font-bold text-secondary border border-secondary/30">
-                System fact: {pairWhy.system_fact.status}
+                Kết luận: {pairWhy.system_fact.status}
               </span>
               <InfoTip text="Kết luận tổng thể của hệ thống về mối quan hệ giữa 2 cảnh báo này (CORRELATED, CAUSAL hoặc INDEPENDENT)." />
             </div>
             <div className="flex items-center gap-2 text-xs font-code-sm">
               <span className="text-emerald-400 font-semibold flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                {pairWhy.evidence.filter(e => e.state === 'SUPPORT').length} Support
+                {pairWhy.evidence.filter(e => e.state === 'SUPPORT').length} Hỗ trợ
               </span>
               <span className="text-on-surface-variant">·</span>
               <span className="text-amber-300 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-300"></span>
-                {pairWhy.evidence.filter(e => e.state === 'NEUTRAL').length} Neutral
+                {pairWhy.evidence.filter(e => e.state === 'NEUTRAL').length} Trung tính
               </span>
               <span className="text-on-surface-variant">·</span>
               <span className="text-slate-400 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                {pairWhy.evidence.filter(e => e.state === 'UNAVAILABLE').length} Unavailable
+                {pairWhy.evidence.filter(e => e.state === 'UNAVAILABLE').length} Chưa khả dụng
               </span>
             </div>
           </div>
@@ -268,16 +261,16 @@ export function PairScopeView({
               const isSupport = item.state === 'SUPPORT'
               const isNeutral = item.state === 'NEUTRAL'
               const channelTitle =
-                item.channel_family === 'E_device' ? 'Physical Device Match'
-                : item.channel_family === 'E_card' ? 'Hardware Card / Component Match'
-                : item.channel_family === 'E_site' ? 'Physical Site Co-location'
-                : item.channel_family === 'E_remote' ? 'Remote Node Adjacency'
-                : item.channel_family === 'T_burst' ? 'Contextual Temporal Burst'
-                : item.channel_family === 'T_delay' ? 'Directed Temporal Delay'
-                : item.channel_family === 'S' ? 'Semantic Alarm Similarity'
-                : item.channel_family === 'Dep_hop' ? 'Topology Adjacency Hop'
-                : item.channel_family === 'DEP_UPSTREAM' ? 'Upstream Causality Gate'
-                : item.channel_family === 'H' ? 'Behavioral History Lift'
+                item.channel_family === 'E_device' ? 'Trùng khớp thiết bị vật lý'
+                : item.channel_family === 'E_card' ? 'Trùng khớp card / linh kiện phần cứng'
+                : item.channel_family === 'E_site' ? 'Cùng trạm / vị trí vật lý'
+                : item.channel_family === 'E_remote' ? 'Liên kết node từ xa'
+                : item.channel_family === 'T_burst' ? 'Bùng nổ đồng thời (Temporal Burst)'
+                : item.channel_family === 'T_delay' ? 'Độ trễ lan truyền có hướng'
+                : item.channel_family === 'S' ? 'Độ tương đồng ngữ nghĩa cảnh báo'
+                : item.channel_family === 'Dep_hop' ? 'Số bước kề cận Topology (Hop)'
+                : item.channel_family === 'DEP_UPSTREAM' ? 'Cổng quan hệ nhân quả thượng lưu'
+                : item.channel_family === 'H' ? 'Quy luật lịch sử (Behavioral Lift)'
                 : item.channel_family
 
               const channelExpl =
@@ -323,28 +316,28 @@ export function PairScopeView({
                   <dl className="mt-space-xs grid grid-cols-2 gap-space-xs font-code-sm text-xs sm:grid-cols-4 bg-[#050912]/60 p-2 rounded">
                     <div>
                       <dt className="text-on-surface-variant text-[10px] flex items-center gap-1">
-                        score
+                        Điểm số (score)
                         <InfoTip text="Điểm tương quan thực tế đo được giữa 2 cảnh báo trên kênh này." />
                       </dt>
                       <dd className="font-semibold text-on-surface">{item.score === null ? 'N/A' : item.score.toFixed(4)}</dd>
                     </div>
                     <div>
                       <dt className="text-on-surface-variant text-[10px] flex items-center gap-1">
-                        threshold
+                        Ngưỡng (threshold)
                         <InfoTip text="Ngưỡng kích hoạt bằng chứng. Nếu score >= threshold, kênh sẽ chuyển sang trạng thái SUPPORT." />
                       </dt>
                       <dd className="font-semibold text-on-surface">{item.threshold === null ? 'N/A' : item.threshold.toFixed(4)}</dd>
                     </div>
                     <div>
                       <dt className="text-on-surface-variant text-[10px] flex items-center gap-1">
-                        group
+                        Nhóm (group)
                         <InfoTip text="Nhóm dẫn xuất bằng chứng (Derivation group) giúp loại bỏ sự trùng lặp thuộc tính." />
                       </dt>
                       <dd className="truncate text-secondary font-medium">{item.derivation_tag}</dd>
                     </div>
                     <div>
                       <dt className="text-on-surface-variant text-[10px] flex items-center gap-1">
-                        provenance
+                        Nguồn gốc (provenance)
                         <InfoTip text="Nguồn gốc kiểm chứng của bằng chứng (DATA_DRIVEN hoặc DOCUMENTED_DEFAULT)." />
                       </dt>
                       <dd className="truncate text-on-surface-variant">{item.provenance_class}</dd>
@@ -353,7 +346,7 @@ export function PairScopeView({
 
                   {item.detail && (
                     <p className="mt-2 text-[11px] font-code-sm text-on-surface-variant bg-[#0c1424] px-2.5 py-1.5 rounded border border-[#1b273e]/60">
-                      Detail: <span className="text-slate-200">{item.detail}</span>
+                      Chi tiết: <span className="text-slate-200">{item.detail}</span>
                     </p>
                   )}
                 </article>
@@ -361,24 +354,7 @@ export function PairScopeView({
             })}
           </div>
 
-          {/* Bottom Actions */}
-          <div className="pt-2 border-t border-[#1b273e] flex items-center justify-between text-xs font-code-sm">
-            <span className="text-on-surface-variant">Switch to another scope:</span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => onSwitchScope('Chain')}
-                className="px-2.5 py-1 rounded bg-surface-container-high hover:bg-surface-bright text-on-surface font-semibold transition-colors cursor-pointer"
-              >
-                ← Back to Chain Scope
-              </button>
-              <button
-                onClick={() => onSwitchScope('Group')}
-                className="px-2.5 py-1 rounded bg-primary/15 hover:bg-primary/25 text-primary border border-primary/40 font-semibold transition-colors cursor-pointer"
-              >
-                Analyze Subclusters (Group) →
-              </button>
-            </div>
-          </div>
+
         </div>
       )}
     </div>

@@ -2,7 +2,6 @@ export type SubNavTab =
   | 'snapshot-overview'
   | 'chains-explorer'
   | 'multi-chain-timeline'
-  | 'compare-chains'
   | 'chain-overview'
   | 'why'
   | 'members'
@@ -29,8 +28,7 @@ export function SubNavBar({
   const isSnapshotLevel = (
     currentTab === 'snapshot-overview' ||
     currentTab === 'chains-explorer' ||
-    currentTab === 'multi-chain-timeline' ||
-    currentTab === 'compare-chains'
+    currentTab === 'multi-chain-timeline'
   )
   if (!selectedChainId || isSnapshotLevel) {
     return null
@@ -83,7 +81,7 @@ export function SubNavBar({
               : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
           }`}
           onClick={() => onSelectTab('evolution')}
-          title="Dòng thời gian lan truyền cảnh báo (T0, Cascade Velocity) & Vòng đời sự cố"
+          title="Tiến trình thời gian xuất hiện cảnh báo (T0, Arrival Velocity) & Vòng đời sự cố"
         >
           <span className="material-symbols-outlined text-[15px]">timeline</span>
           <span>Timeline &amp; Evolution</span>

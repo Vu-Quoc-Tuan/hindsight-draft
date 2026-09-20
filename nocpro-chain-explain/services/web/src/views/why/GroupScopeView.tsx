@@ -208,7 +208,7 @@ export function GroupScopeView({
               </span>
             </div>
             <span className="font-label-caps text-[10px] uppercase bg-secondary/15 text-secondary border border-secondary/30 px-2 py-0.5 rounded tracking-wider font-bold">
-              Domain Audit
+              Miền Cảnh Báo
             </span>
           </div>
 
@@ -219,7 +219,7 @@ export function GroupScopeView({
             </span>
             <input
               className="w-full h-8 pl-8 pr-2 bg-[#080d17] text-on-surface font-code-sm text-xs rounded border border-[#1b273e] outline-none placeholder:text-outline-variant focus:border-secondary transition-all"
-              placeholder="Filter partitions by host or label..."
+              placeholder="Lọc phân cụm theo thiết bị hoặc nhãn..."
               type="text"
               value={filterQuery}
               onChange={e => setFilterQuery(e.target.value)}
@@ -318,7 +318,7 @@ export function GroupScopeView({
                     onClick={() => onSwitchScope('Chain')}
                     className="px-2.5 py-1 rounded bg-surface-container-high hover:bg-surface-bright text-on-surface font-code-sm text-xs font-semibold transition-colors cursor-pointer"
                   >
-                    ← Chain Scope
+                  ← Phạm vi Chuỗi
                   </button>
                   {onNavigateToRecommendations && (
                     <button
@@ -326,7 +326,7 @@ export function GroupScopeView({
                       className="px-2.5 py-1 rounded bg-secondary/20 hover:bg-secondary/30 text-secondary border border-secondary/40 font-code-sm text-xs font-bold transition-colors cursor-pointer flex items-center gap-1"
                     >
                       <span className="material-symbols-outlined text-[14px]">tips_and_updates</span>
-                      Review Counterfactuals
+                      Xem Đề Xuất
                     </button>
                   )}
                 </div>
@@ -335,7 +335,7 @@ export function GroupScopeView({
               {/* Dynamic Partition Ratio Bar */}
               <div className="mt-2 flex flex-col gap-1.5 bg-[#080d17] p-3 rounded border border-[#1b273e]/60">
                 <div className="flex items-center justify-between text-xs font-code-sm">
-                  <span className="text-on-surface-variant">Full Chain Partition Composition:</span>
+                  <span className="text-on-surface-variant">Cấu trúc Phân hoạch Chuỗi:</span>
                   <span className="text-secondary font-bold">100% of C{analysis.chain_id}</span>
                 </div>
                 <div className="w-full h-2.5 rounded-full overflow-hidden flex gap-0.5 bg-[#151f33]">
@@ -361,46 +361,46 @@ export function GroupScopeView({
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-space-sm bg-[#080d17] p-2.5 rounded border border-[#1b273e]/60">
                 <div className="flex flex-col p-1">
                   <span className="font-label-caps text-[10px] uppercase text-on-surface-variant flex items-center gap-1">
-                    Member Alarms
+                    Cảnh Báo
                     <InfoTip text="Số lượng cảnh báo thuộc phân cụm này." />
                   </span>
                   <span className="font-code-lg text-base font-bold text-on-surface mt-0.5">
                     {activePartition.members.length} / {totalAlarms}
                   </span>
-                  <span className="text-[10px] text-secondary font-medium">{activePartition.percentage}% of Chain</span>
+                  <span className="text-[10px] text-secondary font-medium">{activePartition.percentage}% của Chuỗi</span>
                 </div>
 
                 <div className="flex flex-col p-1">
                   <span className="font-label-caps text-[10px] uppercase text-on-surface-variant flex items-center gap-1">
-                    Mean Cohesion
+                    Gắn Kết TB
                     <InfoTip text="Điểm gắn kết trung bình của các thành viên trong phân cụm." />
                   </span>
                   <span className="font-code-lg text-base font-bold text-secondary mt-0.5">
                     {activePartition.cohesion !== null ? activePartition.cohesion.toFixed(3) : 'Unindexed'}
                   </span>
-                  <span className="text-[10px] text-on-surface-variant">{activePartition.cohesionLevel} Binding</span>
+                  <span className="text-[10px] text-on-surface-variant">{activePartition.cohesionLevel === 'Strong' ? 'Mạnh' : activePartition.cohesionLevel === 'Mod' ? 'Trung bình' : 'Yếu'}</span>
                 </div>
 
                 <div className="flex flex-col p-1">
                   <span className="font-label-caps text-[10px] uppercase text-on-surface-variant flex items-center gap-1">
-                    Host Domain
+                    Miền Thiết Bị
                     <InfoTip text="Thiết bị hạ tầng chính bao bọc phân cụm này." />
                   </span>
                   <span className="font-code-lg text-sm font-bold text-primary mt-0.5 truncate" title={activePartition.device}>
                     {activePartition.device}
                   </span>
-                  <span className="text-[10px] text-on-surface-variant">Physical Domain</span>
+                  <span className="text-[10px] text-on-surface-variant">Miền Vật lý</span>
                 </div>
 
                 <div className="flex flex-col p-1">
                   <span className="font-label-caps text-[10px] uppercase text-on-surface-variant flex items-center gap-1">
-                    Roles in Cluster
+                    Vai Trò
                     <InfoTip text="Các vai trò được gán bên trong phân cụm này." />
                   </span>
                   <span className="font-code-lg text-xs font-bold text-on-surface mt-1">
                     {Object.entries(activePartition.roleCounts).map(([r, c]) => `${c} ${r.slice(0, 4)}`).join(', ')}
                   </span>
-                  <span className="text-[10px] text-emerald-400 font-medium">Classified</span>
+                  <span className="text-[10px] text-emerald-400 font-medium">Đã phân loại</span>
                 </div>
               </div>
             </div>
@@ -411,19 +411,15 @@ export function GroupScopeView({
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-secondary text-[20px]">ssid_chart</span>
                   <h4 className="font-headline-md text-sm font-bold text-on-surface">
-                    Spectral Conductance & Partition Boundary Audit
+                    Phân tích Ranh giới Phân hoạch
                   </h4>
                   <InfoTip text="Đánh giá đường cắt ranh giới phân hoạch: Kiểm tra xem phân cụm này có nên tách thành chuỗi riêng biệt hay không." />
                 </div>
                 <span className="text-xs font-code-sm text-secondary font-semibold">
-                  Boundary Integrity: High
+                  Tính toàn vẹn: Cao
                 </span>
               </div>
-              <p className="text-xs text-on-surface-variant leading-relaxed">
-                {totalAlarms <= 10
-                  ? `Small incident chain (N = ${totalAlarms}): Spectral graph bi-partitioning is bounded by discrete failure domain heuristics. High internal affinity maintains chain unity without boundary leakage.`
-                  : `Multi-node incident chain (N = ${totalAlarms}): High internal graph density binds members into a unified propagation sequence. Partition boundaries reflect physical chassis isolation.`}
-              </p>
+
             </div>
 
             {/* Real Members in this Partition Table */}
@@ -432,11 +428,11 @@ export function GroupScopeView({
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-secondary text-[18px]">format_list_bulleted</span>
                   <h4 className="font-headline-md text-sm font-bold text-on-surface">
-                    Alarms in {activePartition.name} ({activePartition.members.length})
+                    Cảnh báo trong {activePartition.name} ({activePartition.members.length})
                   </h4>
                 </div>
                 <span className="text-xs font-code-sm text-on-surface-variant">
-                  Click to inspect member in Member Scope
+                  Nhấp để xem chi tiết thành viên
                 </span>
               </div>
 
@@ -444,12 +440,12 @@ export function GroupScopeView({
                 <table className="w-full text-left font-code-sm text-xs">
                   <thead>
                     <tr className="border-b border-[#1b273e] bg-[#080d17] text-on-surface-variant uppercase text-[10px] tracking-wider">
-                      <th className="p-2.5">Alarm ID</th>
-                      <th className="p-2.5">Alarm Name</th>
-                      <th className="p-2.5">Device</th>
-                      <th className="p-2.5">Timestamp</th>
-                      <th className="p-2.5">Role</th>
-                      <th className="p-2.5 text-right">Support</th>
+                      <th className="p-2.5">Mã Cảnh Báo</th>
+                      <th className="p-2.5">Tên Cảnh Báo</th>
+                      <th className="p-2.5">Thiết Bị</th>
+                      <th className="p-2.5">Thời Điểm</th>
+                      <th className="p-2.5">Vai Trò</th>
+                      <th className="p-2.5 text-right">Hỗ Trợ</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#151f33]">

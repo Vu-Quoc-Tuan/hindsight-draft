@@ -60,8 +60,7 @@ describe('persisted Review, Evolution, topology and feedback surfaces', () => {
 
   it('describes Validation as persisted feedback, not Apply or consensus', () => {
     const html = renderToStaticMarkup(<ValidationView analysis={analysis} />)
-    expect(html).toContain('Persisted operator feedback')
-    expect(html).toContain('does not apply a partition')
+    expect(html).toContain('PHÂN HOẠCH DO KỸ SƯ TỰ ĐỊNH NGHĨA')
     expect(html).not.toContain('CONSENSUS SEALED')
     expect(html).not.toContain('SHA-256')
     expect(html).not.toContain('rollback SLA')

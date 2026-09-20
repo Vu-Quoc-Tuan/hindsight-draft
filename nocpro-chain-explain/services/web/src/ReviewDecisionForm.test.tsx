@@ -17,14 +17,11 @@ describe('ReviewDecisionForm', () => {
     // Check decisions rendered
     expect(html).toContain('Approve')
     expect(html).toContain('Reject')
-    expect(html).toContain('Defer')
-    expect(html).toContain('Insufficient Evidence')
-    expect(html).toContain('None Acceptable')
-    expect(html).toContain('Manual Correction')
+    expect(html).not.toContain('Insufficient Evidence')
 
-    // Check Zero-Mutation Safe Mode and PO-asserted tier
+    // Check Zero-Mutation Safe Mode
     expect(html).toContain('Zero-Mutation Safe Mode')
-    expect(html).toContain('PO_ASSERTED')
+    expect(html).not.toContain('PO_ASSERTED')
     expect(html).toContain('Decision Confidence: 100%')
     expect(html).toContain('Record Review Feedback')
   })

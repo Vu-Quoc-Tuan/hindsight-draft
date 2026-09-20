@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest'
 
 import { ChainsExplorerView } from './views/ChainsExplorerView'
 import { MultiChainTimelineView } from './views/MultiChainTimelineView'
-import { CompareChainsView } from './views/CompareChainsView'
 import { SnapshotOverviewView } from './views/SnapshotOverviewView'
 import { NocHeader } from './components/NocHeader'
 import type { ChainList } from './types'
@@ -30,7 +29,11 @@ describe('snapshot views use only factual chain summary fields', () => {
 
     expect(html).toContain('S-REAL@v2')
     expect(html).toContain('Observed chain')
-    expect(html).toContain('Audit on demand')
+    expect(html).toContain('Observation Window')
+    expect(html).toContain('Chain Duration Profile')
+    expect(html).not.toContain('Audit on demand')
+    expect(html).not.toContain('Solitary Alarms')
+    expect(html).not.toContain('Multi-alarm Chains')
     expect(html).not.toContain('8,714')
     expect(html).not.toContain('Structural Findings')
     expect(html).not.toContain('Alternative Partitions')
@@ -65,7 +68,7 @@ describe('snapshot views use only factual chain summary fields', () => {
 
   it('does not fabricate conductance, weak members or severity', () => {
     const html = renderToStaticMarkup(
-      <ChainsExplorerView chainList={chainList} onSelectChain={() => {}} onCompareChains={() => {}} />,
+      <ChainsExplorerView chainList={chainList} onSelectChain={() => {}} />,
     )
 
     expect(html).toContain('Audit on demand')
@@ -75,9 +78,20 @@ describe('snapshot views use only factual chain summary fields', () => {
     expect(html).not.toContain('CRITICAL')
   })
 
+  it('renders sort controls and members sortable header in ChainsExplorerView', () => {
+    const html = renderToStaticMarkup(
+      <ChainsExplorerView chainList={chainList} onSelectChain={() => {}} />,
+    )
+
+    expect(html).toContain('Most members')
+    expect(html).toContain('Fewest')
+    expect(html).toContain('SORT')
+    expect(html).toContain('Members')
+  })
+
   it('renders a timeline from exact returned timestamps', () => {
     const html = renderToStaticMarkup(
-      <MultiChainTimelineView chains={chainList.chains} onSelectChain={() => {}} onCompareChains={() => {}} />,
+      <MultiChainTimelineView chains={chainList.chains} onSelectChain={() => {}} />,
     )
 
     expect(html).toContain('10:00:00')
@@ -92,31 +106,13 @@ describe('snapshot views use only factual chain summary fields', () => {
       <MultiChainTimelineView
         chains={[{ ...chainList.chains[0], start_time: null, end_time: null, duration_seconds: null }]}
         onSelectChain={() => {}}
-        onCompareChains={() => {}}
-      />,
+      />
     )
 
     expect(html).toContain('Temporal range unavailable')
   })
 
-  it('compares observed fields without fabricating cross-chain causality', () => {
-    const other = { ...chainList.chains[0], chain_id: 'C-OTHER', title: 'Other observed chain' }
-    const html = renderToStaticMarkup(
-      <CompareChainsView
-        chainAId="C-REAL"
-        chainBId="C-OTHER"
-        chains={[chainList.chains[0], other]}
-        onSelectChain={() => {}}
-        onChangeSelection={() => {}}
-      />,
-    )
 
-    expect(html).toContain('Observed chain')
-    expect(html).toContain('Other observed chain')
-    expect(html).not.toContain('root cause')
-    expect(html).not.toContain('+1.82s')
-    expect(html).not.toContain('CONDUCTANCE')
-  })
 
   it('renders snapshot catalog items in header without mock contamination', () => {
     const snapshots = [

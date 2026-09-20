@@ -188,12 +188,11 @@ export function ManualChainSplitModal({
 
   // Load target chain alarms when selectedMergeTargetChainId changes
   useEffect(() => {
-    if (!selectedMergeTargetChainId) {
-      setTargetChainAlarms([])
-      return
-    }
+    if (!selectedMergeTargetChainId) return
     let active = true
-    setLoadingTargetChain(true)
+    queueMicrotask(() => {
+      if (active) setLoadingTargetChain(true)
+    })
     api.analysis(selectedMergeTargetChainId)
       .then((res) => {
         if (active) {
@@ -228,11 +227,13 @@ export function ManualChainSplitModal({
   }, [alarms, searchTerm])
 
   const [displayLimit, setDisplayLimit] = useState<number>(100)
+  const [prevFilters, setPrevFilters] = useState({ searchTerm, operation })
 
-  // Reset displayLimit on search or tab change
-  useEffect(() => {
+  // Reset displayLimit on search or tab change without effect cascading render
+  if (prevFilters.searchTerm !== searchTerm || prevFilters.operation !== operation) {
+    setPrevFilters({ searchTerm, operation })
     setDisplayLimit(100)
-  }, [searchTerm, operation])
+  }
 
   // Accessibility: close on Escape key
   useEffect(() => {
@@ -247,8 +248,6 @@ export function ManualChainSplitModal({
   const displayedAlarms = useMemo(() => {
     return filteredAlarms.slice(0, displayLimit)
   }, [filteredAlarms, displayLimit])
-
-  if (!isOpen) return null
 
   const allAlarmIds = alarms.map((a) => a.alarm_id)
   const selectedCount = selectedIds.size
@@ -534,6 +533,8 @@ export function ManualChainSplitModal({
       setSubmitting(false)
     }
   }
+
+  if (!isOpen) return null
 
   const currentOpMeta = OPERATION_TABS.find((t) => t.op === operation) || OPERATION_TABS[0]
 

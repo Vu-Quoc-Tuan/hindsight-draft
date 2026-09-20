@@ -9,6 +9,7 @@ const FALLBACK_LABELS: Record<string, string> = {
   INVALID_TOOL_CALL: 'Invalid tool call',
   GROUNDING_VIOLATION: 'Grounding validation failed',
   STALE_CONTEXT: 'Workspace context changed',
+  OUTPUT_REJECTED: 'AI output exceeded briefing constraints',
 }
 
 export function GroundedProviderBadge({

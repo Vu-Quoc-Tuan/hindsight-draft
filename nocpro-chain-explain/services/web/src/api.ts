@@ -125,6 +125,67 @@ async function topologyResolveRequest(
   return (await response.json()) as TopologyNavigationResolution
 }
 
+export type TopologySubgraphNode = {
+  id: string
+  name: string
+  type: string
+  is_seed: boolean
+  source_tables?: string[]
+  attributes?: Record<string, any>
+}
+
+export type TopologySubgraphEdge = {
+  id: string
+  source: string
+  target: string
+  relation: string
+  direction_kind?: string
+  dependency_semantics?: string
+}
+
+export type TopologySubgraphResult = {
+  status: 'AVAILABLE' | 'UNAVAILABLE'
+  profile_id: string
+  topology_version?: string
+  nodes: TopologySubgraphNode[]
+  edges: TopologySubgraphEdge[]
+  reason?: string
+}
+
+const _subgraphCache = new Map<string, TopologySubgraphResult>()
+
+async function topologySubgraphRequest(
+  profileId: string,
+  seeds: string[],
+  hops: number = 2,
+  signal?: AbortSignal,
+): Promise<TopologySubgraphResult> {
+  const cacheKey = `${profileId}:${seeds.slice().sort().join(',')}:${hops}`
+  if (_subgraphCache.has(cacheKey)) {
+    return _subgraphCache.get(cacheKey)!
+  }
+  const url = explainTopologyUrl('subgraph')
+  url.searchParams.set('profile_id', profileId)
+  if (seeds.length > 0) url.searchParams.set('seeds', seeds.join(','))
+  url.searchParams.set('hops', String(hops))
+  const response = await fetch(url, { signal })
+  if (!response.ok) throw new ApiError(response.status, `${response.status} ${response.statusText}`)
+  const result = (await response.json()) as TopologySubgraphResult
+  _subgraphCache.set(cacheKey, result)
+  return result
+}
+
+const _cohesionCache = new Map<string, CohesionNarrativeView>()
+
+export const clearCohesionCache = (chainId?: string) => {
+  if (chainId) {
+    for (const key of _cohesionCache.keys()) {
+      if (key.startsWith(`${chainId}:`)) _cohesionCache.delete(key)
+    }
+  } else {
+    _cohesionCache.clear()
+  }
+}
 
 export const api = {
   health: (signal?: AbortSignal) =>
@@ -328,11 +389,24 @@ export const api = {
       `/api/v1/chains/${encodeURIComponent(chainId)}/ai-suggestion?lang=${encodeURIComponent(lang)}`,
       { signal },
     ),
-  cohesionNarrative: (chainId: string, signal?: AbortSignal, lang: string = 'vi') =>
-    request<CohesionNarrativeView>(
-      `/api/v1/chains/${encodeURIComponent(chainId)}/cohesion-narrative?lang=${encodeURIComponent(lang)}`,
-      { signal },
-    ),
+  cohesionNarrative: async (
+    chainId: string,
+    signal?: AbortSignal,
+    lang: string = 'vi',
+    forceRefresh: boolean = false
+  ): Promise<CohesionNarrativeView> => {
+    const cacheKey = `${chainId}:${lang}`
+    if (!forceRefresh && _cohesionCache.has(cacheKey)) {
+      const cached = _cohesionCache.get(cacheKey)!
+      if (cached.context?.has_p2) {
+        return cached
+      }
+    }
+    const url = `/api/v1/chains/${encodeURIComponent(chainId)}/cohesion-narrative?lang=${encodeURIComponent(lang)}${forceRefresh ? '&force_refresh=true' : ''}`
+    const result = await request<CohesionNarrativeView>(url, { signal })
+    _cohesionCache.set(cacheKey, result)
+    return result
+  },
   assistantQuery: (query: string, context: AssistantContext, history: AssistantHistoryMessage[] = [], signal?: AbortSignal) =>
     request<AssistantResponse>('/api/v1/assistant/query', {
       method: 'POST',
@@ -348,6 +422,8 @@ export const api = {
     topologySearchRequest(profileId, query, signal),
   topologyResolve: (profileId: string, identifier: string, signal?: AbortSignal) =>
     topologyResolveRequest(profileId, identifier, signal),
+  topologySubgraph: (profileId: string, seeds: string[], hops?: number, signal?: AbortSignal) =>
+    topologySubgraphRequest(profileId, seeds, hops, signal),
   getConfig: (signal?: AbortSignal) => request<AnalysisConfigView>('/api/v1/config', { signal }),
   updateConfig: (parameters: Record<string, number>, signal?: AbortSignal) =>
     request<AnalysisConfigView>('/api/v1/config', {

@@ -9,7 +9,7 @@ interface EvolutionViewProps {
 }
 
 export function EvolutionView({ analysis, initialTab = 'timeline' }: EvolutionViewProps) {
-  const [activeTab, setActiveTab] = useState<'timeline' | 'cross_snapshot'>(initialTab)
+  const [activeTab] = useState<'timeline' | 'cross_snapshot'>(initialTab)
   const [selectedAlarmId, setSelectedAlarmId] = useState<string | null>(null)
   const [hoveredAlarmId, setHoveredAlarmId] = useState<string | null>(null)
 
@@ -25,10 +25,10 @@ export function EvolutionView({ analysis, initialTab = 'timeline' }: EvolutionVi
     })
   }, [members])
 
-  // Genesis Alarm (T0) and propagation metrics
-  const { genesisAlarm, timeSpanSecs, alarmDeltas, dominantDevice, dominantCount } = useMemo(() => {
-    const genesis = sortedAlarms[0] || null
-    const t0 = genesis?.canonical_start_time ? Date.parse(genesis.canonical_start_time) : 0
+  // First Observed Alarm (T0) and arrival metrics
+  const { firstObservedAlarm, timeSpanSecs, alarmDeltas, dominantDevice, dominantCount } = useMemo(() => {
+    const firstObserved = sortedAlarms[0] || null
+    const t0 = firstObserved?.canonical_start_time ? Date.parse(firstObserved.canonical_start_time) : 0
     const last = sortedAlarms[sortedAlarms.length - 1] || null
     const tEnd = last?.canonical_start_time ? Date.parse(last.canonical_start_time) : t0
 
@@ -64,7 +64,7 @@ export function EvolutionView({ analysis, initialTab = 'timeline' }: EvolutionVi
     })
 
     return {
-      genesisAlarm: genesis,
+      firstObservedAlarm: firstObserved,
       timeSpanSecs: diffSec,
       alarmDeltas: deltas,
       dominantDevice: maxDev,
@@ -101,7 +101,7 @@ export function EvolutionView({ analysis, initialTab = 'timeline' }: EvolutionVi
 
   const arrivalRate = timeSpanSecs > 0 ? (totalAlarms / timeSpanSecs).toFixed(2) : totalAlarms.toFixed(2)
 
-  const activeAlarmId = selectedAlarmId ?? genesisAlarm?.alarm_id ?? alarmDeltas[0]?.member.alarm_id ?? null
+  const activeAlarmId = selectedAlarmId ?? firstObservedAlarm?.alarm_id ?? alarmDeltas[0]?.member.alarm_id ?? null
   const activeIndex = alarmDeltas.findIndex(d => d.member.alarm_id === activeAlarmId)
   const activeItem = (activeIndex >= 0 ? alarmDeltas[activeIndex] : null) ?? alarmDeltas[0] ?? null
   const prevItem = activeIndex > 0 ? alarmDeltas[activeIndex - 1] : null
@@ -129,43 +129,12 @@ export function EvolutionView({ analysis, initialTab = 'timeline' }: EvolutionVi
         <div className="flex flex-col gap-space-sm p-space-md lg:flex-row lg:items-center lg:justify-between border-b border-[#1b273e]">
           <div className="flex items-center gap-space-xs">
             <span className="material-symbols-outlined text-secondary text-[20px]">
-              {activeTab === 'timeline' ? 'timeline' : 'history'}
+              timeline
             </span>
             <h1 className="font-headline-md text-base font-semibold text-on-surface flex items-center gap-2">
-              <span>{activeTab === 'timeline' ? 'Propagation Timeline' : 'Cross-Snapshot Lineage'}</span>
-              <InfoTip text={activeTab === 'timeline'
-                ? 'Trình tự nổ cảnh báo theo thời gian thực. Theo dõi cảnh báo khởi nguồn T₀, tốc độ bùng nổ cascade và tích lũy số lượng.'
-                : 'Theo dõi vòng đời và tính liên tục cấu trúc qua các khung giờ quan sát kế tiếp (Duy trì, Tăng trưởng, Tách, Hợp nhất).'}
-              />
+              <span>Alarm Arrival Timeline</span>
+              <InfoTip text="Trình tự xuất hiện cảnh báo theo mốc thời gian ghi nhận trong cửa sổ quan sát. Theo dõi thời điểm quan sát đầu T₀ và phân bố thời gian đến của các cảnh báo." />
             </h1>
-          </div>
-
-          {/* View Mode Toggle Pill */}
-          <div className="flex items-center gap-1 bg-[#0c1424] p-1 rounded-md border border-[#1e2b44] shrink-0">
-            <button
-              type="button"
-              onClick={() => setActiveTab('timeline')}
-              className={`px-3 py-1 rounded font-code-sm text-xs transition-all flex items-center gap-1.5 cursor-pointer ${
-                activeTab === 'timeline'
-                  ? 'bg-secondary text-[#070e1d] font-bold shadow-xs'
-                  : 'text-on-surface-variant hover:text-on-surface'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[14px]">timeline</span>
-              <span>Propagation Timeline</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('cross_snapshot')}
-              className={`px-3 py-1 rounded font-code-sm text-xs transition-all flex items-center gap-1.5 cursor-pointer ${
-                activeTab === 'cross_snapshot'
-                  ? 'bg-secondary text-[#070e1d] font-bold shadow-xs'
-                  : 'text-on-surface-variant hover:text-on-surface'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[14px]">history</span>
-              <span>Cross-Snapshot Lineage</span>
-            </button>
           </div>
         </div>
 
@@ -173,15 +142,15 @@ export function EvolutionView({ analysis, initialTab = 'timeline' }: EvolutionVi
         <div className="grid grid-cols-1 divide-y divide-[#1b273e] sm:grid-cols-4 sm:divide-y-0 sm:divide-x bg-[#0c1424]">
           <div className="px-space-md py-space-sm flex flex-col">
             <small className="block uppercase text-[10px] font-label-caps tracking-wider text-on-surface-variant">
-              Genesis Alarm (T₀)
+              First Observed Alarm (T₀)
             </small>
             <strong className="font-code-sm text-xs text-secondary font-bold truncate">
-              {genesisAlarm?.alarm_id || 'N/A'} ({genesisAlarm?.device_code || dominantDevice})
+              {firstObservedAlarm?.alarm_id || 'N/A'} ({firstObservedAlarm?.device_code || dominantDevice})
             </strong>
           </div>
           <div className="px-space-md py-space-sm flex flex-col">
             <small className="block uppercase text-[10px] font-label-caps tracking-wider text-on-surface-variant">
-              Cascade Velocity
+              Arrival Velocity
             </small>
             <strong className="font-code-sm text-xs text-on-surface font-bold">
               {totalAlarms} Alarms in {timeSpanSecs > 0 ? `${timeSpanSecs.toFixed(1)}s` : '0.0s'} ({arrivalRate}/s)
@@ -200,21 +169,18 @@ export function EvolutionView({ analysis, initialTab = 'timeline' }: EvolutionVi
               View Focus
             </small>
             <strong className="font-code-sm text-xs text-sky-400 font-bold">
-              {activeTab === 'timeline' ? 'Intra-Chain Sequence' : 'Cross-Snapshot Lineage DAG'}
+              Intra-Chain Sequence
             </strong>
           </div>
         </div>
       </section>
 
-      {/* 2. Persisted Cross-Snapshot Lineage Panel */}
-      {activeTab === 'cross_snapshot' && (
+      {/* 2. Content */}
+      {activeTab === 'cross_snapshot' ? (
         <div className="overflow-hidden rounded-xl border border-[#1b273e] bg-[#0c1424] p-space-md shadow-md animate-fadeIn">
           <EvolutionPanel key={analysis.chain_id} chainId={analysis.chain_id} />
         </div>
-      )}
-
-      {/* 3. Chronological Alarm Cascade: Interactive Cumulative Onset Trajectory */}
-      {activeTab === 'timeline' && (
+      ) : (
         <div className="flex flex-col gap-space-md animate-fadeIn">
           {alarmDeltas.length === 0 ? (
             <div className="w-full bg-[#0c1424] rounded-xl p-space-xl border border-[#1b273e] text-center text-on-surface-variant font-code-sm">
@@ -386,9 +352,9 @@ export function EvolutionView({ analysis, initialTab = 'timeline' }: EvolutionVi
 
                   {/* Time Axis Labels */}
                   <div className="flex justify-between items-center text-on-surface-variant font-code-sm text-[11px] pt-1 px-4 border-t border-[#1b273e]">
-                    <span className="text-emerald-400 font-semibold">T₀: 0.00s (Genesis trigger)</span>
+                    <span className="text-emerald-400 font-semibold">T₀: 0.00s (Cảnh báo đầu tiên / First observed)</span>
                     <span className="text-on-surface-variant">T+{((timeSpanSecs * 0.5)).toFixed(1)}s (Midpoint)</span>
-                    <span className="text-tertiary font-semibold">T+{timeSpanSecs.toFixed(1)}s (Climax: {totalAlarms} Alarms)</span>
+                    <span className="text-tertiary font-semibold">T+{timeSpanSecs.toFixed(1)}s (Cảnh báo cuối / Last: {totalAlarms} Alarms)</span>
                   </div>
                 </div>
               </div>
@@ -406,13 +372,13 @@ export function EvolutionView({ analysis, initialTab = 'timeline' }: EvolutionVi
                             : 'bg-secondary/20 text-secondary border border-secondary/40'
                         }`}
                       >
-                        {activeItem.stepIndex === 1 ? '★ GENESIS T₀ TRIGGER' : `CASCADE STEP #${activeItem.stepIndex}`}
+                        {activeItem.stepIndex === 1 ? '★ CẢNH BÁO ĐẦU TIÊN (T₀)' : `MỐC QUAN SÁT #${activeItem.stepIndex}`}
                       </span>
                       <span className="font-code-md text-sm text-on-surface font-bold">
                         Độ lệch: {activeItem.formattedDelta}
                       </span>
                       <span className="text-on-surface-variant font-code-sm text-xs">
-                        (Khởi phát lúc {activeItem.timestamp})
+                        (Ghi nhận lúc {activeItem.timestamp})
                       </span>
                     </div>
 

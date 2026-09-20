@@ -1927,6 +1927,24 @@ button.table-row.is-selected {
   padding: 0.95rem;
 }
 
+.review-rejected-alternatives {
+  border: 1px solid rgba(244, 63, 94, 0.28);
+  border-radius: var(--radius-sm);
+  background: rgba(76, 5, 25, 0.12);
+}
+
+.review-rejected-alternatives > summary {
+  cursor: pointer;
+  padding: 0.75rem 0.9rem;
+  color: #fda4af;
+  font: 700 0.68rem/1.4 var(--mono);
+  list-style-position: inside;
+}
+
+.review-rejected-alternatives[open] > summary {
+  border-bottom: 1px solid rgba(244, 63, 94, 0.22);
+}
+
 .review-candidate {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
@@ -2545,19 +2563,211 @@ button.table-row.is-selected {
 .review-unavailable {
   display: grid;
   place-items: center;
-  min-height: 330px;
-  padding: 2.5rem;
+  min-height: 320px;
+  padding: 2.5rem 1.5rem;
   text-align: center;
 }
 
-.review-loading > span {
-  color: var(--text-dim);
-  font: 300 3rem var(--sans);
+/* Fallback span for review-loading if rendered simply */
+.review-loading > span:empty {
+  display: block;
+  width: 320px;
+  max-width: 90%;
+  height: 4px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #00f0ff 0%, #3b82f6 50%, #a855f7 100%);
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.75), 0 0 24px rgba(168, 85, 247, 0.55);
+  animation: cf-line-glow 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  margin: 1.5rem auto;
 }
 
 .review-loading > p {
   color: var(--text-muted);
-  font: 0.72rem var(--mono);
+  font: 0.75rem var(--mono);
+}
+
+/* ==========================================================================
+   Counterfactual Premium Glowing Loading Card & Bar
+   ========================================================================== */
+.cf-loading-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 520px;
+  padding: 2.25rem 2rem;
+  background: radial-gradient(ellipse at center, rgba(12, 20, 36, 0.96) 0%, rgba(7, 13, 26, 0.98) 100%);
+  border: 1px solid rgba(27, 39, 62, 0.9);
+  border-radius: 0.875rem;
+  box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.03);
+  gap: 1.25rem;
+}
+
+.cf-loading-header {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  width: 100%;
+}
+
+.cf-loading-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(0, 240, 255, 0.1);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  box-shadow: 0 0 16px rgba(0, 240, 255, 0.25);
+  flex-shrink: 0;
+}
+
+.cf-loading-icon {
+  font-size: 22px;
+  color: #00f0ff;
+}
+
+.cf-loading-titles {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.cf-loading-title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #f8fafc;
+  letter-spacing: -0.01em;
+}
+
+.cf-loading-subtitle {
+  margin: 0.2rem 0 0 0;
+  font-size: 0.72rem;
+  color: #94a3b8;
+  font-family: var(--mono);
+}
+
+/* The Glowing Gradient Loading Bar Container */
+.cf-loading-bar-track {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  margin: 0.25rem 0;
+}
+
+/* The Exact Glowing Gradient Line from User Design */
+.cf-loading-bar {
+  height: 100%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #00f0ff 0%, #3b82f6 50%, #a855f7 100%);
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.8), 0 0 22px rgba(168, 85, 247, 0.6);
+  position: relative;
+}
+
+/* Indeterminate animation: continuous fluid glowing wave */
+.cf-loading-bar.is-indeterminate {
+  width: 100%;
+  background-size: 200% 100%;
+  animation: cf-line-flow 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes cf-line-flow {
+  0% {
+    background-position: 100% 0;
+    filter: brightness(0.95);
+    box-shadow: 0 0 8px rgba(0, 240, 255, 0.6), 0 0 16px rgba(168, 85, 247, 0.45);
+  }
+  50% {
+    filter: brightness(1.25);
+    box-shadow: 0 0 14px rgba(0, 240, 255, 0.95), 0 0 28px rgba(168, 85, 247, 0.75);
+  }
+  100% {
+    background-position: -100% 0;
+    filter: brightness(0.95);
+    box-shadow: 0 0 8px rgba(0, 240, 255, 0.6), 0 0 16px rgba(168, 85, 247, 0.45);
+  }
+}
+
+@keyframes cf-line-glow {
+  0%, 100% {
+    opacity: 0.8;
+    filter: brightness(0.95);
+    box-shadow: 0 0 8px rgba(0, 240, 255, 0.6), 0 0 16px rgba(168, 85, 247, 0.45);
+  }
+  50% {
+    opacity: 1;
+    filter: brightness(1.25);
+    box-shadow: 0 0 14px rgba(0, 240, 255, 0.95), 0 0 28px rgba(168, 85, 247, 0.75);
+  }
+}
+
+/* Determinate animation: smooth filling progress with glowing tip */
+.cf-loading-bar.is-determinate {
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.cf-loading-bar.is-determinate::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: -2px;
+  bottom: -2px;
+  width: 8px;
+  border-radius: 9999px;
+  background: #ffffff;
+  box-shadow: 0 0 8px #ffffff, 0 0 16px #a855f7;
+}
+
+/* Footer Status & Percentage */
+.cf-loading-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  font-size: 0.72rem;
+  font-family: var(--mono);
+  color: #94a3b8;
+}
+
+.cf-loading-step {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.cf-pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: #00f0ff;
+  box-shadow: 0 0 6px #00f0ff;
+  animation: cf-dot-pulse 1.3s ease-in-out infinite alternate;
+}
+
+@keyframes cf-dot-pulse {
+  from { opacity: 0.4; transform: scale(0.85); }
+  to { opacity: 1; transform: scale(1.15); }
+}
+
+.cf-loading-percent {
+  font-weight: 700;
+  color: #00f0ff;
+  font-size: 0.8rem;
+  text-shadow: 0 0 8px rgba(0, 240, 255, 0.6);
+}
+
+.cf-loading-error {
+  color: #f87171;
+  font-size: 0.72rem;
+  font-family: var(--mono);
+  margin-top: 0.25rem;
 }
 
 .review-unavailable > span {
@@ -2580,34 +2790,30 @@ button.table-row.is-selected {
 }
 
 /* ==========================================================================
-   Loading State Scanner
+   Loading State Scanner (Unified Glowing Gradient Bar)
    ========================================================================== */
 .loading-state {
   display: grid;
   place-items: center;
-  min-height: 70vh;
+  min-height: 60vh;
   overflow-anchor: none;
+  gap: 1rem;
 }
 
 .loading-state span {
-  width: 60px;
-  height: 3px;
+  width: 280px;
+  max-width: 85%;
+  height: 4px;
   border-radius: var(--radius-full);
-  background: linear-gradient(90deg, var(--accent-cyan), var(--accent-primary));
-  box-shadow: 0 0 16px var(--accent-cyan);
-  animation: scan 1.2s ease-in-out infinite alternate;
+  background: linear-gradient(90deg, #00f0ff 0%, #3b82f6 50%, #a855f7 100%);
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.75), 0 0 24px rgba(168, 85, 247, 0.55);
+  background-size: 200% 100%;
+  animation: cf-line-flow 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 .loading-state p {
   color: var(--text-muted);
   font: 0.75rem var(--mono);
-}
-
-@keyframes scan {
-  to {
-    width: 200px;
-    box-shadow: 0 0 24px var(--accent-primary-light);
-  }
 }
 
 /* ==========================================================================
@@ -2786,8 +2992,23 @@ button.table-row.is-selected {
   display: grid;
   gap: 0.35rem;
   margin: 0;
-  padding: 0;
+  padding: 0 4px 0 0;
   list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.topology-score-list::-webkit-scrollbar,
+.topology-resource-list ul::-webkit-scrollbar,
+.topology-resource-tags::-webkit-scrollbar {
+  width: 4px;
+}
+
+.topology-score-list::-webkit-scrollbar-thumb,
+.topology-resource-list ul::-webkit-scrollbar-thumb,
+.topology-resource-tags::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 4px;
 }
 
 .topology-score-list li {
@@ -2810,6 +3031,27 @@ button.table-row.is-selected {
   grid-column: 1 / -1;
   color: var(--text-muted);
   font: 0.58rem var(--mono);
+}
+
+.topology-resource-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0 4px 0 0;
+  list-style: none;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.topology-resource-tags li code {
+  display: inline-block;
+  padding: 0.2rem 0.45rem;
+  border-radius: var(--radius-xs);
+  background: rgba(244, 63, 94, 0.12);
+  border: 1px solid rgba(244, 63, 94, 0.28);
+  color: #fda4af;
+  font: 700 0.65rem var(--mono);
 }
 
 .topology-provenance {
@@ -2845,10 +3087,10 @@ button.table-row.is-selected {
 }
 
 .topology-resource-list ul {
-  max-height: 125px;
+  max-height: 140px;
   overflow-y: auto;
   margin: 0;
-  padding: 0;
+  padding: 0 4px 0 0;
   list-style: none;
 }
 
@@ -2858,6 +3100,16 @@ button.table-row.is-selected {
   color: var(--text-secondary);
   font: 0.62rem var(--mono);
   overflow-wrap: anywhere;
+}
+
+.topology-resource-list li code {
+  color: #a7f3d0;
+  font: 0.62rem var(--mono);
+}
+
+.topology-resource-list .topology-empty {
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 /* ==========================================================================
@@ -3691,31 +3943,6 @@ button.table-row.is-selected {
   font-family: var(--mono);
   font-weight: 600;
   color: var(--accent-amber);
-}
-
-.node-compare-btn {
-  padding: 0.3rem 0.65rem;
-  border-radius: var(--radius-xs);
-  border: 1px solid var(--border-subtle);
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  white-space: nowrap;
-}
-
-.node-compare-btn:hover {
-  background: rgba(56, 189, 248, 0.15);
-  color: var(--accent-cyan-light);
-  border-color: rgba(56, 189, 248, 0.3);
-}
-
-.node-compare-btn.is-active {
-  background: rgba(16, 185, 129, 0.2);
-  color: #34d399;
-  border-color: rgba(16, 185, 129, 0.4);
 }
 
 .tree-empty-state {

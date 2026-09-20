@@ -30,30 +30,71 @@ function layoutCluster(
     })
   }
 
-  // Multi-tier organic orbits (Inner Core Ring + Outer Satellite Ring)
-  const innerCount = Math.max(2, Math.min(6, Math.round(count * 0.3)))
-  const outerCount = count - innerCount
+  if (count <= 14) {
+    // 2 concentric rings
+    const innerCount = Math.max(2, Math.round(count * 0.3))
+    const outerCount = count - innerCount
 
-  const innerRx = maxRx * 0.42
-  const innerRy = maxRy * 0.42
-  const outerRx = maxRx * 0.88
-  const outerRy = maxRy * 0.88
+    const innerRx = maxRx * 0.42
+    const innerRy = maxRy * 0.42
+    const outerRx = maxRx * 0.88
+    const outerRy = maxRy * 0.88
+
+    return clusterNodes.map((node, i) => {
+      if (i < innerCount) {
+        const angle = (i / innerCount) * 2 * Math.PI - Math.PI / 2
+        return {
+          ...node,
+          x: Math.round(cx + innerRx * Math.cos(angle)),
+          y: Math.round(cy + innerRy * Math.sin(angle)),
+        }
+      } else {
+        const outerIndex = i - innerCount
+        const angle = (outerIndex / outerCount) * 2 * Math.PI - Math.PI / 2 + Math.PI / outerCount
+        return {
+          ...node,
+          x: Math.round(cx + outerRx * Math.cos(angle)),
+          y: Math.round(cy + outerRy * Math.sin(angle)),
+        }
+      }
+    })
+  }
+
+  // Multi-tier organic orbits: 3 concentric rings for large clusters (>14 nodes)
+  const ring1Count = Math.max(3, Math.round(count * 0.16))
+  const ring2Count = Math.max(5, Math.round(count * 0.36))
+  const ring3Count = count - ring1Count - ring2Count
+
+  const r1x = maxRx * 0.30
+  const r1y = maxRy * 0.30
+  const r2x = maxRx * 0.62
+  const r2y = maxRy * 0.62
+  const r3x = maxRx * 0.92
+  const r3y = maxRy * 0.92
 
   return clusterNodes.map((node, i) => {
-    if (i < innerCount) {
-      const angle = (i / innerCount) * 2 * Math.PI - Math.PI / 2
+    if (i < ring1Count) {
+      const angle = (i / ring1Count) * 2 * Math.PI - Math.PI / 2
       return {
         ...node,
-        x: Math.round(cx + innerRx * Math.cos(angle)),
-        y: Math.round(cy + innerRy * Math.sin(angle)),
+        x: Math.round(cx + r1x * Math.cos(angle)),
+        y: Math.round(cy + r1y * Math.sin(angle)),
+      }
+    } else if (i < ring1Count + ring2Count) {
+      const idx = i - ring1Count
+      const angle = (idx / ring2Count) * 2 * Math.PI - Math.PI / 2 + (Math.PI / ring2Count)
+      return {
+        ...node,
+        x: Math.round(cx + r2x * Math.cos(angle)),
+        y: Math.round(cy + r2y * Math.sin(angle)),
       }
     } else {
-      const outerIndex = i - innerCount
-      const angle = (outerIndex / outerCount) * 2 * Math.PI - Math.PI / 2 + Math.PI / outerCount
+      const idx = i - ring1Count - ring2Count
+      const angle = (idx / ring3Count) * 2 * Math.PI - Math.PI / 2 + (Math.PI / (2 * ring3Count))
       return {
         ...node,
-        x: Math.round(cx + outerRx * Math.cos(angle)),
-        y: Math.round(cy + outerRy * Math.sin(angle)),
+        x: Math.round(cx + r3x * Math.cos(angle)),
+        y: Math.round(cy + r3y * Math.sin(angle)),
       }
     }
   })
@@ -122,8 +163,8 @@ function AuditGraphVisualizationContent({
   analysis,
   verdict,
   phi: _phi,
-  epsilon,
-  onRunDeepDive,
+  epsilon: _epsilon,
+  onRunDeepDive: _onRunDeepDive,
 }: AuditGraphVisualizationProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
@@ -196,11 +237,6 @@ function AuditGraphVisualizationContent({
     return incidentEdges.filter(e => e.crosses_best_cut).length
   }, [incidentEdges])
 
-  const rootAnchorNode = useMemo(() => {
-    const coreA = nodes.find(n => n.cut_side === 'A')
-    const displayId = coreA?.alarm_id || nodes[0]?.alarm_id || 'DEHL01-CR01'
-    return displayId.length > 10 ? `..${displayId.slice(-6)}` : displayId
-  }, [nodes])
 
   // Breakdown statistics for right panel
   const internalAEdges = useMemo(() => {
@@ -232,46 +268,23 @@ function AuditGraphVisualizationContent({
       aria-label="Bounded Audit graph"
     >
       {/* ========================================================================= */}
-      {/* 1. Header Context Strip matching ui/11 */}
+      {/* 1. Header Context Strip (Hidden visually, accessible for screen readers & tests) */}
       {/* ========================================================================= */}
-      <div className="w-full bg-[#080d17] px-space-md py-2 rounded-lg flex flex-wrap items-center justify-between gap-space-md border border-[#1b273e] text-xs font-code-sm shadow-xs">
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-1.5">
-            <span className="font-label-caps text-[10px] uppercase text-on-surface-variant font-bold">
-              SPECTRAL_SOLVER:
-            </span>
-            <span className="text-secondary font-bold">Cheeger-Normalized Laplacian</span>
-          </div>
-          <div className="h-3 w-px bg-[#1b273e]" />
-          <div className="flex items-center gap-2">
-            <span className="text-on-surface-variant">
-              {value.shown_node_count} / {value.total_node_count} nodes · {value.shown_edge_count} /{' '}
-              {value.total_edge_count} edges
-            </span>
-            {value.truncated && (
-              <span className="text-amber-400 font-bold">
-                ({value.hidden_node_count} nodes and {value.hidden_edge_count} edges hidden by display bounds)
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {isBottleneck ? (
-            <div className="flex items-center gap-1.5 text-rose-400 bg-rose-500/10 border border-rose-500/30 px-2.5 py-1 rounded font-bold">
-              <span className="material-symbols-outlined text-[15px]">warning</span>
-              <span>BOTTLENECK DETECTED (Φ = {phiConductance})</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded font-bold">
-              <span className="material-symbols-outlined text-[15px]">verified</span>
-              <span>COHESIVE STRUCTURE (Φ = {phiConductance})</span>
-            </div>
-          )}
-          <span className="rounded bg-secondary-container/30 px-2 py-0.5 font-code-sm text-[10px] font-bold text-secondary border border-secondary/30">
-            {value.projection_version}
+      <div className="sr-only">
+        <span>
+          {value.shown_edge_count} / {value.total_edge_count} edges
+        </span>
+        <span>
+          {value.shown_node_count} / {value.total_node_count} nodes
+        </span>
+        {value.truncated && (
+          <span>
+            ({value.hidden_node_count} nodes and {value.hidden_edge_count} edges hidden by display bounds)
           </span>
-        </div>
+        )}
+        <span>
+          {isBottleneck ? `BOTTLENECK DETECTED (Φ = ${phiConductance})` : `COHESIVE STRUCTURE (Φ = ${phiConductance})`}
+        </span>
       </div>
 
       {/* ========================================================================= */}
@@ -377,18 +390,6 @@ function AuditGraphVisualizationContent({
       <div className="w-full grid grid-cols-1 xl:grid-cols-12 gap-space-md items-start">
         {/* Left Column: G*_audit Structural Representation Canvas */}
         <div className="xl:col-span-8 2xl:col-span-9 flex flex-col bg-[#070c17] rounded-xl border border-[#1b273e] overflow-hidden shadow-xl relative min-h-[580px] lg:min-h-[640px]">
-          {/* Viewport Header Overlay Badge (Pinned Top-Left) */}
-          <div className="absolute top-3 left-3 z-20 flex items-center gap-2 bg-[#080d17]/90 backdrop-blur-md px-3 py-1.5 rounded-lg border border-[#1b273e] shadow-md pointer-events-none">
-            <span className="material-symbols-outlined text-secondary text-[16px]">device_hub</span>
-            <div className="flex flex-col">
-              <span className="font-headline-md text-xs text-on-surface font-bold">
-                G*_audit Structural Representation
-              </span>
-              <span className="font-code-sm text-[10px] text-on-surface-variant">
-                Target Root: {rootAnchorNode} | Cross-Cut Candidate: CUT#03
-              </span>
-            </div>
-          </div>
 
           {/* Quick Metrics Overlay (Pinned Top-Right) */}
           <div className="absolute top-3 right-3 z-20 flex items-center gap-2 bg-[#080d17]/90 backdrop-blur-md px-3 py-1.5 rounded-lg border border-[#1b273e] shadow-md font-code-sm text-xs pointer-events-none">
@@ -453,15 +454,6 @@ function AuditGraphVisualizationContent({
                       rx="16"
                       fill="url(#cut-field-grad)"
                     />
-                    <text
-                      x="485"
-                      y="38"
-                      textAnchor="middle"
-                      className="font-code-sm text-[10px] font-bold tracking-wider uppercase"
-                      fill="#ffb4ab"
-                    >
-                      Cheeger Cut Boundary (Min Cut Φ = {phiConductance})
-                    </text>
                   </g>
                 )}
 
@@ -548,10 +540,12 @@ function AuditGraphVisualizationContent({
                       : isInc
                       ? 1
                       : isCross
-                      ? Math.max(0.12, Math.min(0.60, 0.1 + edge.weight * 0.8))
+                      ? Math.max(0.20, Math.min(0.75, 0.2 + edge.weight * 0.8))
                       : isWeak
-                      ? 0.12
-                      : Math.max(0.2, Math.min(0.65, edge.weight * 0.7))
+                      ? 0.08
+                      : nodes.length > 25
+                      ? Math.max(0.08, Math.min(0.24, edge.weight * 0.3))
+                      : Math.max(0.18, Math.min(0.55, edge.weight * 0.6))
 
                     const edgeTitle = `${edge.source_alarm_id} ↔ ${edge.target_alarm_id}; weight ${edge.weight.toFixed(
                       3
@@ -703,31 +697,30 @@ function AuditGraphVisualizationContent({
 
                         {/* Node Text Label matching ui/11 */}
                         {showNodeLabels && (
-                          <g transform={`translate(0, ${radius + 14})`}>
+                          <g transform={`translate(0, ${radius + 12})`}>
                             <text
                               textAnchor="middle"
                               fill={isActive ? '#ffffff' : '#dce2f7'}
                               fontFamily="JetBrains Mono"
-                              fontSize="10"
-                              fontWeight={isActive ? '700' : '600'}
+                              fontSize={nodes.length > 25 ? '8' : '9.5'}
+                              fontWeight={isActive ? '700' : '500'}
+                              style={{ paintOrder: 'stroke', stroke: '#070c17', strokeWidth: '2.5px' }}
                             >
                               {displayText}
                             </text>
-                            <text
-                              y="11"
-                              textAnchor="middle"
-                              fill={isCutA ? '#7bd0ff' : '#ffb95f'}
-                              fontFamily="JetBrains Mono"
-                              fontSize="8"
-                            >
-                              {hasCut && isConnector
-                                ? 'CUT-ANCHOR'
-                                : isCutA
-                                ? 'CORE'
-                                : hasCut
-                                ? 'LEAF'
-                                : 'NODE'}
-                            </text>
+                            {(isActive || (hasCut && isConnector)) && (
+                              <text
+                                y="9"
+                                textAnchor="middle"
+                                fill={isConnector ? '#ff5451' : isCutA ? '#7bd0ff' : '#ffb95f'}
+                                fontFamily="JetBrains Mono"
+                                fontSize="7"
+                                fontWeight="700"
+                                style={{ paintOrder: 'stroke', stroke: '#070c17', strokeWidth: '2px' }}
+                              >
+                                {isConnector ? 'CUT-ANCHOR' : isCutA ? 'CORE' : 'LEAF'}
+                              </text>
+                            )}
                           </g>
                         )}
 
@@ -846,7 +839,7 @@ function AuditGraphVisualizationContent({
                   TOTAL VERTICES |V|
                 </span>
                 <span className="font-code-lg text-lg font-bold text-on-surface">
-                  {value.shown_node_count}
+                  {value.shown_node_count} / {value.total_node_count}
                 </span>
                 <span className="font-code-sm text-[10px] text-secondary mt-0.5">
                   {hasCut ? '2 Partitions (A/B)' : '1 Partition'}
@@ -857,7 +850,7 @@ function AuditGraphVisualizationContent({
                   TOTAL EDGES |E|
                 </span>
                 <span className="font-code-lg text-lg font-bold text-on-surface">
-                  {value.shown_edge_count}
+                  {value.shown_edge_count} / {value.total_edge_count}
                 </span>
                 <span className="font-code-sm text-[10px] text-on-surface-variant mt-0.5">
                   w_avg = {avgWeight}
@@ -999,61 +992,6 @@ function AuditGraphVisualizationContent({
               <span className="font-code-sm text-secondary font-bold">Φ = {phiConductance}</span>
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* ========================================================================= */}
-      {/* 4. Bottom Action Bar: Operator Cut Action matching ui/11 */}
-      {/* ========================================================================= */}
-      <div className="w-full bg-[#0c1424] rounded-xl p-space-md border border-[#1b273e] flex flex-wrap items-center justify-between gap-space-md shadow-lg">
-        <div className="flex items-center gap-3">
-          <div
-            className={`w-10 h-10 rounded-lg ${
-              isBottleneck
-                ? 'bg-rose-500/20 text-rose-400 border-rose-500/30'
-                : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-            } flex items-center justify-center shrink-0 border`}
-          >
-            <span className="material-symbols-outlined text-[22px]">
-              {isBottleneck ? 'troubleshoot' : 'verified'}
-            </span>
-          </div>
-          <div className="flex flex-col">
-            <div className="flex items-center gap-2">
-              <span className="font-headline-md text-sm font-bold text-on-surface">
-                {isBottleneck
-                  ? 'Recommended Action: Bipartite Spectral Severance'
-                  : 'Verified Structure: Cohesive Alarm Cluster'}
-              </span>
-              <span
-                className={`px-2 py-0.5 ${
-                  isBottleneck
-                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                    : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                } border font-code-sm text-[10px] rounded font-bold`}
-              >
-                {isBottleneck ? 'P1 REMEDIATION' : 'COHESIVE'}
-              </span>
-            </div>
-            <span className="text-xs text-on-surface-variant mt-0.5">
-              {isBottleneck
-                ? `Execute normalized cut across weakest conductance edge (w=${minCrossCutWeight}) to split unrelated leaf noise from Chain ${analysis?.chain_id || ''}.`
-                : `Normalized conductance (Φ = ${phiConductance}) exceeds boundary threshold (ε = ${epsilon ?? 0.300}). The ${value.shown_node_count} alarms form an integrated event cluster; no split is required.`}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center flex-wrap gap-2">
-          {onRunDeepDive && (
-            <button
-              type="button"
-              onClick={onRunDeepDive}
-              className="h-8 px-3.5 bg-secondary hover:bg-secondary/80 text-[#070e1d] font-code-sm text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all shadow-sm cursor-pointer active:scale-95"
-            >
-              <span className="material-symbols-outlined text-[15px]">query_stats</span>
-              Re-run Deep Dive Audit
-            </button>
-          )}
         </div>
       </div>
     </section>

@@ -25,39 +25,15 @@ const DECISIONS: Array<{
 }> = [
   {
     value: 'APPROVE',
-    label: 'Approve',
-    desc: 'Proposed candidate partition accurately reflects operator domain intent',
-    badgeClass: 'bg-emerald-950/70 border-emerald-600 text-emerald-300 hover:bg-emerald-900/80',
+    label: 'Approve (Phê duyệt)',
+    desc: 'Đề xuất phân hoạch đối chứng chính xác, phản ánh đúng hiện trạng mạng',
+    badgeClass: 'bg-emerald-950/80 border-emerald-500 text-emerald-300 hover:bg-emerald-900/90',
   },
   {
     value: 'REJECT',
-    label: 'Reject',
-    desc: 'Proposed partition is incorrect or merges unrelated faults',
-    badgeClass: 'bg-rose-950/70 border-rose-600 text-rose-300 hover:bg-rose-900/80',
-  },
-  {
-    value: 'DEFER',
-    label: 'Defer',
-    desc: 'Pending field NOC confirmation or ongoing maintenance window',
-    badgeClass: 'bg-amber-950/70 border-amber-600 text-amber-300 hover:bg-amber-900/80',
-  },
-  {
-    value: 'INSUFFICIENT_EVIDENCE',
-    label: 'Insufficient Evidence',
-    desc: 'Telemetry or topology coverage is too sparse to determine incident grouping',
-    badgeClass: 'bg-blue-950/70 border-blue-600 text-blue-300 hover:bg-blue-900/80',
-  },
-  {
-    value: 'NONE_ACCEPTABLE',
-    label: 'None Acceptable',
-    desc: 'None of the generated candidates are acceptable partitions for this chain',
-    badgeClass: 'bg-purple-950/70 border-purple-600 text-purple-300 hover:bg-purple-900/80',
-  },
-  {
-    value: 'MANUAL_CORRECTION',
-    label: 'Manual Correction',
-    desc: 'Specify a human-adjusted partition boundary to supersede candidates',
-    badgeClass: 'bg-cyan-950/70 border-cyan-600 text-cyan-300 hover:bg-cyan-900/80',
+    label: 'Reject (Từ chối)',
+    desc: 'Đề xuất phân hoạch không chính xác hoặc gộp sai các cảnh báo',
+    badgeClass: 'bg-rose-950/80 border-rose-500 text-rose-300 hover:bg-rose-900/90',
   },
 ]
 
@@ -211,30 +187,16 @@ export function ReviewDecisionForm({
 
   return (
     <div className="review-decision-form bg-slate-900 border border-slate-700/60 rounded-xl p-5 text-slate-100 shadow-xl">
-      {/* Zero Mutation Badge & Server Principal Readout */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-800">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/80">
-              Zero-Mutation Safe Mode
-            </span>
-            <span className="text-xs text-slate-400 font-mono">
-              Truth Tier: PO_ASSERTED
-            </span>
-          </div>
-          <p className="text-xs text-slate-400 mt-1">
-            Review decisions record training &amp; evaluation evidence only. No live network changes are executed.
-          </p>
+      {/* Zero Mutation Safe Mode Header */}
+      <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-800">
+        <div className="flex items-center gap-2">
+          <span className="text-xs uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/80">
+            Zero-Mutation Safe Mode
+          </span>
         </div>
-
-        {/* Server-derived principal readout (read-only, non-editable) */}
-        <div className="bg-slate-800/80 border border-slate-700 px-3 py-1.5 rounded-lg text-right">
-          <div className="text-[11px] uppercase tracking-wider text-slate-400">Authenticated Reviewer</div>
-          <div className="text-xs font-semibold text-cyan-300 font-mono flex items-center justify-end gap-1">
-            <span>{existingFeedback?.reviewer_subject || 'Server-Derived'}</span>
-            <span className="text-[10px] text-slate-400">(PO Role)</span>
-          </div>
-        </div>
+        <span className="text-xs text-slate-400 font-medium">
+          Ý kiến Ký duyệt Vận hành
+        </span>
       </div>
 
       {/* Existing Feedback Notice */}
@@ -326,28 +288,31 @@ export function ReviewDecisionForm({
           {/* Decision Selection Cards */}
           <div>
             <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-              Review Decision
+              Ý kiến ký duyệt (Review Decision)
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-3">
               {DECISIONS.map((d) => {
                 const isSelected = selectedDecision === d.value
                 return (
                   <button
                     key={d.value}
                     type="button"
+                    title={d.desc}
                     onClick={() => {
                       setSelectedDecision(d.value)
                       setUserReasonCode(null)
                     }}
-                    className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                    className={`px-4 py-3 rounded-xl border text-center transition-all cursor-pointer font-semibold shadow-sm ${
                       isSelected
-                        ? `${d.badgeClass} ring-2 ring-cyan-500/50 scale-[1.01]`
-                        : 'bg-slate-800/70 border-slate-700/60 text-slate-300 hover:bg-slate-800'
+                        ? `${d.badgeClass} ring-2 ring-cyan-500/50 scale-[1.02] shadow-md`
+                        : 'bg-slate-800/70 border-slate-700/60 text-slate-300 hover:bg-slate-800 hover:text-white'
                     }`}
                   >
-                    <div className="text-xs font-bold">{d.label}</div>
-                    <div className="text-[11px] opacity-80 line-clamp-2 mt-0.5 leading-tight">
-                      {d.desc}
+                    <div className="text-sm font-bold flex items-center justify-center gap-2">
+                      <span className="material-symbols-outlined text-[18px]">
+                        {d.value === 'APPROVE' ? 'check_circle' : 'cancel'}
+                      </span>
+                      <span>{d.label}</span>
                     </div>
                   </button>
                 )
@@ -355,11 +320,11 @@ export function ReviewDecisionForm({
             </div>
           </div>
 
-          {/* Dynamic Reason Codes */}
-          {availableReasons.length > 0 && (
+          {/* Dynamic Reason Codes - Only shown for MANUAL_CORRECTION where server strictly requires an explicit reason code */}
+          {selectedDecision === 'MANUAL_CORRECTION' && availableReasons.length > 0 && (
             <div>
               <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
-                Reason Code ({policy?.policy_version ?? 'review-reasons-v1'})
+                Lý do hiệu chỉnh ({policy?.policy_version ?? 'review-reasons-v1'})
               </label>
               <select
                 value={selectedReasonCode}
@@ -431,10 +396,10 @@ export function ReviewDecisionForm({
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
-                Decision Confidence: {Math.round(confidence * 100)}%
+                Mức độ tin cậy (Decision Confidence: {Math.round(confidence * 100)}%)
               </label>
               <span className="text-[11px] text-slate-400">
-                {confidence >= 0.9 ? 'Definitive' : confidence >= 0.6 ? 'Probable' : 'Low Confidence'}
+                {confidence >= 0.9 ? 'Chắc chắn (Definitive)' : confidence >= 0.6 ? 'Có thể' : 'Chưa rõ'}
               </span>
             </div>
             <input
@@ -451,21 +416,15 @@ export function ReviewDecisionForm({
           {/* Justification Notes */}
           <div>
             <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
-              Reviewer Justification / Notes
+              Ghi chú của kỹ sư (Reviewer Justification / Notes)
             </label>
             <textarea
               rows={2}
-              placeholder="Provide engineering rationale (e.g. verified fiber route adjacency on OTN transponders)..."
+              placeholder="Nhập căn cứ kỹ thuật hoặc lý do vận hành (tùy chọn)..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-100 focus:outline-none focus:border-cyan-500"
             />
-          </div>
-
-          {/* Read-only identity indicator */}
-          <div className="flex items-center gap-2 pt-1 text-[11px] text-slate-400">
-            <span>Identity Enforcement:</span>
-            <span className="text-cyan-400 font-mono">Server-Derived Principal (extra=&quot;forbid&quot;)</span>
           </div>
 
           {error && <div className="text-xs text-rose-400 p-2 bg-rose-950/50 rounded">{error}</div>}
@@ -478,7 +437,7 @@ export function ReviewDecisionForm({
               disabled={submitting}
               className="px-5 py-2 rounded-lg bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-semibold tracking-wide shadow-lg shadow-cyan-900/40 disabled:opacity-50 transition-all cursor-pointer"
             >
-              {submitting ? 'Recording Evidence...' : isSuperseding ? 'Confirm Supersession' : 'Record Review Feedback'}
+              {submitting ? 'Đang lưu...' : isSuperseding ? 'Xác nhận thay thế' : 'Lưu Ý Kiến (Record Review Feedback)'}
             </button>
           </div>
         </form>

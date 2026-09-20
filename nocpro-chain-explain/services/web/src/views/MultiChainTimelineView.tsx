@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 
 import type { ChainSummary } from '../types'
+import { formatDuration } from '../format'
+import { InfoTip } from '../components/InfoTip'
 
 interface MultiChainTimelineViewProps {
   chains?: ChainSummary[]
   onSelectChain: (chainId: string) => void
-  onCompareChains: (chainA: string, chainB: string) => void
   selectedChainId?: string | null
 }
 
@@ -49,20 +50,11 @@ function formatTick(tickMs: number, minMs: number, spanMs: number) {
   return timeStr
 }
 
-function formatDuration(seconds: number | null) {
-  if (seconds == null) return 'Unavailable'
-  if (seconds < 60) return `${Math.round(seconds)}s`
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m`
-  return `${(seconds / 3600).toFixed(1)}h`
-}
-
 export function MultiChainTimelineView({
   chains = [],
   onSelectChain,
-  onCompareChains,
   selectedChainId,
 }: MultiChainTimelineViewProps) {
-  const [selected, setSelected] = useState<string[]>([])
   const [zoomLevel, setZoomLevel] = useState<number>(100)
   const [searchTerm, setSearchTerm] = useState('')
   const [kindFilter, setKindFilter] = useState<'ALL' | 'MULTI' | 'SINGLETON'>('ALL')
@@ -136,58 +128,46 @@ export function MultiChainTimelineView({
     })
   }, [chains, searchTerm, kindFilter])
 
-  const toggle = (chainId: string) => setSelected(current => current.includes(chainId)
-    ? current.filter(value => value !== chainId)
-    : current.length >= 2 ? [current[1], chainId] : [...current, chainId])
-
   return (
     <div className="flex w-full flex-col gap-space-md pb-12 select-none animate-fadeIn">
-      {/* 1. Top Summary Banner */}
-      <section className="overflow-hidden rounded-xl border border-surface-container-high bg-[#0c1322] shadow-md">
-        <div className="flex flex-col gap-space-md p-space-lg lg:flex-row lg:items-end lg:justify-between border-b border-[#1b273e]">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-secondary text-[20px]">schedule</span>
-              <p className="font-label-caps text-label-caps uppercase tracking-[0.16em] text-secondary">Snapshot chronology</p>
-            </div>
-            <h1 className="mt-1 font-headline-lg text-headline-lg font-extrabold text-on-surface tracking-tight">Multi-chain timeline</h1>
-            <p className="mt-space-xs max-w-2xl text-body-sm text-on-surface-variant">
-              Each rail uses canonical first and last alarm timestamps returned by the snapshot. Ordering reflects temporal observation, not causal direction.
-            </p>
+      {/* 1. Header & Context Strip */}
+      <section className="overflow-hidden rounded-xl border border-[#1b273e] bg-[#080d17] shadow-md">
+        <div className="flex flex-col gap-space-sm p-space-md lg:flex-row lg:items-center lg:justify-between border-b border-[#1b273e]">
+          <div className="flex items-center gap-space-xs">
+            <span className="material-symbols-outlined text-secondary text-[20px]">schedule</span>
+            <h1 className="font-headline-md text-base font-semibold text-on-surface flex items-center gap-2">
+              <span>Snapshot Chronology · Multi-Chain Timeline</span>
+              <InfoTip text="Trình tự lan truyền và phân bố thời gian thực của các chuỗi sự cố trong snapshot. Mỗi vạch biểu diễn mốc thời gian bắt đầu và kết thúc của chuỗi (không suy diễn quan hệ nhân quả)." />
+            </h1>
           </div>
-          <div className="flex items-center gap-3">
-            {selected.length === 2 && (
-              <span className="font-code-sm text-xs text-secondary font-semibold animate-pulse">
-                2 chains selected for comparison
-              </span>
-            )}
-            <button
-              disabled={selected.length !== 2}
-              onClick={() => selected.length === 2 && onCompareChains(selected[0], selected[1])}
-              className="inline-flex items-center justify-center gap-space-xs rounded-lg bg-secondary-container px-space-md py-2 font-code-sm font-bold text-on-secondary-container shadow-sm transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-35"
-            >
-              <span aria-hidden="true" className="material-symbols-outlined text-[17px]">compare_arrows</span>
-              Compare pair
-            </button>
+          <div className="flex flex-wrap items-center gap-space-xs shrink-0">
+            <div className="inline-flex items-center gap-space-xs rounded-full border border-secondary/30 bg-secondary/10 px-space-sm py-0.5 font-code-sm text-xs text-secondary">
+              <span className="material-symbols-outlined text-[14px]">timer</span>
+              {range.count}/{chains.length} Timed Chains
+            </div>
+            <div className="inline-flex items-center gap-space-xs rounded-full border border-sky-500/30 bg-sky-500/10 px-space-sm py-0.5 font-code-sm text-xs text-sky-300">
+              <span className="material-symbols-outlined text-[14px]">calendar_today</span>
+              Span: {formatDuration(range.span != null ? range.span / 1000 : null)}
+            </div>
           </div>
         </div>
 
-        {/* 4 Metric Stats */}
+        {/* 4 Metric Stats Strip */}
         <div className="grid grid-cols-2 bg-[#090e1a] md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-[#1b273e]">
           <div className="px-space-md py-3">
             <small className="block font-label-caps text-[11px] uppercase tracking-wider text-on-surface-variant">Chains</small>
             <strong className="font-code-lg text-lg font-bold text-on-surface">{chains.length}</strong>
           </div>
           <div className="px-space-md py-3">
-            <small className="block font-label-caps text-[11px] uppercase tracking-wider text-on-surface-variant">Timed</small>
+            <small className="block font-label-caps text-[11px] uppercase tracking-wider text-on-surface-variant">Timed Chains</small>
             <strong className="font-code-lg text-lg font-bold text-on-surface">{range.count}</strong>
           </div>
           <div className="px-space-md py-3">
-            <small className="block font-label-caps text-[11px] uppercase tracking-wider text-on-surface-variant">Window start</small>
+            <small className="block font-label-caps text-[11px] uppercase tracking-wider text-on-surface-variant">Window Start</small>
             <strong className="font-code-md text-secondary font-bold">{range.min == null ? 'Unavailable' : formatClock(range.min)}</strong>
           </div>
           <div className="px-space-md py-3">
-            <small className="block font-label-caps text-[11px] uppercase tracking-wider text-on-surface-variant">Window end</small>
+            <small className="block font-label-caps text-[11px] uppercase tracking-wider text-on-surface-variant">Window End</small>
             <strong className="font-code-md text-secondary font-bold">{range.max == null ? 'Unavailable' : formatClock(range.max, range.min)}</strong>
           </div>
         </div>
@@ -205,7 +185,7 @@ export function MultiChainTimelineView({
             </div>
             <button
               onClick={() => setIncludeOutliers(!includeOutliers)}
-              className="px-2.5 py-1 rounded bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 border border-amber-400/40 font-semibold transition-colors"
+              className="px-2.5 py-1 rounded bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 border border-amber-400/40 font-semibold transition-colors cursor-pointer"
             >
               {includeOutliers ? 'Focus primary observation window' : 'Show full span (incl. outliers)'}
             </button>
@@ -222,8 +202,8 @@ export function MultiChainTimelineView({
                 type="text"
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
-                placeholder="Filter chain ID..."
-                className="h-8 w-48 rounded-md border border-[#22314d] bg-[#090e1a] pl-8 pr-3 font-code-sm text-xs text-on-surface placeholder:text-on-surface-variant/60 focus:border-secondary focus:outline-none"
+                placeholder="Filter chain ID or title..."
+                className="h-8 w-56 rounded-md border border-[#22314d] bg-[#090e1a] pl-8 pr-3 font-code-sm text-xs text-on-surface placeholder:text-on-surface-variant/60 focus:border-secondary focus:outline-none"
               />
             </div>
 
@@ -231,19 +211,19 @@ export function MultiChainTimelineView({
             <div className="flex items-center gap-1 rounded-md border border-[#22314d] bg-[#090e1a] p-0.5 text-xs font-code-sm">
               <button
                 onClick={() => setKindFilter('ALL')}
-                className={`px-2 py-1 rounded transition-colors ${kindFilter === 'ALL' ? 'bg-secondary text-surface-container-lowest font-bold' : 'text-on-surface-variant hover:text-on-surface'}`}
+                className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${kindFilter === 'ALL' ? 'bg-secondary text-[#070e1d] font-bold shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}`}
               >
                 All ({chains.length})
               </button>
               <button
                 onClick={() => setKindFilter('MULTI')}
-                className={`px-2 py-1 rounded transition-colors ${kindFilter === 'MULTI' ? 'bg-secondary text-surface-container-lowest font-bold' : 'text-on-surface-variant hover:text-on-surface'}`}
+                className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${kindFilter === 'MULTI' ? 'bg-secondary text-[#070e1d] font-bold shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}`}
               >
                 Multi-alarm
               </button>
               <button
                 onClick={() => setKindFilter('SINGLETON')}
-                className={`px-2 py-1 rounded transition-colors ${kindFilter === 'SINGLETON' ? 'bg-secondary text-surface-container-lowest font-bold' : 'text-on-surface-variant hover:text-on-surface'}`}
+                className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${kindFilter === 'SINGLETON' ? 'bg-secondary text-[#070e1d] font-bold shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}`}
               >
                 Singletons
               </button>
@@ -254,11 +234,11 @@ export function MultiChainTimelineView({
           <div className="flex items-center gap-2">
             <span className="font-label-caps text-[11px] uppercase tracking-wider text-on-surface-variant">Scale Zoom:</span>
             <div className="flex items-center gap-1 bg-[#090e1a] p-0.5 rounded-md border border-[#22314d]">
-              {[100, 150, 200, 300].map(z => (
+              {[100, 150].map(z => (
                 <button
                   key={z}
                   onClick={() => setZoomLevel(z)}
-                  className={`px-2 py-1 rounded font-code-sm text-xs font-semibold transition-colors ${zoomLevel === z ? 'bg-secondary text-black font-bold' : 'text-on-surface-variant hover:text-on-surface'}`}
+                  className={`px-2 py-1 rounded font-code-sm text-xs font-semibold transition-colors cursor-pointer ${zoomLevel === z ? 'bg-secondary text-[#070e1d] font-bold' : 'text-on-surface-variant hover:text-on-surface'}`}
                 >
                   {z}%
                 </button>
@@ -273,7 +253,7 @@ export function MultiChainTimelineView({
         <div className="overflow-x-auto">
           <div style={{ minWidth: `${Math.max(860, (860 * zoomLevel) / 100)}px` }} className="w-full">
             {/* Time Axis Ruler */}
-            <div className="grid grid-cols-[280px_1fr] border-b border-[#1b273e] bg-[#0c1322] sticky top-0 z-20">
+            <div className="grid grid-cols-[240px_1fr] border-b border-[#1b273e] bg-[#0c1322] sticky top-0 z-20">
               <div className="border-r border-[#1b273e] px-space-md py-2.5 font-label-caps text-label-caps uppercase tracking-wider text-on-surface-variant flex items-center justify-between">
                 <span>Alarm chain</span>
                 <span className="text-[10px] text-secondary">Showing {filteredChains.length}</span>
@@ -306,50 +286,46 @@ export function MultiChainTimelineView({
                 const available = startMs != null && endMs != null && range.min != null
                 const left = available ? ((startMs - range.min!) / range.span) * 100 : 0
                 const rawWidth = available ? ((Math.max(startMs, endMs) - startMs) / range.span) * 100 : 0
-                // Minimum visual bar width so it's always an interactive, readable pill
-                const visualWidth = available ? Math.max(3.5, rawWidth) : 0
-                const isSelected = selected.includes(chain.chain_id)
                 const isOutlier = outlierIds.has(chain.chain_id)
+                const isSelected = selectedChainId === chain.chain_id
 
                 return (
                   <div
                     key={chain.chain_id}
-                    className={`grid grid-cols-[280px_1fr] transition-colors hover:bg-[#101a2e] group ${
-                      selectedChainId === chain.chain_id ? 'bg-secondary-container/15' : isSelected ? 'bg-[#15233d]' : ''
+                    onClick={() => onSelectChain(chain.chain_id)}
+                    className={`grid grid-cols-[240px_1fr] transition-colors hover:bg-[#101a2e] group cursor-pointer ${
+                      isSelected ? 'bg-secondary-container/15' : ''
                     }`}
+                    title={`Inspect chain ${chain.chain_id}`}
                   >
                     {/* Left Meta Column */}
-                    <div className="flex items-center gap-2.5 border-r border-[#1b273e] p-space-sm bg-[#090e1a] group-hover:bg-[#101a2e] transition-colors">
-                      <input
-                        aria-label={`Select ${chain.chain_id} for comparison`}
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggle(chain.chain_id)}
-                        className="accent-secondary h-4 w-4 rounded cursor-pointer shrink-0"
-                      />
-                      <button
-                        className="min-w-0 flex-1 text-left cursor-pointer"
-                        onClick={() => onSelectChain(chain.chain_id)}
-                        title={`Inspect chain ${chain.chain_id}`}
-                      >
+                    <div className="flex items-center gap-2 border-r border-[#1b273e] px-space-md py-2.5 bg-[#090e1a] group-hover:bg-[#101a2e] transition-colors min-w-0">
+                      <span className="material-symbols-outlined text-secondary text-[18px] shrink-0 group-hover:text-primary transition-colors">
+                        device_hub
+                      </span>
+                      <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
-                          <strong className="block truncate font-code-sm text-sm text-secondary group-hover:underline">
+                          <strong className="block truncate font-code-sm text-sm text-on-surface group-hover:text-primary group-hover:underline transition-colors">
                             {chain.chain_id}
                           </strong>
-                          {chain.is_singleton && (
-                            <span className="rounded bg-[#17243b] px-1.5 py-0.2 font-code-sm text-[10px] text-tertiary border border-tertiary/30">
+                          {chain.is_singleton ? (
+                            <span className="rounded bg-[#17243b] px-1.5 py-0.2 font-code-sm text-[10px] text-tertiary border border-tertiary/30 shrink-0">
                               1
+                            </span>
+                          ) : (
+                            <span className="rounded bg-secondary/15 px-1.5 py-0.2 font-code-sm text-[10px] text-secondary border border-secondary/30 shrink-0 font-bold">
+                              {chain.member_count}
                             </span>
                           )}
                         </div>
                         <small className="block truncate text-on-surface-variant text-[11px] font-code-sm">
-                          {chain.member_count} {chain.member_count === 1 ? 'alarm' : 'alarms'} · {formatDuration(chain.duration_seconds)}
+                          {chain.title ? chain.title : `${chain.member_count} alarms`} · {formatDuration(chain.duration_seconds)}
                         </small>
-                      </button>
+                      </div>
                     </div>
 
                     {/* Right Gantt Track Area */}
-                    <div className="relative min-h-[58px] overflow-hidden px-space-md py-2 flex items-center">
+                    <div className="relative min-h-[52px] overflow-hidden px-space-md py-1.5 flex items-center">
                       {/* Vertical Guideline Gridlines */}
                       {ticks.slice(1).map(tick => (
                         <span
@@ -363,8 +339,11 @@ export function MultiChainTimelineView({
                       {isOutlier && !includeOutliers ? (
                         <div
                           className="h-6 rounded-md bg-amber-500/15 border border-amber-400/50 px-2.5 flex items-center gap-1.5 text-amber-300 font-code-sm text-xs cursor-pointer hover:bg-amber-500/25 transition-colors shadow-sm"
-                          onClick={() => setIncludeOutliers(true)}
-                          title="Timestamp year is outside primary observation range. Click to expand full span."
+                          onClick={e => {
+                            e.stopPropagation()
+                            setIncludeOutliers(true)
+                          }}
+                          title="Timestamp year is outside primary observation range. Click to expand full scale."
                         >
                           <span className="material-symbols-outlined text-[15px]">event_upcoming</span>
                           <span className="font-semibold">Future Outlier ({formatClock(chain.start_time!)})</span>
@@ -375,24 +354,41 @@ export function MultiChainTimelineView({
                           className="relative h-7 flex items-center transition-all"
                           style={{
                             left: `${Math.min(95, Math.max(0, left))}%`,
-                            width: `${Math.min(100 - Math.min(95, Math.max(0, left)), Math.max(4, visualWidth))}%`,
+                            width: `${Math.min(100 - Math.min(95, Math.max(0, left)), Math.max(0.2, rawWidth))}%`,
+                            minWidth: '4px',
                           }}
                         >
                           {/* The Gantt Bar */}
                           <div
-                            className="h-6 w-full rounded-md border flex items-center justify-between px-2 cursor-pointer shadow-md transition-all hover:brightness-125 bg-gradient-to-r from-secondary/40 via-sky-500/30 to-secondary/50 border-secondary/80 text-white shadow-[0_0_12px_rgba(34,211,238,0.2)]"
-                            onClick={() => onSelectChain(chain.chain_id)}
+                            className={`h-5 w-full rounded-sm border flex items-center justify-between cursor-pointer transition-all hover:brightness-125 hover:shadow-[0_0_10px_rgba(34,211,238,0.5)] bg-gradient-to-r from-secondary/40 via-sky-500/30 to-secondary/50 border-secondary/80 text-white ${
+                              rawWidth >= 5 ? 'px-1.5' : 'px-0'
+                            }`}
                             title={`${chain.chain_id}: ${formatClock(chain.start_time!)} – ${formatClock(chain.end_time!, range.min)} (${formatDuration(chain.duration_seconds)})`}
                           >
-                            <span className="font-code-sm text-[11px] font-bold truncate">
-                              {formatDuration(chain.duration_seconds)}
-                            </span>
-                            {visualWidth >= 8 && (
-                              <span className="font-code-sm text-[10px] text-on-surface-variant hidden md:inline truncate ml-1 opacity-80">
-                                {chain.member_count} alms
-                              </span>
+                            {rawWidth >= 5 && (
+                              <>
+                                <span className="font-code-sm text-[11px] font-bold truncate">
+                                  {formatDuration(chain.duration_seconds)}
+                                </span>
+                                {rawWidth >= 9 && (
+                                  <span className="font-code-sm text-[10px] text-on-surface-variant hidden md:inline truncate ml-1 opacity-80">
+                                    {chain.member_count} alms
+                                  </span>
+                                )}
+                              </>
                             )}
                           </div>
+
+                          {/* External duration label for narrow bars (< 5%) */}
+                          {rawWidth < 5 && (
+                            <span
+                              className={`absolute font-code-sm text-[11px] font-bold text-secondary whitespace-nowrap select-none pointer-events-none ${
+                                left <= 88 ? 'left-full ml-1.5' : 'right-full mr-1.5'
+                              }`}
+                            >
+                              {formatDuration(chain.duration_seconds)}
+                            </span>
+                          )}
 
                           {/* Hover Timestamp Badge */}
                           <div

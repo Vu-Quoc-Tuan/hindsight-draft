@@ -42,12 +42,13 @@ interface NocHeaderProps {
   snapshotId: string
   currentView: string
   onNavigate: (view: string) => void
-  onOpenSettings: () => void
+  onOpenSettings?: () => void
   onChangeDatasetProfile?: (profile: DatasetProfile) => void
   snapshots?: HeaderSnapshotItem[]
   onSelectSnapshot?: (snapshotId: string, profile: DatasetProfile) => void
   onUploadSnapshotFile?: (file: File) => void
   onOpenReviewLearning?: () => void
+  onOpenLearning?: (tab?: 'engine' | 'ranker') => void
 }
 
 export function NocHeader({
@@ -61,6 +62,7 @@ export function NocHeader({
   onSelectSnapshot,
   onUploadSnapshotFile,
   onOpenReviewLearning,
+  onOpenLearning,
 }: NocHeaderProps) {
   const [isSelectorOpen, setSelectorOpen] = useState(false)
   const [selectedCategoryTab, setSelectedCategoryTab] = useState<'ALL' | DatasetProfile>('ALL')
@@ -285,24 +287,23 @@ export function NocHeader({
           </div>
         </div>
         <nav className="order-3 flex w-full items-center gap-space-sm overflow-x-auto lg:order-none lg:w-auto" aria-label="Snapshot navigation">
-          {([['snapshot-overview', 'Overview'], ['chains-explorer', 'Chains Explorer'], ['multi-chain-timeline', 'Timeline'], ['compare-chains', 'Compare']] as const).map(([view, label]) => (
+          {([['snapshot-overview', 'Overview'], ['chains-explorer', 'Chains Explorer'], ['multi-chain-timeline', 'Timeline']] as const).map(([view, label]) => (
             <button key={view} className={`shrink-0 rounded px-space-md py-1 font-code-sm text-code-sm transition-all ${currentView === view ? 'bg-surface-container-high font-semibold text-secondary' : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'}`} onClick={() => onNavigate(view)}>{label}</button>
           ))}
         </nav>
         <div className="flex items-center gap-2">
-          {onOpenReviewLearning && (
-            <button
-              className="flex items-center gap-1.5 h-8 px-2.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 hover:text-amber-200 transition-colors text-xs font-semibold"
-              onClick={onOpenReviewLearning}
-              title="XGBRanker Model Governance & Active Learning Panel"
-              aria-label="Review Learning & Model Governance"
-            >
-              <span className="material-symbols-outlined text-[16px]">psychology</span>
-              <span className="hidden sm:inline">Model Governance</span>
-            </button>
-          )}
-          <button className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-surface-container-highest bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface" onClick={onOpenSettings} title="Analysis settings" aria-label="Analysis settings">
-            <span className="material-symbols-outlined text-[18px]">settings</span>
+          <button
+            className="flex items-center gap-1.5 h-8 px-3 rounded border border-secondary/40 bg-secondary/10 text-secondary hover:bg-secondary/20 hover:text-primary transition-colors text-xs font-semibold cursor-pointer shadow-sm"
+            onClick={() => {
+              if (onOpenLearning) onOpenLearning('engine')
+              else if (onOpenSettings) onOpenSettings()
+              else if (onOpenReviewLearning) onOpenReviewLearning()
+            }}
+            title="Hindsight Learning & Calibration: Tham số động cơ & Mô hình AI"
+            aria-label="Learning & Calibration"
+          >
+            <span className="material-symbols-outlined text-[16px]">psychology</span>
+            <span className="font-code-sm font-bold">Learn</span>
           </button>
         </div>
       </div>

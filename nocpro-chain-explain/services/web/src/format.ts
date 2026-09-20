@@ -23,3 +23,13 @@ export function duration(milliseconds: number | undefined): string {
 export function humanize(value: string): string {
   return value.toLowerCase().replaceAll('_', ' ')
 }
+
+export function formatDuration(seconds: number | null | undefined): string {
+  if (seconds == null || Number.isNaN(seconds)) return 'Unavailable'
+  if (seconds <= 0) return '0s'
+  if (seconds < 60) return `${Math.round(seconds)}s`
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`
+  const hours = Math.floor(seconds / 3600)
+  const mins = Math.round((seconds % 3600) / 60)
+  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`
+}

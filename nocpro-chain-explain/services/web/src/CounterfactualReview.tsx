@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 
 import { api, ApiError } from './api'
 import { ExplainClarityComparisonModal } from './components/ExplainClarityComparisonModal'
@@ -16,15 +16,16 @@ import type {
   OperatorFeedback,
   SimilarCaseRetrievalResult,
 } from './types'
+import { getConciseCandidateTitle } from './views/ValidationView'
 
 const metricLabels: Array<[keyof CounterfactualMetricVector, string]> = [
-  ['weak_member_count', 'Weak members'],
-  ['minimum_membership_support', 'Minimum support'],
-  ['evidence_union_coverage', 'Evidence coverage'],
-  ['component_count', 'Components'],
-  ['audit_conductance', 'Conductance'],
-  ['audit_verdict_severity', 'Audit severity'],
-  ['eligible_external_contradiction_count', 'Contradictions'],
+  ['weak_member_count', 'Số cảnh báo yếu (Weak)'],
+  ['minimum_membership_support', 'Độ hỗ trợ tối thiểu (Min Support)'],
+  ['evidence_union_coverage', 'Độ phủ chứng cứ (Union Coverage)'],
+  ['component_count', 'Số thành phần liên thông'],
+  ['audit_conductance', 'Độ dẫn Conductance (Phi)'],
+  ['audit_verdict_severity', 'Mức độ nghiêm trọng kiểm toán'],
+  ['eligible_external_contradiction_count', 'Mâu thuẫn kiểm định'],
 ]
 
 function metricValue(name: keyof CounterfactualMetricVector, vector: CounterfactualMetricVector | null) {
@@ -63,6 +64,10 @@ function CandidateCard({
   ) => Promise<void>
 }) {
   const status = candidate.evaluation_status ?? candidate.status ?? 'NOT_EVALUATED'
+  const rejectionReason = candidate.hard_gate_result?.reason ?? candidate.reason
+  const isRejected = candidate.hard_gate_result?.status === 'REJECTED'
+    || status === 'HARD_GATE_REJECTED'
+    || status === 'EXTERNALLY_CONTRADICTED'
   const sourceRef = candidate.debug_source_ref ?? candidate.source_ref
   const memberIds = candidate.member_ids?.length
     ? candidate.member_ids
@@ -132,7 +137,7 @@ function CandidateCard({
       <header>
         <div>
           <span className="review-operation">{candidate.operation}</span>
-          <strong>{memberIds.join(' · ') || 'Partition proposal'}</strong>
+          <strong>{memberIds.join(' · ') || (isRejected ? 'Phương án thử nghiệm đã bị loại' : 'Phương án phân hoạch')}</strong>
         </div>
         <span className={`review-state review-state--${status.toLowerCase()}`}>{status}</span>
       </header>
@@ -169,16 +174,26 @@ function CandidateCard({
       )}
 
       <div className="review-partition" aria-label="Before and after partition">
-        <div><small>Current</small>{candidate.partition_delta.before.map(([id, members]) => <p key={id}><strong>{id}</strong><span>{members.length} members</span></p>)}</div>
+        <div><small>Hiện tại</small>{candidate.partition_delta.before.map(([id, members]) => <p key={id}><strong>{id}</strong><span>{members.length} cảnh báo</span></p>)}</div>
         <i aria-hidden="true">→</i>
-        <div><small>Proposed</small>{candidate.partition_delta.after.map(([id, members]) => <p key={id}><strong>{id}</strong><span>{members.length} members</span></p>)}</div>
+        <div><small>{isRejected ? 'Kết quả mô phỏng' : 'Đề xuất'}</small>{candidate.partition_delta.after.map(([id, members]) => <p key={id}><strong>{id}</strong><span>{members.length} cảnh báo</span></p>)}</div>
       </div>
 
       {candidate.comparative_explanation ? (
         <div className="review-comparative" aria-label="Comparative explanation">
           <div className="review-comparative-summary">
-            <span className="review-comparative-icon" aria-hidden="true">💡</span>
-            <span>{candidate.comparative_explanation.summary_action}</span>
+            <span className="review-comparative-icon" aria-hidden="true">{isRejected ? '⊘' : '💡'}</span>
+            <span>
+              {(() => {
+                const rawAction = candidate.comparative_explanation.summary_action || ''
+                const displayAction = rawAction.includes('theo vết cắt Audit Graph')
+                  ? getConciseCandidateTitle(candidate)
+                  : rawAction || getConciseCandidateTitle(candidate)
+                return isRejected
+                  ? `Phương án thử nghiệm đã bị loại: ${displayAction.replace(/^Đề xuất\s*/i, '')}`
+                  : displayAction
+              })()}
+            </span>
           </div>
 
           {candidate.comparative_explanation.delta_highlights && candidate.comparative_explanation.delta_highlights.length > 0 && (
@@ -199,17 +214,19 @@ function CandidateCard({
 
           <div className="review-comparative-rationale">
             <p className="review-comparative-why">
-              <strong>Vì sao đề xuất này tốt hơn: </strong>
-              {candidate.comparative_explanation.why_better}
+              <strong>{isRejected ? 'Vì sao bị loại: ' : 'Vì sao đề xuất này tốt hơn: '}</strong>
+              {isRejected
+                ? `${rejectionReason ?? 'HARD_GATE_REJECTED'} — ${REASON_EXPLANATIONS[rejectionReason ?? ''] ?? 'Phương án không vượt qua điều kiện an toàn hoặc ngưỡng cải thiện vật chất.'}`
+                : candidate.comparative_explanation.why_better}
             </p>
-            {candidate.comparative_explanation.comparison_points && candidate.comparative_explanation.comparison_points.length > 0 && (
+            {!isRejected && candidate.comparative_explanation.comparison_points && candidate.comparative_explanation.comparison_points.length > 0 && (
               <ul className="review-comparative-points">
                 {candidate.comparative_explanation.comparison_points.map((pt, i) => (
                   <li key={i}>{pt}</li>
                 ))}
               </ul>
             )}
-            {candidate.comparative_explanation.ai_narrative && (
+            {!isRejected && candidate.comparative_explanation.ai_narrative && (
               <div className="review-comparative-ai">
                 <span className="review-comparative-ai-label">🤖 AI Phân tích chuyên sâu:</span>
                 <p>{candidate.comparative_explanation.ai_narrative}</p>
@@ -220,7 +237,7 @@ function CandidateCard({
       ) : null}
 
       <div className="review-ledger" role="table" aria-label="Exact before and after metrics">
-        <div className="review-ledger-head" role="row"><span>Metric</span><span>Before</span><span>After</span></div>
+        <div className="review-ledger-head" role="row"><span>Chỉ số</span><span>Trước can thiệp</span><span>Sau can thiệp</span></div>
         {metricLabels.map(([name, label]) => (
           <div role="row" key={name}>
             <span>{label}</span>
@@ -315,6 +332,10 @@ function CandidateCard({
       ) : recommended ? (
         <div className="review-feedback-non-recommended">
           <small>Read-only navigation displays the persisted proposal but does not open operator-feedback controls.</small>
+        </div>
+      ) : isRejected ? (
+        <div className="review-feedback-non-recommended">
+          <small>Phương án này đã bị hard gate loại và không phải khuyến nghị vận hành.</small>
         </div>
       ) : (
         <div className="review-feedback-non-recommended">
@@ -438,6 +459,11 @@ const REASON_EXPLANATIONS: Record<string, string> = {
   NO_CLEAR_ALTERNATIVE: 'Không có phương án phân hoạch nào vượt trội rõ rệt trên biên Pareto',
   STRUCTURAL_AUDIT_SKIPPED_SMALL_CHAIN: 'Chuỗi nhỏ (<10 cảnh báo) không áp dụng phân hoạch cấu trúc',
   COUNTERFACTUAL_CONFIG_INCOMPLETE: 'Cấu hình Counterfactual chưa hoàn tất trên baseline v1.yaml. Cần khởi động lại backend để nạp calibrated.yaml',
+  NO_MATERIAL_IMPROVEMENT: 'Không có chỉ số nào đạt ngưỡng cải thiện đáng kể.',
+  PARETO_METRIC_WORSENED: 'Ít nhất một chỉ số bị xấu đi so với trạng thái hiện tại.',
+  REQUIRED_METRIC_UNAVAILABLE: 'Thiếu chỉ số bắt buộc để đánh giá phương án một cách an toàn.',
+  AUDIT_SEVERITY_WORSENED: 'Mức độ nghiêm trọng của Audit Graph xấu đi sau mô phỏng.',
+  EXTERNAL_CONTRADICTION: 'Phương án mâu thuẫn với evidence kiểm định bên ngoài.',
 }
 
 function OperationSection({
@@ -458,17 +484,24 @@ function OperationSection({
     reason?: string,
   ) => Promise<void>
 }) {
+  const activeCandidates = operation.candidates.filter((candidate) => {
+    const status = candidate.evaluation_status ?? candidate.status
+    return candidate.hard_gate_result?.status !== 'REJECTED'
+      && status !== 'HARD_GATE_REJECTED'
+      && status !== 'EXTERNALLY_CONTRADICTED'
+  })
+  const rejectedCandidates = operation.candidates.filter((candidate) => !activeCandidates.includes(candidate))
   return (
     <section className="review-operation-section">
       <header>
-        <div><p className="kicker">Bounded operation</p><h3>{operation.operation}</h3></div>
+        <div><p className="kicker">Thao tác giới hạn</p><h3>{operation.operation}</h3></div>
         <span className={`review-state review-state--${operation.status.toLowerCase()}`}>{operation.status}</span>
       </header>
       <dl className="review-search-diagnostics">
-        <div><dt>discovered</dt><dd>{operation.discovered_candidate_count}</dd></div>
-        <div><dt>evaluated</dt><dd>{operation.evaluated_candidate_count}</dd></div>
-        <div><dt>rejected</dt><dd>{operation.rejected_candidate_count}</dd></div>
-        <div><dt>limit</dt><dd>{operation.candidate_limit ?? '⊥'}</dd></div>
+        <div><dt>Đã phát hiện</dt><dd>{operation.discovered_candidate_count}</dd></div>
+        <div><dt>Đã đánh giá</dt><dd>{operation.evaluated_candidate_count}</dd></div>
+        <div><dt>Đã loại bỏ</dt><dd>{operation.rejected_candidate_count}</dd></div>
+        <div><dt>Giới hạn trần</dt><dd>{operation.candidate_limit ?? '⊥'}</dd></div>
       </dl>
       {operation.reason && (
         <p className="review-reason" title={REASON_EXPLANATIONS[operation.reason] ?? operation.reason}>
@@ -479,7 +512,7 @@ function OperationSection({
         </p>
       )}
       <div className="review-candidate-list">
-        {operation.candidates.map((candidate) => (
+        {activeCandidates.map((candidate) => (
           <CandidateCard
             key={candidate.candidate_id}
             candidate={candidate}
@@ -489,7 +522,103 @@ function OperationSection({
             onFeedbackSubmit={onFeedbackSubmit}
           />
         ))}
-        {operation.status === 'AVAILABLE' && operation.candidates.length === 0 ? <p className="review-empty">No bounded candidate met the trigger policy.</p> : null}
+        {rejectedCandidates.length > 0 ? (
+          <details className="review-rejected-alternatives">
+            <summary>{rejectedCandidates.length} phương án đã bị loại · xem bằng chứng hard gate</summary>
+            <div className="review-candidate-list mt-2">
+              {rejectedCandidates.map((candidate) => (
+                <CandidateCard
+                  key={candidate.candidate_id}
+                  candidate={candidate}
+                  recommended={false}
+                  feedback={feedbacks[candidate.candidate_id]}
+                  jobId={jobId}
+                />
+              ))}
+            </div>
+          </details>
+        ) : null}
+        {operation.status === 'AVAILABLE' && activeCandidates.length === 0 && rejectedCandidates.length === 0 ? <p className="review-empty">Không có phương án phân hoạch nào vượt qua chính sách kích hoạt.</p> : null}
+      </div>
+    </section>
+  )
+}
+
+const reviewJobCache = new Map<string, CounterfactualJob>()
+
+export function getCachedReviewJob(chainId: string): CounterfactualJob | null {
+  if (reviewJobCache.has(chainId)) return reviewJobCache.get(chainId)!
+  if (typeof window !== 'undefined' && window.sessionStorage) {
+    try {
+      const raw = window.sessionStorage.getItem(`nocpro_review_${chainId}`)
+      if (raw) {
+        const parsed = JSON.parse(raw) as CounterfactualJob
+        reviewJobCache.set(chainId, parsed)
+        return parsed
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return null
+}
+
+export function setCachedReviewJob(chainId: string, job: CounterfactualJob) {
+  reviewJobCache.set(chainId, job)
+  if (typeof window !== 'undefined' && window.sessionStorage) {
+    try {
+      window.sessionStorage.setItem(`nocpro_review_${chainId}`, JSON.stringify(job))
+    } catch {
+      // ignore
+    }
+  }
+}
+
+export function CounterfactualLoadingView({
+  progressPercent,
+  status,
+  error,
+  message = 'Đang đánh giá các phương án phân hoạch đối chứng…',
+}: {
+  progressPercent?: number | null
+  status?: string | null
+  error?: string | null
+  message?: string
+}) {
+  const hasPercent = typeof progressPercent === 'number' && progressPercent >= 0
+
+  return (
+    <section className="review-shell review-loading" role="status" aria-label="Đang tải Counterfactual">
+      <div className="cf-loading-card">
+        <div className="cf-loading-header">
+          <div className="cf-loading-icon-wrap">
+            <span className="material-symbols-outlined cf-loading-icon">alt_route</span>
+          </div>
+          <div className="cf-loading-titles">
+            <h3 className="cf-loading-title">Phân tích Phân hoạch Đối chứng (Counterfactual What-If)</h3>
+            <p className="cf-loading-subtitle">{status ? `Trạng thái: ${status}` : message}</p>
+          </div>
+        </div>
+
+        {/* The Exact Glowing Gradient Loading Bar */}
+        <div className="cf-loading-bar-track">
+          <div
+            className={`cf-loading-bar ${hasPercent ? 'is-determinate' : 'is-indeterminate'}`}
+            style={hasPercent ? { width: `${Math.max(6, Math.min(100, progressPercent))}%` } : undefined}
+          />
+        </div>
+
+        <div className="cf-loading-footer">
+          <span className="cf-loading-step">
+            <span className="cf-pulse-dot" />
+            <span>{status || 'Đang mô phỏng đột biến REMOVE, SPLIT, MOVE, MERGE & Pareto frontier…'}</span>
+          </span>
+          {hasPercent && (
+            <span className="cf-loading-percent">{progressPercent}%</span>
+          )}
+        </div>
+
+        {error ? <small className="cf-loading-error">{error}</small> : null}
       </div>
     </section>
   )
@@ -500,7 +629,8 @@ export function CounterfactualReview({
   initialJob = null,
   initialFeedbacks = {},
   readOnly = false,
-  onNavigateToValidation,
+  hideHeader = false,
+  onNavigateToValidation: _onNavigateToValidation,
   onOpenReviewLearning,
   onOpenManualSplit,
 }: {
@@ -509,14 +639,16 @@ export function CounterfactualReview({
   initialFeedbacks?: Record<string, OperatorFeedback>
   /** Assistant navigation may only display persisted results; it never starts Review. */
   readOnly?: boolean
+  hideHeader?: boolean
   onNavigateToValidation?: () => void
   onOpenReviewLearning?: () => void
   onOpenManualSplit?: () => void
 }) {
-  const [job, setJob] = useState<CounterfactualJob | null>(initialJob)
+  const cachedInitial = initialJob ?? getCachedReviewJob(chainId)
+  const [job, setJob] = useState<CounterfactualJob | null>(cachedInitial)
   const [feedbacks, setFeedbacks] = useState<Record<string, OperatorFeedback>>(initialFeedbacks)
   const [manualFeedbacks, setManualFeedbacks] = useState<OperatorFeedback[]>([])
-  const [loading, setLoading] = useState(initialJob == null)
+  const [loading, setLoading] = useState(cachedInitial == null)
   const [error, setError] = useState<string | null>(null)
   const [noPersistedReview, setNoPersistedReview] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
@@ -524,6 +656,7 @@ export function CounterfactualReview({
   const [retractingFeedbackId, setRetractingFeedbackId] = useState<string | null>(null)
   const [copiedFeedbackId, setCopiedFeedbackId] = useState<string | null>(null)
   const [retractStatusMsg, setRetractStatusMsg] = useState<string | null>(null)
+  const pollRetryCountRef = useRef(0)
 
   const handleUndoManualCorrection = async (feedbackId: string) => {
     if (!job?.job_id) return
@@ -607,6 +740,7 @@ export function CounterfactualReview({
             return
           }
           setJob(current)
+          setCachedReviewJob(chainId, current)
           setError(null)
           // Also fetch existing feedbacks for this job
           if (current.job_id) {
@@ -643,14 +777,33 @@ export function CounterfactualReview({
   }, [chainId, initialJob, readOnly, reloadKey])
 
   useEffect(() => {
-    if (!job || !['QUEUED', 'RUNNING'].includes(job.status)) return
+    if (!job || !['QUEUED', 'RUNNING'].includes(job.status)) {
+      pollRetryCountRef.current = 0
+      return
+    }
     const controller = new AbortController()
     const timer = window.setTimeout(() => {
-      api.reviewJob(job.job_id, controller.signal).then(setJob).catch((cause: unknown) => {
-        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Review polling failed')
-      })
+      api.reviewJob(job.job_id, controller.signal)
+        .then((nextJob) => {
+          pollRetryCountRef.current = 0
+          setJob(nextJob)
+          setCachedReviewJob(chainId, nextJob)
+        })
+        .catch((cause: unknown) => {
+          if (controller.signal.aborted) return
+          pollRetryCountRef.current += 1
+          if (pollRetryCountRef.current <= 3) {
+            // Transient retry while backend is computing or flushing
+            setJob((prev) => (prev ? { ...prev } : prev))
+          } else {
+            setError(cause instanceof Error ? cause.message : 'Review polling failed')
+          }
+        })
     }, 450)
-    return () => { controller.abort(); window.clearTimeout(timer) }
+    return () => {
+      controller.abort()
+      window.clearTimeout(timer)
+    }
   }, [job])
 
   const handleFeedbackSubmit = async (
@@ -668,11 +821,15 @@ export function CounterfactualReview({
     setFeedbacks((prev) => ({ ...prev, [candidateId]: fb }))
   }
 
-  if (loading && !job) return <section className="review-shell review-loading"><span /><p>Evaluating bounded alternatives…</p></section>
+  if (loading && !job) return (
+    <CounterfactualLoadingView
+      message="Đang đánh giá các phương án phân hoạch đối chứng…"
+    />
+  )
   if (error) return (
     <section className="review-shell review-unavailable" role="alert">
       <span>UNAVAILABLE</span>
-      <h2>Counterfactual review could not be loaded.</h2>
+      <h2>Không thể tải kết quả đối chứng Counterfactual.</h2>
       <p>{error}</p>
       <button
         type="button"
@@ -684,22 +841,36 @@ export function CounterfactualReview({
         className="mt-3 inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-secondary text-[#070e1d] font-bold text-xs hover:brightness-110 cursor-pointer transition-all shadow-sm"
       >
         <span className="material-symbols-outlined text-[16px]">refresh</span>
-        <span>Thử lại (Retry)</span>
+        <span>Thử lại</span>
       </button>
     </section>
   )
   if (noPersistedReview) return (
     <section className="review-shell review-unavailable">
       <span>NOT_RUN</span>
-      <h2>No persisted Counterfactual Review is available.</h2>
-      <p>Assistant navigation is read-only and does not create Review jobs. Open Review directly to run the configured bounded evaluation.</p>
+      <h2>Chưa có kết quả Counterfactual được lưu trữ.</h2>
+      <p>Góc nhìn Assistant ở chế độ chỉ đọc và không tự tạo tác vụ Review. Hãy mở trực tiếp Review để chạy đánh giá các phương án phân hoạch.</p>
     </section>
   )
   if (!job) return null
-  if (!job.result) return <section className="review-shell review-loading"><span>{job.progress_percent}%</span><p>{job.status}</p>{job.error ? <small>{job.error}</small> : null}</section>
+  if (!job.result) return (
+    <CounterfactualLoadingView
+      progressPercent={job.progress_percent}
+      status={job.status}
+      error={job.error}
+    />
+  )
 
   const result = job.result
   const recommendationIds = new Set(result.recommendations.map((item) => item.candidate_id))
+  const evaluatedCandidates = result.evaluated_candidates ?? []
+  const isRejectedCandidate = (candidate: CounterfactualCandidate) => {
+    const status = candidate.evaluation_status ?? candidate.status
+    return candidate.hard_gate_result?.status === 'REJECTED'
+      || status === 'HARD_GATE_REJECTED'
+      || status === 'EXTERNALLY_CONTRADICTED'
+  }
+  const rejectedCandidateCount = evaluatedCandidates.filter(isRejectedCandidate).length
   const operations: CounterfactualOperation[] = result.operation_status
     ? ['REMOVE_MEMBER', 'SPLIT_CHAIN', 'MOVE_MEMBER', 'MERGE_CHAINS', 'ADD_MEMBER']
         .map((operation) => {
@@ -712,7 +883,9 @@ export function CounterfactualReview({
             search_mode: summary.search_mode as CounterfactualOperation['search_mode'],
             discovered_candidate_count: summary.candidate_count,
             evaluated_candidate_count: summary.evaluated_count,
-            rejected_candidate_count: 0,
+            rejected_candidate_count: (result.evaluated_candidates ?? []).filter(
+              (item) => item.operation === operation && isRejectedCandidate(item)
+            ).length,
             candidate_limit: summary.ceiling,
             candidates: (result.evaluated_candidates ?? []).filter((item) => item.operation === operation),
           }
@@ -721,42 +894,60 @@ export function CounterfactualReview({
     : [result.remove, result.split, result.move, result.merge].filter(Boolean) as CounterfactualOperation[]
   return (
     <section className="review-shell">
-      <header className="review-heading">
-        <div>
-          <p className="kicker">Review-only · {result.identity.engine_version}</p>
-          <h2>Counterfactual chain review</h2>
-          <p>Compare exact, bounded partition alternatives. This analysis does not change the NocPro grouping.</p>
+      {!hideHeader && (
+        <>
+          <header className="review-heading">
+            <div>
+              <p className="kicker">Review-only · {result.identity.engine_version}</p>
+              <h2>Counterfactual chain review</h2>
+              <p>So sánh chính xác các phương án phân hoạch đối chứng. Phân tích này không làm thay đổi gom nhóm thực tế trên NocPro.</p>
+            </div>
+            <div className="flex flex-col items-end gap-1.5">
+              <div className="flex items-center gap-2">
+                {onOpenManualSplit && !readOnly && (
+                  <button
+                    type="button"
+                    onClick={onOpenManualSplit}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 transition-colors cursor-pointer"
+                    title="Tự định nghĩa phương án phân tách chuỗi sự cố thủ công"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">alt_route</span>
+                    <span>✂️ Tự Tách Chuỗi</span>
+                  </button>
+                )}
+                {onOpenReviewLearning && (
+                  <button
+                    type="button"
+                    onClick={onOpenReviewLearning}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 transition-colors cursor-pointer"
+                    title="Xem bảng quản trị mô hình XGBRanker và active learning"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">psychology</span>
+                    <span>🎯 XGBRanker v1 Model</span>
+                  </button>
+                )}
+                <span className={`review-state review-state--${result.recommendation_status.toLowerCase()}`}>
+                  {job.status === 'SUCCEEDED' && result.recommendation_status === 'UNAVAILABLE'
+                    ? 'ANALYSIS COMPLETE · RECOMMENDATION LOCKED'
+                    : result.recommendation_status}
+                </span>
+              </div>
+              <small>{result.identity.config_version}</small>
+            </div>
+          </header>
+          <div className="review-safety-notice"><strong>Proposal only</strong><span>NocPro was not changed. Không có phương án nào được tự động áp dụng.</span></div>
+        </>
+      )}
+      {job.status === 'SUCCEEDED' ? (
+        <div className="mx-5 my-3 p-3 rounded-lg border border-[#28415f] bg-[#0b1625] text-xs text-on-surface" role="status">
+          <strong>Counterfactual đã chạy xong.</strong>{' '}
+          Đã đánh giá {evaluatedCandidates.length || operations.reduce((sum, item) => sum + item.evaluated_candidate_count, 0)} phương án;
+          {' '}{rejectedCandidateCount || operations.reduce((sum, item) => sum + item.rejected_candidate_count, 0)} phương án đã bị loại.
+          {result.recommendation_status === 'UNAVAILABLE'
+            ? ' Không có khuyến nghị đủ điều kiện để trình vận hành; khóa calibration không làm mất kết quả đánh giá đã tính.'
+            : ''}
         </div>
-        <div className="flex flex-col items-end gap-1.5">
-          <div className="flex items-center gap-2">
-            {onOpenManualSplit && !readOnly && (
-              <button
-                type="button"
-                onClick={onOpenManualSplit}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 transition-colors cursor-pointer"
-                title="Tự định nghĩa phương án phân tách chuỗi sự cố thủ công"
-              >
-                <span className="material-symbols-outlined text-[15px]">alt_route</span>
-                <span>✂️ Tự Tách Chuỗi</span>
-              </button>
-            )}
-            {onOpenReviewLearning && (
-              <button
-                type="button"
-                onClick={onOpenReviewLearning}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 transition-colors cursor-pointer"
-                title="Xem bảng quản trị mô hình XGBRanker và active learning"
-              >
-                <span className="material-symbols-outlined text-[15px]">psychology</span>
-                <span>🎯 XGBRanker v1 Model</span>
-              </button>
-            )}
-            <span className={`review-state review-state--${result.recommendation_status.toLowerCase()}`}>{result.recommendation_status}</span>
-          </div>
-          <small>{result.identity.config_version}</small>
-        </div>
-      </header>
-      <div className="review-safety-notice"><strong>Proposal only</strong><span>NocPro was not changed. No candidate is applied automatically.</span></div>
+      ) : null}
       {result.reason ? (
         <p className="review-global-reason" title={REASON_EXPLANATIONS[result.reason] ?? result.reason}>
           <span className="review-reason-code">{result.reason}</span>
@@ -764,55 +955,6 @@ export function CounterfactualReview({
             <span className="review-reason-desc"> — {REASON_EXPLANATIONS[result.reason]}</span>
           ) : null}
         </p>
-      ) : null}
-      {result.recommendation_status === 'UNAVAILABLE' && (result.reason === 'COUNTERFACTUAL_POLICY_NOT_CALIBRATED' || result.reason === 'COUNTERFACTUAL_CONFIG_INCOMPLETE') ? (
-        <div
-          className="review-calibration-hint"
-          style={{
-            margin: '0.75rem 1.25rem',
-            padding: '0.75rem 1rem',
-            borderRadius: 'var(--radius-sm, 6px)',
-            background: 'rgba(59, 130, 246, 0.12)',
-            border: '1px solid rgba(59, 130, 246, 0.3)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '1rem',
-            fontSize: '0.8rem',
-            color: '#93c5fd',
-          }}
-        >
-          <div>
-            <strong>💡 Chế độ an toàn mặc định ({result.reason}):</strong>{' '}
-            {result.reason === 'COUNTERFACTUAL_CONFIG_INCOMPLETE'
-              ? 'Tệp cấu hình đang chạy (v1.yaml) chưa bật bộ thông số Counterfactual. Hãy tắt và bật lại dev server (`make dev`) để nạp cấu hình `calibrated.yaml` đã được hiệu chuẩn.'
-              : 'Chính sách Counterfactual hiện đang chạy cấu hình mặc định (SYNTHETIC_ONLY). Do chưa có bộ nhãn phản hồi thực tế từ kỹ sư vận hành (Operator Ground Truth), hệ thống tự động khóa an toàn các đề xuất phân hoạch trên dữ liệu mạng thực tế để tránh can thiệp ngoài kiểm chứng.'}
-          </div>
-          {onNavigateToValidation && (
-            <button
-              type="button"
-              onClick={onNavigateToValidation}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.375rem',
-                padding: '0.375rem 0.75rem',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                color: '#070e1d',
-                backgroundColor: '#38bdf8',
-                borderRadius: '0.375rem',
-                border: 'none',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                flexShrink: 0,
-              }}
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>verified</span>
-              <span>Đi đến Ký duyệt</span>
-            </button>
-          )}
-        </div>
       ) : null}
       {/* Top Recommended Proposals Spotlight */}
       {result.recommendations.length > 0 ? (
@@ -825,7 +967,7 @@ export function CounterfactualReview({
               <div>
                 <h3>⭐ Đề xuất Phân hoạch Được Khuyến nghị (Top Recommended Proposals)</h3>
                 <p>
-                  Phương án tối ưu trên biên Pareto (tính toán chính xác Trước vs Sau). Phản hồi của kỹ sư sẽ được lưu làm căn cứ đánh giá.
+                  Phương án tối ưu trên biên Pareto (tính toán chính xác Trước vs Sau can thiệp). Phản hồi của kỹ sư sẽ được lưu làm căn cứ đánh giá.
                 </p>
               </div>
             </div>
@@ -897,38 +1039,23 @@ export function CounterfactualReview({
           </div>
         </section>
       ) : result.recommendation_status === 'AVAILABLE' ? (
-        <div className="review-optimal-section" role="status" aria-label="Optimal chain cohesion">
-          <div className="review-optimal-icon" aria-hidden="true">✓</div>
+        <div className="review-optimal-section" role="alert" aria-label="Counterfactual contract inconsistency">
+          <div className="review-optimal-icon" aria-hidden="true">!</div>
           <div className="review-optimal-text">
-            <h4>Chuỗi có độ gắn kết cao và cấu trúc thuần nhất (Optimal Partition Cohesion)</h4>
+            <h4>Kết quả không nhất quán</h4>
             <p>
-              Toàn bộ các cảnh báo trong chuỗi đều liên kết chặt chẽ qua các mối quan hệ tô-pô mạng và chuỗi kiểm toán sự cố. Không phát hiện cảnh báo rời rạc (WEAK) hay thành phần phân mảnh. Hệ thống không khuyến nghị phân tách, loại bỏ hay di chuyển cảnh báo nào.
+              Trạng thái AVAILABLE nhưng không có recommendation. Không thể suy ra chuỗi tối ưu, thuần nhất hoặc không cần can thiệp từ contract này.
             </p>
-            {onOpenManualSplit && !readOnly && (
-              <div style={{ marginTop: '0.6rem' }}>
-                <button
-                  type="button"
-                  onClick={onOpenManualSplit}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.4rem',
-                    backgroundColor: 'rgba(6, 182, 212, 0.15)',
-                    border: '1px solid rgba(6, 182, 212, 0.4)',
-                    color: '#22d3ee',
-                    padding: '0.35rem 0.75rem',
-                    borderRadius: '6px',
-                    fontSize: '0.8rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                  title="Tự định nghĩa phân hoạch tách chuỗi theo nhận định kỹ sư"
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>alt_route</span>
-                  <span>✂️ Thiết lập phương án tách thủ công theo nhận định kỹ sư</span>
-                </button>
-              </div>
-            )}
+          </div>
+        </div>
+      ) : result.recommendation_status === 'NO_CLEAR_ALTERNATIVE' ? (
+        <div className="review-optimal-section" role="status" aria-label="Bounded counterfactual result">
+          <div className="review-optimal-icon" aria-hidden="true">≈</div>
+          <div className="review-optimal-text">
+            <h4>Không tìm thấy phương án vượt trội rõ ràng</h4>
+            <p>
+              Kết luận này chỉ áp dụng cho không gian tìm kiếm hữu hạn đã đánh giá; không xác nhận tính tối ưu của chuỗi ngoài phạm vi đó.
+            </p>
           </div>
         </div>
       ) : null}
@@ -952,7 +1079,7 @@ export function CounterfactualReview({
                 alt_route
               </span>
               <strong style={{ color: '#e2e8f0', fontSize: '0.95rem' }}>
-                Phân Hoạch Do Kỹ Sư Tự Định Nghĩa ({manualFeedbacks.length} phương án đã lưu)
+                Phân hoạch do kỹ sư tự định nghĩa ({manualFeedbacks.length} phương án đã lưu)
               </strong>
             </div>
             <span style={{ fontSize: '0.75rem', color: '#22d3ee', fontWeight: 600 }}>
@@ -1129,11 +1256,6 @@ export function CounterfactualReview({
           />
         ))}
       </div>
-      <footer className="review-provenance">
-        <span>Snapshot {result.identity.snapshot_id}@{result.identity.snapshot_version}</span>
-        <span>{result.frontier?.count_before_limit ?? result.frontier_count_before_limit} frontier candidates{(result.frontier?.truncated ?? result.frontier_truncated) ? ' · bounded for display' : ''}</span>
-        <span>Artifact {job.cache_fingerprint.slice(0, 12)}</span>
-      </footer>
       {showClarityModal && job && (
         <ExplainClarityComparisonModal
           isOpen={showClarityModal}

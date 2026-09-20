@@ -99,7 +99,7 @@ describe('ChainTree component', () => {
 
     expect(html).toContain('is-selected-pair')
     expect(html).toContain('is-inspecting')
-    expect(html).toContain('✓ Compared')
+    expect(html).not.toContain('+ Compare')
   })
 
   it('renders tree structure controls with sanitized mode names', () => {
@@ -114,7 +114,7 @@ describe('ChainTree component', () => {
 
     expect(html).toContain('Resource Hierarchy')
     expect(html).toContain('By Role &amp; Membership')
-    expect(html).toContain('Cascade Stages')
+    expect(html).not.toContain('Cascade Stages')
     expect(html).toContain('Expand all')
     expect(html).toContain('Collapse all')
   })

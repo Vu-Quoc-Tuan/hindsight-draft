@@ -2,13 +2,13 @@ import { useMemo, useState } from 'react'
 import { compactTime } from './format'
 import type { Member } from './types'
 
-export type TreeGrouping = 'resource' | 'role' | 'cascade'
+export type TreeGrouping = 'resource' | 'role'
 
 export interface ChainTreeProps {
   members: Member[]
   selectedMembers: string[]
   activeInspectId?: string | null
-  onSelectMember: (member: Member) => void
+  onSelectMember?: (member: Member) => void
   onInspectMember: (member: Member) => void
 }
 
@@ -30,9 +30,9 @@ interface SiteGroup {
 interface FlatGroup {
   id: string
   title: string
-  subtitle?: string
-  badge?: string
-  badgeTone?: 'core' | 'extender' | 'connector' | 'leaf' | 'neutral'
+  subtitle: string
+  badge: string
+  badgeTone: 'core' | 'connector' | 'extender' | 'leaf'
   members: Member[]
 }
 
@@ -67,7 +67,7 @@ export function ChainTree({
   members,
   selectedMembers,
   activeInspectId,
-  onSelectMember,
+  onSelectMember: _onSelectMember,
   onInspectMember,
 }: ChainTreeProps) {
   const [grouping, setGrouping] = useState<TreeGrouping>('resource')
@@ -217,59 +217,8 @@ export function ChainTree({
       return res
     }
 
-    if (grouping === 'cascade') {
-      const wave0: Member[] = []
-      const wave1: Member[] = []
-      const wave2: Member[] = []
-
-      for (const m of filteredMembers) {
-        if (!m.canonical_start_time || baseTime === null) {
-          wave0.push(m)
-          continue
-        }
-        const t = new Date(m.canonical_start_time).getTime()
-        const diffSec = (t - baseTime) / 1000
-        if (diffSec <= 2) wave0.push(m)
-        else if (diffSec <= 15) wave1.push(m)
-        else wave2.push(m)
-      }
-
-      const res: FlatGroup[] = []
-      if (wave0.length > 0) {
-        res.push({
-          id: 'cascade-0',
-          title: 'Wave 0 · Initial Onset (0s – 2s)',
-          subtitle: 'Earliest detected anomalies',
-          badge: `${wave0.length}`,
-          badgeTone: 'core',
-          members: wave0,
-        })
-      }
-      if (wave1.length > 0) {
-        res.push({
-          id: 'cascade-1',
-          title: 'Wave 1 · Local Propagation (2s – 15s)',
-          subtitle: 'Neighboring device impact',
-          badge: `${wave1.length}`,
-          badgeTone: 'extender',
-          members: wave1,
-        })
-      }
-      if (wave2.length > 0) {
-        res.push({
-          id: 'cascade-2',
-          title: 'Wave 2 · Downstream Ripple (> 15s)',
-          subtitle: 'Secondary service effects',
-          badge: `${wave2.length}`,
-          badgeTone: 'leaf',
-          members: wave2,
-        })
-      }
-      return res
-    }
-
     return []
-  }, [filteredMembers, grouping, baseTime])
+  }, [filteredMembers, grouping])
 
   function toggleCollapse(key: string) {
     setCollapsedKeys((prev) => {
@@ -340,6 +289,11 @@ export function ChainTree({
               </strong>
               <div className="node-sub-info">
                 <span className="node-id-code">{member.alarm_id}</span>
+                {(member.content || member.raw_content) && (
+                  <span className="node-content-snip text-[10px] text-slate-400 truncate max-w-[240px] ml-2" title={member.content || member.raw_content || ''}>
+                    {member.content || member.raw_content}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -353,23 +307,6 @@ export function ChainTree({
                 {relTime && <span className="node-rel-time">{relTime}</span>}
               </div>
             )}
-
-            <button
-              type="button"
-              className={`node-compare-btn ${isSelectedPair ? 'is-active' : ''}`}
-              onClick={(e) => {
-                e.stopPropagation()
-                onSelectMember(member)
-              }}
-              title={
-                isSelectedPair
-                  ? 'Remove from Pair WHY comparison'
-                  : 'Select for Pair WHY comparison (pick 2)'
-              }
-              aria-pressed={isSelectedPair}
-            >
-              {isSelectedPair ? '✓ Compared' : '+ Compare'}
-            </button>
           </div>
         </div>
       </div>
@@ -398,14 +335,6 @@ export function ChainTree({
             title="Group by membership role (CORE, CONNECTOR, EXTENDER, LEAF)"
           >
             🌳 By Role & Membership
-          </button>
-          <button
-            type="button"
-            className={`tree-mode-btn ${grouping === 'cascade' ? 'is-active' : ''}`}
-            onClick={() => setGrouping('cascade')}
-            title="Group chronologically by cascade waves"
-          >
-            ⏱️ Cascade Stages
           </button>
         </div>
 

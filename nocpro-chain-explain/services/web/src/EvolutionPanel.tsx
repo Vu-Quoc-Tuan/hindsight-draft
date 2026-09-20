@@ -60,14 +60,22 @@ export function EvolutionPanel({ chainId, initialResult = null }: { chainId: str
       </li>)}
     </ol>
     <div className="evolution-edge-list" role="table" aria-label="Chronological lineage edges">
-      <div className="evolution-edge evolution-edge--head" role="row"><span>Parent</span><span>Event</span><span>Child</span><span>Overlap</span><span>Containment</span></div>
-      {result.edges.map((edge) => <div className="evolution-edge" role="row" key={`${edge.parent_snapshot_id}@${edge.parent_snapshot_version}:${edge.parent_chain_id}-${edge.child_snapshot_id}@${edge.child_snapshot_version}:${edge.child_chain_id}`}>
-        <span>{edge.parent_chain_id}<small>{edge.parent_snapshot_id}@{edge.parent_snapshot_version}</small></span>
-        <strong>{edge.event_type}</strong>
-        <span>{edge.child_chain_id}<small>{edge.child_snapshot_id}@{edge.child_snapshot_version}</small></span>
-        <span>{edge.overlap_count}</span>
-        <span>{percent(edge.contain_parent)} / {percent(edge.contain_child)}</span>
-      </div>)}
+      {result.edges.length === 0 ? (
+        <p className="text-xs text-on-surface-variant py-2 px-1">
+          Chuỗi này chưa có chuyển tiếp cross-snapshot — chỉ xuất hiện trong 1 snapshot.
+        </p>
+      ) : (
+        <>
+          <div className="evolution-edge evolution-edge--head" role="row"><span>Parent</span><span>Event</span><span>Child</span><span>Overlap</span><span>Containment</span></div>
+          {result.edges.map((edge) => <div className="evolution-edge" role="row" key={`${edge.parent_snapshot_id}@${edge.parent_snapshot_version}:${edge.parent_chain_id}-${edge.child_snapshot_id}@${edge.child_snapshot_version}:${edge.child_chain_id}`}>
+            <span>{edge.parent_chain_id}<small>{edge.parent_snapshot_id}@{edge.parent_snapshot_version}</small></span>
+            <strong>{edge.event_type}</strong>
+            <span>{edge.child_chain_id}<small>{edge.child_snapshot_id}@{edge.child_snapshot_version}</small></span>
+            <span>{edge.overlap_count}</span>
+            <span>{percent(edge.contain_parent)} / {percent(edge.contain_child)}</span>
+          </div>)}
+        </>
+      )}
     </div>
   </section>
 }

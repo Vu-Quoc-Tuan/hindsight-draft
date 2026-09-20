@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
-import { CounterfactualReview } from './CounterfactualReview'
+import { CounterfactualReview, CounterfactualLoadingView } from './CounterfactualReview'
 import type { CounterfactualCandidate, CounterfactualJob, CounterfactualMetricVector } from './types'
 
 const exactMetrics: CounterfactualMetricVector = {
@@ -97,6 +97,32 @@ describe('CounterfactualReview', () => {
     expect(html.toLowerCase()).not.toContain('>apply<')
   })
 
+  it('renders glowing gradient loading bar with status and progress percent', () => {
+    const html = renderToStaticMarkup(
+      <CounterfactualLoadingView
+        progressPercent={45}
+        status="RUNNING"
+      />
+    )
+
+    expect(html).toContain('cf-loading-card')
+    expect(html).toContain('cf-loading-bar-track')
+    expect(html).toContain('cf-loading-bar')
+    expect(html).toContain('is-determinate')
+    expect(html).toContain('45%')
+    expect(html).toContain('RUNNING')
+  })
+
+  it('renders indeterminate glowing gradient loading bar during initial evaluation', () => {
+    const html = renderToStaticMarkup(
+      <CounterfactualLoadingView />
+    )
+
+    expect(html).toContain('cf-loading-card')
+    expect(html).toContain('is-indeterminate')
+    expect(html).toContain('Đang đánh giá các phương án phân hoạch đối chứng…')
+  })
+
   it('shows an unavailable domain result without fabricating a proposal', () => {
     const unavailable: CounterfactualJob = {
       ...job,
@@ -116,6 +142,32 @@ describe('CounterfactualReview', () => {
     expect(html).toContain('COUNTERFACTUAL_CONFIG_INCOMPLETE')
     expect(html).toContain('UNAVAILABLE')
     expect(html).not.toContain('review-ledger')
+  })
+
+  it('treats AVAILABLE with zero recommendations as a contract inconsistency', () => {
+    const html = renderToStaticMarkup(<CounterfactualReview chainId="C1" initialJob={job} />)
+
+    expect(html).toContain('Kết quả không nhất quán')
+    expect(html).toContain('AVAILABLE nhưng không có recommendation')
+    expect(html).not.toContain('Optimal Partition Cohesion')
+    expect(html).not.toContain('liên kết chặt chẽ qua các mối quan hệ tô-pô')
+  })
+
+  it('renders NO_CLEAR_ALTERNATIVE as a bounded neutral result', () => {
+    const bounded: CounterfactualJob = {
+      ...job,
+      result: job.result ? {
+        ...job.result,
+        recommendation_status: 'NO_CLEAR_ALTERNATIVE',
+        recommendations: [],
+      } : null,
+    }
+    const html = renderToStaticMarkup(<CounterfactualReview chainId="C1" initialJob={bounded} />)
+
+    expect(html).toContain('Không tìm thấy phương án vượt trội rõ ràng')
+    expect(html).toContain('không gian tìm kiếm hữu hạn đã đánh giá')
+    expect(html).not.toContain('Optimal Partition Cohesion')
+    expect(html).not.toContain('tối ưu toàn cục')
   })
 
   it('surfaces connector completion only for a Pareto recommendation', () => {
@@ -305,6 +357,50 @@ describe('CounterfactualReview', () => {
     expect(html).toContain('AI đánh giá đề xuất loại bỏ phần tử nhiễu sẽ làm gọn phân vùng lỗi.')
   })
 
+  it('labels hard-gate failures as rejected alternatives instead of recommendations', () => {
+    const rejected = {
+      ...job.result!.remove.candidates[0],
+      status: 'HARD_GATE_REJECTED',
+      reason: 'NO_MATERIAL_IMPROVEMENT',
+      evaluation_status: 'HARD_GATE_REJECTED',
+      hard_gate_passed: false,
+      hard_gate_result: { status: 'REJECTED', reason: 'NO_MATERIAL_IMPROVEMENT' },
+      comparative_explanation: {
+        operation: 'REMOVE_MEMBER',
+        summary_action: 'Đề xuất loại bỏ 1 cảnh báo (X) ra khỏi chuỗi C1',
+        why_better: 'Không có chiều metric khả dụng để diễn giải cải thiện.',
+        comparison_points: ['Không có chiều metric khả dụng để diễn giải cải thiện.'],
+        delta_highlights: [],
+        ai_narrative: null,
+      },
+    } as CounterfactualCandidate
+    const rejectedJob: CounterfactualJob = {
+      ...job,
+      result: job.result ? {
+        ...job.result,
+        recommendation_status: 'UNAVAILABLE',
+        reason: 'COUNTERFACTUAL_POLICY_NOT_CALIBRATED',
+        remove: {
+          ...job.result.remove,
+          rejected_candidate_count: 1,
+          candidates: [rejected],
+        },
+        evaluated_candidates: [rejected],
+      } : null,
+    }
+
+    const html = renderToStaticMarkup(
+      <CounterfactualReview chainId="C1" initialJob={rejectedJob} />
+    )
+
+    expect(html).toContain('Counterfactual đã chạy xong')
+    expect(html).toContain('1 phương án đã bị loại')
+    expect(html).toContain('Phương án thử nghiệm đã bị loại')
+    expect(html).toContain('Vì sao bị loại:')
+    expect(html).toContain('NO_MATERIAL_IMPROVEMENT')
+    expect(html).not.toContain('Vì sao đề xuất này tốt hơn:')
+  })
+
   it('renders top recommended proposals spotlight when recommendations exist', () => {
     const recommendedJob: CounterfactualJob = {
       ...job,
@@ -325,7 +421,7 @@ describe('CounterfactualReview', () => {
     expect(html).toContain('⚖️ So Sánh Lời Giải Thích Giữa Các Đề Xuất')
   })
 
-  it('renders optimal chain cohesion banner when no recommendations are needed', () => {
+  it('does not render optimality when AVAILABLE has no recommendations', () => {
     const optimalJob: CounterfactualJob = {
       ...job,
       result: job.result
@@ -340,8 +436,9 @@ describe('CounterfactualReview', () => {
       <CounterfactualReview chainId="C1" initialJob={optimalJob} />
     )
 
-    expect(html).toContain('Chuỗi có độ gắn kết cao và cấu trúc thuần nhất (Optimal Partition Cohesion)')
-    expect(html).toContain('Không phát hiện cảnh báo rời rạc (WEAK) hay thành phần phân mảnh')
+    expect(html).toContain('Kết quả không nhất quán')
+    expect(html).not.toContain('Optimal Partition Cohesion')
+    expect(html).not.toContain('Không phát hiện cảnh báo rời rạc (WEAK) hay thành phần phân mảnh')
   })
 
   it('renders XGBRanker ranking audit badge and model governance button', () => {
@@ -419,5 +516,3 @@ describe('CounterfactualReview', () => {
     expect(html).toContain('🛡️ Model Abstained: Score under margin threshold')
   })
 })
-
-

@@ -69,7 +69,7 @@ export function MemberScopeView({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-secondary text-[20px]">hub</span>
-              <span className="font-headline-md text-sm font-bold text-on-surface">Chain Members</span>
+              <span className="font-headline-md text-sm font-bold text-on-surface">Thành Viên Chuỗi</span>
               <span className="bg-surface-container-highest text-on-surface-variant px-1.5 py-0.5 rounded font-code-sm text-xs font-semibold">
                 {filteredMembers.length} / {members.length}
               </span>
@@ -87,7 +87,7 @@ export function MemberScopeView({
             </span>
             <input
               className="w-full h-8 pl-8 pr-2 bg-[#080d17] text-on-surface font-code-sm text-xs rounded border border-[#1b273e] outline-none placeholder:text-outline-variant focus:border-secondary transition-all"
-              placeholder="Filter by ID, interface, or role..."
+              placeholder="Lọc theo mã, thiết bị hoặc vai trò..."
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
@@ -195,6 +195,11 @@ export function MemberScopeView({
                   <span className="font-code-sm text-[11px] text-on-surface-variant truncate">
                     {member.device_code ?? member.node_reference ?? 'No Host'} · {member.canonical_start_time ? member.canonical_start_time.slice(11, 19) : 'T0'}
                   </span>
+                  {(member.content || member.raw_content) && (
+                    <span className="font-mono text-[10px] text-slate-400 truncate mt-0.5" title={member.content || member.raw_content || ''}>
+                      {member.content || member.raw_content}
+                    </span>
+                  )}
                 </div>
 
                 <div className="mt-2 pt-1.5 border-t border-[#151f33] flex items-center justify-between text-on-surface-variant font-code-sm text-[11px]">
@@ -249,6 +254,17 @@ export function MemberScopeView({
                     <span className="material-symbols-outlined text-[18px]">router</span>
                     {activeMember.alarm_name || 'Alarm'} on <strong className="text-on-surface">{activeMember.device_code ?? activeMember.node_reference ?? 'N/A'}</strong>
                   </p>
+                  {(activeMember.content || activeMember.raw_content) && (
+                    <div className="mt-2 p-2.5 rounded bg-[#080d17] border border-[#1b273e] flex items-start gap-2">
+                      <span className="material-symbols-outlined text-amber-400 text-[16px] shrink-0 mt-0.5">description</span>
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        <span className="font-label-caps text-[10px] uppercase text-on-surface-variant font-bold">Nội dung chi tiết (Alarm Content)</span>
+                        <span className="font-mono text-xs text-on-surface select-text break-words">
+                          {activeMember.content || activeMember.raw_content}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* 3 Codified Role Badges */}
@@ -299,41 +315,41 @@ export function MemberScopeView({
                     {activeMember.membership_support !== null ? activeMember.membership_support.toFixed(3) : 'Unindexed'}
                   </span>
                   <span className="text-[10px] text-on-surface-variant">
-                    {activeMember.membership_support !== null && activeMember.membership_support >= 0.7 ? 'Strong Affinity' : 'Moderate'}
+                    {activeMember.membership_support !== null && activeMember.membership_support >= 0.7 ? 'Liên kết mạnh' : 'Trung bình'}
                   </span>
                 </div>
 
                 <div className="flex flex-col p-1">
                   <span className="font-label-caps text-[10px] uppercase text-on-surface-variant flex items-center gap-1">
-                    Availability Coverage
+                    Độ Phủ Kênh
                     <InfoTip text="Tỷ lệ bao phủ kênh dữ liệu thực tế thỏa mãn điều kiện khả dụng." />
                   </span>
                   <span className="font-code-lg text-base font-bold text-on-surface mt-0.5">
                     {(activeMember.availability_coverage * 100).toFixed(1)}%
                   </span>
-                  <span className="text-[10px] text-primary font-semibold">Data Channel Gate</span>
+                  <span className="text-[10px] text-primary font-semibold">Ngưỡng Kênh Dữ Liệu</span>
                 </div>
 
                 <div className="flex flex-col p-1">
                   <span className="font-label-caps text-[10px] uppercase text-on-surface-variant flex items-center gap-1">
-                    Competitor Margins
+                    Biên Đối Thủ
                     <InfoTip text="Số lượng chuỗi đối thủ được so sánh độ gắn kết." />
                   </span>
                   <span className="font-code-lg text-base font-bold text-primary mt-0.5">
                     {activeMember.margins?.length ?? 0} Evaluated
                   </span>
-                  <span className="text-[10px] text-on-surface-variant">Rival Chain Delta</span>
+                  <span className="text-[10px] text-on-surface-variant">Tương quan Chuỗi</span>
                 </div>
 
                 <div className="flex flex-col p-1">
                   <span className="font-label-caps text-[10px] uppercase text-on-surface-variant flex items-center gap-1">
-                    Representativeness
+                    Đại diện
                     <InfoTip text="Mức độ đại diện cho toàn bộ chuỗi." />
                   </span>
                   <span className="font-code-lg text-base font-bold text-secondary flex items-center gap-1 mt-0.5">
                     {activeMember.representativeness !== null ? activeMember.representativeness.toFixed(3) : '—'}
                   </span>
-                  <span className="text-[10px] text-on-surface-variant">Global Prototype</span>
+                  <span className="text-[10px] text-on-surface-variant">Mẫu Chuỗi Tổng thể</span>
                 </div>
               </div>
             </div>
@@ -344,7 +360,7 @@ export function MemberScopeView({
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-secondary text-[20px]">analytics</span>
                   <h3 className="font-headline-md text-sm font-bold text-on-surface">
-                    Evidence Fit Dimensions ({activeMember.group_fits?.length ?? 0} Evaluated Channels)
+                    Bằng Chứng Phù Hợp ({activeMember.group_fits?.length ?? 0} Kênh Đã Đánh Giá)
                   </h3>
                   <InfoTip text="Các chiều bằng chứng cụ thể giải thích vì sao cảnh báo này thuộc về chuỗi sự cố này." />
                 </div>
@@ -398,17 +414,17 @@ export function MemberScopeView({
                               <div className="bg-secondary h-full rounded-full transition-all" style={{ width: `${gf.fit! * 100}%` }}></div>
                             </div>
                             <span className="text-on-surface-variant text-[11px] shrink-0">
-                              Score: <strong className="text-on-surface">{gf.fit!.toFixed(4)}</strong>
+                              Điểm: <strong className="text-on-surface">{gf.fit!.toFixed(4)}</strong>
                             </span>
                           </div>
                         ) : unavailReason ? (
                           <p className="text-[11px] text-on-surface-variant bg-[#0c1424] px-2 py-1 rounded border border-[#1b273e]/60">
-                            Reason: <span className="text-amber-300/90">{unavailReason}</span>
+                            Lý do: <span className="text-amber-300/90">{unavailReason}</span>
                           </p>
                         ) : null}
 
                         <div className="flex items-center gap-2 text-[10px] text-on-surface-variant">
-                          <span>Channels:</span>
+                          <span>Kênh:</span>
                           <div className="flex items-center gap-1 flex-wrap">
                             {gf.channels.map(ch => (
                               <span key={ch} className="bg-surface-container px-1.5 py-0.2 rounded text-secondary border border-[#1b273e]">
@@ -423,7 +439,7 @@ export function MemberScopeView({
                 </div>
               ) : (
                 <p className="text-xs text-on-surface-variant bg-[#080d17] p-4 rounded border border-dashed border-[#1b273e] text-center">
-                  No individual derivation fits available for this member.
+                  Không có dữ liệu bằng chứng nào cho thành viên này.
                 </p>
               )}
             </div>
@@ -434,7 +450,7 @@ export function MemberScopeView({
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-primary text-[20px]">compare</span>
                   <h3 className="font-headline-md text-sm font-bold text-on-surface">
-                    Competitor Displacement Margins ({activeMember.margins?.length ?? 0} Rival Chains Evaluated)
+                    Độ Lệch Só Đối Thủ ({activeMember.margins?.length ?? 0} Chuỗi So Sánh)
                   </h3>
                   <InfoTip text="Khoảng cách vượt trội (Margin) của cảnh báo này khi thuộc chuỗi hiện tại so với các chuỗi đối thủ lân cận." />
                 </div>
@@ -450,21 +466,21 @@ export function MemberScopeView({
                           vs Chain C{m.compared_chain_id}
                         </span>
                         <span className="text-[10px] text-on-surface-variant">
-                          {m.computable_groups} Evidence Groups Evaluated
+                          {m.computable_groups} Nhóm Bằng Chứng
                         </span>
                       </div>
                       <div className="flex flex-col items-end">
                         <span className="text-primary font-bold text-sm">
                           {m.margin !== null ? `+${m.margin.toFixed(3)} Δ` : '—'}
                         </span>
-                        <span className="text-[9px] text-emerald-400 font-medium">Optimal Partition</span>
+                        <span className="text-[9px] text-emerald-400 font-medium">Phân hoạch Tối ưu</span>
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
                 <p className="text-xs text-on-surface-variant bg-[#080d17] p-3 rounded border border-dashed border-[#1b273e] text-center">
-                  No overlapping competitor chains identified in the current snapshot partition.
+                  Không có chuỗi đối thủ nào được phát hiện trong snapshot hiện tại.
                 </p>
               )}
             </div>
@@ -476,7 +492,7 @@ export function MemberScopeView({
                 onClick={() => onSwitchScope('Chain')}
                 className="px-2.5 py-1 rounded bg-surface-container-high hover:bg-surface-bright text-on-surface font-semibold transition-colors cursor-pointer flex items-center gap-1"
               >
-                ← Back to Chain Scope
+                ← Quay lại Phạm vi Chuỗi
               </button>
               {defaultPartner && (
                 <button
@@ -485,7 +501,7 @@ export function MemberScopeView({
                   className="px-3 py-1 rounded bg-secondary/15 hover:bg-secondary/25 text-secondary border border-secondary/40 font-code-sm text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
                 >
                   <span className="material-symbols-outlined text-[15px]">compare_arrows</span>
-                  Compare with {defaultPartner} →
+                  Đối sánh với {defaultPartner} →
                 </button>
               )}
             </div>
@@ -493,7 +509,7 @@ export function MemberScopeView({
         ) : (
           <div className="bg-surface-container rounded-lg p-space-xl border border-dashed border-[#1b273e] text-center flex flex-col items-center justify-center">
             <span className="material-symbols-outlined text-4xl text-on-surface-variant mb-2">person_search</span>
-            <p className="font-body-md text-on-surface font-semibold">Select a member from the left list to inspect evidence dossier.</p>
+            <p className="font-body-md text-on-surface font-semibold">Chọn một thành viên từ danh sách để xem hồ sơ bằng chứng.</p>
           </div>
         )}
       </section>
