@@ -17,7 +17,7 @@ from configuration import (
     load_analysis_config,
 )
 from tier1a import CacheTier, Tier1Cache
-from tier2 import JobStatus, SimilarityQueryContext, Tier2JobManager
+from tier2 import AUDIT_ARTIFACT_VERSION, JobStatus, SimilarityQueryContext, Tier2JobManager
 from groups import AuditGraphMode
 from similar_chains import (
     CorpusPolicy,
@@ -260,7 +260,7 @@ def test_default_worker_runs_real_per_chain_audit(analysis_config):
     assert completed.audit_artifact is artifacts[0]
     assert len(artifacts) == 1
     assert completed.audit_artifact.mode == "EXACT"
-    assert completed.audit_artifact.artifact_version == "review-audit-v2"
+    assert completed.audit_artifact.artifact_version == AUDIT_ARTIFACT_VERSION
     assert completed.audit_artifact.visualization == completed.result.audit_visualization
     assert completed.audit_artifact.snapshot_id == "s1"
     assert completed.audit_artifact.snapshot_version == "1"

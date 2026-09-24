@@ -126,7 +126,16 @@ def test_workspace_tier1b_snapshot_versions_do_not_collide(monkeypatch) -> None:
     assert {
         entry.key.snapshot_version
         for entry in workspace.cache.tier_entries(CacheTier.TIER_1B)
-    } == {"1", "2"}
+    } == {"2"}
+
+    workspace.replace_snapshot(_payload(snapshot_version="1"))
+    third = workspace.analyze("C1")
+    assert third is not first
+    assert len(calls) == 3
+    assert {
+        entry.key.snapshot_version
+        for entry in workspace.cache.tier_entries(CacheTier.TIER_1B)
+    } == {"1"}
 
 
 def test_workspace_restart_recomputes_memory_only_tier1b_cache(monkeypatch) -> None:

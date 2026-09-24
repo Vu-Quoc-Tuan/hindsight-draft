@@ -158,6 +158,7 @@ def test_legacy_v1_artifact_hydrates_without_mutation_or_visualization():
     payload = audit_artifact_to_dict(_artifact())
     payload["artifact_version"] = "review-audit-v1"
     payload.pop("visualization")
+    payload.pop("topology_version")
     payload.pop("artifact_fingerprint")
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     payload["artifact_fingerprint"] = sha256(encoded.encode("utf-8")).hexdigest()
