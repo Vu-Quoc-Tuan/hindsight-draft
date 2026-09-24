@@ -247,8 +247,15 @@ async def test_non_equivalent_receipts_require_an_explicit_choice(harness):
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("overrides", [
-    {"status": "NOT_EVALUATED", "readiness": "NOT_READY"},
+    {"status": "NOT_EVALUATED"},
+    {"readiness": "NOT_READY"},
     {"score": None},
+    {"score": -0.01},
+    {"score": 1.01},
+    {"score": float("nan")},
+    {"score": float("inf")},
+    {"score": -float("inf")},
+    {"score": True},
 ])
 @pytest.mark.parametrize("candidate_count", [1, 2])
 async def test_incomplete_receipts_require_an_explicit_choice(harness, overrides, candidate_count):
@@ -268,6 +275,48 @@ async def test_incomplete_receipts_require_an_explicit_choice(harness, overrides
         item.receipt_id for item in candidates
     ]
     assert body["quality"]["before_receipt_id"] is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("location,field", [
+    ("assessment", "method"),
+    ("assessment", "readiness_policy_version"),
+    ("analysis_identity", "analysis_config_version"),
+    ("analysis_identity", "review_config_version"),
+    ("analysis_identity", "pipeline_version"),
+    ("analysis_identity", "topology_version"),
+])
+async def test_missing_comparator_signature_field_requires_explicit_choice(harness, location, field):
+    app, repo, _ = harness
+    incomplete = receipt(PARENT, "p-incomplete", compatible=True)
+    getattr(incomplete, location).pop(field)
+    child = receipt(CHILD, "c-new", compatible=True)
+    repo.list_evolution_endpoint_receipts.side_effect = [([incomplete], False), ([child], False)]
+
+    response = await get(app, PATH + SELECTED)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "RECEIPT_SELECTION_REQUIRED" in body["reason_codes"]
+    assert [item["receipt_id"] for item in body["parent_receipt_choices"]] == ["p-incomplete"]
+    assert body["quality"]["before_receipt_id"] is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("score", [0, 1])
+async def test_receipt_scores_at_inclusive_boundaries_remain_comparable(harness, score):
+    app, repo, _ = harness
+    parent = receipt(PARENT, "p-boundary", compatible=True, score=score)
+    child = receipt(CHILD, "c-new", compatible=True, score=0.5)
+    repo.list_evolution_endpoint_receipts.side_effect = [([parent], False), ([child], False)]
+
+    response = await get(app, PATH + SELECTED)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "RECEIPT_SELECTION_REQUIRED" not in body["reason_codes"]
+    assert body["quality"]["comparable"] is True
+    assert body["quality"]["before_receipt_id"] == "p-boundary"
 
 
 @pytest.mark.anyio
