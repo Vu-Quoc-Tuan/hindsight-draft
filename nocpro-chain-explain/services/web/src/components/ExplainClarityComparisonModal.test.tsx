@@ -209,9 +209,21 @@ describe('ExplainClarityComparisonModal', () => {
       progress_percent: 100,
       cache_hit: false,
       cache_fingerprint: 'abcdef0123456789',
-      identity: { snapshot_id: 's1', snapshot_version: '1' },
+      identity: {
+        snapshot_id: 's1', snapshot_version: '1', topology_version: null, chain_id: 'C1',
+        analysis_version: 'v1', engine_version: 'review-engine-v1', config_version: 'review-config-v1',
+        tier1b_artifact_fingerprint: 'tier1b-v1', alarm_universe_fingerprint: 'alarms-v1',
+        structural_audit_artifact_fingerprint: null, external_validation_artifact_fingerprint: null,
+      },
+      analysis_identity: {
+        identity_version: 'analysis-identity-v1', snapshot_id: 's1', snapshot_version: '1',
+        topology_version: null, chain_id: 'C1', analysis_config_version: 'v1',
+        review_config_version: 'review-config-v1', pipeline_version: 'review-engine-v1',
+        input_fingerprint: 'tier1b-v1',
+      },
+      artifact_revision: { resource_kind: 'counterfactual_review', fingerprint: 'abcdef0123456789' },
       result: {
-        identity: { snapshot_id: 's1', snapshot_version: '1', config_version: 'v1' },
+        identity: { snapshot_id: 's1', snapshot_version: '1', chain_id: 'C1', config_version: 'v1' },
         status: 'AVAILABLE',
         recommendation_status: 'AVAILABLE',
         recommendations: [{
@@ -246,7 +258,15 @@ describe('ExplainClarityComparisonModal', () => {
 
     }
 
-    const html = renderToStaticMarkup(<CounterfactualReview chainId="C1" initialJob={mockJob} readOnly={false} />)
+    const html = renderToStaticMarkup(
+      <CounterfactualReview
+        chainId="C1"
+        initialJob={mockJob}
+        expectedAnalysisIdentity={mockJob.analysis_identity}
+        expectedArtifactRevision={mockJob.artifact_revision}
+        readOnly={false}
+      />,
+    )
     expect(html).toContain('⚖️ So Sánh Lời Giải Thích Giữa Các Đề Xuất')
   })
 })

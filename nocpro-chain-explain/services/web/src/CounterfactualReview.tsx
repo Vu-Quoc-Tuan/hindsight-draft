@@ -13,12 +13,18 @@ import type {
   CounterfactualJob,
   CounterfactualMetricVector,
   CounterfactualOperation,
+  AnalysisIdentity,
+  ArtifactRevision,
   OperatorFeedback,
   SimilarCaseRetrievalResult,
 } from './types'
 import { isReviewApproved } from './types'
 import { getConciseCandidateTitle } from './reviewPresentation'
-import { getCachedReviewJob, setCachedReviewJob } from './reviewJobCache'
+import {
+  getCachedReviewJob,
+  reviewJobMatchesExpected,
+  setCachedReviewJob,
+} from './reviewJobCache'
 
 const metricLabels: Array<[keyof CounterfactualMetricVector, string]> = [
   ['weak_member_count', 'Số cảnh báo yếu (Weak)'],
@@ -641,6 +647,8 @@ export function CounterfactualReview({
   snapshotId,
   snapshotVersion,
   topologyVersion,
+  expectedAnalysisIdentity = null,
+  expectedArtifactRevision = null,
   initialJob = null,
   initialFeedbacks = {},
   readOnly = false,
@@ -656,6 +664,8 @@ export function CounterfactualReview({
   snapshotId?: string | null
   snapshotVersion?: string | null
   topologyVersion?: string | null
+  expectedAnalysisIdentity?: AnalysisIdentity | null
+  expectedArtifactRevision?: ArtifactRevision | null
   initialJob?: CounterfactualJob | null
   initialFeedbacks?: Record<string, OperatorFeedback>
   /** Hosts may explicitly request a read-only view; normal app navigation keeps review actions enabled. */
@@ -675,15 +685,21 @@ export function CounterfactualReview({
   ) => Promise<void>
   onFeedbackRetract?: (candidateId: string, feedbackId: string) => Promise<void>
 }) {
-  const initialJobMatchesContext = initialJob != null
+  const hasExpectedReviewContext = expectedAnalysisIdentity != null
+    && expectedArtifactRevision != null
+  const initialJobMatchesContext = hasExpectedReviewContext
+    && initialJob != null
     && initialJob.chain_id === chainId
     && initialJob.identity?.chain_id === chainId
     && (!snapshotId || initialJob.identity?.snapshot_id === snapshotId)
     && (!snapshotVersion || initialJob.identity?.snapshot_version === snapshotVersion)
     && (topologyVersion === undefined || initialJob.identity?.topology_version === topologyVersion)
+    && reviewJobMatchesExpected(initialJob, expectedAnalysisIdentity!, expectedArtifactRevision!)
   const cachedInitial = initialJobMatchesContext
     ? initialJob
-    : getCachedReviewJob(chainId, snapshotId, snapshotVersion, topologyVersion)
+    : hasExpectedReviewContext
+      ? getCachedReviewJob(expectedAnalysisIdentity!, expectedArtifactRevision!)
+      : null
   const [job, setJob] = useState<CounterfactualJob | null>(cachedInitial)
   const [feedbacks, setFeedbacks] = useState<Record<string, OperatorFeedback>>(initialFeedbacks)
   const [manualFeedbacks, setManualFeedbacks] = useState<OperatorFeedback[]>([])
@@ -697,6 +713,11 @@ export function CounterfactualReview({
   const [retractStatusMsg, setRetractStatusMsg] = useState<string | null>(null)
   const pollRetryCountRef = useRef(0)
   const notifiedReviewJobIdRef = useRef<string | null>(null)
+  const requestGenerationRef = useRef(0)
+  const expectedReviewContextKey = JSON.stringify([
+    expectedAnalysisIdentity ?? null,
+    expectedArtifactRevision ?? null,
+  ])
 
   const handleUndoManualCorrection = async (feedbackId: string) => {
     if (!job?.job_id) return
@@ -759,6 +780,7 @@ export function CounterfactualReview({
 
   useEffect(() => {
     const controller = new AbortController()
+    const generation = ++requestGenerationRef.current
     async function load() {
       setNoPersistedReview(false)
       setError(null)
@@ -776,26 +798,31 @@ export function CounterfactualReview({
           } catch (cause) {
             if (!(cause instanceof ApiError && cause.status === 404)) throw cause
             if (readOnly) {
-              if (!controller.signal.aborted) setNoPersistedReview(true)
+              if (!controller.signal.aborted && requestGenerationRef.current === generation) setNoPersistedReview(true)
               return
             }
             const submission = await api.submitReview(chainId)
             current = await api.reviewJob(submission.job_id, controller.signal)
           }
         }
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && requestGenerationRef.current === generation) {
           if (
             current.chain_id !== chainId
             || current.identity.chain_id !== chainId
             || (snapshotId && current.identity.snapshot_id !== snapshotId)
             || (snapshotVersion && current.identity.snapshot_version !== snapshotVersion)
             || (topologyVersion !== undefined && current.identity.topology_version !== topologyVersion)
+            || !reviewJobMatchesExpected(
+              current,
+              hasExpectedReviewContext ? expectedAnalysisIdentity! : current.analysis_identity!,
+              hasExpectedReviewContext ? expectedArtifactRevision! : current.artifact_revision!,
+            )
           ) {
             setError('REVIEW_CONTEXT_MISMATCH')
             return
           }
           setJob(current)
-          setCachedReviewJob(chainId, snapshotId, snapshotVersion, topologyVersion, current)
+          setCachedReviewJob(current)
           if (current.status === 'SUCCEEDED' && notifiedReviewJobIdRef.current !== current.job_id) {
             notifiedReviewJobIdRef.current = current.job_id
             onReviewSucceeded?.(current)
@@ -826,14 +853,30 @@ export function CounterfactualReview({
           }
         }
       } catch (cause) {
-        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Review unavailable')
+        if (!controller.signal.aborted && requestGenerationRef.current === generation) {
+          setError(cause instanceof Error ? cause.message : 'Review unavailable')
+        }
       } finally {
-        if (!controller.signal.aborted) setLoading(false)
+        if (!controller.signal.aborted && requestGenerationRef.current === generation) setLoading(false)
       }
     }
     void load()
     return () => controller.abort()
-  }, [chainId, snapshotId, snapshotVersion, topologyVersion, initialJob, onReviewSucceeded, readOnly, reloadKey])
+  }, [
+    chainId,
+    snapshotId,
+    snapshotVersion,
+    topologyVersion,
+    initialJob,
+    initialJobMatchesContext,
+    onReviewSucceeded,
+    readOnly,
+    reloadKey,
+    hasExpectedReviewContext,
+    expectedAnalysisIdentity,
+    expectedArtifactRevision,
+    expectedReviewContextKey,
+  ])
 
   useEffect(() => {
     if (!job || !['QUEUED', 'RUNNING'].includes(job.status)) {
@@ -851,13 +894,18 @@ export function CounterfactualReview({
             || (snapshotId && nextJob.identity.snapshot_id !== snapshotId)
             || (snapshotVersion && nextJob.identity.snapshot_version !== snapshotVersion)
             || (topologyVersion !== undefined && nextJob.identity.topology_version !== topologyVersion)
+            || !reviewJobMatchesExpected(
+              nextJob,
+              hasExpectedReviewContext ? expectedAnalysisIdentity! : nextJob.analysis_identity!,
+              hasExpectedReviewContext ? expectedArtifactRevision! : nextJob.artifact_revision!,
+            )
           ) {
             setError('REVIEW_CONTEXT_MISMATCH')
             return
           }
           pollRetryCountRef.current = 0
           setJob(nextJob)
-          setCachedReviewJob(chainId, snapshotId, snapshotVersion, topologyVersion, nextJob)
+          setCachedReviewJob(nextJob)
           if (nextJob.status === 'SUCCEEDED' && notifiedReviewJobIdRef.current !== nextJob.job_id) {
             notifiedReviewJobIdRef.current = nextJob.job_id
             onReviewSucceeded?.(nextJob)
@@ -878,7 +926,18 @@ export function CounterfactualReview({
       controller.abort()
       window.clearTimeout(timer)
     }
-  }, [chainId, snapshotId, snapshotVersion, topologyVersion, job, onReviewSucceeded])
+  }, [
+    chainId,
+    snapshotId,
+    snapshotVersion,
+    topologyVersion,
+    job,
+    onReviewSucceeded,
+    hasExpectedReviewContext,
+    expectedAnalysisIdentity,
+    expectedArtifactRevision,
+    expectedReviewContextKey,
+  ])
 
   const handleFeedbackSubmit = async (
     candidateId: string,

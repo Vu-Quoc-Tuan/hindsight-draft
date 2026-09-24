@@ -22,15 +22,22 @@ const job: CounterfactualJob = {
   cache_hit: false,
   cache_fingerprint: '0123456789abcdef',
   identity: {
-    snapshot_id: 's1', snapshot_version: '1', chain_id: 'C1',
+    snapshot_id: 's1', snapshot_version: '1', topology_version: null, chain_id: 'C1',
     alarm_universe_fingerprint: 'alarms', analysis_version: 'analysis-v1',
     engine_version: 'counterfactual-p1-v1', config_version: 'synthetic-review-v1',
     tier1b_artifact_fingerprint: 'tier1b', structural_audit_artifact_fingerprint: null,
     external_validation_artifact_fingerprint: null,
   },
+  analysis_identity: {
+    identity_version: 'analysis-identity-v1',
+    snapshot_id: 's1', snapshot_version: '1', chain_id: 'C1', topology_version: null,
+    analysis_config_version: 'analysis-v1', review_config_version: 'synthetic-review-v1',
+    pipeline_version: 'counterfactual-p1-v1', input_fingerprint: 'tier1b',
+  },
+  artifact_revision: { resource_kind: 'counterfactual_review', fingerprint: '0123456789abcdef' },
   result: {
     identity: {
-      snapshot_id: 's1', snapshot_version: '1', chain_id: 'C1',
+      snapshot_id: 's1', snapshot_version: '1', topology_version: null, chain_id: 'C1',
       alarm_universe_fingerprint: 'alarms', analysis_version: 'analysis-v1',
       engine_version: 'counterfactual-p1-v1', config_version: 'synthetic-review-v1',
       tier1b_artifact_fingerprint: 'tier1b', structural_audit_artifact_fingerprint: null,
@@ -80,9 +87,27 @@ const job: CounterfactualJob = {
   error: null,
 }
 
+function renderReview(
+  initialJob: CounterfactualJob,
+  extraProps: Pick<
+    Parameters<typeof CounterfactualReview>[0],
+    'readOnly' | 'onFeedbackSubmit' | 'onOpenReviewLearning' | 'initialFeedbacks'
+  > = {},
+) {
+  return renderToStaticMarkup(
+    <CounterfactualReview
+      chainId="C1"
+      initialJob={initialJob}
+      expectedAnalysisIdentity={job.analysis_identity}
+      expectedArtifactRevision={job.artifact_revision}
+      {...extraProps}
+    />,
+  )
+}
+
 describe('CounterfactualReview', () => {
   it('renders partial operations and exact comparison without an apply control', () => {
-    const html = renderToStaticMarkup(<CounterfactualReview chainId="C1" initialJob={job} />)
+    const html = renderReview(job)
 
     expect(html).toContain('Counterfactual chain review')
     expect(html).toContain('REMOVE_MEMBER')
@@ -123,6 +148,29 @@ describe('CounterfactualReview', () => {
     expect(html).toContain('Đang đánh giá các phương án phân hoạch đối chứng…')
   })
 
+  it('does not trust an injected initial job when the expected identity and revision are absent', () => {
+    const html = renderToStaticMarkup(
+      <CounterfactualReview chainId="C1" initialJob={job} />,
+    )
+
+    expect(html).toContain('Đang đánh giá các phương án phân hoạch đối chứng…')
+    expect(html).not.toContain('Exact before and after metrics')
+  })
+
+  it('rejects an injected initial job from an older expected identity', () => {
+    const html = renderToStaticMarkup(
+      <CounterfactualReview
+        chainId="C1"
+        initialJob={job}
+        expectedAnalysisIdentity={{ ...job.analysis_identity!, analysis_config_version: 'old-config' }}
+        expectedArtifactRevision={job.artifact_revision}
+      />,
+    )
+
+    expect(html).toContain('Đang đánh giá các phương án phân hoạch đối chứng…')
+    expect(html).not.toContain('Exact before and after metrics')
+  })
+
   it('shows an unavailable domain result without fabricating a proposal', () => {
     const unavailable: CounterfactualJob = {
       ...job,
@@ -137,7 +185,7 @@ describe('CounterfactualReview', () => {
         merge: { ...job.result.merge, reason: 'COUNTERFACTUAL_CONFIG_INCOMPLETE' },
       } : null,
     }
-    const html = renderToStaticMarkup(<CounterfactualReview chainId="C1" initialJob={unavailable} />)
+    const html = renderReview(unavailable)
 
     expect(html).toContain('COUNTERFACTUAL_CONFIG_INCOMPLETE')
     expect(html).toContain('UNAVAILABLE')
@@ -145,7 +193,7 @@ describe('CounterfactualReview', () => {
   })
 
   it('treats AVAILABLE with zero recommendations as a contract inconsistency', () => {
-    const html = renderToStaticMarkup(<CounterfactualReview chainId="C1" initialJob={job} />)
+    const html = renderReview(job)
 
     expect(html).toContain('Kết quả không nhất quán')
     expect(html).toContain('AVAILABLE nhưng không có recommendation')
@@ -162,7 +210,7 @@ describe('CounterfactualReview', () => {
         recommendations: [],
       } : null,
     }
-    const html = renderToStaticMarkup(<CounterfactualReview chainId="C1" initialJob={bounded} />)
+    const html = renderReview(bounded)
 
     expect(html).toContain('Không tìm thấy phương án vượt trội rõ ràng')
     expect(html).toContain('không gian tìm kiếm hữu hạn đã đánh giá')
@@ -193,7 +241,7 @@ describe('CounterfactualReview', () => {
         recommendations: [move],
       } : null,
     }
-    const html = renderToStaticMarkup(<CounterfactualReview chainId="C1" initialJob={withMove} />)
+    const html = renderReview(withMove)
     expect(html).toContain('Reason: becomes a connector after the move')
     expect(html).toContain('2 supported blocks')
   })
@@ -208,7 +256,7 @@ describe('CounterfactualReview', () => {
           }
         : null,
     }
-    const html = renderToStaticMarkup(<CounterfactualReview chainId="C1" initialJob={recommendedJob} />)
+    const html = renderReview(recommendedJob)
 
     expect(html).toContain('Phản hồi chuyên gia (Operator Feedback):')
     expect(html).toContain('Chấp thuận đề xuất')
@@ -216,13 +264,7 @@ describe('CounterfactualReview', () => {
   })
 
   it('allows operator feedback on an evaluated non-recommended candidate', () => {
-    const html = renderToStaticMarkup(
-      <CounterfactualReview
-        chainId="C1"
-        initialJob={job}
-        onFeedbackSubmit={async () => {}}
-      />
-    )
+    const html = renderReview(job, { onFeedbackSubmit: async () => {} })
 
     expect(html).toContain('Phản hồi chuyên gia (Operator Feedback):')
     expect(html).toContain('Chấp thuận đề xuất')
@@ -239,9 +281,7 @@ describe('CounterfactualReview', () => {
         ? { ...job.result, recommendations: [job.result.remove.candidates[0]] }
         : null,
     }
-    const html = renderToStaticMarkup(
-      <CounterfactualReview chainId="C1" initialJob={recommendedJob} readOnly />,
-    )
+    const html = renderReview(recommendedJob, { readOnly: true })
 
     expect(html).toContain('Read-only navigation displays the persisted proposal')
     expect(html).not.toContain('Phản hồi chuyên gia (Operator Feedback):')
@@ -263,13 +303,7 @@ describe('CounterfactualReview', () => {
       created_at: '2026-09-04T06:00:00Z',
     }
 
-    const html = renderToStaticMarkup(
-      <CounterfactualReview
-        chainId="C1"
-        initialJob={job}
-        initialFeedbacks={{ 'remove-X': approvedFeedback }}
-      />
-    )
+    const html = renderReview(job, { initialFeedbacks: { 'remove-X': approvedFeedback } })
 
     expect(html).toContain('ĐÃ CHẤP THUẬN ĐỀ XUẤT')
     expect(html).toContain('review-feedback-verdict--approved')
@@ -296,13 +330,7 @@ describe('CounterfactualReview', () => {
       created_at: '2026-09-04T06:10:00Z',
     }
 
-    const html = renderToStaticMarkup(
-      <CounterfactualReview
-        chainId="C1"
-        initialJob={job}
-        initialFeedbacks={{ 'remove-X': rejectedFeedback }}
-      />
-    )
+    const html = renderReview(job, { initialFeedbacks: { 'remove-X': rejectedFeedback } })
 
     expect(html).toContain('ĐÃ TỪ CHỐI ĐỀ XUẤT')
     expect(html).toContain('ops_shift_lead')
@@ -351,9 +379,7 @@ describe('CounterfactualReview', () => {
       } : null,
     }
 
-    const html = renderToStaticMarkup(
-      <CounterfactualReview chainId="C1" initialJob={jobWithComparative} />
-    )
+    const html = renderReview(jobWithComparative)
 
     expect(html).toContain('Comparative explanation')
     expect(html).toContain('Đề xuất loại bỏ 1 cảnh báo (X) ra khỏi chuỗi C1')
@@ -399,9 +425,7 @@ describe('CounterfactualReview', () => {
       } : null,
     }
 
-    const html = renderToStaticMarkup(
-      <CounterfactualReview chainId="C1" initialJob={rejectedJob} />
-    )
+    const html = renderReview(rejectedJob)
 
     expect(html).toContain('Counterfactual đã chạy xong')
     expect(html).toContain('1 phương án đã bị loại')
@@ -422,9 +446,7 @@ describe('CounterfactualReview', () => {
           }
         : null,
     }
-    const html = renderToStaticMarkup(
-      <CounterfactualReview chainId="C1" initialJob={recommendedJob} />
-    )
+    const html = renderReview(recommendedJob)
 
     expect(html).toContain('⭐ Đề xuất Phân hoạch Được Khuyến nghị (Top Recommended Proposals)')
     expect(html).toContain('1 đề xuất')
@@ -442,9 +464,7 @@ describe('CounterfactualReview', () => {
           }
         : null,
     }
-    const html = renderToStaticMarkup(
-      <CounterfactualReview chainId="C1" initialJob={optimalJob} />
-    )
+    const html = renderReview(optimalJob)
 
     expect(html).toContain('Kết quả không nhất quán')
     expect(html).not.toContain('Optimal Partition Cohesion')
@@ -477,13 +497,7 @@ describe('CounterfactualReview', () => {
       },
     }
 
-    const html = renderToStaticMarkup(
-      <CounterfactualReview
-        chainId="C1"
-        initialJob={rerankedJob}
-        onOpenReviewLearning={() => {}}
-      />
-    )
+    const html = renderReview(rerankedJob, { onOpenReviewLearning: () => {} })
 
     expect(html).toContain('🎯 XGBRanker')
     expect(html).toContain('Score: 0.8842')
@@ -519,9 +533,7 @@ describe('CounterfactualReview', () => {
       },
     }
 
-    const html = renderToStaticMarkup(
-      <CounterfactualReview chainId="C1" initialJob={abstainedJob} />
-    )
+    const html = renderReview(abstainedJob)
 
     expect(html).toContain('🛡️ Model Abstained: Score under margin threshold')
   })

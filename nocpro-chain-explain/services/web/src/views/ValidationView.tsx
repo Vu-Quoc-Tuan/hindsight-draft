@@ -7,11 +7,14 @@ import {
   copyToClipboard,
 } from '../partitionExport'
 import type {
+  AnalysisIdentity,
+  ArtifactRevision,
   ChainAnalysis,
   CounterfactualCandidate,
   CounterfactualJob,
   OperatorFeedback,
 } from '../types'
+import { reviewJobMatchesExpected } from '../reviewJobCache'
 import { isReviewApproved } from '../types'
 import { ReviewDecisionForm } from '../components/ReviewDecisionForm'
 import { getConciseCandidateTitle } from '../reviewPresentation'
@@ -21,15 +24,26 @@ export function ValidationView({
   snapshotId,
   snapshotVersion,
   topologyVersion,
+  expectedAnalysisIdentity,
+  expectedArtifactRevision,
   onOpenManualSplit: _onOpenManualSplit,
 }: {
   analysis: ChainAnalysis
   snapshotId?: string | null
   snapshotVersion?: string | null
   topologyVersion?: string | null
+  expectedAnalysisIdentity?: AnalysisIdentity | null
+  expectedArtifactRevision?: ArtifactRevision | null
   onOpenManualSplit?: () => void
 }) {
-  const cached = getCachedReviewJob(analysis.chain_id, snapshotId, snapshotVersion, topologyVersion)
+  const hasExpectedReviewContext = expectedAnalysisIdentity != null && expectedArtifactRevision != null
+  const expectedReviewContextKey = JSON.stringify([
+    expectedAnalysisIdentity ?? null,
+    expectedArtifactRevision ?? null,
+  ])
+  const cached = hasExpectedReviewContext
+    ? getCachedReviewJob(expectedAnalysisIdentity!, expectedArtifactRevision!)
+    : null
   const [job, setJob] = useState<CounterfactualJob | null>(cached)
   const [loading, setLoading] = useState<boolean>(cached == null)
   const [error, setError] = useState<string | null>(null)
@@ -65,13 +79,18 @@ export function ValidationView({
             || (snapshotId && reviewRes.value.identity.snapshot_id !== snapshotId)
             || (snapshotVersion && reviewRes.value.identity.snapshot_version !== snapshotVersion)
             || (topologyVersion !== undefined && reviewRes.value.identity.topology_version !== topologyVersion)
+            || !reviewJobMatchesExpected(
+              reviewRes.value,
+              hasExpectedReviewContext ? expectedAnalysisIdentity! : reviewRes.value.analysis_identity!,
+              hasExpectedReviewContext ? expectedArtifactRevision! : reviewRes.value.artifact_revision!,
+            )
           ) {
             setError('REVIEW_CONTEXT_MISMATCH')
             setLoading(false)
             return
           }
           setJob(reviewRes.value)
-          setCachedReviewJob(analysis.chain_id, snapshotId, snapshotVersion, topologyVersion, reviewRes.value)
+          setCachedReviewJob(reviewRes.value)
           const recs = reviewRes.value?.result?.recommendations ?? []
           const evaluated = reviewRes.value?.result?.evaluated_candidates ?? []
           const defaultCandidate = recs[0] ?? evaluated[0]
@@ -97,7 +116,16 @@ export function ValidationView({
       cancelled = true
       controller.abort()
     }
-  }, [analysis.chain_id, snapshotId, snapshotVersion, topologyVersion])
+  }, [
+    analysis.chain_id,
+    snapshotId,
+    snapshotVersion,
+    topologyVersion,
+    hasExpectedReviewContext,
+    expectedAnalysisIdentity,
+    expectedArtifactRevision,
+    expectedReviewContextKey,
+  ])
 
   // Poll if review is actively computing
   useEffect(() => {
@@ -113,12 +141,17 @@ export function ValidationView({
             || (snapshotId && updated.identity.snapshot_id !== snapshotId)
             || (snapshotVersion && updated.identity.snapshot_version !== snapshotVersion)
             || (topologyVersion !== undefined && updated.identity.topology_version !== topologyVersion)
+            || !reviewJobMatchesExpected(
+              updated,
+              hasExpectedReviewContext ? expectedAnalysisIdentity! : updated.analysis_identity!,
+              hasExpectedReviewContext ? expectedArtifactRevision! : updated.artifact_revision!,
+            )
           ) {
             setError('REVIEW_CONTEXT_MISMATCH')
             return
           }
           setJob(updated)
-          setCachedReviewJob(analysis.chain_id, snapshotId, snapshotVersion, topologyVersion, updated)
+          setCachedReviewJob(updated)
           const recs = updated?.result?.recommendations ?? []
           const evaluated = updated?.result?.evaluated_candidates ?? []
           const first = recs[0] ?? evaluated[0]
@@ -134,7 +167,18 @@ export function ValidationView({
       controller.abort()
       window.clearTimeout(timer)
     }
-  }, [job, selectedCandidateId, analysis.chain_id, snapshotId, snapshotVersion, topologyVersion])
+  }, [
+    job,
+    selectedCandidateId,
+    analysis.chain_id,
+    snapshotId,
+    snapshotVersion,
+    topologyVersion,
+    hasExpectedReviewContext,
+    expectedAnalysisIdentity,
+    expectedArtifactRevision,
+    expectedReviewContextKey,
+  ])
 
   // Impression logging: log candidate display events
   useEffect(() => {
@@ -175,12 +219,17 @@ export function ValidationView({
         || (snapshotId && initialJob.identity.snapshot_id !== snapshotId)
         || (snapshotVersion && initialJob.identity.snapshot_version !== snapshotVersion)
         || (topologyVersion !== undefined && initialJob.identity.topology_version !== topologyVersion)
+        || !reviewJobMatchesExpected(
+          initialJob,
+          hasExpectedReviewContext ? expectedAnalysisIdentity! : initialJob.analysis_identity!,
+          hasExpectedReviewContext ? expectedArtifactRevision! : initialJob.artifact_revision!,
+        )
       ) {
         setError('REVIEW_CONTEXT_MISMATCH')
         return
       }
       setJob(initialJob)
-      setCachedReviewJob(analysis.chain_id, snapshotId, snapshotVersion, topologyVersion, initialJob)
+      setCachedReviewJob(initialJob)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not launch review evaluation')
     } finally {

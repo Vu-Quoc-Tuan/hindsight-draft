@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { CounterfactualReview } from '../CounterfactualReview'
 
 import { ValidationView } from './ValidationView'
-import type { ChainAnalysis, CounterfactualJob } from '../types'
+import type { AnalysisIdentity, ArtifactRevision, ChainAnalysis, CounterfactualJob } from '../types'
 import { InfoTip } from '../components/InfoTip'
 import { ExplainClarityComparisonModal } from '../components/ExplainClarityComparisonModal'
 import { ManualChainSplitModal } from '../components/ManualChainSplitModal'
@@ -12,6 +12,8 @@ export function RecommendationsView({
   snapshotId,
   snapshotVersion,
   topologyVersion,
+  expectedAnalysisIdentity,
+  expectedArtifactRevision,
   readOnly = false,
   initialSubTab = 'recommendations',
   onOpenReviewLearning,
@@ -22,6 +24,8 @@ export function RecommendationsView({
   snapshotId?: string | null
   snapshotVersion?: string | null
   topologyVersion?: string | null
+  expectedAnalysisIdentity?: AnalysisIdentity | null
+  expectedArtifactRevision?: ArtifactRevision | null
   readOnly?: boolean
   initialSubTab?: 'recommendations' | 'validation'
   onOpenReviewLearning?: () => void
@@ -123,11 +127,13 @@ export function RecommendationsView({
       {activeTab === 'recommendations' ? (
         <div className="overflow-hidden rounded-xl border border-surface-container-high bg-surface-container shadow-md">
           <CounterfactualReview
-            key={`${snapshotId ?? 'NO_SNAPSHOT'}@${snapshotVersion ?? 'NO_VERSION'}#${topologyVersion ?? 'NO_TOPOLOGY'}-${analysis.chain_id}-${reviewReloadKey}`}
+            key={`${snapshotId ?? 'NO_SNAPSHOT'}@${snapshotVersion ?? 'NO_VERSION'}#${topologyVersion ?? 'NO_TOPOLOGY'}-${analysis.chain_id}-${reviewReloadKey}-${expectedAnalysisIdentity?.input_fingerprint ?? 'NO_EXPECTED_IDENTITY'}-${expectedArtifactRevision?.fingerprint ?? 'NO_EXPECTED_REVISION'}`}
             chainId={analysis.chain_id}
             snapshotId={snapshotId}
             snapshotVersion={snapshotVersion}
             topologyVersion={topologyVersion}
+            expectedAnalysisIdentity={expectedAnalysisIdentity}
+            expectedArtifactRevision={expectedArtifactRevision}
             readOnly={readOnly}
             hideHeader={true}
             onNavigateToValidation={() => setActiveTab('validation')}
@@ -143,6 +149,8 @@ export function RecommendationsView({
           snapshotId={snapshotId}
           snapshotVersion={snapshotVersion}
           topologyVersion={topologyVersion}
+          expectedAnalysisIdentity={expectedAnalysisIdentity}
+          expectedArtifactRevision={expectedArtifactRevision}
           onOpenManualSplit={() => setShowManualSplitModal(true)}
         />
       )}
