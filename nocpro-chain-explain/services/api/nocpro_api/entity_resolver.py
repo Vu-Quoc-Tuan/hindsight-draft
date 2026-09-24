@@ -47,7 +47,7 @@ class AlarmEntityResolver:
     def __init__(
         self,
         *,
-        profile_id: str = "IT_SERVICES",
+        profile_id: str | None = None,
         topology_version: str | None = None,
         resolver_version: str = "v1",
         host_modules_map: dict[str, list[ModuleCandidate]] | None = None,
@@ -308,9 +308,27 @@ class AlarmEntityResolver:
         return observed_resource_id, resolutions
 
     @classmethod
-    def from_package(cls, package: Any, profile_id: str = "IT_SERVICES") -> AlarmEntityResolver:
+    def from_package(
+        cls,
+        package: Any,
+        profile_id: str | None = None,
+        topology_version: str | None = None,
+    ) -> AlarmEntityResolver:
         """Construct an in-memory resolver from a package's topology."""
         topology = getattr(package, "topology", None) or {}
+        if profile_id is None:
+            profile_id = (
+                topology.get("profile_id")
+                if isinstance(topology, dict)
+                else getattr(topology, "profile_id", None)
+            )
+        if topology_version is None:
+            topology_ref = (
+                getattr(getattr(package, "snapshot", None), "topology_ref", None)
+                or getattr(package, "topology_ref", None)
+            )
+            topology_version = getattr(topology_ref, "topology_version", None)
+
         nodes = getattr(topology, "nodes", ()) if hasattr(topology, "nodes") else ()
         edges = getattr(topology, "edges", ()) if hasattr(topology, "edges") else ()
         if isinstance(topology, dict):
@@ -355,6 +373,7 @@ class AlarmEntityResolver:
 
         return cls(
             profile_id=profile_id,
+            topology_version=topology_version,
             host_modules_map=host_modules_map,
             host_canonical_id_map=host_canonical_id_map,
         )

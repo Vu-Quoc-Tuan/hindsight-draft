@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections import OrderedDict
 from datetime import datetime, timezone
 import io
 import json
@@ -59,6 +61,16 @@ def _insert_stmt(table, session):
 MAX_TOPOLOGY_UNCOMPRESSED_BYTES = 256 * 1024 * 1024  # 256MB safety decompression limit
 MAX_QUERY_DEPTH = 10
 MAX_QUERY_CHILDREN = 200
+MAX_ANALYSIS_HYDRATION_HOPS = 3
+MAX_HOST_MODULE_MAP_CACHE_ENTRIES = 2
+
+
+def _canonical_relation_type(raw_type: str | None, profile: str) -> str:
+    if raw_type in ("ADJACENT_TO", "IP_ADJACENCY"):
+        return "IP_ADJACENCY"
+    if isinstance(raw_type, str) and raw_type:
+        return raw_type
+    return "IP_ADJACENCY" if profile == "IP_NETWORK" else "UNKNOWN"
 
 
 class TopologyRepository:
@@ -67,6 +79,11 @@ class TopologyRepository:
     def __init__(self, sessions: async_sessionmaker) -> None:
         self.sessions = sessions
         self._subgraph_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+        self._host_modules_cache: OrderedDict[
+            tuple[str, str],
+            tuple[dict[str, list[ModuleCandidate]], dict[str, str]],
+        ] = OrderedDict()
+        self._host_modules_cache_lock = asyncio.Lock()
 
     async def record_inbox(
         self,
@@ -104,6 +121,8 @@ class TopologyRepository:
 
         Returns (profile_id, topology_version) if a version was finalized to READY, else None.
         """
+        invalid_reason: str | None = None
+        committed: tuple[str, str] | None = None
         async with self.sessions.begin() as session:
             # 1. Atomic Inbox Check
             seen = await session.scalar(
@@ -115,24 +134,51 @@ class TopologyRepository:
             )
             if seen is not None:
                 LOGGER.debug("Duplicate topology message at %s/%s/%s; skipping", topic, partition, offset)
-                return None
-
-            session.add(
-                TopologyKafkaInbox(
-                    topic=topic,
-                    partition=partition,
-                    offset=offset,
-                    message_key=message_key,
+                version = await session.get(
+                    TopologyVersionRecord,
+                    (event.profile_id, event.topology_version),
                 )
-            )
-
-            # 2. Dispatch to Chunk or Complete
-            if isinstance(event, TopologyChunkEvent):
-                return await self._process_chunk_within_session(session, event)
-            elif isinstance(event, TopologyCompleteEvent):
-                return await self._process_complete_within_session(session, event)
-            else:
+                if version is not None and version.status == "READY":
+                    return event.profile_id, event.topology_version
                 return None
+
+            session.add(TopologyKafkaInbox(
+                topic=topic,
+                partition=partition,
+                offset=offset,
+                message_key=message_key,
+            ))
+
+            # 2. Dispatch to Chunk or Complete.  Expected payload corruption is
+            # committed as INVALID state before it is surfaced to the consumer
+            # for DLQ publication; raising inside the transaction would roll
+            # back the very state that explains why this version was rejected.
+            try:
+                if isinstance(event, TopologyChunkEvent):
+                    committed = await self._process_chunk_within_session(session, event)
+                elif isinstance(event, TopologyCompleteEvent):
+                    committed = await self._process_complete_within_session(session, event)
+            except ValueError as exc:
+                invalid_reason = str(exc)
+                await self._mark_invalid(
+                    session,
+                    event.profile_id,
+                    event.topology_version,
+                    invalid_reason,
+                )
+                # A failed DLQ write must be retryable. Do not leave this
+                # offset deduplicated until the consumer has published it.
+                await session.execute(
+                    delete(TopologyKafkaInbox).where(
+                        TopologyKafkaInbox.topic == topic,
+                        TopologyKafkaInbox.partition == partition,
+                        TopologyKafkaInbox.offset == offset,
+                    )
+                )
+
+        if invalid_reason is not None:
+            raise ValueError(invalid_reason)
+        return committed
 
     async def _process_chunk_within_session(
         self,
@@ -539,6 +585,14 @@ class TopologyRepository:
                 TopologyIngest.topology_version == topology_version,
             )
             .values(status="INVALID", invalid_reason=reason, updated_at=func.now())
+        )
+        await session.execute(
+            update(TopologyVersionRecord)
+            .where(
+                TopologyVersionRecord.profile_id == profile_id,
+                TopologyVersionRecord.topology_version == topology_version,
+            )
+            .values(status="INVALID")
         )
 
     # Standalone backward-compatible helpers
@@ -1001,100 +1055,65 @@ class TopologyRepository:
     ) -> dict[str, Any]:
         """Hydrate topology dictionary from PostgreSQL for Analysis Worker."""
         async with self.sessions() as session:
+            version_record = await session.get(
+                TopologyVersionRecord,
+                (profile_id, topology_version),
+            )
             # Query edges
             stmt = select(TopologyEdgeRecord).where(
                 TopologyEdgeRecord.profile_id == profile_id,
                 TopologyEdgeRecord.topology_version == topology_version,
             )
-            if resource_ids and profile_id == "IT_SERVICES":
-                # 2-hop expansion for IT services (Service -> Module -> Instance)
-                stmt1 = select(TopologyEdgeRecord).where(
-                    TopologyEdgeRecord.profile_id == profile_id,
-                    TopologyEdgeRecord.topology_version == topology_version,
-                    or_(
-                        TopologyEdgeRecord.source_id.in_(resource_ids),
-                        TopologyEdgeRecord.target_id.in_(resource_ids),
-                    ),
-                )
-                edge_rows1 = (await session.scalars(stmt1)).all()
-                intermediate = {e.source_id for e in edge_rows1} | {e.target_id for e in edge_rows1}
-                stmt2 = select(TopologyEdgeRecord).where(
-                    TopologyEdgeRecord.profile_id == profile_id,
-                    TopologyEdgeRecord.topology_version == topology_version,
-                    or_(
-                        TopologyEdgeRecord.source_id.in_(intermediate),
-                        TopologyEdgeRecord.target_id.in_(intermediate),
-                    ),
-                )
-                edge_rows2 = (await session.scalars(stmt2)).all()
-                all_edge_map = {(e.source_id, e.target_id): e for e in (edge_rows1 + edge_rows2)}
-                
-                # Check for root services and identify the primary service covering the most seed resources
-                services = {e.source_id for e in all_edge_map.values() if e.source_id.startswith("it:service:")}
-                if services:
-                    # Build adjacency for reachability calculation
-                    adj: dict[str, list[str]] = {}
-                    for e in all_edge_map.values():
-                        adj.setdefault(e.source_id, []).append(e.target_id)
-                    
-                    best_service = None
-                    best_covered: set[str] = set()
-                    for s in sorted(services):
-                        visited: set[str] = set()
-                        queue = [s]
-                        while queue:
-                            curr = queue.pop(0)
-                            for nxt in adj.get(curr, []):
-                                if nxt not in visited:
-                                    visited.add(nxt)
-                                    queue.append(nxt)
-                        covered = visited & resource_ids
-                        # Prioritize service 4137 (Nova) if coverage is equal
-                        if len(covered) > len(best_covered) or (len(covered) == len(best_covered) and s == "it:service:4137"):
-                            best_service = s
-                            best_covered = covered
-                    
-                    if best_service:
-                        s_modules = {e.target_id for e in all_edge_map.values() if e.source_id == best_service}
-                        filtered_rows = [
-                            e for e in all_edge_map.values()
-                            if e.source_id == best_service or (e.source_id in s_modules and e.target_id in resource_ids)
-                        ]
-                        edge_rows = filtered_rows
-                    else:
-                        edge_rows = list(all_edge_map.values())
-                else:
-                    edge_rows = list(all_edge_map.values())
-            elif resource_ids:
-                stmt = stmt.where(
-                    or_(
-                        TopologyEdgeRecord.source_id.in_(resource_ids),
-                        TopologyEdgeRecord.target_id.in_(resource_ids),
-                    )
-                )
-                edge_rows = (await session.scalars(stmt)).all()
+            if resource_ids:
+                # Analysis must receive complete paths between snapshot seeds, not
+                # merely direct seed edges.  Treat IT source relations as
+                # traversable in either direction here: alarms land on leaf
+                # resources while evidence can originate at a service ancestor.
+                all_edge_rows = (await session.scalars(stmt)).all()
+                adjacency: dict[str, list[TopologyEdgeRecord]] = {}
+                for edge in all_edge_rows:
+                    adjacency.setdefault(edge.source_id, []).append(edge)
+                    adjacency.setdefault(edge.target_id, []).append(edge)
+
+                visited_node_ids = set(resource_ids)
+                frontier = set(resource_ids)
+                for _ in range(MAX_ANALYSIS_HYDRATION_HOPS):
+                    if not frontier:
+                        break
+                    next_frontier: set[str] = set()
+                    for resource_id in sorted(frontier):
+                        for edge in adjacency.get(resource_id, []):
+                            for endpoint in (edge.source_id, edge.target_id):
+                                if endpoint not in visited_node_ids:
+                                    visited_node_ids.add(endpoint)
+                                    next_frontier.add(endpoint)
+                    frontier = next_frontier
+
+                # An induced neighborhood keeps intermediate cross-edges such
+                # as A-X-Y-B intact, and retains every service branch reaching a
+                # snapshot resource rather than picking a presentation winner.
+                edge_rows = [
+                    edge for edge in all_edge_rows
+                    if edge.source_id in visited_node_ids and edge.target_id in visited_node_ids
+                ]
             else:
                 edge_rows = (await session.scalars(stmt)).all()
-
-            def _map_rel_type(raw_type: str | None, profile: str) -> str:
-                if profile == "IP_NETWORK" or raw_type in ("ADJACENT_TO", "IP_ADJACENCY"):
-                    return "IP_ADJACENCY"
-                if profile == "IT_SERVICES":
-                    return "SERVICE_DEPENDS_ON"
-                if raw_type == "SERVICE_DEPENDS_ON":
-                    return "SERVICE_DEPENDS_ON"
-                return "LOGICAL_DEPENDENCY"
 
             edges = [
                 {
                     "edge_id": f"{e.source_id}->{e.target_id}",
                     "source_resource_id": e.source_id,
                     "target_resource_id": e.target_id,
-                    "relation_type": _map_rel_type(e.relation_type, profile_id),
-                    "directed": True if profile_id == "IT_SERVICES" else (e.direction_kind in ("SOURCE_RELATION", "DIRECTED")),
+                    "relation_type": _canonical_relation_type(e.relation_type, profile_id),
+                    "directed": e.direction_kind in ("SOURCE_RELATION", "DIRECTED"),
                     "source_id": e.source_table or e.source_id or ("topoIT" if profile_id == "IT_SERVICES" else "topoIP"),
                     "source_kind": "REAL_EXPORT_REPLAY",
                     "source_version": e.source_version,
+                    "dependency_semantics": (
+                        e.dependency_semantics
+                        or getattr(version_record, "dependency_semantics", None)
+                    ),
+                    "p2_eligible": getattr(version_record, "p2_eligible", False) is True,
                     "provenance_class": "EXTERNAL_OPERATIONAL",
                     "provenance_subtype": "TOPOLOGY_EXTERNAL",
                     "quality_status": "UNKNOWN",
@@ -1151,6 +1170,12 @@ class TopologyRepository:
             return {
                 "edges": edges,
                 "nodes": nodes,
+                "profile_id": profile_id,
+                "topology_version": topology_version,
+                "relation_model": getattr(version_record, "relation_model", None),
+                "direction_kind": getattr(version_record, "direction_kind", None),
+                "dependency_semantics": getattr(version_record, "dependency_semantics", None),
+                "p2_eligible": getattr(version_record, "p2_eligible", False) is True,
                 "alias_resolution": aliases,
                 "mappings": [],
                 "failure_domains": [],
@@ -1200,6 +1225,18 @@ class TopologyRepository:
         topology_version: str | None = None,
     ) -> dict[str, Any]:
         """Extract k-hop induced neighborhood subgraph around seed identifiers."""
+        if max_hops not in (1, 2, 3, 4):
+            raise ValueError("max_hops must be between 1 and 4")
+
+        cleaned_seeds = sorted({s.strip() for s in seeds if s and s.strip()})
+        empty_metadata = {
+            "requested_seed_count": len(cleaned_seeds),
+            "resolved_seed_count": 0,
+            "retained_seed_count": 0,
+            "dropped_seed_count": 0,
+            "truncated": False,
+            "truncation_reasons": [],
+        }
         if profile_id == "ALARM_ONLY":
             return {
                 "status": "UNAVAILABLE",
@@ -1207,6 +1244,7 @@ class TopologyRepository:
                 "profile_id": profile_id,
                 "nodes": [],
                 "edges": [],
+                **empty_metadata,
             }
 
         async with self.sessions() as session:
@@ -1220,20 +1258,22 @@ class TopologyRepository:
                         "profile_id": profile_id,
                         "nodes": [],
                         "edges": [],
+                        **empty_metadata,
                     }
                 target_version = active.topology_version
 
-            cleaned_seeds = sorted([s.strip() for s in seeds if s and s.strip()])
             if not cleaned_seeds:
                 return {
                     "status": "AVAILABLE",
                     "profile_id": profile_id,
+                    "topology_version": target_version,
                     "nodes": [],
                     "edges": [],
+                    **empty_metadata,
                 }
 
-            safe_hops = min(max(1, max_hops), 4)
-            cache_key = f"{profile_id}:{target_version}:{','.join(cleaned_seeds)}:{safe_hops}:{max_nodes}"
+            safe_hops = max_hops
+            cache_key = f"subgraph-v3:{profile_id}:{target_version}:{','.join(cleaned_seeds)}:{safe_hops}:{max_nodes}"
             cached = getattr(self, "_subgraph_cache", {}).get(cache_key)
             if cached is not None:
                 ts, val = cached
@@ -1260,9 +1300,10 @@ class TopologyRepository:
                 TopologyAliasResolutionRecord.alias_key.in_(cleaned_seeds),
             )
             alias_rows = (await session.scalars(alias_stmt)).all()
-            seed_resource_ids = {
-                a.unique_resource_id for a in alias_rows if a.unique_resource_id
-            }
+            seed_to_resource_ids: dict[str, set[str]] = {seed: set() for seed in cleaned_seeds}
+            for alias in alias_rows:
+                if alias.unique_resource_id and alias.alias_key in seed_to_resource_ids:
+                    seed_to_resource_ids[alias.alias_key].add(alias.unique_resource_id)
 
             node_seed_stmt = select(TopologyNodeRecord).where(
                 TopologyNodeRecord.profile_id == profile_id,
@@ -1274,7 +1315,9 @@ class TopologyRepository:
             )
             node_seed_rows = (await session.scalars(node_seed_stmt)).all()
             for nr in node_seed_rows:
-                seed_resource_ids.add(nr.resource_id)
+                for seed in cleaned_seeds:
+                    if seed == nr.resource_id or seed == nr.display_name:
+                        seed_to_resource_ids[seed].add(nr.resource_id)
 
             # Match IP prefixes if display_name has CIDR mask e.g. 10.210.48.136 matching 10.210.48.136/22
             # Match IP prefixes for all seeds across all source tables (server, storage, db)
@@ -1285,26 +1328,47 @@ class TopologyRepository:
                     TopologyNodeRecord.display_name.like(f"{s}%"),
                 ).limit(10)
                 matched = (await session.scalars(like_stmt)).all()
-                seed_resource_ids.update(matched)
+                seed_to_resource_ids[s].update(matched)
+
+            seed_resource_ids = {
+                resource_id
+                for resource_ids in seed_to_resource_ids.values()
+                for resource_id in resource_ids
+            }
+            resolved_seed_count = sum(bool(resource_ids) for resource_ids in seed_to_resource_ids.values())
 
             if not seed_resource_ids:
                 return {
                     "status": "AVAILABLE",
                     "profile_id": profile_id,
+                    "topology_version": target_version,
                     "nodes": [],
                     "edges": [],
+                    **{
+                        **empty_metadata,
+                        "resolved_seed_count": resolved_seed_count,
+                    },
                 }
 
             # 2. BFS k-hop expansion (both source and target directions)
-            visited_node_ids = set(seed_resource_ids)
-            current_frontier = set(seed_resource_ids)
+            safe_max_nodes = max(0, max_nodes)
+            admitted_seed_ids = sorted(seed_resource_ids)[:safe_max_nodes]
+            admitted_seed_id_set = set(admitted_seed_ids)
+            retained_seed_count = sum(
+                bool(resource_ids & admitted_seed_id_set)
+                for resource_ids in seed_to_resource_ids.values()
+            )
+            dropped_seed_count = resolved_seed_count - retained_seed_count
+            truncation_reasons: set[str] = set()
+            if dropped_seed_count:
+                truncation_reasons.add("SEED_NODE_LIMIT")
+            visited_node_ids = set(admitted_seed_ids)
+            current_frontier = set(admitted_seed_ids)
             collected_edges: list[TopologyEdgeRecord] = []
             seen_edge_ids: set[Any] = set()
 
-            safe_hops = min(max(1, max_hops), 4)
-
             for _ in range(safe_hops):
-                if not current_frontier or len(visited_node_ids) >= max_nodes:
+                if not current_frontier:
                     break
 
                 edge_stmt = select(TopologyEdgeRecord).where(
@@ -1314,18 +1378,27 @@ class TopologyRepository:
                         TopologyEdgeRecord.source_id.in_(current_frontier),
                         TopologyEdgeRecord.target_id.in_(current_frontier),
                     ),
-                ).limit(500)
+                ).order_by(TopologyEdgeRecord.id).limit(501)
 
                 edges = (await session.scalars(edge_stmt)).all()
+                if len(edges) > 500:
+                    truncation_reasons.add("EDGE_QUERY_LIMIT")
+                    edges = edges[:500]
                 next_frontier = set()
 
                 for edge in edges:
                     if edge.id in seen_edge_ids:
                         continue
+                    new_node_ids = {
+                        nid for nid in (edge.source_id, edge.target_id)
+                        if nid not in visited_node_ids
+                    }
+                    if len(visited_node_ids) + len(new_node_ids) > safe_max_nodes:
+                        truncation_reasons.add("NODE_LIMIT")
+                        continue
                     seen_edge_ids.add(edge.id)
                     collected_edges.append(edge)
-
-                    for nid in (edge.source_id, edge.target_id):
+                    for nid in new_node_ids:
                         if nid not in visited_node_ids:
                             visited_node_ids.add(nid)
                             next_frontier.add(nid)
@@ -1339,10 +1412,17 @@ class TopologyRepository:
                     TopologyEdgeRecord.topology_version == target_version,
                     TopologyEdgeRecord.source_id.in_(visited_node_ids),
                     TopologyEdgeRecord.target_id.in_(visited_node_ids),
-                ).limit(1000)
+                ).order_by(TopologyEdgeRecord.id).limit(1001)
                 cross_edges = (await session.scalars(cross_stmt)).all()
+                if len(cross_edges) > 1000:
+                    truncation_reasons.add("CROSS_EDGE_QUERY_LIMIT")
+                    cross_edges = cross_edges[:1000]
                 for ce in cross_edges:
-                    if ce.id not in seen_edge_ids:
+                    if (
+                        ce.id not in seen_edge_ids
+                        and ce.source_id in visited_node_ids
+                        and ce.target_id in visited_node_ids
+                    ):
                         seen_edge_ids.add(ce.id)
                         collected_edges.append(ce)
 
@@ -1362,7 +1442,7 @@ class TopologyRepository:
                     "id": n.resource_id,
                     "name": n.display_name or n.resource_id,
                     "type": n.resource_type,
-                    "is_seed": n.resource_id in seed_resource_ids,
+                    "is_seed": n.resource_id in visited_node_ids and n.resource_id in seed_resource_ids,
                     "source_tables": n.source_tables or [],
                     "attributes": n.attributes or {},
                 }
@@ -1374,11 +1454,12 @@ class TopologyRepository:
                     "id": f"edge-{e.source_id}-{e.target_id}",
                     "source": e.source_id,
                     "target": e.target_id,
-                    "relation": e.relation_type or "CONNECTED_TO",
+                    "relation": _canonical_relation_type(e.relation_type, profile_id),
                     "direction_kind": e.direction_kind or "NONE",
                     "dependency_semantics": e.dependency_semantics or "UNVERIFIED",
                 }
                 for e in collected_edges
+                if e.source_id in visited_node_ids and e.target_id in visited_node_ids
             ]
 
             result = {
@@ -1387,6 +1468,12 @@ class TopologyRepository:
                 "topology_version": target_version,
                 "nodes": nodes_out,
                 "edges": edges_out,
+                "requested_seed_count": len(cleaned_seeds),
+                "resolved_seed_count": resolved_seed_count,
+                "retained_seed_count": retained_seed_count,
+                "dropped_seed_count": dropped_seed_count,
+                "truncated": bool(truncation_reasons),
+                "truncation_reasons": sorted(truncation_reasons),
             }
             if hasattr(self, "_subgraph_cache"):
                 if len(self._subgraph_cache) > 200:
@@ -1422,11 +1509,38 @@ class TopologyRepository:
         if not target_version:
             return {}, {}
 
+        cache_key = (profile_id, target_version)
+        cached = self._host_modules_cache.get(cache_key)
+        if cached is not None:
+            self._host_modules_cache.move_to_end(cache_key)
+            return cached
+
+        # Serialize cache misses so concurrent chain-detail requests for the
+        # same topology version share a single full-map database read.
+        async with self._host_modules_cache_lock:
+            cached = self._host_modules_cache.get(cache_key)
+            if cached is not None:
+                self._host_modules_cache.move_to_end(cache_key)
+                return cached
+
+            maps = await self._load_host_modules_map(profile_id, target_version)
+            self._host_modules_cache[cache_key] = maps
+            self._host_modules_cache.move_to_end(cache_key)
+            while len(self._host_modules_cache) > MAX_HOST_MODULE_MAP_CACHE_ENTRIES:
+                self._host_modules_cache.popitem(last=False)
+            return maps
+
+    async def _load_host_modules_map(
+        self,
+        profile_id: str,
+        topology_version: str,
+    ) -> tuple[dict[str, list[ModuleCandidate]], dict[str, str]]:
+        """Build the resolver map once for an exact, finalized version key."""
         async with self.sessions() as session:
             # 1. Fetch all INSTANCE nodes for this profile and version
             inst_stmt = select(TopologyNodeRecord).where(
                 TopologyNodeRecord.profile_id == profile_id,
-                TopologyNodeRecord.topology_version == target_version,
+                TopologyNodeRecord.topology_version == topology_version,
                 TopologyNodeRecord.resource_type == "INSTANCE",
             )
             inst_rows = (await session.scalars(inst_stmt)).all()
@@ -1449,13 +1563,13 @@ class TopologyRepository:
                     TopologyNodeRecord,
                     and_(
                         TopologyNodeRecord.profile_id == profile_id,
-                        TopologyNodeRecord.topology_version == target_version,
+                        TopologyNodeRecord.topology_version == topology_version,
                         TopologyNodeRecord.resource_id == TopologyEdgeRecord.source_id,
                     ),
                 )
                 .where(
                     TopologyEdgeRecord.profile_id == profile_id,
-                    TopologyEdgeRecord.topology_version == target_version,
+                    TopologyEdgeRecord.topology_version == topology_version,
                     TopologyEdgeRecord.relation_type == "MODULE_HAS_INSTANCE",
                 )
             )
@@ -1518,16 +1632,24 @@ class TopologyRepository:
         """Persist alarm entity resolutions to database."""
         if not resolutions:
             return
+        if any(
+            not r.topology_profile_id or not r.topology_version
+            for r in resolutions
+        ):
+            raise ValueError(
+                "Alarm entity resolutions require an explicit topology profile and version"
+            )
+
         async with self.sessions() as session:
             for r in resolutions:
-                res_id = f"{r.alarm_id}:{r.entity_role}:{r.source_field or ''}:{r.topology_profile_id or ''}:{r.topology_version or ''}:{r.resolver_version or ''}"
+                res_id = f"{r.alarm_id}:{r.entity_role}:{r.source_field or ''}:{r.topology_profile_id}:{r.topology_version}:{r.resolver_version or ''}"
                 existing = await session.get(AlarmEntityResolutionRecord, res_id)
                 if existing is None:
                     rec = AlarmEntityResolutionRecord(
                         resolution_id=res_id,
                         alarm_id=r.alarm_id,
-                        profile_id=r.topology_profile_id or "IT_SERVICES",
-                        topology_version=r.topology_version or "",
+                        profile_id=r.topology_profile_id,
+                        topology_version=r.topology_version,
                         resolver_version=r.resolver_version or "v1",
                         entity_role=r.entity_role,
                         raw_value=r.raw_value,
@@ -1541,8 +1663,8 @@ class TopologyRepository:
                     )
                     session.add(rec)
                 else:
-                    existing.profile_id = r.topology_profile_id or "IT_SERVICES"
-                    existing.topology_version = r.topology_version or ""
+                    existing.profile_id = r.topology_profile_id
+                    existing.topology_version = r.topology_version
                     existing.resolver_version = r.resolver_version or "v1"
                     existing.raw_value = r.raw_value
                     existing.resource_id = r.resource_id
@@ -1553,5 +1675,3 @@ class TopologyRepository:
                     existing.candidate_resource_ids = list(r.candidate_resource_ids)
                     existing.matched_text = r.matched_text
             await session.commit()
-
-

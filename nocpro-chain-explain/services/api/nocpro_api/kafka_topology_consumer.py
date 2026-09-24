@@ -75,14 +75,33 @@ class KafkaTopologyConsumer:
         while self._running:
             try:
                 msg_batch = await self.consumer.getmany(timeout_ms=1000, max_records=10)
-                for _tp, messages in msg_batch.items():
-                    for message in messages:
-                        await self.process_message(message)
+                await asyncio.gather(
+                    *(self._process_partition(messages) for messages in msg_batch.values())
+                )
             except asyncio.CancelledError:
                 break
             except Exception as exc:
                 LOGGER.error("Topology consumer batch iteration failed: %s", exc)
                 await asyncio.sleep(self.config.retry_backoff_seconds)
+
+    async def _process_partition(self, messages) -> None:
+        """Retry one failed record before advancing its partition offset."""
+        for message in messages:
+            while self._running:
+                try:
+                    await self.process_message(message)
+                    break
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    LOGGER.error(
+                        "Topology message at %s/%s/%s failed; retrying before the next partition record: %s",
+                        message.topic,
+                        message.partition,
+                        message.offset,
+                        exc,
+                    )
+                    await asyncio.sleep(self.config.retry_backoff_seconds)
 
     async def process_message(self, message) -> None:
         key_str = message.key.decode("utf-8") if message.key else None

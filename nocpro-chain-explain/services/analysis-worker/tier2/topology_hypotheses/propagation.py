@@ -21,7 +21,7 @@ from .models import (
     PropagationResult,
     TopologyHypothesisReason,
 )
-from .mapping import resolve_p2_mappings
+from libs.contracts.topology_mapping import resolve_resource_ids
 
 
 SEED_POLICY = "ALL_SOURCE_NODES_UNIFORM"
@@ -395,7 +395,7 @@ def analyze_propagation(
             numeric=numeric,
         )
 
-    mappings = resolve_p2_mappings(package, alarm_ids)
+    mappings = resolve_resource_ids(package.topology.get("mappings") or (), alarm_ids, require_all=True)
     if mappings is None:
         return _empty_result(
             TopologyHypothesisReason.RESOURCE_MAPPING_UNAVAILABLE,

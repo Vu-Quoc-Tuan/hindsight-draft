@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from nocpro_api.kafka_topology_consumer import KafkaTopologyConsumer
+from nocpro_api.ingest.topology_wire import TopologyWireEventError, parse_topology_wire_event
 
 
 class FakeConsumer:
@@ -152,6 +153,34 @@ def test_complete_event_commits_and_wakes_coordinator():
     coordinator.wake_pending_topology.assert_awaited_once_with("IT_SERVICES", "it-v1")
     assert len(consumer.commits) == 1
     assert len(dlq.messages) == 0
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("p2_eligible", "false"), ("navigation_eligible", "false")],
+)
+def test_topology_capability_flags_require_json_booleans(field, value):
+    event = {
+        "schema_version": "v1",
+        "event_type": "TOPOLOGY_COMPLETE",
+        "profile_id": "IT_SERVICES",
+        "topology_version": "it-v1",
+        "source_version": "sha256:source",
+        "chunk_count": 1,
+        "payload_checksum": "d" * 64,
+        "node_count": 1,
+        "edge_count": 0,
+        "alias_count": 0,
+        "relation_model": "DIRECTED_SOURCE_RELATIONS",
+        "direction_kind": "SOURCE_RELATION",
+        "dependency_semantics": "VERIFIED_DEPENDENCY",
+        "navigation_eligible": True,
+        "p2_eligible": False,
+        field: value,
+    }
+
+    with pytest.raises(TopologyWireEventError, match=f"{field} must be a boolean"):
+        parse_topology_wire_event(event)
 
 
 def test_transient_db_error_raises_for_retry():

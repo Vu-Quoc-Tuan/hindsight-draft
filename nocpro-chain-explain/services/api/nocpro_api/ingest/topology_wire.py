@@ -174,8 +174,12 @@ def parse_topology_wire_event(
         relation_model = _required_text(event, "relation_model")
         direction_kind = _required_text(event, "direction_kind")
         dependency_semantics = _required_text(event, "dependency_semantics")
-        navigation_eligible = bool(event.get("navigation_eligible", True))
-        p2_eligible = bool(event.get("p2_eligible", False))
+        navigation_eligible = event.get("navigation_eligible", True)
+        p2_eligible = event.get("p2_eligible", False)
+        if not isinstance(navigation_eligible, bool):
+            raise TopologyWireEventError("navigation_eligible must be a boolean")
+        if not isinstance(p2_eligible, bool):
+            raise TopologyWireEventError("p2_eligible must be a boolean")
 
         return TopologyCompleteEvent(
             event_type="TOPOLOGY_COMPLETE",

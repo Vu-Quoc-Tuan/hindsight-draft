@@ -103,6 +103,144 @@ def _compress_payload(payload: dict) -> tuple[bytes, str]:
     return compressed, checksum
 
 
+async def _materialize_topology(repo: TopologyRepository, payload: dict, *, offset: int) -> None:
+    """Persist a compact topology fixture through the same ingest path as Kafka."""
+    compressed, checksum = _compress_payload(payload)
+    profile_id = payload["profile_id"]
+    topology_version = payload["topology_version"]
+    await repo.process_kafka_event(
+        TopologyChunkEvent(
+            event_type="TOPOLOGY_CHUNK",
+            event_id=f"chunk-{profile_id}-{topology_version}",
+            profile_id=profile_id,
+            topology_version=topology_version,
+            chunk_index=0,
+            chunk_count=1,
+            chunk_checksum=sha256_hex(compressed),
+            payload_checksum=checksum,
+            payload=compressed,
+            produced_at=datetime.now(timezone.utc).isoformat(),
+        ),
+        topic="nocpro.topology.v1", partition=0, offset=offset, message_key=profile_id,
+    )
+    await repo.process_kafka_event(
+        TopologyCompleteEvent(
+            event_type="TOPOLOGY_COMPLETE",
+            event_id=f"complete-{profile_id}-{topology_version}",
+            profile_id=profile_id,
+            topology_version=topology_version,
+            source_version=payload["source_version"],
+            chunk_count=1,
+            payload_checksum=checksum,
+            node_count=len(payload["nodes"]),
+            edge_count=len(payload["edges"]),
+            alias_count=len(payload.get("alias_resolution", [])),
+            relation_model="PHYSICAL_ADJACENCY" if profile_id == "IP_NETWORK" else "DIRECTED_SOURCE_RELATIONS",
+            direction_kind="NONE" if profile_id == "IP_NETWORK" else "SOURCE_RELATION",
+            dependency_semantics="UNAVAILABLE" if profile_id == "IP_NETWORK" else "UNVERIFIED",
+            navigation_eligible=True,
+            p2_eligible=False,
+            produced_at=datetime.now(timezone.utc).isoformat(),
+        ),
+        topic="nocpro.topology.v1", partition=0, offset=offset + 1, message_key=profile_id,
+    )
+
+
+def _topology_payload(profile_id: str, topology_version: str, nodes: list[str], edges: list[tuple[str, str]]) -> dict:
+    return {
+        "profile_id": profile_id,
+        "topology_version": topology_version,
+        "source_version": "sha256:33333333333333333333333333333333",
+        "nodes": [
+            {"resource_id": node, "resource_type": "DEVICE", "display_name": node, "source_tables": ["fixture"]}
+            for node in nodes
+        ],
+        "edges": [
+            {
+                "source_id": source,
+                "target_id": target,
+                "relation_type": "ADJACENT_TO" if profile_id == "IP_NETWORK" else "CONNECTS_TO",
+                "direction_kind": "NONE" if profile_id == "IP_NETWORK" else "SOURCE_RELATION",
+                "dependency_semantics": "UNAVAILABLE" if profile_id == "IP_NETWORK" else "UNVERIFIED",
+                "source_table": "fixture",
+                "source_version": "sha256:33333333333333333333333333333333",
+            }
+            for source, target in edges
+        ],
+        "alias_resolution": [],
+    }
+
+
+async def test_analysis_hydration_keeps_intermediary_paths_and_all_service_branches(repo: TopologyRepository):
+    await _materialize_topology(
+        repo,
+        _topology_payload("IP_NETWORK", "ip-path-v1", ["A", "X", "Y", "B"], [("A", "X"), ("X", "Y"), ("Y", "B")]),
+        offset=900,
+    )
+    hydrated_ip = await repo.hydrate_graph_for_analysis("IP_NETWORK", "ip-path-v1", {"A", "B"})
+    assert {(edge["source_resource_id"], edge["target_resource_id"]) for edge in hydrated_ip["edges"]} == {
+        ("A", "X"), ("X", "Y"), ("Y", "B"),
+    }
+
+    await _materialize_topology(
+        repo,
+        _topology_payload(
+            "IT_SERVICES", "it-branches-v1",
+            ["S1", "M1", "H1", "S2", "M2", "H2"],
+            [("S1", "M1"), ("M1", "H1"), ("S2", "M2"), ("M2", "H2")],
+        ),
+        offset=910,
+    )
+    hydrated_it = await repo.hydrate_graph_for_analysis("IT_SERVICES", "it-branches-v1", {"H1", "H2"})
+    assert {(edge["source_resource_id"], edge["target_resource_id"]) for edge in hydrated_it["edges"]} == {
+        ("S1", "M1"), ("M1", "H1"), ("S2", "M2"), ("M2", "H2"),
+    }
+
+
+async def test_subgraph_never_exceeds_node_budget_or_emits_dangling_edges(repo: TopologyRepository):
+    await _materialize_topology(
+        repo,
+        _topology_payload("IP_NETWORK", "ip-budget-v1", ["A", "B", "C", "D"], [("A", "B"), ("A", "C"), ("A", "D")]),
+        offset=920,
+    )
+    result = await repo.get_subgraph("IP_NETWORK", seeds=["A", "B", "C"], max_hops=2, max_nodes=2)
+    node_ids = {node["id"] for node in result["nodes"]}
+    assert len(node_ids) == 2
+    assert all(edge["source"] in node_ids and edge["target"] in node_ids for edge in result["edges"])
+    assert result["requested_seed_count"] == 3
+    assert result["resolved_seed_count"] == 3
+    assert result["retained_seed_count"] == 2
+    assert result["dropped_seed_count"] == 1
+    assert result["truncated"] is True
+    assert "SEED_NODE_LIMIT" in result["truncation_reasons"]
+
+
+async def test_subgraph_supports_four_hops_for_overview_paths(repo: TopologyRepository):
+    await _materialize_topology(
+        repo,
+        _topology_payload(
+            "IP_NETWORK", "ip-four-hop-v1", ["A", "B", "C", "D", "E"],
+            [("A", "B"), ("B", "C"), ("C", "D"), ("D", "E")],
+        ),
+        offset=925,
+    )
+
+    result = await repo.get_subgraph(
+        "IP_NETWORK", seeds=["A"], max_hops=4, max_nodes=20
+    )
+
+    assert result["status"] == "AVAILABLE"
+    assert result["topology_version"] == "ip-four-hop-v1"
+    assert {node["id"] for node in result["nodes"]} == {"A", "B", "C", "D", "E"}
+    assert len(result["edges"]) == 4
+    assert result["truncated"] is False
+
+
+async def test_subgraph_rejects_hops_outside_supported_range(repo: TopologyRepository):
+    with pytest.raises(ValueError, match="max_hops must be between 1 and 4"):
+        await repo.get_subgraph("IP_NETWORK", seeds=["A"], max_hops=5)
+
+
 async def test_topology_repository_chunk_and_barrier_lifecycle(repo: TopologyRepository):
     """Test full assembly of chunk followed by complete barrier into real tables."""
     payload = _make_it_topology()
@@ -383,5 +521,3 @@ async def test_alarm_entity_resolution_persistence(repo: TopologyRepository):
     assert len(fetched_after) == 2
     comp_updated = next(r for r in fetched_after if r.entity_role == "AFFECTED_COMPONENT_CANDIDATE")
     assert comp_updated.confidence == 0.90
-
-

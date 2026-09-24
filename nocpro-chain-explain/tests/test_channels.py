@@ -270,6 +270,34 @@ def test_dep_hop_score_decays_with_distance():
     assert one_hop.positive_score == pytest.approx(0.5)
     assert two_hop.positive_score == pytest.approx(1 / 3)
     assert one_hop.positive_score > two_hop.positive_score
+    assert one_hop.evidence_metadata["topology_path"] == {
+        "nodes": ["R1", "R2"],
+        "hop_count": 1,
+        "relation_types": ["IP_ADJACENCY"],
+        "traversal_semantic": "STRUCTURAL_TOPOLOGY_PATH_NOT_CAUSAL",
+        "direction_policy": "UNDIRECTED",
+    }
+    assert two_hop.evidence_metadata["topology_path"]["nodes"] == ["R1", "R2", "R3"]
+
+
+def test_dep_hop_path_metadata_reports_only_relations_used_by_witness():
+    graph = TopologyGraph(
+        relation_types=frozenset({"IP_ADJACENCY", "UNRELATED_RELATION"}),
+        adjacency={"R1": {"R2"}, "R2": {"R1"}},
+        edge_relation_types={
+            ("R1", "R2"): {"IP_ADJACENCY"},
+            ("R2", "R1"): {"IP_ADJACENCY"},
+        },
+    )
+    value = evaluate_dep_hop_channel(
+        alarm("a1"),
+        alarm("a2"),
+        graph=graph,
+        resolver=ResourceResolver(resolved={"a1": "R1", "a2": "R2"}),
+    )
+
+    assert value.detail == "hop distance 1 over ['IP_ADJACENCY']"
+    assert value.evidence_metadata["topology_path"]["relation_types"] == ["IP_ADJACENCY"]
 
 
 def test_unmapped_alarm_forces_dep_hop_unavailable():
@@ -279,6 +307,7 @@ def test_unmapped_alarm_forces_dep_hop_unavailable():
         alarm("a1"), alarm("a2"), graph=_graph(), resolver=resolver
     )
     assert value.state is EvidenceState.UNAVAILABLE
+    assert value.evidence_metadata is None
     assert "mapping unresolved" in value.detail
 
 

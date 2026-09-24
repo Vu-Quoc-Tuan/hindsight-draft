@@ -108,6 +108,8 @@ def _package(
             "mappings": mappings
             if mappings is not None
             else [_mapping(alarm_id, f"R_{alarm_id}") for alarm_id in members],
+            "p2_eligible": True,
+            "dependency_semantics": "VERIFIED_DEPENDENCY",
         },
     )
 

@@ -83,6 +83,8 @@ def _package(edges: list[dict], resources: dict[str, str]) -> IngestedPackage:
         topology={
             "edges": edges,
             "mappings": [_mapping(alarm_id, resource) for alarm_id, resource in resources.items()],
+            "p2_eligible": True,
+            "dependency_semantics": "VERIFIED_DEPENDENCY",
         },
     )
 

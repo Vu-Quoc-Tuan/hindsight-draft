@@ -49,7 +49,12 @@ def _package(
         alarms=alarms,
         chains={"C1": IngestedChain("C1", "S1", len(members))},
         memberships={"C1": list(members)},
-        topology={"edges": edges, "mappings": mappings},
+        topology={
+            "edges": edges,
+            "mappings": mappings,
+            "p2_eligible": True,
+            "dependency_semantics": "VERIFIED_DEPENDENCY",
+        },
     )
 
 
@@ -216,7 +221,7 @@ def test_whitespace_distinct_source_identities_cannot_be_merged_into_a_witness()
     assert result.reason is TopologyHypothesisReason.COMMON_DOMINATOR_UNAVAILABLE
 
 
-def test_validated_omitted_topology_subtype_uses_the_contract_default():
+def test_omitted_topology_subtype_fails_closed_in_p2():
     payload = {
         "schema_version": "v1",
         "snapshot": {
@@ -268,6 +273,7 @@ def test_validated_omitted_topology_subtype_uses_the_contract_default():
                     "source_id": "topology-source",
                     "source_version": "v2",
                     "source_kind": "REAL_EXPORT_REPLAY",
+                    "provenance_class": "EXTERNAL_OPERATIONAL",
                 }
                 for edge_id, source, target in (
                     ("E1", "ROOT", "CORE"),
@@ -282,10 +288,17 @@ def test_validated_omitted_topology_subtype_uses_the_contract_default():
         },
     }
 
-    result = analyze_common_dominator(load_validated_package(payload), "C1")
+    package = load_validated_package(payload)
+    # P2 capability comes from the trusted runtime topology projection; the
+    # public v1 payload intentionally does not accept these internal fields.
+    package.topology.update({
+        "p2_eligible": True,
+        "dependency_semantics": "VERIFIED_DEPENDENCY",
+    })
+    result = analyze_common_dominator(package, "C1")
 
-    assert result.status is HypothesisStatus.AVAILABLE
-    assert result.provenance_subtype is ProvenanceSubtype.TOPOLOGY_EXTERNAL
+    assert result.status is HypothesisStatus.UNAVAILABLE
+    assert result.reason is TopologyHypothesisReason.DIRECTED_TOPOLOGY_UNAVAILABLE
 
 
 def test_cycle_reachable_from_a_root_has_an_exact_common_dominator():
@@ -459,6 +472,94 @@ def test_dominator_requires_exact_boolean_true_for_directed_edges(
     assert universes == ()
     assert result.status is HypothesisStatus.UNAVAILABLE
     assert result.reason is TopologyHypothesisReason.DIRECTED_TOPOLOGY_UNAVAILABLE
+
+
+@pytest.mark.parametrize(
+    ("p2_eligible", "dependency_semantics"),
+    [
+        (False, "VERIFIED_DEPENDENCY"),
+        (True, "UNAVAILABLE"),
+        (True, "UNVERIFIED"),
+        (True, "UNSPECIFIED_BUT_PRESENT"),
+        ("true", "VERIFIED_DEPENDENCY"),
+    ],
+)
+def test_directed_universe_requires_explicit_p2_semantics(
+    package: IngestedPackage,
+    p2_eligible: object,
+    dependency_semantics: str,
+):
+    altered = replace(
+        package,
+        topology={
+            **package.topology,
+            "p2_eligible": p2_eligible,
+            "dependency_semantics": dependency_semantics,
+        },
+    )
+
+    assert build_directed_universes(altered) == ()
+
+
+def test_navigation_edges_cannot_become_p2_by_inferred_direction(package: IngestedPackage):
+    edges = [
+        _edge("ROOT", "LEAF_A", relation_type="IP_ADJACENCY", directed=False),
+        _edge("ROOT", "LEAF_B", relation_type="IP_ADJACENCY", directed=False),
+    ]
+    altered = replace(
+        package,
+        topology={
+            **package.topology,
+            "edges": edges,
+            "assume_directed": True,
+            "dependency_semantics": "VERIFIED_DEPENDENCY",
+        },
+    )
+
+    assert build_directed_universes(altered) == ()
+
+
+def test_edge_level_unavailable_semantics_overrides_verified_topology(package: IngestedPackage):
+    edges = [
+        {**edge, "dependency_semantics": "UNAVAILABLE"}
+        for edge in package.topology["edges"]
+    ]
+    altered = replace(package, topology={**package.topology, "edges": edges})
+
+    assert build_directed_universes(altered) == ()
+
+
+@pytest.mark.parametrize(
+    "relation_type",
+    [
+        "SERVICE_HAS_MODULE",
+        "MODULE_HAS_INSTANCE",
+        "MODULE_LINKS_DATABASE",
+        "DATABASE_LINKS_SERVICE",
+        "DATABASE_LINKS_INSTANCE",
+        "INSTANCE_LINKS_STORAGE",
+    ],
+)
+def test_explicit_verified_it_relations_remain_eligible(
+    package: IngestedPackage, relation_type: str
+):
+    edge = _edge("resource-a", "resource-b", relation_type=relation_type)
+    altered = replace(package, topology={**package.topology, "edges": [edge]})
+
+    universes = build_directed_universes(altered)
+
+    assert len(universes) == 1
+    assert universes[0].relation_type == relation_type
+
+
+def test_missing_provenance_does_not_default_to_external_operational(package: IngestedPackage):
+    edges = [
+        {key: value for key, value in edge.items() if key != "provenance_class"}
+        for edge in package.topology["edges"]
+    ]
+    altered = replace(package, topology={**package.topology, "edges": edges})
+
+    assert build_directed_universes(altered) == ()
 
 
 def test_directed_topology_reason_wins_when_mapping_is_also_unavailable(

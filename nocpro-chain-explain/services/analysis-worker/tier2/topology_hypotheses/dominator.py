@@ -19,10 +19,12 @@ from .models import (
     HypothesisStatus,
     TopologyHypothesisReason,
 )
-from .mapping import resolve_p2_mappings
+from libs.contracts.topology_mapping import resolve_resource_ids
 
 
-IT_RELATION_TYPES = frozenset({
+ELIGIBLE_RELATION_TYPES = frozenset({
+    "LOGICAL_DEPENDENCY",
+    "SERVICE_DEPENDS_ON",
     "SERVICE_HAS_MODULE",
     "MODULE_HAS_INSTANCE",
     "MODULE_LINKS_DATABASE",
@@ -30,60 +32,35 @@ IT_RELATION_TYPES = frozenset({
     "DATABASE_LINKS_INSTANCE",
     "INSTANCE_LINKS_STORAGE",
 })
-ELIGIBLE_RELATION_TYPES = (
-    frozenset({"LOGICAL_DEPENDENCY", "SERVICE_DEPENDS_ON", "IP_ADJACENCY"})
-    | IT_RELATION_TYPES
-)
-
-
-def _ip_device_tier(resource_id: str) -> int:
-    """Return device hierarchy tier in telecom IP network (lower number = higher tier)."""
-    res = resource_id.upper()
-    if any(k in res for k in ("SRT", "CORE", "CR", "BB")):
-        return 1
-    if any(k in res for k in ("AGG", "PE", "BRAS", "BR")):
-        return 2
-    if any(k in res for k in ("CSW", "DSW", "MSAN", "OLT", "BTS", "NODEB", "ENODEB", "SW", "ACCESS")):
-        return 3
-    return 4
 
 
 def _eligible_directed_edges(package: IngestedPackage) -> tuple[dict, ...]:
-    """Return exact directed edges with a supported dependency semantic."""
-    assume_directed = bool(
-        package.topology.get("assume_directed")
-        or package.topology.get("direction_mode") == "DIRECTED"
-    )
+    """Return only explicitly P2-eligible, semantically directed edges."""
+    topology = package.topology
+    semantics = topology.get("dependency_semantics")
+    if (
+        topology.get("p2_eligible") is not True
+        or not isinstance(semantics, str)
+        or semantics.strip().upper() != "VERIFIED_DEPENDENCY"
+    ):
+        return ()
     eligible = []
-    for edge in package.topology.get("edges") or ():
+    for edge in topology.get("edges") or ():
         rel = edge.get("relation_type")
         if rel not in ELIGIBLE_RELATION_TYPES:
+            continue
+        edge_semantics = edge.get("dependency_semantics", semantics)
+        if (
+            edge.get("p2_eligible", True) is not True
+            or not isinstance(edge_semantics, str)
+            or edge_semantics.strip().upper() != "VERIFIED_DEPENDENCY"
+        ):
             continue
         src = edge.get("source_resource_id")
         tgt = edge.get("target_resource_id")
         if not src or not tgt:
             continue
-        is_directed = edge.get("directed") is True
-        if not is_directed and assume_directed:
-            if rel == "IP_ADJACENCY":
-                tier_s = _ip_device_tier(src)
-                tier_t = _ip_device_tier(tgt)
-                if tier_s <= tier_t:
-                    eligible.append({**edge, "directed": True})
-                else:
-                    eligible.append(
-                        {
-                            **edge,
-                            "source_resource_id": tgt,
-                            "target_resource_id": src,
-                            "directed": True,
-                        }
-                    )
-                continue
-            elif rel in IT_RELATION_TYPES:
-                eligible.append({**edge, "directed": True})
-                continue
-        if is_directed:
+        if edge.get("directed") is True:
             eligible.append(edge)
     return tuple(eligible)
 
@@ -95,17 +72,14 @@ def _provenance_signature(
     signatures: set[tuple[ProvenanceClass, ProvenanceSubtype | None, str | None]] = set()
     for edge in edges:
         try:
-            provenance_class = ProvenanceClass(
-                edge.get("provenance_class", ProvenanceClass.EXTERNAL_OPERATIONAL.value)
-            )
-            raw_subtype = (
-                edge["provenance_subtype"]
-                if "provenance_subtype" in edge
-                else ProvenanceSubtype.TOPOLOGY_EXTERNAL.value
-            )
-            provenance_subtype = (
-                ProvenanceSubtype(raw_subtype) if raw_subtype is not None else None
-            )
+            raw_class = edge.get("provenance_class")
+            raw_subtype = edge.get("provenance_subtype")
+            if not isinstance(raw_class, str) or not raw_class:
+                return None
+            if not isinstance(raw_subtype, str) or not raw_subtype:
+                return None
+            provenance_class = ProvenanceClass(raw_class)
+            provenance_subtype = ProvenanceSubtype(raw_subtype)
         except ValueError:
             return None
         signatures.add((provenance_class, provenance_subtype, edge.get("source_kind")))
@@ -116,8 +90,8 @@ def build_directed_universes(package: IngestedPackage) -> tuple[DirectedUniverse
     """Build isolated eligible directed universes from canonical topology edges.
 
     The grouping key intentionally includes both the source identity/version and
-    relation type.  In particular, this function never infers direction and
-    never accepts ``IP_ADJACENCY``.
+    relation type. This function never infers direction or provenance and only
+    accepts topology explicitly marked P2-eligible with dependency semantics.
     """
     grouped: dict[tuple[str, str, str | None], list[dict]] = {}
     for edge in _eligible_directed_edges(package):
@@ -265,7 +239,7 @@ def analyze_common_dominator(package: IngestedPackage, chain_id: str) -> Dominat
     if not universes:
         return _unavailable(TopologyHypothesisReason.DIRECTED_TOPOLOGY_UNAVAILABLE)
 
-    mappings = resolve_p2_mappings(package, member_alarm_ids)
+    mappings = resolve_resource_ids(package.topology.get("mappings") or (), member_alarm_ids, require_all=True)
     if mappings is None:
         return _unavailable(TopologyHypothesisReason.RESOURCE_MAPPING_UNAVAILABLE)
     mapped_resources = tuple(sorted(set(mappings.values())))

@@ -7,7 +7,7 @@ from libs.contracts import IngestedAlarm, IngestedChain, IngestedPackage, Ingest
 from tier2.topology_hypotheses import HypothesisStatus, analyze_topology_hypotheses
 
 
-def test_ip_topology_with_hierarchy_direction_enables_p2_hypotheses():
+def test_ip_navigation_adjacency_does_not_enable_p2_hypotheses():
     package = IngestedPackage(
         snapshot=IngestedSnapshot(
             snapshot_id="s_ip",
@@ -26,6 +26,8 @@ def test_ip_topology_with_hierarchy_direction_enables_p2_hypotheses():
         memberships={"C1": ["a1", "a2"]},
         topology={
             "assume_directed": True,
+            "p2_eligible": False,
+            "dependency_semantics": "UNAVAILABLE",
             "edges": [
                 {
                     "edge_id": "e1",
@@ -70,18 +72,12 @@ def test_ip_topology_with_hierarchy_direction_enables_p2_hypotheses():
     cfg = load_analysis_config("config/thresholds/calibrated.yaml")
     result = analyze_topology_hypotheses(package, "C1", cfg)
 
-    assert result.dominator.status is HypothesisStatus.AVAILABLE
-    assert result.dominator.witness_resource_id == "DNG0527SRT01"
-    assert result.dominator.covered_resource_ids == ("DNG0047AGG01", "DNG0048AGG02")
-
-    assert result.propagation.status is HypothesisStatus.AVAILABLE
-    assert len(result.propagation.node_scores) == 2
-
-    assert result.dependency_scope.status is HypothesisStatus.AVAILABLE
-    assert result.dependency_scope.observed_coverage == 1.0
+    assert result.dominator.status is HypothesisStatus.UNAVAILABLE
+    assert result.propagation.status is HypothesisStatus.UNAVAILABLE
+    assert result.dependency_scope.status is HypothesisStatus.UNAVAILABLE
 
 
-def test_it_topology_hierarchical_relations_enable_p2_hypotheses():
+def test_it_source_relations_without_verified_semantics_stay_unavailable():
     package = IngestedPackage(
         snapshot=IngestedSnapshot(
             snapshot_id="s_it",
@@ -100,6 +96,8 @@ def test_it_topology_hierarchical_relations_enable_p2_hypotheses():
         memberships={"C1": ["a1", "a2"]},
         topology={
             "assume_directed": True,
+            "p2_eligible": False,
+            "dependency_semantics": "UNVERIFIED",
             "edges": [
                 {
                     "edge_id": "e1",
@@ -155,13 +153,9 @@ def test_it_topology_hierarchical_relations_enable_p2_hypotheses():
     cfg = load_analysis_config("config/thresholds/calibrated.yaml")
     result = analyze_topology_hypotheses(package, "C1", cfg)
 
-    assert result.dominator.status is HypothesisStatus.AVAILABLE
-    assert result.dominator.witness_resource_id == "it:module:payments"
-    assert result.dominator.covered_resource_ids == ("it:instance:srv1", "it:instance:srv2")
-
-    assert result.propagation.status is HypothesisStatus.AVAILABLE
-    assert result.dependency_scope.status is HypothesisStatus.AVAILABLE
-    assert result.dependency_scope.observed_coverage == 1.0
+    assert result.dominator.status is HypothesisStatus.UNAVAILABLE
+    assert result.propagation.status is HypothesisStatus.UNAVAILABLE
+    assert result.dependency_scope.status is HypothesisStatus.UNAVAILABLE
 
 
 def test_fail_closed_boundary_preserved_without_directed_flag():

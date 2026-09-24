@@ -25,6 +25,8 @@ For each valid balanced candidate S, compute conductance on `G*_audit`:
 
 with balance constraints.
 
+If no candidate yields a feasible cut with defined conductance, report the audit as `UNAVAILABLE`; do not report `NO_LOW_CONDUCTANCE_CUT`, which means at least one cut was actually scored and none crossed the calibrated threshold.
+
 `epsilon_Phi` SHALL use conditional calibration with fallback: detailed bin if enough samples → coarser size bin → global weak baseline with low-confidence label.
 
 For small chains where the balance rule is impossible, the result is **SKIPPED/NOT_APPLICABLE**, not “stable”.

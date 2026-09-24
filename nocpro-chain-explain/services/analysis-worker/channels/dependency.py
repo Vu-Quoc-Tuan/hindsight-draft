@@ -19,6 +19,8 @@ from collections import deque
 from dataclasses import dataclass, field
 
 from libs.contracts import IngestedAlarm, IngestedPackage
+from libs.contracts.topology_mapping import resolve_resource_ids
+from libs.contracts.topology_paths import shortest_path as find_shortest_path
 from libs.provenance import ProvenanceClass, ProvenanceSubtype
 from topology_source import (
     TOPOLOGY_SOURCE_VERSION_MISSING,
@@ -50,6 +52,8 @@ class TopologyGraph:
     relation_types: frozenset[str]
     adjacency: dict[str, set[str]] = field(default_factory=dict)
     directed: bool = False
+    edge_relation_types: dict[tuple[str, str], set[str]] = field(default_factory=dict)
+    directed_edges: set[tuple[str, str]] = field(default_factory=set)
     #: EXTERNAL_OPERATIONAL for inventory/NMS exports, POST_HOC if alarm-derived.
     provenance_class: ProvenanceClass = ProvenanceClass.EXTERNAL_OPERATIONAL
     provenance_subtype: ProvenanceSubtype | None = ProvenanceSubtype.TOPOLOGY_EXTERNAL
@@ -80,24 +84,14 @@ class TopologyGraph:
 
     def hop_distance(self, source: str, target: str, *, max_depth: int) -> int | None:
         """BFS distance, or ``None`` when unreachable within ``max_depth``."""
-        if source == target:
-            return 0
-        if source not in self.adjacency or target not in self.adjacency:
-            return None
+        path = self.path(source, target, max_hops=max_depth)
+        return len(path) - 1 if path is not None else None
 
-        seen = {source}
-        queue: deque[tuple[str, int]] = deque([(source, 0)])
-        while queue:
-            node, depth = queue.popleft()
-            if depth >= max_depth:
-                continue
-            for neighbour in self.neighbours(node):
-                if neighbour == target:
-                    return depth + 1
-                if neighbour not in seen:
-                    seen.add(neighbour)
-                    queue.append((neighbour, depth + 1))
-        return None
+    def path(self, source: str, target: str, *, max_hops: int) -> list[str] | None:
+        """Return the same bounded witness used to derive the hop distance."""
+        return find_shortest_path(
+            self.adjacency, source, target, max_hops=max_hops
+        )
 
 
 def build_topology_graph(
@@ -172,12 +166,16 @@ def build_topology_graph(
     for edge in eligible_edges:
         source = edge["source_resource_id"]
         target = edge["target_resource_id"]
+        relation = str(edge["relation_type"])
         graph.adjacency.setdefault(source, set()).add(target)
+        graph.edge_relation_types.setdefault((source, target), set()).add(relation)
         if edge.get("directed"):
             directed_seen = True
+            graph.directed_edges.add((source, target))
             graph.adjacency.setdefault(target, set())
         else:
             graph.adjacency.setdefault(target, set()).add(source)
+            graph.edge_relation_types.setdefault((target, source), set()).add(relation)
 
     graph.directed = directed_seen
     return graph
@@ -187,24 +185,15 @@ def build_topology_graph(
 class ResourceResolver:
     """alarm_id -> resource_id, honouring ingested mapping status.
 
-    Only EXACT and VERIFIED_ALIAS mappings resolve. UNMAPPED and AMBIGUOUS do
-    not, which is what forces ``Dep_hop`` to ⊥.
+    Only unique, recognized mapping claims resolve. Conflicting, UNMAPPED,
+    and AMBIGUOUS claims force ``Dep_hop`` to ⊥.
     """
 
     resolved: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_package(cls, package: IngestedPackage) -> ResourceResolver:
-        resolved: dict[str, str] = {}
-        for mapping in package.topology.get("mappings") or ():
-            status = mapping.get("mapping_status")
-            resource_id = mapping.get("resource_id")
-            alarm_id = mapping.get("alarm_id")
-            if not alarm_id or not resource_id:
-                continue
-            if status in ("EXACT", "VERIFIED_ALIAS"):
-                resolved[alarm_id] = resource_id
-        return cls(resolved=resolved)
+        return cls(resolved=resolve_resource_ids(package.topology.get("mappings") or ()) or {})
 
     def resource_of(self, alarm_id: str) -> str | None:
         return self.resolved.get(alarm_id)
@@ -253,10 +242,23 @@ def evaluate_dep_hop_channel(
         # The DEHL01/DEHT01 case: mapping failed, so no topology evidence.
         return fail("alarm->resource mapping unresolved (UNMAPPED/AMBIGUOUS)")
 
-    distance = graph.hop_distance(resource_a, resource_b, max_depth=d_max)
-    if distance is None:
+    path = graph.path(resource_a, resource_b, max_hops=d_max)
+    if path is None:
         # Reachability beyond D_max is genuinely unknown here, not "far".
         return fail(f"no path within D_max={d_max}")
+    distance = len(path) - 1
+    path_relation_types = {
+        relation
+        for source, target in zip(path, path[1:])
+        for relation in graph.edge_relation_types.get((source, target), ())
+    }
+    if not path_relation_types:
+        # Compatibility for small in-memory graphs created without edge metadata.
+        path_relation_types = set(graph.relation_types)
+    path_uses_directed_edge = any(
+        (source, target) in graph.directed_edges
+        for source, target in zip(path, path[1:])
+    )
 
     return ChannelValue(
         channel_id=CHANNEL_ID,
@@ -266,10 +268,22 @@ def evaluate_dep_hop_channel(
         availability=True,
         positive_score=1.0 / (1.0 + distance),
         threshold=threshold,
-        detail=f"hop distance {distance} over {sorted(graph.relation_types)}",
+        detail=f"hop distance {distance} over {sorted(path_relation_types)}",
         source_ref=graph.source_ref,
         source_id=graph.source_id,
         source_version=graph.source_version,
         scenario_id=graph.scenario_id,
         generator_version=graph.generator_version,
+        evidence_metadata={
+            "topology_path": {
+                "nodes": path,
+                "hop_count": distance,
+                "relation_types": sorted(path_relation_types),
+                "traversal_semantic": "STRUCTURAL_TOPOLOGY_PATH_NOT_CAUSAL",
+                "direction_policy": (
+                    "SOURCE_EDGE_DIRECTION_PRESERVED"
+                    if path_uses_directed_edge else "UNDIRECTED"
+                ),
+            }
+        },
     )
