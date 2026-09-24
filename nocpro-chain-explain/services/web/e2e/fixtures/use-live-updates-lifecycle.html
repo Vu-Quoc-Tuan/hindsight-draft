@@ -1,0 +1,93 @@
+<!doctype html>
+<html>
+  <head><meta charset="utf-8"><title>useLiveUpdates lifecycle fixture</title></head>
+  <body>
+    <div id="root"></div>
+    <script type="module">
+      import React from 'react'
+      import { createRoot } from 'react-dom/client'
+      import { useLiveUpdates } from '/src/useLiveUpdates.ts'
+
+      const nativeSetInterval = window.setInterval.bind(window)
+      const nativeClearInterval = window.clearInterval.bind(window)
+      const nativeSetTimeout = window.setTimeout.bind(window)
+      const nativeClearTimeout = window.clearTimeout.bind(window)
+      const activeIntervals = new Set()
+      const activeTimeouts = new Set()
+      const sources = []
+
+      window.setInterval = (callback, delay, ...args) => {
+        const id = nativeSetInterval(callback, delay, ...args)
+        activeIntervals.add(id)
+        return id
+      }
+      window.clearInterval = id => {
+        activeIntervals.delete(id)
+        nativeClearInterval(id)
+      }
+      window.setTimeout = (callback, delay, ...args) => {
+        let id
+        id = nativeSetTimeout(() => {
+          activeTimeouts.delete(id)
+          callback(...args)
+        }, delay)
+        activeTimeouts.add(id)
+        return id
+      }
+      window.clearTimeout = id => {
+        activeTimeouts.delete(id)
+        nativeClearTimeout(id)
+      }
+
+      class FakeEventSource extends EventTarget {
+        static CONNECTING = 0
+        static OPEN = 1
+        static CLOSED = 2
+        readyState = FakeEventSource.CONNECTING
+        onopen = null
+        onerror = null
+        closed = false
+
+        constructor(url) {
+          super()
+          this.url = url
+          sources.push(this)
+          queueMicrotask(() => {
+            if (this.closed) return
+            this.readyState = FakeEventSource.OPEN
+            this.onopen?.(new Event('open'))
+          })
+        }
+
+        close() {
+          this.closed = true
+          this.readyState = FakeEventSource.CLOSED
+        }
+      }
+      window.EventSource = FakeEventSource
+
+      function HookProbe() {
+        useLiveUpdates(() => {})
+        return React.createElement('output', { id: 'mounted' }, 'mounted')
+      }
+
+      const root = createRoot(document.getElementById('root'))
+      root.render(React.createElement(React.StrictMode, null, React.createElement(HookProbe)))
+
+      window.lifecycleHarness = {
+        unmount() {
+          root.unmount()
+        },
+        snapshot() {
+          return {
+            createdSources: sources.length,
+            openSources: sources.filter(source => source.readyState === FakeEventSource.OPEN && !source.closed).length,
+            closedSources: sources.filter(source => source.closed).length,
+            activeIntervals: activeIntervals.size,
+            activeTimeouts: activeTimeouts.size,
+          }
+        },
+      }
+    </script>
+  </body>
+</html>
