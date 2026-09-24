@@ -302,6 +302,15 @@ def test_chain_quality_assessment_rates_complete_cohesive_evidence_five_stars():
     assert assessment["stars"] == 5
     assert assessment["label"] == "Rất vững"
     assert assessment["method"] == "HEURISTIC_V1"
+    assert assessment["score"] == 1.0
+    assert assessment["dimensions"] == [
+        {"name": "role_coverage", "value": 1.0, "weight": 0.15},
+        {"name": "member_consistency", "value": 1.0, "weight": 0.20},
+        {"name": "device_mapping", "value": 1.0, "weight": 0.15},
+        {"name": "topology_connectivity", "value": 1.0, "weight": 0.15},
+        {"name": "structural_audit", "value": 1.0, "weight": 0.25},
+        {"name": "over_merge", "value": 1.0, "weight": 0.10},
+    ]
 
 
 def test_chain_quality_assessment_does_not_turn_missing_evidence_into_one_star():
@@ -325,6 +334,8 @@ def test_chain_quality_assessment_does_not_turn_missing_evidence_into_one_star()
     assert assessment["status"] == "UNAVAILABLE"
     assert assessment["stars"] is None
     assert assessment["label"] == "Chưa đủ dữ liệu để chấm"
+    assert assessment["score"] is None
+    assert assessment["dimensions"] == []
 
 
 def test_four_core_members_without_mapping_or_independent_evidence_get_no_stars():
@@ -395,6 +406,11 @@ def test_chain_quality_assessment_caps_split_and_over_merge_signals():
     assert assessment["status"] == "EVALUATED"
     assert assessment["stars"] <= 2
     assert assessment["label"] == "Có dấu hiệu nên tách"
+    assert assessment["score"] == pytest.approx(0.675)
+    assert assessment["dimensions"][-2:] == [
+        {"name": "structural_audit", "value": 0.0, "weight": 0.25},
+        {"name": "over_merge", "value": 0.25, "weight": 0.10},
+    ]
 
 
 def test_chain_quality_assessment_does_not_rate_before_counterfactual_completes():

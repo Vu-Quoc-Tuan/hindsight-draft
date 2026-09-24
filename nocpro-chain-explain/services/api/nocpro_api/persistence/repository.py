@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import math
 from dataclasses import replace
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -52,6 +53,7 @@ from .change_journal import append_change_if_enabled
 
 
 from tier2.audit_artifact import (
+    AUDIT_ANALYSIS_VERSION,
     ReviewAuditArtifact,
     audit_artifact_from_dict,
     audit_artifact_to_dict,
@@ -1103,6 +1105,29 @@ class SnapshotRepository:
             return None
         if assessment.get("status") not in {"EVALUATED", "UNAVAILABLE"}:
             return None
+        dimensions = assessment.get("dimensions")
+        score = assessment.get("score")
+        if assessment["status"] == "EVALUATED":
+            if (
+                type(score) not in {int, float} or not math.isfinite(score)
+                or not 0.0 <= score <= 1.0
+                or not isinstance(dimensions, list) or not dimensions
+                or len(dimensions) != assessment.get("available_dimension_count")
+                or any(
+                    not isinstance(item, dict)
+                    or not isinstance(item.get("name"), str)
+                    or type(item.get("value")) not in {int, float}
+                    or not math.isfinite(item["value"])
+                    or not 0.0 <= item["value"] <= 1.0
+                    or type(item.get("weight")) not in {int, float}
+                    or not math.isfinite(item["weight"])
+                    or item["weight"] <= 0
+                    for item in dimensions
+                )
+            ):
+                return None
+        elif score is not None or dimensions != []:
+            return None
         adapted = analysis_identity_from_projection(projection)
         if not adapted.available or adapted.identity is None:
             return None
@@ -1174,6 +1199,79 @@ class SnapshotRepository:
         }
         if _canonical_sha256(fingerprint_payload) != identity.input_fingerprint:
             return None
+        audit_coverage = assessment.get("evidence_coverage", {}).get("audit")
+        audit_used = (
+            isinstance(audit_coverage, dict) and audit_coverage.get("complete") is True
+        ) or (
+            isinstance(dimensions, list) and any(
+                isinstance(item, dict) and item.get("name") in {"structural_audit", "over_merge"}
+                for item in dimensions
+            )
+        )
+        audit_ref = payload.get("audit_artifact_ref")
+        audit_id = None
+        audit_fingerprint = None
+        if audit_ref is None:
+            if audit_used:
+                return None
+        else:
+            if not isinstance(audit_ref, dict):
+                return None
+            audit_id = audit_ref.get("artifact_id")
+            audit_fingerprint = audit_ref.get("artifact_fingerprint")
+            membership_fingerprint = payload.get("chain_membership_fingerprint")
+            if not all(
+                isinstance(value, str) and value
+                for value in (audit_id, audit_fingerprint, membership_fingerprint)
+            ):
+                return None
+            audit_row = await session.get(AuditArtifactRecord, audit_id)
+            if audit_row is None:
+                return None
+            try:
+                audit = audit_artifact_from_dict(audit_row.payload)
+            except (AttributeError, KeyError, TypeError, ValueError, IndexError):
+                return None
+            membership_coverage = assessment["evidence_coverage"].get("membership")
+            member_total = (
+                membership_coverage.get("total")
+                if isinstance(membership_coverage, dict) else None
+            )
+            if (
+                audit_row.artifact_id != audit_id
+                or audit_row.artifact_fingerprint != audit_fingerprint
+                or audit.artifact_id != audit_id
+                or audit.artifact_fingerprint != audit_fingerprint
+                or audit_row.artifact_version != audit.artifact_version
+                or audit_row.status != "AVAILABLE" or audit_row.mode != "EXACT"
+                or audit_row.snapshot_id != identity.snapshot_id
+                or audit_row.snapshot_version != identity.snapshot_version
+                or audit_row.chain_id != identity.chain_id
+                or audit_row.chain_fingerprint != membership_fingerprint
+                or audit_row.analysis_version != AUDIT_ANALYSIS_VERSION
+                or audit_row.analysis_config_version != identity.analysis_config_version
+                or audit.snapshot_id != audit_row.snapshot_id
+                or audit.snapshot_version != audit_row.snapshot_version
+                or audit.chain_id != audit_row.chain_id
+                or audit.chain_fingerprint != audit_row.chain_fingerprint
+                or audit.analysis_version != audit_row.analysis_version
+                or audit.analysis_config_version != audit_row.analysis_config_version
+                or audit.topology_version != identity.topology_version
+                or audit.status != audit_row.status or audit.mode != audit_row.mode
+                or audit.chain_size != member_total
+            ):
+                return None
+            if audit_used and (
+                audit.verdict not in {"NO_LOW_CONDUCTANCE_CUT", "CANDIDATE_SPLIT"}
+                or not isinstance(audit_coverage, dict)
+                or audit_coverage.get("status") != "EVALUATED"
+                or audit_coverage.get("complete") is not True
+                or any(
+                    item["value"] != (1.0 if audit.verdict == "NO_LOW_CONDUCTANCE_CUT" else 0.0)
+                    for item in dimensions if item["name"] == "structural_audit"
+                )
+            ):
+                return None
         source_refs = {
             "quality_input_fingerprint": identity.input_fingerprint,
             "review_job_id": job_id,
@@ -1181,6 +1279,8 @@ class SnapshotRepository:
             "tier1b_artifact_fingerprint": review_identity.identity.input_fingerprint,
             "deep_dive_job_id": deep_id,
             "deep_dive_cache_fingerprint": deep_fingerprint,
+            "audit_artifact_id": audit_id,
+            "audit_artifact_fingerprint": audit_fingerprint,
         }
         identity_payload = identity.to_payload()
         return {

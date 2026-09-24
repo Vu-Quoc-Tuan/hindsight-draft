@@ -947,6 +947,8 @@ def build_chain_quality_assessment(
         return {
             **common,
             "status": "NOT_APPLICABLE",
+            "score": None,
+            "dimensions": [],
             "stars": None,
             "label": "Không áp dụng",
             "reasons": [reason_text[code] for code in readiness.missing_reasons],
@@ -956,6 +958,8 @@ def build_chain_quality_assessment(
         return {
             **common,
             "status": "UNAVAILABLE",
+            "score": None,
+            "dimensions": [],
             "stars": None,
             "label": "Chưa đủ dữ liệu để chấm",
             "reasons": [reason_text.get(code, code) for code in readiness.missing_reasons],
@@ -1054,6 +1058,13 @@ def build_chain_quality_assessment(
         **common,
         "method": method,
         "status": "EVALUATED",
+        # Preserve the exact inputs to the weighted score before star caps and
+        # display formatting; the persisted assessment is the receipt fact.
+        "score": score,
+        "dimensions": [
+            {"name": name, "value": value, "weight": weight}
+            for name, value, weight in dimensions
+        ],
         "stars": stars,
         "label": labels[stars],
         "reasons": list(dict.fromkeys([*readiness_notices, *reasons]))[:3],

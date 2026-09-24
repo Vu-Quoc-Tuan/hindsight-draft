@@ -825,6 +825,8 @@ class Workspace:
         if audit_artifact is None and self.repository is not None:
             audit_lookup = await self.latest_audit_visualization(chain_id)
             audit_artifact = audit_lookup.audit_artifact
+        if audit_artifact is not None:
+            await self.flush_audit_persistence()
         # Repository-backed review jobs already contain the public JSON
         # projection.  In-memory jobs still expose the immutable domain
         # result, so project only that shape instead of attempting to treat a
@@ -1016,6 +1018,16 @@ class Workspace:
                 ),
                 "assessment": assessment,
                 "overview_projection": projection_payload,
+                "chain_membership_fingerprint": chain_membership_fingerprint(
+                    package.members_of(chain_id)
+                ),
+                "audit_artifact_ref": (
+                    {
+                        "artifact_id": audit_artifact.artifact_id,
+                        "artifact_fingerprint": audit_artifact.artifact_fingerprint,
+                    }
+                    if isinstance(audit_artifact, ReviewAuditArtifact) else None
+                ),
             }
         )
 

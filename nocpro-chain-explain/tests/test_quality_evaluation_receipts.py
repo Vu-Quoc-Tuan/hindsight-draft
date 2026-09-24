@@ -8,18 +8,20 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from nocpro_api.cohesion_advisor import build_chain_quality_assessment
 from nocpro_api.persistence.repository import _canonical_sha256, _receipt_revision, SnapshotRepository
 
 
 def _assessment() -> dict:
-    return {
-        "method": "HEURISTIC_V1", "status": "EVALUATED", "readiness": "READY",
-        "readiness_policy_version": "quality-readiness-v1", "reason_codes": [],
-        "evidence_coverage": {"membership": {"ratio": 0.82531}},
-        "dimensions": [{"name": "role_coverage", "score": 0.82531}],
-        "score": 0.82531, "stars": 4, "label": "Khá vững",
-        "available_dimension_count": 1,
-    }
+    return build_chain_quality_assessment(
+        alarm_count=3, role_counts={"CORE": 2, "WEAK": 1},
+        mapped_alarm_count=3, mapped_device_count=3, total_device_count=3,
+        topology_status="AVAILABLE", connected_pair_count=2, pair_total=3,
+        evaluated_pair_count=3, audit_status="NOT_EVALUATED", audit_verdict=None,
+        over_merge_strength=None, recommendation_count=0,
+        recommendation_status="NO_CLEAR_ALTERNATIVE",
+        recommendation_evaluation_completed=True,
+    )
 
 
 def test_revision_is_canonical_and_excludes_publication_metadata():
@@ -92,9 +94,21 @@ def test_verified_receipt_requires_exact_source_and_preserves_precision():
         repository = SnapshotRepository(AsyncMock())
         receipt = await repository._verified_quality_receipt_values(session, payload)
         assert receipt is not None
-        assert receipt["assessment"]["score"] == 0.82531
+        assert receipt["assessment"]["score"] == pytest.approx((0.15 + 0.2 * (2 / 3) + 0.15 + 0.15 * (2 / 3)) / 0.65)
+        assert receipt["assessment"]["dimensions"][1] == {
+            "name": "member_consistency", "value": 1.0 - (1 / 3), "weight": 0.20,
+        }
+        assert receipt["source_artifact_refs"]["audit_artifact_id"] is None
+        assert receipt["source_artifact_refs"]["audit_artifact_fingerprint"] is None
         assert receipt["identity_digest"] == _canonical_sha256(identity)
         assert receipt["artifact_revision"] == _receipt_revision(receipt["assessment"], receipt["source_artifact_refs"])
+        for incomplete in (
+            {"score": None}, {"dimensions": []},
+            {"score": float("nan")},
+        ):
+            assert await repository._verified_quality_receipt_values(
+                session, {**payload, "assessment": {**payload["assessment"], **incomplete}}
+            ) is None
 
         mismatched = deepcopy(payload)
         mismatched["overview_projection"]["review_artifact_revision"]["fingerprint"] = "c" * 64
@@ -107,6 +121,97 @@ def test_verified_receipt_requires_exact_source_and_preserves_precision():
         session.get.return_value = None
         assert await repository._verified_quality_receipt_values(session, payload) is None
 
+        from audit import AuditVerdict, StructuralAuditResult
+        from tier2.audit_artifact import (
+            AUDIT_ANALYSIS_VERSION, audit_artifact_to_dict,
+            build_review_audit_artifact, chain_membership_fingerprint,
+        )
+        from nocpro_api.persistence.models import AuditArtifactRecord
+
+        members = ("a1", "a2", "a3")
+        artifact = build_review_audit_artifact(
+            snapshot_id="s1", snapshot_version="v1", chain_id="c1",
+            members=members,
+            structural_audit=StructuralAuditResult(
+                chain_id="c1", verdict=AuditVerdict.NO_LOW_CONDUCTANCE_CUT,
+                best_cut=None, scored_candidates=(), epsilon=None, reason="exact",
+            ),
+            analysis_version=AUDIT_ANALYSIS_VERSION,
+            analysis_config_version="cfg-1", topology_version="topo-1",
+        )
+        audit_row = AuditArtifactRecord(
+            artifact_id=artifact.artifact_id,
+            artifact_version=artifact.artifact_version,
+            artifact_fingerprint=artifact.artifact_fingerprint,
+            snapshot_id="s1", snapshot_version="v1", chain_id="c1",
+            chain_fingerprint=artifact.chain_fingerprint,
+            analysis_version=AUDIT_ANALYSIS_VERSION,
+            analysis_config_version="cfg-1", status="AVAILABLE", mode="EXACT",
+            payload=audit_artifact_to_dict(artifact),
+        )
+        audit_assessment = build_chain_quality_assessment(
+            alarm_count=3, role_counts={"CORE": 3},
+            mapped_alarm_count=0, mapped_device_count=0, total_device_count=3,
+            topology_status="UNAVAILABLE", connected_pair_count=0, pair_total=0,
+            evaluated_pair_count=0, audit_status="EVALUATED",
+            audit_verdict="NO_LOW_CONDUCTANCE_CUT", over_merge_strength="NONE",
+            recommendation_count=0, recommendation_status="NO_CLEAR_ALTERNATIVE",
+            recommendation_evaluation_completed=True,
+        )
+        audit_payload = {
+            **payload, "assessment": audit_assessment,
+            "chain_membership_fingerprint": chain_membership_fingerprint(members),
+            "audit_artifact_ref": {
+                "artifact_id": artifact.artifact_id,
+                "artifact_fingerprint": artifact.artifact_fingerprint,
+            },
+        }
+        review.status = "SUCCEEDED"
+
+        async def persisted_row(model, key):
+            if model is CounterfactualJobRecord:
+                return review
+            if model is AuditArtifactRecord and key == artifact.artifact_id:
+                return audit_row
+            return None
+
+        session.get.side_effect = persisted_row
+        verified = await repository._verified_quality_receipt_values(session, audit_payload)
+        assert verified is not None
+        assert verified["source_artifact_refs"]["audit_artifact_id"] == artifact.artifact_id
+        assert verified["source_artifact_refs"]["audit_artifact_fingerprint"] == artifact.artifact_fingerprint
+        saved_row = audit_row
+        audit_row = None
+        assert await repository._verified_quality_receipt_values(session, audit_payload) is None
+        audit_row = saved_row
+
+        for alteration in (
+            {"audit_artifact_ref": None},
+            {"audit_artifact_ref": {"artifact_id": artifact.artifact_id, "artifact_fingerprint": "f" * 64}},
+            {"chain_membership_fingerprint": "f" * 64},
+        ):
+            assert await repository._verified_quality_receipt_values(
+                session, {**audit_payload, **alteration}
+            ) is None
+        for field, wrong in (
+            ("snapshot_id", "other-snapshot"),
+            ("snapshot_version", "other-version"),
+            ("chain_id", "other-chain"),
+            ("chain_fingerprint", "f" * 64),
+            ("analysis_version", "other-analysis"),
+            ("analysis_config_version", "other-config"),
+            ("artifact_fingerprint", "f" * 64),
+        ):
+            original = getattr(audit_row, field)
+            setattr(audit_row, field, wrong)
+            assert await repository._verified_quality_receipt_values(session, audit_payload) is None
+            setattr(audit_row, field, original)
+        audit_row.payload = {**audit_row.payload, "topology_version": "other-topology"}
+        assert await repository._verified_quality_receipt_values(session, audit_payload) is None
+        audit_row.payload = audit_artifact_to_dict(artifact)
+        audit_row.payload = {**audit_row.payload, "verdict": "CANDIDATE_SPLIT"}
+        assert await repository._verified_quality_receipt_values(session, audit_payload) is None
+
     asyncio.run(exercise())
 
 
@@ -115,7 +220,13 @@ def test_postgres_receipt_replay_conflict_and_quality_journal_are_atomic(monkeyp
     """Runs only against the explicitly configured local PostgreSQL test DB."""
     from uuid import uuid4
 
-    from sqlalchemy import text
+    from pathlib import Path
+    from alembic.config import Config
+    from alembic.operations import Operations
+    from alembic.runtime.migration import MigrationContext
+    from alembic.script import ScriptDirectory
+    from sqlalchemy import text, update, delete
+    from sqlalchemy.exc import DBAPIError
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
     from nocpro_api.persistence.change_journal import journal_position
@@ -147,9 +258,17 @@ def test_postgres_receipt_replay_conflict_and_quality_journal_are_atomic(monkeyp
             async with scoped.begin() as connection:
                 await connection.run_sync(lambda sync: Base.metadata.create_all(sync, tables=[
                     ChainQualityAssessmentRecord.__table__,
-                    QualityEvaluationReceiptRecord.__table__,
                     ChangeEventClockModel.__table__, ChangeEventModel.__table__,
                 ]))
+                await connection.execute(text(f'SET LOCAL search_path TO "{schema}"'))
+                migration_config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+                migration = ScriptDirectory.from_config(migration_config).get_revision("0022").module
+
+                def apply_receipt_migration(sync):
+                    monkeypatch.setattr(migration, "op", Operations(MigrationContext.configure(sync)))
+                    migration.upgrade()
+
+                await connection.run_sync(apply_receipt_migration)
             sessions = async_sessionmaker(scoped, expire_on_commit=False)
             async with sessions.begin() as session:
                 session.add(ChangeEventClockModel(singleton_id=1, epoch=uuid4(), revision=0))
@@ -176,6 +295,18 @@ def test_postgres_receipt_replay_conflict_and_quality_journal_are_atomic(monkeyp
             await repository.persist_chain_quality_assessment(payload)
             assert len(await repository.list_quality_evaluation_receipts(identity_digest=receipt["identity_digest"])) == 1
             assert (await journal_position(sessions)).revision == 1
+            for mutation in (
+                update(QualityEvaluationReceiptRecord).where(
+                    QualityEvaluationReceiptRecord.receipt_id == receipt["receipt_id"]
+                ).values(artifact_revision="f" * 64),
+                delete(QualityEvaluationReceiptRecord).where(
+                    QualityEvaluationReceiptRecord.receipt_id == receipt["receipt_id"]
+                ),
+            ):
+                with pytest.raises(DBAPIError, match="quality evaluation receipts are immutable"):
+                    async with sessions.begin() as session:
+                        await session.execute(mutation)
+            assert len(await repository.list_quality_evaluation_receipts(identity_digest=receipt["identity_digest"])) == 1
             await repository.persist_chain_quality_assessment(payload)
             assert len(await repository.list_quality_evaluation_receipts(identity_digest=receipt["identity_digest"])) == 1
             assert (await journal_position(sessions)).revision == 1
