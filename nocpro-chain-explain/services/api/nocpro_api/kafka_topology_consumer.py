@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from .persistence import TopologyRepository
 from .tier1a_coordinator import Tier1ACoordinator
 
 LOGGER = logging.getLogger(__name__)
+_MAX_DLQ_KEY_DIAGNOSTIC_BYTES = 256
 
 
 @dataclass(frozen=True)
@@ -104,7 +106,18 @@ class KafkaTopologyConsumer:
                     await asyncio.sleep(self.config.retry_backoff_seconds)
 
     async def process_message(self, message) -> None:
-        key_str = message.key.decode("utf-8") if message.key else None
+        try:
+            key_str = message.key.decode("utf-8") if message.key else None
+        except UnicodeDecodeError:
+            LOGGER.warning(
+                "Invalid UTF-8 topology message key at %s/%s/%s; routing to DLQ",
+                message.topic,
+                message.partition,
+                message.offset,
+            )
+            await self._publish_dlq(message, "Invalid UTF-8 message key")
+            await self._commit(message)
+            return
 
         # 1. Parse JSON
         try:
@@ -172,6 +185,8 @@ class KafkaTopologyConsumer:
         )
 
     async def _publish_dlq(self, message, reason: str) -> None:
+        raw_key_bytes = message.key or b""
+        diagnostic_key_bytes = raw_key_bytes[:_MAX_DLQ_KEY_DIAGNOSTIC_BYTES]
         value = json.dumps(
             {
                 "schema_version": "v1",
@@ -179,7 +194,19 @@ class KafkaTopologyConsumer:
                 "source_topic": message.topic,
                 "source_partition": message.partition,
                 "source_offset": message.offset,
-                "raw_key": message.key.decode("utf-8", errors="replace") if message.key else None,
+                "raw_key": (
+                    diagnostic_key_bytes.decode("utf-8", errors="replace")
+                    if message.key
+                    else None
+                ),
+                "raw_key_base64": (
+                    base64.b64encode(diagnostic_key_bytes).decode("ascii")
+                    if message.key
+                    else None
+                ),
+                "raw_key_truncated": (
+                    len(raw_key_bytes) > _MAX_DLQ_KEY_DIAGNOSTIC_BYTES
+                ),
                 "raw_value": message.value.decode("utf-8", errors="replace") if message.value else None,
             }
         ).encode("utf-8")

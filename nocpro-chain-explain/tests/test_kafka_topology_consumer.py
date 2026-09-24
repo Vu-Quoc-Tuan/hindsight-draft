@@ -15,19 +15,30 @@ from nocpro_api.ingest.topology_wire import TopologyWireEventError, parse_topolo
 
 
 class FakeConsumer:
-    def __init__(self) -> None:
+    def __init__(self, actions: list[str] | None = None) -> None:
         self.commits: list[dict] = []
+        self.actions = actions
 
     async def commit(self, offsets: dict) -> None:
         self.commits.append(offsets)
+        if self.actions is not None:
+            self.actions.append("commit")
 
 
 class FakeDlq:
-    def __init__(self) -> None:
+    def __init__(self, actions: list[str] | None = None) -> None:
         self.messages: list[dict] = []
+        self.actions = actions
+        self.raise_on_send: Exception | None = None
 
     async def send_and_wait(self, topic: str, *, key: bytes | None, value: bytes) -> None:
+        if self.actions is not None:
+            self.actions.append("dlq_attempt")
+        if self.raise_on_send is not None:
+            raise self.raise_on_send
         self.messages.append({"topic": topic, "key": key, "value": value})
+        if self.actions is not None:
+            self.actions.append("dlq_ack")
 
 
 def _message(key: bytes | None, value: dict | bytes, *, offset: int = 10):
@@ -41,9 +52,14 @@ def _message(key: bytes | None, value: dict | bytes, *, offset: int = 10):
     )
 
 
-def _service(repo=None, coordinator=None) -> tuple[KafkaTopologyConsumer, FakeConsumer, FakeDlq]:
-    consumer = FakeConsumer()
-    dlq = FakeDlq()
+def _service(
+    repo=None,
+    coordinator=None,
+    *,
+    actions: list[str] | None = None,
+) -> tuple[KafkaTopologyConsumer, FakeConsumer, FakeDlq]:
+    consumer = FakeConsumer(actions)
+    dlq = FakeDlq(actions)
     service = object.__new__(KafkaTopologyConsumer)
     service.repository = repo or MagicMock()
     service.coordinator = coordinator
@@ -55,6 +71,137 @@ def _service(repo=None, coordinator=None) -> tuple[KafkaTopologyConsumer, FakeCo
         retry_backoff_seconds=0.01,
     )
     return service, consumer, dlq
+
+
+def _valid_chunk_payload() -> dict:
+    import hashlib
+
+    raw_chunk = b"compressed-chunk-data"
+    return {
+        "schema_version": "v1",
+        "event_type": "TOPOLOGY_CHUNK",
+        "event_id": "chunk-1",
+        "profile_id": "IT_SERVICES",
+        "topology_version": "it-v1",
+        "chunk_index": 0,
+        "chunk_count": 1,
+        "chunk_checksum": hashlib.sha256(raw_chunk).hexdigest(),
+        "payload_checksum": "b" * 64,
+        "payload": base64.b64encode(raw_chunk).decode("ascii"),
+    }
+
+
+def test_invalid_utf8_key_routes_to_dlq_before_commit():
+    actions: list[str] = []
+    service, consumer, dlq = _service(actions=actions)
+
+    asyncio.run(service.process_message(_message(b"\xff", b"{}")))
+
+    assert len(dlq.messages) == 1
+    diagnostic = json.loads(dlq.messages[0]["value"])
+    assert diagnostic["error"] == "Invalid UTF-8 message key"
+    assert diagnostic["raw_key"] == "\ufffd"
+    assert diagnostic["raw_key_base64"] == "/w=="
+    assert diagnostic["raw_key_truncated"] is False
+    assert len(consumer.commits) == 1
+    assert actions == ["dlq_attempt", "dlq_ack", "commit"]
+
+
+def test_dlq_failure_does_not_commit_invalid_utf8_key():
+    service, consumer, dlq = _service()
+    dlq.raise_on_send = RuntimeError("DLQ unavailable")
+
+    with pytest.raises(RuntimeError, match="DLQ unavailable"):
+        asyncio.run(service.process_message(_message(b"\xff", b"{}")))
+
+    assert dlq.messages == []
+    assert consumer.commits == []
+
+
+def test_invalid_utf8_key_diagnostic_is_bounded():
+    service, _, dlq = _service()
+
+    asyncio.run(service.process_message(_message(b"\xff" * 1024, b"{}")))
+
+    diagnostic = json.loads(dlq.messages[0]["value"])
+    assert len(diagnostic["raw_key"]) <= 256
+    assert len(diagnostic["raw_key_base64"]) <= 4 * ((256 + 2) // 3)
+    assert diagnostic["raw_key_truncated"] is True
+
+
+def test_dlq_outage_can_retry_invalid_utf8_key_without_losing_offset():
+    service, consumer, dlq = _service()
+    message = _message(b"\xff", b"{}")
+    dlq.raise_on_send = RuntimeError("DLQ unavailable")
+
+    with pytest.raises(RuntimeError, match="DLQ unavailable"):
+        asyncio.run(service.process_message(message))
+    assert consumer.commits == []
+
+    dlq.raise_on_send = None
+    asyncio.run(service.process_message(message))
+
+    assert len(dlq.messages) == 1
+    assert len(consumer.commits) == 1
+
+
+def test_partition_continues_after_poison_record_is_dead_lettered():
+    repo = MagicMock()
+    repo.process_kafka_event = AsyncMock(return_value=None)
+    service, consumer, dlq = _service(repo)
+    service._running = True
+    poison = _message(b"\xff", b"{}", offset=10)
+    valid = _message(b"IT_SERVICES", _valid_chunk_payload(), offset=11)
+
+    asyncio.run(service._process_partition([poison, valid]))
+
+    assert len(dlq.messages) == 1
+    assert len(consumer.commits) == 2
+    assert repo.process_kafka_event.await_count == 1
+
+
+def test_partition_retries_transient_failure_before_committing():
+    repo = MagicMock()
+    repo.process_kafka_event = AsyncMock(
+        side_effect=[ConnectionError("Database timeout"), None]
+    )
+    service, consumer, dlq = _service(repo)
+    service._running = True
+    message = _message(b"IT_SERVICES", _valid_chunk_payload())
+
+    asyncio.run(service._process_partition([message]))
+
+    assert repo.process_kafka_event.await_count == 2
+    assert len(consumer.commits) == 1
+    assert dlq.messages == []
+
+
+def test_replayed_chunk_uses_repository_deduplication_result():
+    repo = MagicMock()
+    # The repository atomically returns None when this already-committed Kafka
+    # offset is replayed after a database commit but before the offset commit.
+    repo.process_kafka_event = AsyncMock(return_value=None)
+    service, consumer, dlq = _service(repo)
+    message = _message(b"IT_SERVICES", _valid_chunk_payload(), offset=10)
+
+    asyncio.run(service.process_message(message))
+    asyncio.run(service.process_message(message))
+
+    assert repo.process_kafka_event.await_count == 2
+    assert len(consumer.commits) == 2
+    assert dlq.messages == []
+
+
+def test_partition_propagates_cancellation_without_retrying_or_committing():
+    service, consumer, dlq = _service()
+    service._running = True
+    service.process_message = AsyncMock(side_effect=asyncio.CancelledError)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(service._process_partition([_message(b"IT_SERVICES", {})]))
+
+    assert consumer.commits == []
+    assert dlq.messages == []
 
 
 def test_malformed_json_routes_to_dlq():
