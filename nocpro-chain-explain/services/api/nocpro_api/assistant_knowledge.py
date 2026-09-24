@@ -111,7 +111,7 @@ class KnowledgeCatalog:
         ][: max(1, min(int(limit), 5))]
 
 
-def knowledge_fallback_message(entries: Sequence[Mapping[str, Any]]) -> str:
+def knowledge_result_message(entries: Sequence[Mapping[str, Any]]) -> str:
     if not entries:
         return "Không tìm thấy thuật ngữ phù hợp trong kho kiến thức dự án."
     blocks = []

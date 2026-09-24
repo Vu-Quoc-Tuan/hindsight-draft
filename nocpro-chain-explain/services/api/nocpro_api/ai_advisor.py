@@ -2,8 +2,9 @@
 
 ADR-0024 allows a language model to render structured evidence, but the
 operator-facing response itself must never acquire facts that the analysis did
-not produce. The deterministic projection remains authoritative and is also
-the exact fallback whenever the optional renderer is unavailable.
+not produce. The deterministic projection remains authoritative as grounding
+input; if the optional renderer is unavailable, the API reports that state
+instead of presenting the deterministic draft as an AI answer.
 """
 
 from __future__ import annotations
@@ -920,6 +921,8 @@ def generate_ai_suggestion(
         },
         fact_refs=fact_refs,
         purpose="ADVISOR",
+        requested_language=language,
+        preserve_provider_output=True,
     )
     disclaimer = (
         "ADR-0024: phản hồi này có thể sử dụng AI để diễn giải bằng chứng xác định; "

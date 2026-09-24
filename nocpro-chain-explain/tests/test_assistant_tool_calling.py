@@ -90,10 +90,10 @@ def test_provider_failure_after_tool_preserves_verified_tool_fallback(
                 })
                 body = response.json()
                 assert response.status_code == 200
-                assert body["response_mode"] == "DETERMINISTIC_FALLBACK"
+                assert body["response_mode"] == "PROVIDER_UNAVAILABLE"
                 assert body["provider_status"] == "TIMEOUT"
                 assert body["tools_used"] == ["search_project_knowledge"]
-                assert "Audit conductance" in body["message"]
+                assert body["message"] == ""
 
         asyncio.run(exercise())
     finally:
@@ -151,6 +151,12 @@ def test_tool_dispatch_navigate_workspace() -> None:
         assert action["target"]["chain_id"] == "C1"
         assert action["target"]["snapshot_id"] == "s1"
         assert action["target"]["snapshot_version"] == "1"
+
+        legacy_audit_result = asyncio.run(dispatch_assistant_tool(
+            ws, "navigate_workspace", {"tab": "audit", "chain_id": "C1"}, context
+        ))
+        assert legacy_audit_result["status"] == "AVAILABLE"
+        assert legacy_audit_result["actions"][0]["target"]["tab"] == "structure"
 
         # Navigate to Pair WHY with pair
         why_result = asyncio.run(dispatch_assistant_tool(
@@ -631,9 +637,10 @@ def test_llm_tool_calling_inspect_chart_multi_turn(monkeypatch: pytest.MonkeyPat
                 data = resp.json()
                 assert data["status"] == "AVAILABLE"
                 assert "Đường Primary AUC = 9.999" not in data["message"]
-                assert "Số liệu biểu đồ Deletion Curve" in data["message"]
-                assert data["model"] == "DETERMINISTIC_EVIDENCE"
-                assert data["provider_status"] == "GROUNDING_VIOLATION"
+                assert data["message"] == ""
+                assert data["model"] == "mock-model"
+                assert data["provider_status"] == "GROUNDING_NUMBER_MISMATCH"
+                assert data["response_mode"] == "PROVIDER_UNAVAILABLE"
                 assert len(data["actions"]) == 1
                 assert data["actions"][0]["target"]["tab"] == "structure"
                 assert calls_count == 2
@@ -643,7 +650,9 @@ def test_llm_tool_calling_inspect_chart_multi_turn(monkeypatch: pytest.MonkeyPat
         app.state.workspace.close()
 
 
-def test_fallback_chart_route() -> None:
+def test_unconfigured_provider_does_not_infer_a_chart_or_navigation(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("AI_API_KEY", "AI_BASE_URL", "AI_MODEL"):
+        monkeypatch.delenv(name, raising=False)
     app = create_app()
     try:
         async def run() -> None:
@@ -656,20 +665,16 @@ def test_fallback_chart_route() -> None:
         ws = app.state.workspace
         context = {"snapshot_id": "s1", "snapshot_version": "1", "chain_id": "C1"}
 
-        from nocpro_api.assistant import _fallback_route
+        from nocpro_api.assistant import answer_query
 
-        result = asyncio.run(
-            _fallback_route(ws, "giải thích biểu đồ deletion curve chuỗi này", context)
-        )
-        assert result["status"] == "UNAVAILABLE"
-
-        _run_deep_dive_explicitly(ws)
-        result = asyncio.run(
-            _fallback_route(ws, "giải thích biểu đồ deletion curve chuỗi này", context)
-        )
-        assert result["status"] == "AVAILABLE"
-        assert "Số liệu biểu đồ Deletion Curve" in result["message"]
-        assert result["chart_data"]["chart_type"] == "attribution_deletion_curve"
-        assert len(result["actions"]) == 1
+        result = asyncio.run(answer_query(
+            ws,
+            "giải thích biểu đồ deletion curve chuỗi này",
+            context,
+        ))
+        assert result["status"] == "NO_FINDING"
+        assert result["provider_status"] in {"NOT_CONFIGURED", "PROVIDER_ERROR"}
+        assert result["message"] == ""
+        assert result["actions"] == []
     finally:
         app.state.workspace.close()

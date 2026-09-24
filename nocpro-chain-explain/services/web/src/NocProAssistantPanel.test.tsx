@@ -48,11 +48,31 @@ describe('NocProAssistantPanel', () => {
     expect(html).toContain('Assistant không thay đổi analysis')
     expect(html).toContain('Conductance là gì?')
     expect(html).toContain('Open Pair WHY')
-    expect(html).toContain('AI-assisted')
+    expect(html).toContain('AI hỗ trợ')
     expect(html).toContain('mistral-large')
     expect(html).toContain('Bản diễn giải đã được grounded.')
     expect(html).toContain('does not change evidence')
     expect(html).not.toContain('AI_API_KEY')
     expect(html).not.toContain('>Apply recommendation<')
+  })
+
+  it('does not render a legacy deterministic message as provider prose', () => {
+    const html = renderToStaticMarkup(
+      <NocProAssistantPanel
+        context={{ snapshot_id: 'S1', snapshot_version: '1', page: 'ai', chain_id: 'C1', filters: {} }}
+        onNavigate={() => undefined}
+        initialResponse={{
+          ...renderedResponse,
+          message: 'Conductance là độ đo deterministic cũ.',
+          model: 'DETERMINISTIC_EVIDENCE',
+          provider_status: 'NOT_CONFIGURED',
+          response_mode: 'DETERMINISTIC_FALLBACK',
+        }}
+      />,
+    )
+
+    expect(html).not.toContain('Conductance là độ đo deterministic cũ.')
+    expect(html).toContain('AI chưa trả về văn bản')
+    expect(html).not.toContain('AI hỗ trợ')
   })
 })

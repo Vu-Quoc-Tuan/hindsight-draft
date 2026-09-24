@@ -1,4 +1,4 @@
-"""Read-only NocPro Assistant with native LLM tool calling and deterministic fallback.
+"""Read-only NocPro Assistant with native LLM tool calling.
 
 The assistant is a projection and navigation layer over the current workspace.
 It uses native LLM tool selection to interpret user intent without brittle keyword
@@ -9,6 +9,7 @@ bound and validated against the active snapshot.
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -21,13 +22,39 @@ from .grounded_llm import (
     tool_result_message,
     validate_grounded_content,
 )
-from .assistant_knowledge import KnowledgeCatalog, knowledge_fallback_message
+from .assistant_knowledge import KnowledgeCatalog, knowledge_result_message
 
 logger = logging.getLogger(__name__)
 
 ProviderRunner = Callable[..., Awaitable[Any]]
 
 REGISTRY_VERSION = "nocpro-assistant-registry-v1"
+
+WORKSPACE_TABS = (
+    "snapshots-overview",
+    "snapshot-overview",
+    "all-chains",
+    "chain-overview",
+    "why",
+    "members",
+    "structure",
+    "review",
+    "evolution",
+    "topology",
+    "validation",
+)
+
+# Provider models can retain vocabulary from an earlier UI contract even when
+# the tool schema has been updated. These are explicit one-to-one aliases to
+# current tabs, not query-driven navigation or a fallback answer path.
+WORKSPACE_TAB_ALIASES = {
+    "audit": "structure",
+    "structural-audit": "structure",
+    "counterfactual": "review",
+    "recommendations": "review",
+    "timeline": "evolution",
+    "chains": "all-chains",
+}
 
 SEMANTIC_REGISTRY: dict[str, dict[str, str]] = {
     "conductance": {
@@ -92,7 +119,7 @@ ASSISTANT_TOOLS: list[dict[str, Any]] = [
                 "properties": {
                     "tab": {
                         "type": "string",
-                        "enum": ["snapshot-overview", "chains-explorer", "multi-chain-timeline", "compare-chains", "chain-overview", "why", "members", "structure", "review", "evolution", "topology", "validation"],
+                        "enum": list(WORKSPACE_TABS),
                         "description": "Trang giao diện cần mở.",
                     },
                     "chain_id": {
@@ -187,10 +214,9 @@ ASSISTANT_TOOLS: list[dict[str, Any]] = [
 ]
 
 TAB_LABELS: dict[str, str] = {
+    "snapshots-overview": "Open Snapshots Portfolio",
     "snapshot-overview": "Open Snapshot Overview",
-    "chains-explorer": "Open Chains Explorer",
-    "multi-chain-timeline": "Open Multi-chain Timeline",
-    "compare-chains": "Open Compare Chains",
+    "all-chains": "Open All Chains",
     "chain-overview": "Open Chain Overview",
     "why": "Open Pair WHY",
     "members": "Open Member Diagnostics",
@@ -691,7 +717,7 @@ async def dispatch_assistant_tool(
                     refs.append(f"semantic-registry:{legacy_key}")
             return {
                 "status": "AVAILABLE",
-                "message": knowledge_fallback_message(entries),
+                "message": knowledge_result_message(entries),
                 "data": {"catalog_version": "nocpro-assistant-knowledge-v1", "entries": entries},
                 "fact_refs": refs,
                 "actions": [],
@@ -745,7 +771,13 @@ async def dispatch_assistant_tool(
         }
 
     if tool_name == "navigate_workspace":
-        tab = arguments.get("tab", "structure")
+        requested_tab = str(arguments.get("tab", "structure")).strip().casefold()
+        tab = WORKSPACE_TAB_ALIASES.get(requested_tab, requested_tab)
+        if tab not in WORKSPACE_TABS:
+            return _unavailable(
+                f"Workspace tab {requested_tab!r} is not available in this UI version.",
+                "UNSUPPORTED_WORKSPACE_TAB",
+            )
         label = TAB_LABELS.get(tab, f"Open {tab.capitalize()}")
         if tab == "why":
             target_a = arguments.get("pair_alarm_id_a")
@@ -831,7 +863,7 @@ async def dispatch_assistant_tool(
         if raw_type == "current":
             raw_type = str(context.get("page") or "chain").casefold()
         package = service.require_package()
-        if raw_type in {"snapshot", "snapshot-overview", "chains-explorer", "multi-chain-timeline", "compare-chains"}:
+        if raw_type in {"snapshot", "snapshots-overview", "snapshot-overview", "all-chains"}:
             listed = service.list_chains()
             data = {
                 "view": raw_type,
@@ -906,60 +938,6 @@ async def dispatch_assistant_tool(
     }
 
 
-async def _fallback_route(
-    service: Any,
-    text: str,
-    context: dict[str, Any],
-) -> dict[str, Any]:
-    """Lightweight fallback routing used when LLM provider is offline or not configured."""
-    for metric_key in SEMANTIC_REGISTRY:
-        if metric_key in text:
-            return await dispatch_assistant_tool(service, "search_project_knowledge", {"query": metric_key}, context)
-
-    if "độ dẫn" in text:
-        return await dispatch_assistant_tool(service, "search_project_knowledge", {"query": "conductance"}, context)
-    if "thành viên" in text or "membership" in text:
-        return await dispatch_assistant_tool(service, "search_project_knowledge", {"query": "membership_support"}, context)
-
-    if "root cause" in text or "nguyên nhân gốc" in text or "rca" in text:
-        return await dispatch_assistant_tool(service, "explain_capability_boundary", {}, context)
-
-    if "service" in text or "dịch vụ" in text or "resource" in text or "tài nguyên" in text:
-        return await dispatch_assistant_tool(service, "inspect_mapping_capability", {}, context)
-
-    # Chart inspection fallback
-    if any(m in text for m in ("biểu đồ", "chart", "đường vẽ", "đồ thị", "deletion", "auc", "lát cắt", "độ dốc")):
-        raw_chart = (
-            "conductance_cut"
-            if any(c in text for c in ("conductance", "độ dẫn", "lát cắt", "cut"))
-            else "attribution_deletion_curve"
-        )
-        return await dispatch_assistant_tool(
-            service,
-            "inspect_current_view",
-            {"view": raw_chart},
-            context,
-        )
-
-    # Tab navigation fallback
-    for tab, tab_key in [("why", "why"), ("pair", "why"), ("audit", "structure"), ("structure", "structure"),
-                         ("review", "review"), ("evolution", "evolution"), ("topology", "topology")]:
-        if tab in text:
-            return await dispatch_assistant_tool(service, "navigate_workspace", {"tab": tab_key}, context)
-
-    # Search chains fallback
-    matches = _find_chain_matches(service, text)
-    if matches:
-        return await dispatch_assistant_tool(service, "search_chains", {"query": text}, context)
-
-    return {
-        "status": "NO_FINDING",
-        "message": "No deterministic match was found. Try a chain ID/title, or ask for a definition of conductance, membership support, Pair WHY, Counterfactual Review, or topology.",
-        "fact_refs": [f"semantic-registry:{REGISTRY_VERSION}"],
-        "actions": [],
-    }
-
-
 async def answer_query(
     service: Any,
     query: str,
@@ -968,22 +946,27 @@ async def answer_query(
     history: list[dict[str, str]] | None = None,
     provider_runner: ProviderRunner | None = None,
 ) -> dict[str, Any]:
-    """Run a bounded LLM/tool loop; deterministic routing is failure fallback."""
-    def fallback_result(
+    """Run a bounded LLM/tool loop without fabricating an AI narrative.
+
+    Deterministic tools may still supply verified navigation actions and fact
+    references, but provider failure is surfaced as an empty AI message rather
+    than a canned deterministic paragraph.
+    """
+    def provider_unavailable_result(
         result: dict[str, Any], reason: str, used_tools: list[str] | None = None
     ) -> dict[str, Any]:
         return {
             **result,
-            "model": "DETERMINISTIC_EVIDENCE",
+            "message": "",
+            "model": os.environ.get("AI_MODEL", "").strip(),
             "provider_status": reason,
-            "response_mode": "DETERMINISTIC_FALLBACK",
+            "response_mode": "PROVIDER_UNAVAILABLE",
             "tools_used": used_tools or [],
         }
 
     if not _active_context_matches(service, context):
-        return fallback_result({
+        return provider_unavailable_result({
             "status": "STALE_CONTEXT",
-            "message": "The selected snapshot changed. Refresh the workspace before using this assistant result.",
             "fact_refs": [],
             "actions": [],
         }, "STALE_CONTEXT")
@@ -992,14 +975,19 @@ async def answer_query(
     if not text:
         selected_metric = _normalize(str(context.get("selected_metric") or ""))
         if selected_metric in SEMANTIC_REGISTRY:
-            message, refs = _definition_response(selected_metric)
-            return fallback_result({"status": "AVAILABLE", "message": message, "fact_refs": refs, "actions": []}, "EMPTY_QUERY")
-        return fallback_result({
-            "status": "AVAILABLE",
-            "message": "Ask about a metric, search a chain ID/title, or open Pair WHY, Audit, Review, Evolution, or Topology for the selected chain.",
-            "fact_refs": [f"semantic-registry:{REGISTRY_VERSION}"],
-            "actions": [],
-        }, "EMPTY_QUERY")
+            _, refs = _definition_response(selected_metric)
+            return provider_unavailable_result(
+                {"status": "AVAILABLE", "fact_refs": refs, "actions": []},
+                "EMPTY_QUERY",
+            )
+        return provider_unavailable_result(
+            {
+                "status": "NO_FINDING",
+                "fact_refs": [f"semantic-registry:{REGISTRY_VERSION}"],
+                "actions": [],
+            },
+            "EMPTY_QUERY",
+        )
 
     # If LLM is configured, invoke it with tools
     if is_provider_configured():
@@ -1014,6 +1002,8 @@ async def answer_query(
             "alarms, roles, Audit, Review, Evolution, topology, chart, or metric, you must call a read-only tool before making factual claims. "
             "Do not invent or infer chain-specific facts, counts, scores, statuses, recommendations, or causal conclusions without tool data. "
             "If no tool can verify a requested repository fact, say that it cannot be verified from the available read-only tools. "
+            "All user-facing prose must be written in Vietnamese. Keep alarm names, device IDs, IP addresses, interface names, "
+            "component names, and other technical identifiers exactly as supplied, even when those literals are English. "
             "You may answer general conceptual or conversational questions directly in Vietnamese when they do not assert repository-specific facts."
         )
         bounded_history_reversed: list[dict[str, str]] = []
@@ -1041,29 +1031,26 @@ async def answer_query(
                 return call_grounded_assistant(messages=messages, tools=ASSISTANT_TOOLS)
             return await provider_runner(call_grounded_assistant, messages=messages, tools=ASSISTANT_TOOLS)
 
-        async def tool_aware_fallback(reason: str) -> dict[str, Any]:
+        async def provider_unavailable_after_tools(reason: str) -> dict[str, Any]:
             if deterministic_messages:
-                return fallback_result(
-                    {
-                        **authoritative,
-                        "message": "\n\n".join(deterministic_messages),
-                    },
-                    reason,
-                    tools_used,
-                )
-            return fallback_result(await _fallback_route(service, text, context), reason)
+                return provider_unavailable_result({**authoritative, "message": ""}, reason, tools_used)
+            return provider_unavailable_result(
+                {"status": "NO_FINDING", "fact_refs": [], "actions": []},
+                reason,
+                tools_used,
+            )
 
         for _round in range(3):
             llm_result = await run_provider()
             if not llm_result.used_provider:
-                return await tool_aware_fallback(llm_result.provider_status)
+                return await provider_unavailable_after_tools(llm_result.provider_status)
             if llm_result.tool_calls:
                 if total_tool_calls + len(llm_result.tool_calls) > 4:
-                    return await tool_aware_fallback("TOOL_LOOP_LIMIT")
+                    return await provider_unavailable_after_tools("TOOL_LOOP_LIMIT")
                 messages.append(assistant_message_with_tool_calls(llm_result))
                 for index, call in enumerate(llm_result.tool_calls):
                     if not _active_context_matches(service, context):
-                        return fallback_result({"status": "STALE_CONTEXT", "message": "The selected snapshot changed while the Assistant was working. Please ask again.", "fact_refs": [], "actions": []}, "STALE_CONTEXT")
+                        return provider_unavailable_result({"status": "STALE_CONTEXT", "fact_refs": [], "actions": []}, "STALE_CONTEXT")
                     dispatched = await dispatch_assistant_tool(service, call.name, call.arguments, context)
                     tool_payloads.append(dispatched)
                     total_tool_calls += 1
@@ -1101,6 +1088,7 @@ async def answer_query(
                     fact_refs=[str(ref) for ref in authoritative["fact_refs"]],
                     model=llm_result.model,
                     provider_status=llm_result.provider_status,
+                    preserve_provider_output=True,
                 )
                 if validated.used_provider:
                     return {
@@ -1111,11 +1099,16 @@ async def answer_query(
                         "response_mode": "LLM_PRIMARY",
                         "tools_used": tools_used,
                     }
-                return await tool_aware_fallback(validated.provider_status)
-        return await tool_aware_fallback("TOOL_LOOP_LIMIT")
+                return await provider_unavailable_after_tools(validated.provider_status)
+        return await provider_unavailable_after_tools("TOOL_LOOP_LIMIT")
 
-    # Fallback when LLM is not configured or fails
-    return fallback_result(await _fallback_route(service, text, context), "NOT_CONFIGURED")
+    # Provider unavailable: do not infer intent from keywords or fabricate a
+    # navigation/chart result.  Tool selection belongs to the configured
+    # provider; a missing provider is an explicit unavailable state.
+    return provider_unavailable_result(
+        {"status": "NO_FINDING", "fact_refs": [], "actions": []},
+        "NOT_CONFIGURED",
+    )
 
 
 def render_answer(
@@ -1127,16 +1120,16 @@ def render_answer(
     if deterministic.get("status") == "STALE_CONTEXT":
         return {
             **deterministic,
-            "model": "DETERMINISTIC_EVIDENCE",
+            "model": "",
             "provider_status": "STALE_CONTEXT",
-            "response_mode": "DETERMINISTIC_FALLBACK",
+            "response_mode": "PROVIDER_UNAVAILABLE",
             "tools_used": [],
         }
     if deterministic.get("response_mode"):
         return {key: value for key, value in deterministic.items() if key != "data"}
 
-    # Native tool-calling output has already been either grounded or replaced by
-    # its deterministic draft. Never invoke a third provider pass here.
+    # Native tool-calling output has already been grounded or marked
+    # unavailable. Never invoke a third provider pass here.
     if deterministic.get("used_llm_tools"):
         return {key: val for key, val in deterministic.items() if key != "used_llm_tools"}
 
@@ -1167,6 +1160,8 @@ def render_answer(
         },
         fact_refs=fact_refs,
         purpose="ASSISTANT",
+        requested_language="vi",
+        preserve_provider_output=True,
     )
     return {
         **{k: v for k, v in deterministic.items() if k != "used_llm_tools"},

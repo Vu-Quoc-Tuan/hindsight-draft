@@ -14,7 +14,7 @@ from nocpro_api.ai_advisor import (
     extract_grounded_claims,
     generate_ai_suggestion,
 )
-from nocpro_api.assistant import render_answer
+from nocpro_api.assistant import answer_query, render_answer
 from nocpro_api.grounded_llm import GroundedRenderResult
 from tests.test_api import _payload
 
@@ -134,10 +134,9 @@ def test_ai_advisor_uses_recommendation_refs_to_find_evaluated_detail(
     )
 
     assert result.status == "AVAILABLE"
-    assert result.model == "DETERMINISTIC_EVIDENCE"
+    assert result.model == ""
     assert result.provider_status == "NOT_CONFIGURED"
-    assert "REMOVE_MEMBER (cf-1)" in result.narrative
-    assert "does not infer root cause" in result.narrative
+    assert result.narrative == ""
 
 
 def test_ai_advisor_uses_llm_only_for_grounded_narrative(
@@ -192,11 +191,10 @@ def test_ai_advisor_distinguishes_unavailable_review_from_no_recommendation(
 
     assert result.review_status == "UNAVAILABLE"
     assert result.review_reason == "REVIEW_ARTIFACT_UNAVAILABLE"
-    assert "could not be read" in result.narrative
-    assert "No operator-facing counterfactual recommendation" not in result.narrative
+    assert result.narrative == ""
 
 
-def test_ai_suggestion_api_endpoint_falls_back_when_provider_is_not_configured(
+def test_ai_suggestion_api_endpoint_surfaces_provider_unavailable_without_fallback(
     monkeypatch,
 ) -> None:
     monkeypatch.delenv("AI_API_KEY", raising=False)
@@ -215,8 +213,9 @@ def test_ai_suggestion_api_endpoint_falls_back_when_provider_is_not_configured(
                 assert first.status_code == 200
                 assert second.status_code == 200
                 assert first.json() == second.json()
-                assert first.json()["model"] == "DETERMINISTIC_EVIDENCE"
+                assert first.json()["model"] == ""
                 assert first.json()["provider_status"] == "NOT_CONFIGURED"
+                assert first.json()["narrative"] == ""
                 assert "ADR-0024" in first.json()["disclaimer"]
         finally:
             app.state.workspace.close()
@@ -224,7 +223,7 @@ def test_ai_suggestion_api_endpoint_falls_back_when_provider_is_not_configured(
     asyncio.run(exercise())
 
 
-def test_assistant_query_is_snapshot_bound_and_only_returns_typed_navigation() -> None:
+def test_assistant_query_is_snapshot_bound_and_does_not_infer_offline_navigation() -> None:
     async def exercise() -> None:
         app = create_app()
         transport = httpx2.ASGITransport(app=app)
@@ -247,19 +246,12 @@ def test_assistant_query_is_snapshot_bound_and_only_returns_typed_navigation() -
                 assert response.status_code == 200
                 body = response.json()
                 assert body["contract_version"] == "nocpro-assistant-v1"
-                assert body["actions"] == [{
-                    "kind": "NAVIGATE",
-                    "label": "Open Structural Audit",
-                    "target": {
-                        "snapshot_id": "s1",
-                        "snapshot_version": "1",
-                        "chain_id": "C1",
-                        "tab": "structure",
-                        "pair_alarm_id_a": None,
-                        "pair_alarm_id_b": None,
-                    },
-                }]
-                assert "root cause" not in body["message"].lower()
+                assert body["status"] == "NO_FINDING"
+                assert body["message"] == ""
+                assert body["provider_status"] == "NOT_CONFIGURED"
+                assert body["response_mode"] == "PROVIDER_UNAVAILABLE"
+                assert body["fact_refs"] == []
+                assert body["actions"] == []
 
                 stale = await client.post(
                     "/api/v1/assistant/query",
@@ -344,25 +336,17 @@ def test_assistant_stale_context_never_invokes_llm(monkeypatch) -> None:
 
     assert result == {
         **deterministic,
-        "model": "DETERMINISTIC_EVIDENCE",
+        "model": "",
         "provider_status": "STALE_CONTEXT",
-        "response_mode": "DETERMINISTIC_FALLBACK",
+        "response_mode": "PROVIDER_UNAVAILABLE",
         "tools_used": [],
     }
 
 
-def test_assistant_route_renders_after_typed_action_generation(monkeypatch) -> None:
-    def fake_render_grounded(**_kwargs):
-        return GroundedRenderResult(
-            message="Bản diễn giải đã được render từ action hợp lệ.",
-            model="configured-model",
-            provider_status="OK",
-            used_provider=True,
-        )
-
+def test_assistant_route_does_not_infer_actions_when_provider_is_missing(monkeypatch) -> None:
     monkeypatch.setattr(
         "nocpro_api.assistant.render_grounded",
-        fake_render_grounded,
+        lambda **_kwargs: pytest.fail("provider must not be called when unconfigured"),
     )
 
     async def exercise() -> None:
@@ -388,23 +372,13 @@ def test_assistant_route_renders_after_typed_action_generation(monkeypatch) -> N
                 )
                 assert response.status_code == 200
                 body = response.json()
-                assert "open structural audit" in body["message"].lower()
-                assert body["model"] == "DETERMINISTIC_EVIDENCE"
+                assert body["message"] == ""
+                assert body["model"] == ""
                 assert body["provider_status"] == "NOT_CONFIGURED"
-                assert body["response_mode"] == "DETERMINISTIC_FALLBACK"
-                assert body["fact_refs"] == ["ui-context:C1"]
-                assert body["actions"] == [{
-                    "kind": "NAVIGATE",
-                    "label": "Open Structural Audit",
-                    "target": {
-                        "snapshot_id": "s1",
-                        "snapshot_version": "1",
-                        "chain_id": "C1",
-                        "tab": "structure",
-                        "pair_alarm_id_a": None,
-                        "pair_alarm_id_b": None,
-                    },
-                }]
+                assert body["response_mode"] == "PROVIDER_UNAVAILABLE"
+                assert body["status"] == "NO_FINDING"
+                assert body["fact_refs"] == []
+                assert body["actions"] == []
         finally:
             app.state.workspace.close()
 
@@ -434,7 +408,8 @@ def test_assistant_rejects_missing_or_invalid_snapshot_bound_targets() -> None:
                     },
                 )
                 assert missing_chain.status_code == 200
-                assert missing_chain.json()["status"] == "UNAVAILABLE"
+                assert missing_chain.json()["status"] == "NO_FINDING"
+                assert missing_chain.json()["provider_status"] == "NOT_CONFIGURED"
                 assert missing_chain.json()["actions"] == []
 
                 invalid_pair = await client.post(
@@ -448,7 +423,8 @@ def test_assistant_rejects_missing_or_invalid_snapshot_bound_targets() -> None:
                     },
                 )
                 assert invalid_pair.status_code == 200
-                assert invalid_pair.json()["status"] == "UNAVAILABLE"
+                assert invalid_pair.json()["status"] == "NO_FINDING"
+                assert invalid_pair.json()["provider_status"] == "NOT_CONFIGURED"
                 assert invalid_pair.json()["actions"] == []
 
                 valid_pair = await client.post(
@@ -462,21 +438,16 @@ def test_assistant_rejects_missing_or_invalid_snapshot_bound_targets() -> None:
                     },
                 )
                 assert valid_pair.status_code == 200
-                assert valid_pair.json()["actions"] == [{
-                    "kind": "NAVIGATE",
-                    "label": "Open Pair WHY",
-                    "target": {
-                        "snapshot_id": "s1", "snapshot_version": "1", "chain_id": "C1", "tab": "why",
-                        "pair_alarm_id_a": "a1", "pair_alarm_id_b": "a2",
-                    },
-                }]
+                assert valid_pair.json()["status"] == "NO_FINDING"
+                assert valid_pair.json()["provider_status"] == "NOT_CONFIGURED"
+                assert valid_pair.json()["actions"] == []
         finally:
             app.state.workspace.close()
 
     asyncio.run(exercise())
 
 
-def test_assistant_explains_registry_without_claiming_root_cause() -> None:
+def test_assistant_does_not_expose_registry_facts_as_ai_fallback() -> None:
     async def exercise() -> None:
         app = create_app()
         transport = httpx2.ASGITransport(app=app)
@@ -492,10 +463,45 @@ def test_assistant_explains_registry_without_claiming_root_cause() -> None:
                 )
                 assert response.status_code == 200
                 body = response.json()
-                assert "không chứng minh" in body["message"]
-                assert body["fact_refs"] == ["knowledge:metric.conductance"]
+                assert body["message"] == ""
+                assert body["provider_status"] == "NOT_CONFIGURED"
+                assert body["response_mode"] == "PROVIDER_UNAVAILABLE"
+                assert body["status"] == "NO_FINDING"
+                assert body["fact_refs"] == []
+                assert body["actions"] == []
         finally:
             app.state.workspace.close()
+
+    asyncio.run(exercise())
+
+
+def test_assistant_empty_query_does_not_expose_selected_metric_as_ai_fallback() -> None:
+    async def exercise() -> None:
+        service = SimpleNamespace(active_identity=lambda: ("s1", "1"))
+        context = {
+            "snapshot_id": "s1",
+            "snapshot_version": "1",
+            "selected_metric": "conductance",
+        }
+
+        deterministic = await answer_query(service, "", context)
+        rendered = render_answer(context=context, deterministic=deterministic)
+
+        assert rendered["message"] == ""
+        assert rendered["fact_refs"] == ["semantic-registry:conductance"]
+        assert rendered["provider_status"] == "EMPTY_QUERY"
+        assert rendered["response_mode"] == "PROVIDER_UNAVAILABLE"
+
+        no_selection = await answer_query(
+            service,
+            "",
+            {"snapshot_id": "s1", "snapshot_version": "1"},
+        )
+        assert no_selection["message"] == ""
+        assert no_selection["status"] == "NO_FINDING"
+        assert no_selection["fact_refs"] == ["semantic-registry:nocpro-assistant-registry-v1"]
+        assert no_selection["provider_status"] == "EMPTY_QUERY"
+        assert no_selection["response_mode"] == "PROVIDER_UNAVAILABLE"
 
     asyncio.run(exercise())
 
@@ -516,14 +522,10 @@ def test_assistant_fails_closed_for_resource_to_chain_search() -> None:
                 )
                 assert response.status_code == 200
                 body = response.json()
-                assert body["status"] == "UNAVAILABLE"
-                assert "capability:RESOURCE_TO_CHAIN_MAPPING_UNAVAILABLE" in body["fact_refs"]
-                assert body["actions"] == [{
-                    "kind": "NAVIGATE", "label": "Open Topology", "target": {
-                        "snapshot_id": "s1", "snapshot_version": "1", "chain_id": None,
-                        "tab": "topology", "pair_alarm_id_a": None, "pair_alarm_id_b": None,
-                    },
-                }]
+                assert body["status"] == "NO_FINDING"
+                assert body["provider_status"] == "NOT_CONFIGURED"
+                assert body["fact_refs"] == []
+                assert body["actions"] == []
         finally:
             app.state.workspace.close()
 
@@ -572,9 +574,8 @@ def test_ai_advisor_renders_comparative_explanation_in_vietnamese() -> None:
     )
 
     assert result.status == "AVAILABLE"
-    assert "Tách cảnh báo A2 (Device-1 - Link Down) ra khỏi chuỗi" in result.narrative
-    assert "Loại bỏ cảnh báo có độ hỗ trợ yếu giúp tăng độ tin cậy" in result.narrative
-    assert "Min support: 12.0% → 91.0% (+79.0%)" in result.narrative
+    assert result.narrative == ""
+    assert result.provider_status == "NOT_CONFIGURED"
     assert any("Proposal action:" in claim for claim in result.grounded_claims)
     assert any("Proposal rationale:" in claim for claim in result.grounded_claims)
 
@@ -603,7 +604,8 @@ def test_ai_advisor_does_not_infer_optimality_when_review_status_is_missing() ->
     )
 
     assert result.status == "AVAILABLE"
-    assert "Trạng thái recommendation chưa được cung cấp" in result.narrative
+    assert result.narrative == ""
+    assert result.provider_status == "NOT_CONFIGURED"
     assert "Xác thực Pareto" not in result.narrative
     assert "cấu trúc thuần nhất" not in result.narrative
     assert "phân mảnh tô-pô" not in result.narrative
@@ -665,5 +667,5 @@ def test_ai_advisor_extracts_and_renders_operational_facts() -> None:
 
     result = generate_ai_suggestion("C300", analysis, package=pkg, language="vi")
     assert result.status == "AVAILABLE"
-    assert "node-81" in result.narrative
-
+    assert result.narrative == ""
+    assert result.provider_status == "NOT_CONFIGURED"

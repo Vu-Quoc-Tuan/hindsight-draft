@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from nocpro_api.assistant_knowledge import KnowledgeCatalog, knowledge_fallback_message
+from nocpro_api.assistant_knowledge import KnowledgeCatalog, knowledge_result_message
 
 
 def test_default_catalog_covers_frozen_methodology_domains():
@@ -37,7 +37,7 @@ def test_search_is_accent_insensitive_bounded_and_deterministic():
 
 def test_fallback_message_keeps_formula_and_boundary():
     entries = KnowledgeCatalog.load_default().search("conductance", limit=1)
-    message = knowledge_fallback_message(entries)
+    message = knowledge_result_message(entries)
     assert "Phi(S)" in message
     assert "Ranh giới" in message
 

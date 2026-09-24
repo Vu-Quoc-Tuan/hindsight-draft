@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { api } from './api'
+import { api, sanitizeAssistantResponse } from './api'
 import { buildAssistantHistory } from './assistantHistory'
 import { GroundedProviderBadge } from './GroundedProviderBadge'
 import type { AssistantAction, AssistantContext, AssistantResponse } from './types'
@@ -28,6 +28,7 @@ export function NocProAssistantPanel({
   onNavigate: (action: AssistantAction) => void
   initialResponse?: AssistantResponse | null
 }) {
+  const normalizedInitialResponse = initialResponse ? sanitizeAssistantResponse(initialResponse) : null
   const [query, setQuery] = useState('')
   const contextKey = [
     context.snapshot_id,
@@ -43,13 +44,13 @@ export function NocProAssistantPanel({
   ].join('\u0000')
 
   const [messages, setMessages] = useState<MessageItem[]>(() => {
-    if (initialResponse) {
+    if (normalizedInitialResponse) {
       return [
         {
           id: 'init',
           role: 'assistant',
-          response: initialResponse,
-          text: initialResponse.message,
+          response: normalizedInitialResponse,
+          text: normalizedInitialResponse.message,
         },
       ]
     }
@@ -185,7 +186,9 @@ export function NocProAssistantPanel({
                     />
                   </div>
                 )}
-                <p className="assistant-message whitespace-pre-wrap">{msg.text ?? res?.message}</p>
+                <p className="assistant-message whitespace-pre-wrap">
+                  {msg.text || res?.message || (res ? `AI chưa trả về văn bản (${res.provider_status || 'UNAVAILABLE'}).` : '')}
+                </p>
 
                 {res && res.actions.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 pt-1">

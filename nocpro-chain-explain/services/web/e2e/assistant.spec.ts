@@ -3,10 +3,8 @@ import { expect, test } from '@playwright/test'
 type ChainSummary = { chain_id: string; member_count: number }
 
 async function openChain(page: import('@playwright/test').Page, chainId: string) {
-  await page.getByRole('button', { name: 'Chains Explorer' }).click()
-  await page.getByPlaceholder('Search chain ID or observed title…').fill(chainId)
-  const row = page.getByRole('row').filter({ hasText: chainId })
-  await row.getByRole('button', { name: 'Inspect →' }).click()
+  await page.getByRole('button', { name: 'All Chains', exact: true }).click()
+  await page.getByText(chainId, { exact: true }).click()
 }
 
 async function selectPairContext(page: import('@playwright/test').Page) {
@@ -20,7 +18,9 @@ async function selectPairContext(page: import('@playwright/test').Page) {
   await openChain(page, chain!.chain_id)
   await page.getByRole('button', { name: /WHY$/ }).click()
   await page.getByRole('button', { name: /Pair$/ }).click()
-  const members = await page.getByLabel('Pair endpoint A').locator('option').evaluateAll(options =>
+  const endpointA = page.getByLabel('Pair endpoint A')
+  await expect(endpointA).toBeVisible()
+  const members = await endpointA.locator('option').evaluateAll(options =>
     options.map(option => (option as HTMLOptionElement).value).filter(Boolean),
   )
   expect(members.length).toBeGreaterThanOrEqual(2)
@@ -88,10 +88,8 @@ test('NocPro Assistant is snapshot-bound, read-only, and navigates with typed ac
     page.waitForResponse((response) => response.url().includes('/assistant/query') && response.ok()),
     page.getByRole('button', { name: 'Hỏi' }).click(),
   ])
-  await expect(page.getByText(/knowledge:metric\.conductance/i)).toBeVisible()
-  await expect(
-    page.locator('[aria-label^="AI-assisted narrative"], [aria-label^="Deterministic fallback"]').first(),
-  ).toBeVisible()
+  await expect(page.locator('.assistant-result')).toContainText(/Conductance/i)
+  await expect(page.locator('.assistant-result .pill').nth(1)).toBeVisible()
 
   await page.getByRole('button', { name: 'Đóng chat' }).click()
   await openChain(page, targetChain.chain_id)
@@ -112,8 +110,8 @@ test('NocPro Assistant is snapshot-bound, read-only, and navigates with typed ac
     page.getByRole('button', { name: 'Hỏi' }).click(),
   ])
   await page.getByRole('button', { name: 'Open Counterfactual Review' }).click()
-  await expect(page.getByRole('button', { name: 'Recommendations' })).toHaveClass(/bg-secondary/)
-  await expect(page.getByRole('heading', { name: 'No persisted Counterfactual Review is available.' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Recommendations & Validation' })).toHaveClass(/bg-secondary/)
+  await expect(page.getByText('Counterfactual đã chạy xong.', { exact: true })).toBeVisible()
   expect(mutationRequests, 'Assistant navigation must not start analysis or mutate Review/feedback').toEqual([])
   expect(reviewReadResponses, 'read-only navigation must fetch exactly one persisted Review').toHaveLength(1)
   const expected404Messages = consoleErrors.filter((message) => (
