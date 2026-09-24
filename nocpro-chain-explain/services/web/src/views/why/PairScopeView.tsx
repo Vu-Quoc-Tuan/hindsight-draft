@@ -1,6 +1,22 @@
-import { useMemo, useEffect } from 'react'
-import type { Member, PairWhy, WhyScope } from '../../types'
+import { useMemo, useEffect, useState } from 'react'
+import type { EvidenceRecord, Member, PairEvidence, PairWhy, WhyScope } from '../../types'
 import { InfoTip } from '../../components/InfoTip'
+import { EvidenceDetails } from '../../components/EvidenceDetails'
+
+function pairEvidenceRecordFor(item: PairEvidence, pairWhy: PairWhy): EvidenceRecord | null {
+  if (item.channel_family !== 'Dep_hop') return null
+  const rawPath = item.evidence_metadata?.topology_path as { nodes?: unknown } | undefined
+  const nodes = Array.isArray(rawPath?.nodes)
+    && rawPath.nodes.every((node): node is string => typeof node === 'string')
+    ? rawPath.nodes
+    : null
+  return (pairWhy.evidence_records ?? []).find(record => {
+    if (record.kind !== 'TOPOLOGY_PATH' || record.source_artifact_id !== item.source_id) return false
+    if (!nodes) return record.path === null
+    return record.path?.resource_ids.length === nodes.length
+      && record.path.resource_ids.every((node, index) => node === nodes[index])
+  }) ?? null
+}
 
 interface PairScopeViewProps {
   members: Member[]
@@ -21,6 +37,7 @@ export function PairScopeView({
   pairWhyReason,
   onSwitchScope: _onSwitchScope,
 }: PairScopeViewProps) {
+  const [selectedEvidence, setSelectedEvidence] = useState<EvidenceRecord | null>(null)
   // Auto-select first two members if not already selected
   useEffect(() => {
     if (selectedMemberIds.length < 2 && members.length >= 2) {
@@ -258,6 +275,7 @@ export function PairScopeView({
           {/* Real Evidence Channel Cards Grid (100% from backend) */}
           <div className="grid grid-cols-1 gap-space-xs">
             {pairWhy.evidence.map((item, index) => {
+              const pairEvidenceRecord = pairEvidenceRecordFor(item, pairWhy)
               const isSupport = item.state === 'SUPPORT'
               const isNeutral = item.state === 'NEUTRAL'
               const channelTitle =
@@ -388,6 +406,23 @@ export function PairScopeView({
                       </div>
                     </div>
                   )}
+
+                  {item.channel_family === 'Dep_hop' ? (
+                    pairEvidenceRecord ? (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedEvidence(pairEvidenceRecord)}
+                        aria-label={`Mở evidence topology của cặp ${pairWhy.alarm_id_a} và ${pairWhy.alarm_id_b}`}
+                        className="mt-2 rounded border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-1.5 font-code-sm text-[11px] font-semibold text-cyan-200 hover:bg-cyan-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-secondary"
+                      >
+                        Chi tiết evidence topology
+                      </button>
+                    ) : (
+                      <p className="mt-2 text-[11px] text-on-surface-variant">
+                        Chưa có analysis identity Overview tương thích để gắn tham chiếu evidence ổn định.
+                      </p>
+                    )
+                  ) : null}
                 </article>
               )
             })}
@@ -396,6 +431,21 @@ export function PairScopeView({
 
         </div>
       )}
+      {pairWhy ? (
+        <EvidenceDetails
+          chainId={pairWhy.chain_id}
+          title="Witness topology của Pair WHY"
+          isOpen={selectedEvidence !== null}
+          onClose={() => setSelectedEvidence(null)}
+          expectedContext={selectedEvidence ? {
+            snapshot_id: selectedEvidence.analysis_identity.snapshot_id,
+            snapshot_version: selectedEvidence.analysis_identity.snapshot_version,
+            topology_version: selectedEvidence.analysis_identity.topology_version,
+            analysis_identity: selectedEvidence.analysis_identity,
+          } : undefined}
+          inlineRecords={selectedEvidence ? [selectedEvidence] : []}
+        />
+      ) : null}
     </div>
   )
 }

@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import type { ChainOverviewCards, ChainOverviewCardContext, ChainSummary } from '../types'
 import { ChainQualityCard, RepresentativeMemberCard, TopologyCoverageCard } from './ChainQualityCards'
+import { EvidenceDetails } from './EvidenceDetails'
 
 function durationLabel(seconds: number | null): string {
   if (seconds == null) return 'N/A'
@@ -24,6 +26,12 @@ export function ChainOverviewPreview({
   chain: ChainSummary
   cards: ChainOverviewCards | null
 }) {
+  const [evidenceOpen, setEvidenceOpen] = useState(false)
+  const [evidenceIds, setEvidenceIds] = useState<string[] | null>(null)
+  const openEvidence = (ids?: string[]) => {
+    setEvidenceIds(ids?.length ? ids : null)
+    setEvidenceOpen(true)
+  }
   const status = cards?.status ?? 'PENDING'
   const context: ChainOverviewCardContext | null = status === 'READY'
     ? {
@@ -50,6 +58,14 @@ export function ChainOverviewPreview({
             <p className="mt-1 font-code-sm text-xs text-on-surface-variant">
               {chain.member_count} cảnh báo · thẻ bằng chứng được tải độc lập
             </p>
+            <button
+              type="button"
+              onClick={() => openEvidence()}
+              disabled={status !== 'READY'}
+              className="mt-2 rounded border border-cyan-500/30 bg-cyan-500/10 px-2 py-1 font-code-sm text-[11px] font-semibold text-cyan-200 hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Mở chi tiết evidence
+            </button>
           </div>
           <span className="shrink-0 rounded border border-secondary/30 bg-secondary/10 px-2 py-1 font-code-sm text-[10px] font-bold text-secondary">
             {status === 'READY' ? 'ĐÃ CÓ EVIDENCE' : status === 'PENDING' ? 'ĐANG TẢI EVIDENCE' : status}
@@ -84,13 +100,34 @@ export function ChainOverviewPreview({
           </div>
         </div>
         <TopologyCoverageCard context={context} status={status} />
-        <ChainQualityCard context={context} status={status} />
+        <ChainQualityCard
+          context={context}
+          status={status}
+          onOpenEvidence={status === 'READY' ? openEvidence : undefined}
+        />
       </div>
 
       <section className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 px-space-md py-space-sm font-code-sm text-xs text-on-surface-variant" role="status">
         <span className="material-symbols-outlined mr-1 align-middle text-[15px] text-cyan-300">progress_activity</span>
         Đang tải phần WHY/thành viên; nhận định AI chỉ chạy riêng sau khi evidence deterministic sẵn sàng.
       </section>
+      {cards ? (
+        <EvidenceDetails
+          chainId={chain.chain_id}
+          isOpen={evidenceOpen}
+          onClose={() => {
+            setEvidenceOpen(false)
+            setEvidenceIds(null)
+          }}
+          evidenceIds={evidenceIds}
+          expectedContext={{
+            snapshot_id: cards.snapshot_id,
+            snapshot_version: cards.snapshot_version,
+            topology_version: cards.topology_version,
+            analysis_identity: cards.analysis_identity ?? null,
+          }}
+        />
+      ) : null}
     </div>
   )
 }

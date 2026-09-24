@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from '../../api'
 import type { ChainAnalysis, CohesionNarrativeView, Job, Member, WhyScope } from '../../types'
 import { InfoTip } from '../../components/InfoTip'
+import { EvidenceDetails } from '../../components/EvidenceDetails'
 
 
 interface ChainScopeViewProps {
@@ -26,6 +27,8 @@ export function ChainScopeView({
   const [narrativeData, setNarrativeData] = useState<CohesionNarrativeView | null>(null)
   const [loadedChainId, setLoadedChainId] = useState<string | null>(null)
   const [expandedTraceIds, setExpandedTraceIds] = useState<Record<string, boolean>>({})
+  const [evidenceOpen, setEvidenceOpen] = useState(false)
+  const [selectedEvidenceIds, setSelectedEvidenceIds] = useState<string[] | null>(null)
   const loadingNarrative = loadedChainId !== analysis.chain_id
 
   const toggleTrace = (id: string) => {
@@ -37,6 +40,13 @@ export function ChainScopeView({
     [narrativeData]
   )
   const auditContext = narrativeData?.context?.audit
+  const evidenceIdentity = narrativeData?.context?.evidence_analysis_identity
+
+  const openFindingEvidence = (evidenceIds?: string[]) => {
+    if (!evidenceIdentity || !evidenceIds?.length) return
+    setSelectedEvidenceIds(evidenceIds)
+    setEvidenceOpen(true)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -887,6 +897,17 @@ export function ChainScopeView({
                     <p className="text-xs text-on-surface font-semibold leading-relaxed mt-1">
                       {topoFinding?.claim || 'Ánh xạ topo vật lý/IT: các thiết bị đã được định vị trên đồ thị mạng hạ tầng.'}
                     </p>
+                    {topoFinding?.evidence_ids?.length ? (
+                      <button
+                        type="button"
+                        onClick={() => openFindingEvidence(topoFinding.evidence_ids)}
+                        disabled={!evidenceIdentity}
+                        className="w-fit rounded border border-cyan-500/30 bg-cyan-500/10 px-2 py-1 text-[11px] font-semibold text-cyan-200 hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label={`Mở ${topoFinding.evidence_ids.length} record bằng chứng topology`}
+                      >
+                        Mở evidence topology ({topoFinding.evidence_ids.length})
+                      </button>
+                    ) : null}
 
                     {/* Dominator Witness Badge (Tier-2 P2) */}
                     {(domFinding || domData?.witness_resource_id) && (
@@ -1002,6 +1023,17 @@ export function ChainScopeView({
                           : 'Độ dẫn vết cắt conductance lớn hơn ngưỡng epsilon; các cảnh báo gắn kết mạnh, không cần tách chuỗi.'
                         )}
                       </p>
+                      {auditFinding?.evidence_ids?.length ? (
+                        <button
+                          type="button"
+                          onClick={() => openFindingEvidence(auditFinding.evidence_ids)}
+                          disabled={!evidenceIdentity}
+                          className="w-fit rounded border border-cyan-500/30 bg-cyan-500/10 px-2 py-1 text-[11px] font-semibold text-cyan-200 hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                          aria-label={`Mở ${auditFinding.evidence_ids.length} record bằng chứng Audit`}
+                        >
+                          Mở evidence Audit ({auditFinding.evidence_ids.length})
+                        </button>
+                      ) : null}
 
                       {/* Over-merge Warning Chip (Tier-2 P2) */}
                       {overMergeData?.structural_separation && (
@@ -1183,6 +1215,21 @@ export function ChainScopeView({
           )}
         </div>
       )}
+      <EvidenceDetails
+        chainId={analysis.chain_id}
+        isOpen={evidenceOpen}
+        onClose={() => {
+          setEvidenceOpen(false)
+          setSelectedEvidenceIds(null)
+        }}
+        expectedContext={evidenceIdentity ? {
+          snapshot_id: evidenceIdentity.snapshot_id,
+          snapshot_version: evidenceIdentity.snapshot_version,
+          topology_version: evidenceIdentity.topology_version,
+          analysis_identity: evidenceIdentity,
+        } : undefined}
+        evidenceIds={selectedEvidenceIds}
+      />
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, lazy, Suspense } from 'react'
-import { api } from '../api'
+import { api, type ChainOverviewSnapshotContext } from '../api'
 import type {
   ChainAnalysis,
   ChainOverviewCardContext,
@@ -10,7 +10,9 @@ import type {
 } from '../types'
 import { InfoTip } from '../components/InfoTip'
 import { ChainQualityCard, RepresentativeMemberCard, TopologyCoverageCard } from '../components/ChainQualityCards'
+import { EvidenceDetails } from '../components/EvidenceDetails'
 import { compactTime } from '../format'
+import { serializeAnalysisIdentity } from '../analysisIdentity'
 
 const ChainScopeView = lazy(() => import('./why/ChainScopeView').then(m => ({ default: m.ChainScopeView })))
 const MemberScopeView = lazy(() => import('./why/MemberScopeView').then(m => ({ default: m.MemberScopeView })))
@@ -28,6 +30,7 @@ interface ChainDetailViewProps {
   onPairContextChange?: (pair: [string, string] | null) => void
   reviewEpoch?: number
   snapshotKey?: string | null
+  snapshotContext?: ChainOverviewSnapshotContext
   initialOverviewCards?: ChainOverviewCards | null
 }
 
@@ -52,6 +55,7 @@ export function ChainDetailView({
   onPairContextChange,
   reviewEpoch = 0,
   snapshotKey = null,
+  snapshotContext,
   initialOverviewCards = null,
 }: ChainDetailViewProps) {
   const [whyScope, setWhyScope] = useState<WhyScope>('Chain')
@@ -69,9 +73,40 @@ export function ChainDetailView({
     requestKey: string
     payload: ChainOverviewCards
   } | null>(null)
+  const [evidenceDetailsOpen, setEvidenceDetailsOpen] = useState(false)
+  const [evidenceIds, setEvidenceIds] = useState<string[] | null>(null)
+  const openEvidence = (ids?: string[]) => {
+    setEvidenceIds(ids?.length ? ids : null)
+    setEvidenceDetailsOpen(true)
+  }
 
   const members = useMemo(() => analysis.members ?? [], [analysis.members])
   const overviewCardsRequestKey = (snapshotKey ?? 'active') + '\u0000' + analysis.chain_id
+  const contextOverviewCards = overviewCards?.requestKey === overviewCardsRequestKey
+    ? overviewCards.payload
+    : null
+  const expectedOverviewCards = initialOverviewCards?.status === 'READY'
+      || initialOverviewCards?.status === 'NOT_APPLICABLE'
+    ? initialOverviewCards
+    : contextOverviewCards
+  const expectedOverviewIdentityKey = serializeAnalysisIdentity(expectedOverviewCards?.analysis_identity)
+  const expectedOverviewIdentity = useMemo(
+    () => expectedOverviewIdentityKey
+      ? JSON.parse(expectedOverviewIdentityKey) as NonNullable<ChainOverviewCards['analysis_identity']>
+      : null,
+    [expectedOverviewIdentityKey],
+  )
+  const expectedOverviewResourceKind = expectedOverviewCards?.artifact_revision?.resource_kind ?? null
+  const expectedOverviewFingerprint = expectedOverviewCards?.artifact_revision?.fingerprint ?? null
+  const expectedOverviewRevision = useMemo(
+    () => expectedOverviewResourceKind && expectedOverviewFingerprint
+      ? {
+          resource_kind: expectedOverviewResourceKind,
+          fingerprint: expectedOverviewFingerprint,
+        } as NonNullable<ChainOverviewCards['artifact_revision']>
+      : null,
+    [expectedOverviewResourceKind, expectedOverviewFingerprint],
+  )
 
   useEffect(() => {
     if (activeSubTab !== 'OVERVIEW') return
@@ -85,7 +120,13 @@ export function ChainDetailView({
 
     const load = async () => {
       try {
-        const payload = await api.chainOverviewCards(analysis.chain_id, controller.signal)
+        const payload = await api.chainOverviewCards(
+          analysis.chain_id,
+          controller.signal,
+          expectedOverviewIdentity,
+          expectedOverviewRevision,
+          snapshotContext,
+        )
         if (controller.signal.aborted) return
         setOverviewCards({ requestKey, payload })
         if (payload.status === 'PENDING') {
@@ -117,7 +158,17 @@ export function ChainDetailView({
       controller.abort()
       if (retryTimer !== undefined) window.clearTimeout(retryTimer)
     }
-  }, [activeSubTab, analysis.chain_id, initialOverviewCards, overviewCardsRequestKey, snapshotKey])
+  }, [
+    activeSubTab,
+    analysis.chain_id,
+    expectedOverviewIdentity,
+    expectedOverviewRevision,
+    initialOverviewCards,
+    overviewCardsRequestKey,
+    reviewEpoch,
+    snapshotContext,
+    snapshotKey,
+  ])
 
   const initialCardsPayload = initialOverviewCards && initialOverviewCards.status !== 'PENDING'
     ? initialOverviewCards
@@ -328,8 +379,40 @@ export function ChainDetailView({
               context={cardsContext}
               status={cardsStatus}
               onOpenRecommendations={() => onNavigateTab?.('review')}
+              onOpenEvidence={cardsStatus === 'READY' ? openEvidence : undefined}
             />
           </div>
+
+          {cardsPayload ? (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => openEvidence()}
+                disabled={cardsStatus !== 'READY'}
+                className="rounded border border-cyan-500/30 bg-cyan-500/10 px-3 py-1.5 font-code-sm text-xs font-semibold text-cyan-200 hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Mở chi tiết evidence của Overview
+              </button>
+            </div>
+          ) : null}
+
+          {cardsPayload ? (
+            <EvidenceDetails
+              chainId={analysis.chain_id}
+              isOpen={evidenceDetailsOpen}
+              onClose={() => {
+                setEvidenceDetailsOpen(false)
+                setEvidenceIds(null)
+              }}
+              evidenceIds={evidenceIds}
+              expectedContext={{
+                snapshot_id: cardsPayload.snapshot_id,
+                snapshot_version: cardsPayload.snapshot_version,
+                topology_version: cardsPayload.topology_version,
+                analysis_identity: cardsPayload.analysis_identity ?? null,
+              }}
+            />
+          ) : null}
 
           {/* TẦNG 2: short grounded explanation of the deterministic rating */}
           <div className="w-full">

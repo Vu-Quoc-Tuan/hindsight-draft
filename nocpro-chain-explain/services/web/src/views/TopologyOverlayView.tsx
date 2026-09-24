@@ -5,7 +5,9 @@ import type { ChainAnalysis, ChainOverviewCards, Member, TopologyHypothesesResul
 import type { TopologyTreePayload } from '../TopologyTree'
 import { TopologyHypotheses } from '../TopologyHypotheses'
 import { InfoTip } from '../components/InfoTip'
-import { api, type TopologySubgraphResult } from '../api'
+import { EvidenceDetails, type EvidencePathSelector } from '../components/EvidenceDetails'
+import { api, type ChainOverviewSnapshotContext, type TopologySubgraphResult } from '../api'
+import { serializeAnalysisIdentity } from '../analysisIdentity'
 import {
   buildAlarmConnector,
   compactHopLabel,
@@ -19,6 +21,7 @@ interface TopologyOverlayViewProps {
   topologyHypotheses?: TopologyHypothesesResult | null
   subgraphData?: TopologySubgraphResult | null
   snapshotKey?: string | null
+  snapshotContext?: ChainOverviewSnapshotContext
   initialPathProjection?: ChainOverviewCards | null
   onRootChange?: (resourceId: string) => void
   onRunDeepDive?: () => void
@@ -77,6 +80,11 @@ type OverviewPathRequestState = {
   error: string | null
 }
 
+type ContextBoundSelection<T> = {
+  requestKey: string
+  value: T
+}
+
 const EVIDENCE_TIER_LABELS: Record<string, string> = {
   EXACT: 'Exact topology identity',
   STRUCTURED_FIELD_UNIQUE: 'Structured-field unique match',
@@ -95,32 +103,38 @@ const MATCH_STRENGTH_LABELS: Record<string, string> = {
   UNMAPPED: 'Chưa ánh xạ',
 }
 
+const EMPTY_CANONICAL_PATHS: EvidenceTopologyPath[] = []
+const EMPTY_CANONICAL_TERMINALS: string[] = []
+
 export function TopologyOverlayView({
   analysis,
   topologyPayload,
   topologyHypotheses,
   subgraphData: externalSubgraph,
   snapshotKey = null,
+  snapshotContext,
   initialPathProjection = null,
   onRootChange: _onRootChange,
   onRunDeepDive,
   isDeepDiveRunning,
 }: TopologyOverlayViewProps) {
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null)
-  const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null)
+  const [selectedDeviceSelection, setSelectedDeviceSelection] = useState<ContextBoundSelection<string> | null>(null)
+  const [hoveredEdgeSelection, setHoveredEdgeSelection] = useState<ContextBoundSelection<string> | null>(null)
   const [showAlarmsLayer, setShowAlarmsLayer] = useState(true)
   const [showLinksLayer, setShowLinksLayer] = useState(true)
   const [showNeighborsLayer, setShowNeighborsLayer] = useState(false)
   const [showModulesDetail, setShowModulesDetail] = useState(false)
   const [hopDistance, setHopDistance] = useState<number>(2)
-  const [summaryNode, setSummaryNode] = useState<NetworkNode | null>(null)
+  const [summaryNodeSelection, setSummaryNodeSelection] = useState<ContextBoundSelection<NetworkNode> | null>(null)
+  const [evidenceDetailsOpen, setEvidenceDetailsOpen] = useState(false)
+  const [evidencePathSelector, setEvidencePathSelector] = useState<EvidencePathSelector | null>(null)
   const [alarmFilter, setAlarmFilter] = useState<'ALL' | 'EXACT' | 'CANDIDATE'>('ALL')
   const [canvasElement, setCanvasElement] = useState<HTMLDivElement | null>(null)
 
   const closeNodeFocus = () => {
-    setSummaryNode(null)
-    setSelectedDeviceId(null)
-    setHoveredEdgeId(null)
+    setSummaryNodeSelection(null)
+    setSelectedDeviceSelection(null)
+    setHoveredEdgeSelection(null)
   }
 
   useEffect(() => {
@@ -177,7 +191,6 @@ export function TopologyOverlayView({
 
   const distinctDevices = useMemo(() => deviceGroups.map(([dev]) => dev), [deviceGroups])
   const dominantDevice = distinctDevices[0] || 'DOMINANT_NODE'
-  const activeDevice = selectedDeviceId
 
   const alarmMap = useMemo(() => {
     const map = new Map<string, Member[]>()
@@ -201,6 +214,38 @@ export function TopologyOverlayView({
   const requestedTopologyVersion = currentOverviewPathRequest?.payload?.status === 'READY'
     ? currentOverviewPathRequest.payload.topology_version
     : null
+  const expectedOverviewIdentityKey = serializeAnalysisIdentity(
+    currentOverviewPathRequest?.payload?.analysis_identity,
+  )
+  const expectedOverviewIdentity = useMemo(
+    () => expectedOverviewIdentityKey
+      ? JSON.parse(expectedOverviewIdentityKey) as NonNullable<ChainOverviewCards['analysis_identity']>
+      : null,
+    [expectedOverviewIdentityKey],
+  )
+  const expectedOverviewResourceKind = currentOverviewPathRequest?.payload?.artifact_revision?.resource_kind ?? null
+  const expectedOverviewFingerprint = currentOverviewPathRequest?.payload?.artifact_revision?.fingerprint ?? null
+  const expectedOverviewRevision = useMemo(
+    () => expectedOverviewResourceKind && expectedOverviewFingerprint
+      ? {
+          resource_kind: expectedOverviewResourceKind,
+          fingerprint: expectedOverviewFingerprint,
+        } as NonNullable<ChainOverviewCards['artifact_revision']>
+      : null,
+    [expectedOverviewResourceKind, expectedOverviewFingerprint],
+  )
+  const distinctDevicesKey = useMemo(() => distinctDevices.slice().sort().join(','), [distinctDevices])
+  const subgraphRequestKey = `${activeProfile}:${distinctDevicesKey}:${hopDistance}:${requestedTopologyVersion ?? 'active'}`
+  const selectedDeviceId = selectedDeviceSelection?.requestKey === subgraphRequestKey
+    ? selectedDeviceSelection.value
+    : null
+  const activeDevice = selectedDeviceId
+  const hoveredEdgeId = hoveredEdgeSelection?.requestKey === subgraphRequestKey
+    ? hoveredEdgeSelection.value
+    : null
+  const summaryNode = summaryNodeSelection?.requestKey === subgraphRequestKey
+    ? summaryNodeSelection.value
+    : null
 
   useEffect(() => {
     const controller = new AbortController()
@@ -208,7 +253,13 @@ export function TopologyOverlayView({
 
     const load = async () => {
       try {
-        const payload = await api.chainOverviewCards(analysis.chain_id, controller.signal)
+        const payload = await api.chainOverviewCards(
+          analysis.chain_id,
+          controller.signal,
+          expectedOverviewIdentity,
+          expectedOverviewRevision,
+          snapshotContext,
+        )
         if (controller.signal.aborted) return
         const [expectedSnapshotId, expectedSnapshotVersion] = snapshotKey?.split(':') ?? []
         if (
@@ -244,19 +295,14 @@ export function TopologyOverlayView({
       controller.abort()
       if (retryTimer !== undefined) window.clearTimeout(retryTimer)
     }
-  }, [analysis.chain_id, overviewPathRequestKey, snapshotKey])
-
-  const distinctDevicesKey = useMemo(() => distinctDevices.slice().sort().join(','), [distinctDevices])
-  const subgraphRequestKey = `${activeProfile}:${distinctDevicesKey}:${hopDistance}:${requestedTopologyVersion ?? 'active'}`
-
-  // A focus selection belongs to the graph context it was made in. Clear it
-  // before a profile/seed/hop change so a new response cannot inherit a stale
-  // node selection and render an empty or misleading focused graph.
-  useEffect(() => {
-    setSelectedDeviceId(null)
-    setSummaryNode(null)
-    setHoveredEdgeId(null)
-  }, [subgraphRequestKey])
+  }, [
+    analysis.chain_id,
+    expectedOverviewIdentity,
+    expectedOverviewRevision,
+    overviewPathRequestKey,
+    snapshotContext,
+    snapshotKey,
+  ])
 
   useEffect(() => {
     if (externalSubgraph !== undefined) return
@@ -771,10 +817,10 @@ export function TopologyOverlayView({
   )
   const canonicalPaths = hasCanonicalPathProjection
     ? pathTopology!.display_paths as EvidenceTopologyPath[]
-    : []
+    : EMPTY_CANONICAL_PATHS
   const canonicalTerminals = hasCanonicalPathProjection
     ? pathTopology!.mapped_resources as string[]
-    : []
+    : EMPTY_CANONICAL_TERMINALS
   const requiredPathHops = canonicalPaths.reduce((maxHops, path) => (
     Number.isInteger(path?.hop_count)
       ? Math.max(maxHops, Math.min(4, path.hop_count))
@@ -1302,6 +1348,7 @@ export function TopologyOverlayView({
                       const midX = (startX + endX) / 2
                       const midY = (startY + endY) / 2
                       const isHovered = hoveredEdgeId === edge.id
+                      const canOpenEvidenceForEdge = Boolean(edge.isAlarmConnector && edge.relationType)
                       const edgeDescription = edge.label === 'SERVICE_CLUSTER'
                         ? 'Service–Host qua module đã thu gọn (2 hop)'
                         : edge.label
@@ -1335,9 +1382,34 @@ export function TopologyOverlayView({
                         <g
                           key={edge.id}
                           data-testid={`topology-edge-${edge.id}`}
+                          role={canOpenEvidenceForEdge ? 'button' : undefined}
+                          tabIndex={canOpenEvidenceForEdge ? 0 : undefined}
                           aria-label={edgeDescription}
-                          onMouseEnter={() => setHoveredEdgeId(edge.id)}
-                          onMouseLeave={() => setHoveredEdgeId(null)}
+                          aria-description={canOpenEvidenceForEdge
+                            ? `Mở evidence của cạnh ${edge.sourceId} đến ${edge.targetId}, ${edge.relationType}`
+                            : undefined}
+                          aria-haspopup={canOpenEvidenceForEdge ? 'dialog' : undefined}
+                          onClick={canOpenEvidenceForEdge ? () => {
+                            setEvidencePathSelector({
+                              resource_a: edge.sourceId,
+                              resource_b: edge.targetId,
+                              relation_type: edge.relationType!,
+                            })
+                            setEvidenceDetailsOpen(true)
+                          } : undefined}
+                          onKeyDown={canOpenEvidenceForEdge ? event => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault()
+                              setEvidencePathSelector({
+                                resource_a: edge.sourceId,
+                                resource_b: edge.targetId,
+                                relation_type: edge.relationType!,
+                              })
+                              setEvidenceDetailsOpen(true)
+                            }
+                          } : undefined}
+                          onMouseEnter={() => setHoveredEdgeSelection({ requestKey: subgraphRequestKey, value: edge.id })}
+                          onMouseLeave={() => setHoveredEdgeSelection(null)}
                         >
                           <path
                             d={pathD}
@@ -1399,8 +1471,8 @@ export function TopologyOverlayView({
                         className="cursor-pointer"
                         onMouseDown={e => handleNodeMouseDown(node.id, e)}
                         onClick={() => {
-                          setSelectedDeviceId(node.id)
-                          setSummaryNode(node)
+                          setSelectedDeviceSelection({ requestKey: subgraphRequestKey, value: node.id })
+                          setSummaryNodeSelection({ requestKey: subgraphRequestKey, value: node })
                           setAlarmFilter('ALL')
                         }}
                       >
@@ -2127,6 +2199,19 @@ export function TopologyOverlayView({
           </div>
         )
       })(), canvasElement)}
+      <EvidenceDetails
+        chainId={analysis.chain_id}
+        title="Witness topology từ đường Overview"
+        isOpen={evidenceDetailsOpen}
+        onClose={() => setEvidenceDetailsOpen(false)}
+        expectedContext={pathCards ? {
+          snapshot_id: pathCards.snapshot_id,
+          snapshot_version: pathCards.snapshot_version,
+          topology_version: pathCards.topology_version,
+          analysis_identity: pathCards.analysis_identity ?? null,
+        } : undefined}
+        pathSelector={evidencePathSelector}
+      />
     </div>
   )
 }

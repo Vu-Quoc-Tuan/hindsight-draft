@@ -1,6 +1,15 @@
 import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react'
 
-import { api, ApiError, clearCohesionCache, setActiveSnapshotContext } from './api'
+import {
+  api,
+  ApiError,
+  clearCohesionCache,
+  clearChainReadCache,
+  clearTopologySubgraphCache,
+  setActiveSnapshotContext,
+} from './api'
+import { clearReviewJobCache } from './reviewJobCache'
+import { serializeAnalysisIdentity } from './analysisIdentity'
 import type { TopologyTreePayload } from './TopologyTree'
 import { NocHeader, type HeaderSnapshotItem } from './components/NocHeader'
 import { SubNavBar, type SubNavTab } from './components/SubNavBar'
@@ -63,6 +72,7 @@ export default function App() {
   }
 
   const [configEpoch, setConfigEpoch] = useState(0)
+  const previousConfigEpoch = useRef(configEpoch)
   const [reviewEpoch, setReviewEpoch] = useState(0)
   const refreshedCohesionReviewId = useRef<string | null>(null)
   const [snapshotsCatalog, setSnapshotsCatalog] = useState<HeaderSnapshotItem[]>([])
@@ -85,8 +95,24 @@ export default function App() {
   const [assistantPair, setAssistantPair] = useState<[string, string] | null>(null)
 
   const snapshotKey = chainList
-    ? `${chainList.snapshot_id}:${chainList.snapshot_version}:${chainList.topology_version ?? 'NO_TOPOLOGY'}`
+    ? `${chainList.snapshot_id}:${chainList.snapshot_version}:${
+      chainList.topology_version === undefined
+        ? 'UNKNOWN_TOPOLOGY'
+        : chainList.topology_version ?? 'NO_TOPOLOGY'
+    }`
     : null
+  const chainListSnapshotId = chainList?.snapshot_id ?? null
+  const chainListSnapshotVersion = chainList?.snapshot_version ?? null
+  const chainListTopologyVersion = chainList?.topology_version
+  const chainOverviewSnapshotContext = useMemo(() => (
+    chainListSnapshotId && chainListSnapshotVersion
+      ? {
+          snapshot_id: chainListSnapshotId,
+          snapshot_version: chainListSnapshotVersion,
+          topology_version: chainListTopologyVersion,
+        }
+      : undefined
+  ), [chainListSnapshotId, chainListSnapshotVersion, chainListTopologyVersion])
   useEffect(() => {
     setActiveSnapshotContext(
       chainList?.snapshot_id ?? null,
@@ -113,13 +139,45 @@ export default function App() {
     : null
   const selectedChainSummary = chainList?.chains.find(chain => chain.chain_id === chainId) ?? null
   const overviewPreviewRequestKey = snapshotKey && chainId
-    ? `${snapshotKey}\u0000${chainId}`
+    ? `${snapshotKey}\u0000${chainId}\u0000${configEpoch}`
     : null
+  const currentOverviewPreview = overviewPreview?.requestKey === overviewPreviewRequestKey
+    ? overviewPreview.payload
+    : null
+  const expectedOverviewIdentityKey = serializeAnalysisIdentity(currentOverviewPreview?.analysis_identity)
+  const expectedOverviewIdentity = useMemo(
+    () => expectedOverviewIdentityKey
+      ? JSON.parse(expectedOverviewIdentityKey) as NonNullable<ChainOverviewCards['analysis_identity']>
+      : null,
+    [expectedOverviewIdentityKey],
+  )
+  const expectedOverviewResourceKind = currentOverviewPreview?.artifact_revision?.resource_kind ?? null
+  const expectedOverviewFingerprint = currentOverviewPreview?.artifact_revision?.fingerprint ?? null
+  const expectedOverviewRevision = useMemo(
+    () => expectedOverviewResourceKind && expectedOverviewFingerprint
+      ? {
+          resource_kind: expectedOverviewResourceKind,
+          fingerprint: expectedOverviewFingerprint,
+        } as NonNullable<ChainOverviewCards['artifact_revision']>
+      : null,
+    [expectedOverviewResourceKind, expectedOverviewFingerprint],
+  )
+
+  useEffect(() => {
+    if (previousConfigEpoch.current === configEpoch) return
+    previousConfigEpoch.current = configEpoch
+    clearChainReadCache()
+    clearReviewJobCache()
+    clearCohesionCache()
+    clearTopologySubgraphCache()
+    setOverviewPreview(null)
+  }, [configEpoch])
 
   const handleReviewSucceeded = useCallback((reviewJob: CounterfactualJob) => {
     if (reviewJob.chain_id !== chainId || reviewJob.status !== 'SUCCEEDED') return
     if (refreshedCohesionReviewId.current === reviewJob.job_id) return
     refreshedCohesionReviewId.current = reviewJob.job_id
+    clearChainReadCache()
     clearCohesionCache(reviewJob.chain_id)
     setReviewEpoch((epoch) => epoch + 1)
   }, [chainId])
@@ -239,9 +297,9 @@ export default function App() {
   // changing the snapshot ID/version. Refresh only the active chain catalog
   // identity so views and client caches move to that topology generation.
   useEffect(() => {
-    if (!chainList) return
-    const requestedSnapshotId = chainList.snapshot_id
-    const requestedSnapshotVersion = chainList.snapshot_version
+    if (chainListSnapshotId === null || chainListSnapshotVersion === null) return
+    const requestedSnapshotId = chainListSnapshotId
+    const requestedSnapshotVersion = chainListSnapshotVersion
     const controller = new AbortController()
     let inFlight = false
     const refresh = () => {
@@ -274,7 +332,7 @@ export default function App() {
       window.clearInterval(timer)
       window.removeEventListener('focus', refresh)
     }
-  }, [chainList?.snapshot_id, chainList?.snapshot_version])
+  }, [chainListSnapshotId, chainListSnapshotVersion])
 
   // Auto-refresh snapshot catalog when tab is visible to detect newly pushed Kafka snapshots
   useEffect(() => {
@@ -322,14 +380,20 @@ export default function App() {
   // is selected.  This intentionally does not wait for Tier-1B analysis or
   // the LLM narrative, so the first paint is useful even on a cold chain.
   useEffect(() => {
-    if (currentTab !== 'chain-overview' || !chainId || !overviewPreviewRequestKey) {
+    if (!['chain-overview', 'review', 'validation'].includes(currentTab) || !chainId || !overviewPreviewRequestKey) {
       return
     }
     const controller = new AbortController()
     const requestKey = overviewPreviewRequestKey
     let timer: number | null = null
     const load = () => {
-      api.chainOverviewCards(chainId, controller.signal).then(payload => {
+      api.chainOverviewCards(
+        chainId,
+        controller.signal,
+        expectedOverviewIdentity,
+        expectedOverviewRevision,
+        chainOverviewSnapshotContext,
+      ).then(payload => {
         if (controller.signal.aborted) return
         setOverviewPreview({ requestKey, payload })
         if (payload.status === 'PENDING') {
@@ -361,7 +425,17 @@ export default function App() {
       controller.abort()
       if (timer !== null) window.clearTimeout(timer)
     }
-  }, [chainId, chainList, currentTab, overviewPreviewRequestKey])
+  }, [
+    chainId,
+    chainList,
+    currentTab,
+    overviewPreviewRequestKey,
+    configEpoch,
+    reviewEpoch,
+    expectedOverviewIdentity,
+    expectedOverviewRevision,
+    chainOverviewSnapshotContext,
+  ])
 
   // Job Polling
   useEffect(() => {
@@ -839,7 +913,8 @@ export default function App() {
               key={[snapshotKey, analysis.chain_id].join(':')}
               analysis={analysis}
               snapshotKey={snapshotKey}
-              initialOverviewCards={overviewPreview?.requestKey === overviewPreviewRequestKey ? overviewPreview.payload : null}
+              initialOverviewCards={currentOverviewPreview}
+              snapshotContext={chainOverviewSnapshotContext}
               job={activeJob}
               activeSubTab={
                 currentTab === 'chain-overview'
@@ -872,10 +947,13 @@ export default function App() {
 
           {analysis && (currentTab === 'review' || currentTab === 'validation') && (
             <RecommendationsView
+              key={`${snapshotKey ?? 'NO_SNAPSHOT'}-${chainId}-${configEpoch}-${currentOverviewPreview?.review_analysis_identity?.input_fingerprint ?? 'NO_REVIEW_CONTEXT'}`}
               analysis={analysis}
               snapshotId={chainList?.snapshot_id ?? null}
               snapshotVersion={chainList?.snapshot_version ?? null}
               topologyVersion={chainList?.topology_version}
+              expectedAnalysisIdentity={currentOverviewPreview?.review_analysis_identity ?? null}
+              expectedArtifactRevision={currentOverviewPreview?.review_artifact_revision ?? null}
               initialSubTab={currentTab === 'validation' ? 'validation' : 'recommendations'}
               onOpenReviewLearning={() => handleOpenLearning('ranker')}
               onThresholdApplied={() => setConfigEpoch(e => e + 1)}
@@ -892,6 +970,8 @@ export default function App() {
             <TopologyOverlayView
               analysis={analysis}
               snapshotKey={snapshotKey}
+              snapshotContext={chainOverviewSnapshotContext}
+              initialPathProjection={currentOverviewPreview}
               topologyPayload={topologyPayload}
               topologyHypotheses={activeJob?.status === 'SUCCEEDED' ? activeJob.result?.topology_hypotheses : null}
               onRootChange={setTopologyRootId}
