@@ -17,6 +17,13 @@ dependencies = [
   "zstandard==0.25.0",
 ]
 
+[project.optional-dependencies]
+observability = [
+  "opentelemetry-api==1.44.0",
+  "opentelemetry-sdk==1.44.0",
+  "opentelemetry-exporter-otlp-proto-http==1.44.0",
+]
+
 [dependency-groups]
 dev = [
   "httpx2==2.12.0",

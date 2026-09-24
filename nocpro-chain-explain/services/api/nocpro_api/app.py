@@ -7,6 +7,7 @@ import asyncio
 from contextlib import suppress
 import logging
 import os
+import time
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +21,18 @@ from .persistence import Database, SnapshotRepository, TopologyRepository
 from .runtime_env import load_project_environment
 from .tier1a_coordinator import Tier1ACoordinator
 from .quality_background import SnapshotQualityRunner
+from .blocking_work import (
+    BlockingWorkPool,
+    reset_active_pools,
+    set_active_pools,
+)
+from .observability import (
+    RuntimeObservability,
+    acquire_observability,
+    release_observability,
+    reset_active_observability,
+    set_active_observability,
+)
 
 
 load_project_environment()
@@ -51,6 +64,21 @@ async def _recovery_loop(
         await asyncio.sleep(interval_seconds)
 
 
+async def _event_loop_lag_loop(observability: RuntimeObservability) -> None:
+    loop = asyncio.get_running_loop()
+    interval = 1.0
+    deadline = loop.time() + interval
+    while True:
+        await asyncio.sleep(max(0.0, deadline - loop.time()))
+        now = loop.time()
+        observability.record_duration(
+            "event_loop.lag",
+            max(0.0, now - deadline),
+            {"stage": "api"},
+        )
+        deadline = now + interval
+
+
 def create_app(*, workspace: Workspace | None = None) -> FastAPI:
     service = workspace or Workspace()
 
@@ -61,6 +89,10 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
         topology_consumer = None
         recovery_task = None
         quality_runner = None
+        read_work_pool = None
+        provider_work_pool = None
+        observability_runtime = None
+        event_loop_lag_task = None
         database_url = os.environ.get("DATABASE_URL")
         if database_url:
             database = Database(database_url)
@@ -227,25 +259,62 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
                 name="tier1a-recovery-worker",
             )
 
+        read_work_pool = BlockingWorkPool.from_environment(workload="api-read")
+        provider_work_pool = BlockingWorkPool.from_environment(workload="provider")
+        observability_runtime = acquire_observability()
+        app_instance.state.read_work_pool = read_work_pool
+        app_instance.state.provider_work_pool = provider_work_pool
+        app_instance.state.observability = observability_runtime
+        service._blocking_work_pool = read_work_pool
+        if observability_runtime.enabled:
+            event_loop_lag_task = asyncio.create_task(
+                _event_loop_lag_loop(observability_runtime),
+                name="observability-event-loop-lag",
+            )
         try:
             yield
         finally:
-            if quality_runner is not None:
-                await quality_runner.stop()
-            if recovery_task is not None:
-                recovery_task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await recovery_task
-            if consumer is not None:
-                await consumer.stop()
-            if topology_consumer is not None:
-                await topology_consumer.stop()
-            service.close()
-            await service.flush_review_persistence()
-            await service.flush_deep_dive_persistence()
-            await service.flush_audit_persistence()
-            if database is not None:
-                await database.close()
+            try:
+                if quality_runner is not None:
+                    await quality_runner.stop()
+                if recovery_task is not None:
+                    recovery_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await recovery_task
+                if consumer is not None:
+                    await consumer.stop()
+                if topology_consumer is not None:
+                    await topology_consumer.stop()
+                service.close()
+                await service.flush_review_persistence()
+                await service.flush_deep_dive_persistence()
+                await service.flush_audit_persistence()
+                if database is not None:
+                    await database.close()
+            finally:
+                try:
+                    if event_loop_lag_task is not None:
+                        event_loop_lag_task.cancel()
+                        with suppress(asyncio.CancelledError):
+                            await event_loop_lag_task
+                finally:
+                    try:
+                        if provider_work_pool is not None:
+                            await provider_work_pool.aclose()
+                    finally:
+                        try:
+                            if read_work_pool is not None:
+                                await read_work_pool.aclose()
+                        finally:
+                            app_instance.state.read_work_pool = None
+                            app_instance.state.provider_work_pool = None
+                            app_instance.state.observability = (
+                                RuntimeObservability.disabled_from_environment()
+                            )
+                            if getattr(service, "_blocking_work_pool", None) is read_work_pool:
+                                del service._blocking_work_pool
+                            if observability_runtime is not None:
+                                release_observability(observability_runtime)
 
     app = FastAPI(
         title="NocPro Chain Explain API",
@@ -255,7 +324,67 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
     app.state.workspace = service
     app.state.topology_repository = None
     app.state.snapshot_context_lock = asyncio.Lock()
+    app.state.read_work_pool = None
+    app.state.provider_work_pool = None
+    app.state.observability = RuntimeObservability.disabled_from_environment()
     service._snapshot_context_lock = app.state.snapshot_context_lock
+
+    @app.middleware("http")
+    async def api_request_observability(request, call_next):
+        observability = request.app.state.observability
+        started = time.perf_counter()
+        initial_route = getattr(request.scope.get("route"), "path", "unmatched")
+        context_token = observability.attach_remote_context(request.headers)
+        active_token = set_active_observability(observability)
+        response = None
+        status_code = 500
+        span = None
+        try:
+            with observability.span(
+                "http.server",
+                {
+                    "http.route": initial_route,
+                    "http.request.method": request.method,
+                },
+            ) as span:
+                response = await call_next(request)
+                status_code = response.status_code
+                route_template = getattr(request.scope.get("route"), "path", "unmatched")
+                if span is not None:
+                    span.update_name(f"{request.method} {route_template}")
+                    span.set_attribute("http.route", route_template)
+                    span.set_attribute("http.response.status_code", status_code)
+            return response
+        finally:
+            elapsed = max(0.0, time.perf_counter() - started)
+            route_template = getattr(request.scope.get("route"), "path", "unmatched")
+            observability.record_duration(
+                "api.request.duration",
+                elapsed,
+                {
+                    "http.route": route_template,
+                    "http.request.method": request.method,
+                    "http.response.status_code": status_code,
+                },
+            )
+            if response is not None and observability.server_timing:
+                response.headers.setdefault(
+                    "Server-Timing", f"app;dur={elapsed * 1000:.3f}"
+                )
+            reset_active_observability(active_token)
+            observability.detach_remote_context(context_token)
+
+    @app.middleware("http")
+    async def blocking_work_pool_context(request, call_next):
+        read_pool = request.app.state.read_work_pool
+        provider_pool = request.app.state.provider_work_pool
+        if read_pool is None or provider_pool is None:
+            return await call_next(request)
+        token = set_active_pools(read_pool, provider_pool)
+        try:
+            return await call_next(request)
+        finally:
+            reset_active_pools(token)
 
     @app.middleware("http")
     async def guard_workspace_snapshot_context(request, call_next):

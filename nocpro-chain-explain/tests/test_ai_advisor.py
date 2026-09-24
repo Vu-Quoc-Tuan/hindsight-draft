@@ -31,6 +31,14 @@ def _isolate_provider_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name, raising=False)
 
 
+def _run_provider_inline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Avoid cross-thread loop wakeups in this asyncio.run-based ASGI harness."""
+    async def run_inline(function, *args, workload="api-read", **kwargs):
+        return function(*args, **kwargs)
+
+    monkeypatch.setattr("nocpro_api.routes.run_blocking_work", run_inline)
+
+
 def _analysis() -> SimpleNamespace:
     return SimpleNamespace(
         members={
@@ -198,6 +206,8 @@ def test_ai_suggestion_api_endpoint_surfaces_provider_unavailable_without_fallba
     monkeypatch,
 ) -> None:
     monkeypatch.delenv("AI_API_KEY", raising=False)
+    _run_provider_inline(monkeypatch)
+
     async def exercise() -> None:
         app = create_app()
         transport = httpx2.ASGITransport(app=app)
@@ -208,8 +218,12 @@ def test_ai_suggestion_api_endpoint_surfaces_provider_unavailable_without_fallba
                 loaded = await client.post("/api/v1/snapshots", json=_payload())
                 assert loaded.status_code == 201
 
-                first = await client.get("/api/v1/chains/C1/ai-suggestion")
-                second = await client.get("/api/v1/chains/C1/ai-suggestion")
+                first = await asyncio.wait_for(
+                    client.get("/api/v1/chains/C1/ai-suggestion"), timeout=5
+                )
+                second = await asyncio.wait_for(
+                    client.get("/api/v1/chains/C1/ai-suggestion"), timeout=5
+                )
                 assert first.status_code == 200
                 assert second.status_code == 200
                 assert first.json() == second.json()
@@ -223,7 +237,11 @@ def test_ai_suggestion_api_endpoint_surfaces_provider_unavailable_without_fallba
     asyncio.run(exercise())
 
 
-def test_assistant_query_is_snapshot_bound_and_does_not_infer_offline_navigation() -> None:
+def test_assistant_query_is_snapshot_bound_and_does_not_infer_offline_navigation(
+    monkeypatch,
+) -> None:
+    _run_provider_inline(monkeypatch)
+
     async def exercise() -> None:
         app = create_app()
         transport = httpx2.ASGITransport(app=app)
@@ -344,6 +362,7 @@ def test_assistant_stale_context_never_invokes_llm(monkeypatch) -> None:
 
 
 def test_assistant_route_does_not_infer_actions_when_provider_is_missing(monkeypatch) -> None:
+    _run_provider_inline(monkeypatch)
     monkeypatch.setattr(
         "nocpro_api.assistant.render_grounded",
         lambda **_kwargs: pytest.fail("provider must not be called when unconfigured"),
@@ -385,7 +404,9 @@ def test_assistant_route_does_not_infer_actions_when_provider_is_missing(monkeyp
     asyncio.run(exercise())
 
 
-def test_assistant_rejects_missing_or_invalid_snapshot_bound_targets() -> None:
+def test_assistant_rejects_missing_or_invalid_snapshot_bound_targets(monkeypatch) -> None:
+    _run_provider_inline(monkeypatch)
+
     async def exercise() -> None:
         app = create_app()
         transport = httpx2.ASGITransport(app=app)
@@ -447,7 +468,9 @@ def test_assistant_rejects_missing_or_invalid_snapshot_bound_targets() -> None:
     asyncio.run(exercise())
 
 
-def test_assistant_does_not_expose_registry_facts_as_ai_fallback() -> None:
+def test_assistant_does_not_expose_registry_facts_as_ai_fallback(monkeypatch) -> None:
+    _run_provider_inline(monkeypatch)
+
     async def exercise() -> None:
         app = create_app()
         transport = httpx2.ASGITransport(app=app)

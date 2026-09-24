@@ -8,9 +8,7 @@ import json
 import logging
 import os
 import re
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
-from functools import partial
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -52,6 +50,11 @@ from .schemas import (
     ApplyThresholdInput,
     ProposalClarityComparisonView,
     ThresholdExplainOptimizationView,
+)
+from .blocking_work import (
+    BlockingWorkBusy,
+    BlockingWorkClosed,
+    run_blocking as run_blocking_work,
 )
 from .catalog import list_catalog_presets, load_preset_payload
 from .threshold_explain_optimizer import (
@@ -206,36 +209,27 @@ def _should_preserve_cached_cohesion(
 
 
 async def _run_grounded_provider(function: Any, **kwargs: Any) -> Any:
-    """Run one blocking provider call without retaining the loop default pool.
-
-    The provider implementation is synchronous.  Submitting directly to a
-    short-lived executor avoids coupling the request to asyncio's
-    ``run_in_executor`` future bridge, which can leave an ASGI test loop waiting
-    even after the worker has completed.  Polling the concurrent future yields
-    to the loop while preserving the original exception/result semantics.
-    """
-    call = partial(function, **kwargs)
-    with ThreadPoolExecutor(
-        max_workers=1,
-        thread_name_prefix="nocpro-grounded-llm",
-    ) as executor:
-        future = executor.submit(call)
-        while not future.done():
-            await asyncio.sleep(0.01)
-        return future.result()
+    """Run a synchronous provider function on the bounded provider pool."""
+    try:
+        return await run_blocking_work(function, workload="provider", **kwargs)
+    except (BlockingWorkBusy, BlockingWorkClosed) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI provider capacity is temporarily unavailable",
+            headers={"Retry-After": "1"},
+        ) from exc
 
 
 async def _run_blocking(function: Any, *args: Any, **kwargs: Any) -> Any:
-    """Offload one synchronous read without retaining the loop default pool."""
-    call = partial(function, *args, **kwargs)
-    with ThreadPoolExecutor(
-        max_workers=1,
-        thread_name_prefix="nocpro-api-read",
-    ) as executor:
-        future = executor.submit(call)
-        while not future.done():
-            await asyncio.sleep(0.01)
-        return future.result()
+    """Run one synchronous read on the bounded API-read pool."""
+    try:
+        return await run_blocking_work(function, *args, workload="api-read", **kwargs)
+    except (BlockingWorkBusy, BlockingWorkClosed) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="API read capacity is temporarily unavailable",
+            headers={"Retry-After": "1"},
+        ) from exc
 
 
 def translate_error(exc: Exception) -> HTTPException:

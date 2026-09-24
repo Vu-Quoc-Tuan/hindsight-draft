@@ -5,7 +5,6 @@ import os
 import hashlib
 import asyncio
 from copy import deepcopy
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -59,21 +58,15 @@ class Tier1ACoordinator:
         self.topology_repository = topology_repository
 
     async def _compute_snapshot_offloaded(self, payload):
-        """Run CPU-heavy Tier-1A preparation without retaining asyncio's default worker.
+        """Run CPU-heavy Tier-1A preparation without blocking its event loop."""
+        from .blocking_work import run_blocking
 
-        A short-lived executor is intentional here: API tests and lightweight
-        demo processes frequently create/destroy coordinators without an app
-        lifespan shutdown hook.  Using ``asyncio.to_thread`` would leave its
-        implicit executor alive until loop teardown, while this scope joins
-        exactly the worker used for this claim.
-        """
-        loop = asyncio.get_running_loop()
-        with ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix="nocpro-tier1a"
-        ) as executor:
-            return await loop.run_in_executor(
-                executor, self.workspace.compute_snapshot, payload
-            )
+        return await run_blocking(
+            self.workspace.compute_snapshot,
+            payload,
+            workload="api-read",
+            pool=getattr(self.workspace, "_blocking_work_pool", None),
+        )
 
     async def _hydrate_payload_topology_if_needed(self, payload: dict[str, Any]):
         if not self.topology_repository or not isinstance(payload, dict):
