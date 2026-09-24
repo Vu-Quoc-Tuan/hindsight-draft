@@ -22,7 +22,9 @@ from typing import Any
 from audit import AuditVerdict
 from libs.contracts.topology_mapping import resolve_topology_mappings
 from libs.contracts.topology_paths import select_path_forest, shortest_paths_to_targets
+from tier2.counterfactual.public_contract import review_evaluation_completed
 from .grounded_llm import render_grounded
+from .quality_readiness import evaluate_quality_readiness
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +115,7 @@ def _finding(
         "title": title,
         "claim": claim,
         "evidence": evidence,
+        "evidence_ids": [],
         "limitations": list(limitations or []),
         "confidence_basis": confidence_basis,
         "confidence": confidence,
@@ -316,12 +319,17 @@ def _build_topology_connectivity(
     resource_by_alarm: dict[str, str] = {}
     resource_types: set[str] = set()
     resource_devices: dict[str, set[str]] = {}
+    resource_mapping_statuses: dict[str, set[str]] = {}
     mapped_alarm_ids: set[str] = set()
     resolved_mappings = resolve_topology_mappings(raw_mappings or (), member_ids) or {}
     for alarm_id, mapping in resolved_mappings.items():
         resource_id = mapping["resource_id"]
         mapped_alarm_ids.add(alarm_id)
         resource_by_alarm[alarm_id] = resource_id
+        mapping_status = _record_value(mapping, "mapping_status")
+        mapping_status = getattr(mapping_status, "value", mapping_status)
+        if isinstance(mapping_status, str) and mapping_status:
+            resource_mapping_statuses.setdefault(resource_id, set()).add(mapping_status)
         topology_layer = (
             _record_value(mapping, "topology_layer")
             or _record_value(mapping, "resource_type")
@@ -372,8 +380,13 @@ def _build_topology_connectivity(
                 "source_devices": sorted(resource_devices.get(source, ())),
                 "target_devices": sorted(resource_devices.get(target, ())),
                 "hop_count": len(best_path) - 1,
+                "max_hops": max_hops,
                 "path": best_path,
                 "relation_type": best_relation,
+                "mapping_statuses": sorted(
+                    resource_mapping_statuses.get(source, set())
+                    | resource_mapping_statuses.get(target, set())
+                ),
                 "traversal_semantic": "UNDIRECTED_STRUCTURAL_CONNECTIVITY",
             })
 
@@ -394,6 +407,7 @@ def _build_topology_connectivity(
         "paths": paths,
         "display_paths": display_paths,
         "display_paths_truncated": len(complete_display_forest) > len(display_paths),
+        "analysis_truncated": False,
         "pair_total": pair_total,
         "connected_pair_count": len(paths),
         "max_path_hops": max((path["hop_count"] for path in paths), default=None),
@@ -402,6 +416,63 @@ def _build_topology_connectivity(
             for resource_id, count in transit_counter.most_common(5)
         ],
     }
+
+
+def _topology_analysis_truncated(topology: Any) -> bool:
+    if not isinstance(topology, dict):
+        return False
+    if any(
+        topology.get(flag) is True
+        for flag in (
+            "truncated",
+            "analysis_truncated",
+            "edges_truncated",
+            "mappings_truncated",
+        )
+    ):
+        return True
+    for field, rows in (
+        ("total_edge_count", topology.get("edges")),
+        ("total_mapping_count", topology.get("mappings")),
+    ):
+        expected = topology.get(field)
+        if type(expected) is int and isinstance(rows, (list, tuple)) and expected != len(rows):
+            return True
+    return False
+
+
+def _topology_source_status(topology: Any) -> str:
+    """Classify topology input completeness without using display truncation."""
+    if not isinstance(topology, dict) or not (
+        "edges" in topology or "mappings" in topology
+    ):
+        return "UNAVAILABLE"
+    if (
+        "edges" not in topology
+        or "mappings" not in topology
+        or topology.get("edges") is None
+        or topology.get("mappings") is None
+    ):
+        return "PARTIAL"
+    if not isinstance(topology.get("edges"), (list, tuple)) or not isinstance(
+        topology.get("mappings"), (list, tuple)
+    ):
+        return "PARTIAL"
+    if _topology_analysis_truncated(topology):
+        return "PARTIAL"
+    return "AVAILABLE"
+
+
+def _quality_stars_for_score(score: float) -> int:
+    if score >= 0.85:
+        return 5
+    if score >= 0.70:
+        return 4
+    if score >= 0.50:
+        return 3
+    if score >= 0.30:
+        return 2
+    return 1
 
 
 _EVIDENCE_GROUP_LABELS_VI = {
@@ -654,11 +725,12 @@ def _resolve_recommendations(review_result: dict[str, Any] | None) -> dict[str, 
 
     raw_status = str(review_result.get("recommendation_status") or "").upper()
     status = raw_status or ("AVAILABLE" if selected else "NO_RECOMMENDATION")
-    evaluation_status = str(review_result.get("status") or "").upper()
-    evaluation_completed = bool(evaluated_candidates) or evaluation_status in {
-        "AVAILABLE",
-        "UNAVAILABLE",
-    }
+    explicit_completion = review_result.get("evaluation_completed")
+    evaluation_completed = (
+        explicit_completion
+        if isinstance(explicit_completion, bool)
+        else review_evaluation_completed(review_result.get("operation_status"))
+    )
     rejected_count = sum(
         1
         for candidate in evaluated_candidates
@@ -736,10 +808,13 @@ def build_chain_quality_assessment(
     *,
     alarm_count: int,
     role_counts: dict[str, Any],
+    mapped_alarm_count: int,
     mapped_device_count: int,
     total_device_count: int,
+    topology_status: str,
     connected_pair_count: int,
     pair_total: int,
+    evaluated_pair_count: int,
     audit_status: str,
     audit_verdict: str | None,
     over_merge_strength: str | None,
@@ -747,90 +822,179 @@ def build_chain_quality_assessment(
     recommendation_status: str,
     recommendation_evaluation_completed: bool = False,
 ) -> dict[str, Any]:
-    """Rate grouping robustness from available evidence, never as probability."""
+    """Rate grouping robustness only when its evidence readiness is explicit."""
     method = "HEURISTIC_V1"
-    if alarm_count <= 1:
+    if type(alarm_count) is not int or alarm_count < 0:
+        raise ValueError("alarm_count must be a non-negative integer")
+    for name, value in (
+        ("connected_pair_count", connected_pair_count),
+        ("pair_total", pair_total),
+        ("evaluated_pair_count", evaluated_pair_count),
+        ("recommendation_count", recommendation_count),
+    ):
+        if type(value) is not int or value < 0:
+            raise ValueError(f"{name} must be a non-negative integer")
+    if connected_pair_count > pair_total:
+        raise ValueError("connected_pair_count cannot exceed pair_total")
+    if type(recommendation_evaluation_completed) is not bool:
+        raise ValueError("recommendation_evaluation_completed must be a boolean")
+    if not isinstance(role_counts, dict):
+        raise ValueError("role_counts must be a mapping")
+    normalized_roles: dict[str, int] = {}
+    for key, value in role_counts.items():
+        role_name = str(getattr(key, "value", key)).upper()
+        if role_name in normalized_roles:
+            raise ValueError("role_counts contain duplicate normalized role names")
+        if type(value) is not int or value < 0:
+            raise ValueError("role counts must be non-negative integers")
+        normalized_roles[role_name] = value
+    if sum(normalized_roles.values()) != alarm_count:
+        raise ValueError("role_counts must account for every chain alarm exactly once")
+    insufficient = normalized_roles.get("INSUFFICIENT_DATA", 0)
+    weak = normalized_roles.get("WEAK", 0)
+    evaluated_members = alarm_count - insufficient
+    if weak > evaluated_members:
+        raise ValueError("weak role count cannot exceed evaluated member count")
+    role_coverage = evaluated_members / alarm_count if alarm_count else 0.0
+    verdict = str(audit_verdict or "").upper()
+    audit_state = str(audit_status or "").upper()
+    audit_complete = audit_state == "EVALUATED" and verdict in {
+        "CANDIDATE_SPLIT",
+        "NO_LOW_CONDUCTANCE_CUT",
+    }
+    recommendation_state = str(recommendation_status or "NOT_EVALUATED").upper()
+    review_state = (
+        "COMPLETED"
+        if recommendation_evaluation_completed
+        else "UNAVAILABLE"
+        if recommendation_state == "UNAVAILABLE"
+        else "NOT_EVALUATED"
+    )
+    readiness = evaluate_quality_readiness(
+        alarm_count=alarm_count,
+        evaluated_members=evaluated_members,
+        topology_status=topology_status,
+        mapped_alarm_count=mapped_alarm_count,
+        evaluated_pair_count=evaluated_pair_count,
+        eligible_pair_count=pair_total,
+        mapped_device_count=mapped_device_count,
+        total_device_count=total_device_count,
+        audit_status=audit_state,
+        audit_complete=audit_complete,
+        review_status=review_state,
+    )
+    topology_complete = "topology" in readiness.complete_families
+    audit_complete = "structural" in readiness.complete_families
+    available_dimension_count = 2 if evaluated_members > 0 else 0
+    if topology_complete and total_device_count > 0:
+        available_dimension_count += 1
+    if topology_complete and pair_total > 0:
+        available_dimension_count += 1
+    if audit_complete:
+        available_dimension_count += 1
+    if audit_complete and str(over_merge_strength or "").upper() in {
+        "NONE",
+        "WEAK",
+        "MODERATE",
+        "STRONG",
+    }:
+        available_dimension_count += 1
+    evidence_coverage = {
+        "membership": {
+            "evaluated": evaluated_members,
+            "total": alarm_count,
+            "ratio": round(role_coverage, 4),
+        },
+        "topology": {
+            "status": str(topology_status).upper(),
+            "mapped_alarms": mapped_alarm_count,
+            "alarm_total": alarm_count,
+            "mapped_devices": mapped_device_count,
+            "device_total": total_device_count,
+            "evaluated_pairs": evaluated_pair_count,
+            "eligible_pairs": pair_total,
+        },
+        "audit": {"status": audit_state, "complete": audit_complete},
+        "review": {"status": review_state},
+    }
+    reason_text = {
+        "SINGLETON_CHAIN": "Chuỗi chỉ có một cảnh báo.",
+        "INSUFFICIENT_ROLE_COVERAGE": (
+            f"Chỉ đánh giá được {evaluated_members}/{alarm_count} thành viên; cần tối thiểu 50%."
+        ),
+        "INSUFFICIENT_INDEPENDENT_EVIDENCE": (
+            "Cần topology connectivity đầy đủ hoặc kết quả Audit cấu trúc chính xác."
+        ),
+        "TOPOLOGY_NOT_USED": "Không dùng topology trong lần chấm này.",
+        "TOPOLOGY_MAPPING_INCOMPLETE": "Mapping topology chưa bao phủ đủ alarm và thiết bị.",
+        "TOPOLOGY_PAIR_COVERAGE_INCOMPLETE": "Chưa đánh giá đủ các cặp resource topology hợp lệ.",
+        "TOPOLOGY_SOURCE_PARTIAL": "Nguồn topology chưa đầy đủ.",
+        "AUDIT_INCOMPLETE": "Audit chưa có kết quả cấu trúc chính xác để dùng làm evidence.",
+        "AUDIT_UNAVAILABLE": "Audit hiện không khả dụng.",
+        "AUDIT_NOT_EVALUATED": "Audit chưa được đánh giá.",
+        "REVIEW_UNAVAILABLE": "Counterfactual Review hiện không khả dụng.",
+        "REVIEW_NOT_COMPLETED": "Counterfactual Review chưa hoàn tất đánh giá.",
+    }
+    common = {
+        "method": method,
+        "readiness": readiness.status,
+        "reason_codes": list(readiness.missing_reasons),
+        "evidence_coverage": evidence_coverage,
+        "readiness_policy_version": "quality-readiness-v1",
+        "observed_evidence_families": list(readiness.observed_families),
+    }
+    if readiness.status == "NOT_APPLICABLE":
         return {
-            "method": method,
+            **common,
             "status": "NOT_APPLICABLE",
             "stars": None,
             "label": "Không áp dụng",
-            "reasons": ["Chuỗi chỉ có một cảnh báo."],
+            "reasons": [reason_text[code] for code in readiness.missing_reasons],
             "available_dimension_count": 0,
         }
-
-    normalized_roles = {
-        str(getattr(key, "value", key)).upper(): int(value or 0)
-        for key, value in (role_counts or {}).items()
-    }
-    insufficient = normalized_roles.get("INSUFFICIENT_DATA", 0)
-    weak = normalized_roles.get("WEAK", 0)
-    role_total = sum(max(0, count) for count in normalized_roles.values())
-    evaluated_members = max(0, role_total - insufficient)
-    role_coverage = evaluated_members / max(1, alarm_count)
-    if role_coverage < 0.5:
+    if readiness.status != "READY":
         return {
-            "method": method,
+            **common,
             "status": "UNAVAILABLE",
             "stars": None,
-            "label": "Chưa thể chấm",
-            "reasons": ["Chưa đủ thành viên có evidence để đánh giá vai trò."],
-            "available_dimension_count": 1,
+            "label": "Chưa đủ dữ liệu để chấm",
+            "reasons": [reason_text.get(code, code) for code in readiness.missing_reasons],
+            "available_dimension_count": available_dimension_count,
         }
 
     dimensions: list[tuple[str, float, float]] = [
         ("role_coverage", role_coverage, 0.15),
         ("member_consistency", 1.0 - (weak / max(1, evaluated_members)), 0.20),
     ]
-    if total_device_count > 0:
+    if topology_complete and total_device_count > 0:
         dimensions.append((
             "device_mapping",
             min(1.0, mapped_device_count / total_device_count),
             0.15,
         ))
-    if pair_total > 0:
+    if topology_complete and pair_total > 0:
         dimensions.append((
             "topology_connectivity",
             min(1.0, connected_pair_count / pair_total),
             0.15,
         ))
-    verdict = str(audit_verdict or "").upper()
-    if str(audit_status).upper() == "EVALUATED":
+    if audit_complete:
         dimensions.append((
             "structural_audit",
             1.0 if verdict == "NO_LOW_CONDUCTANCE_CUT" else 0.0,
             0.25,
         ))
     strength = str(over_merge_strength or "").upper()
-    if strength in {"NONE", "WEAK", "MODERATE", "STRONG"}:
+    if audit_complete and strength in {"NONE", "WEAK", "MODERATE", "STRONG"}:
         dimensions.append((
             "over_merge",
             {"NONE": 1.0, "WEAK": 0.7, "MODERATE": 0.25, "STRONG": 0.0}.get(strength, 0.5),
             0.10,
         ))
 
-    if len(dimensions) < 3:
-        return {
-            "method": method,
-            "status": "UNAVAILABLE",
-            "stars": None,
-            "label": "Chưa thể chấm",
-            "reasons": ["Chưa đủ nguồn evidence độc lập để chấm độ vững."],
-            "available_dimension_count": len(dimensions),
-        }
-
     weight_total = sum(weight for _, _, weight in dimensions)
     score = sum(value * weight for _, value, weight in dimensions) / weight_total
-    if score >= 0.85:
-        stars = 5
-    elif score >= 0.70:
-        stars = 4
-    elif score >= 0.50:
-        stars = 3
-    elif score >= 0.30:
-        stars = 2
-    else:
-        stars = 1
+    stars = _quality_stars_for_score(score)
 
     strength = str(over_merge_strength or "").upper()
     if verdict == "CANDIDATE_SPLIT" or strength == "MODERATE":
@@ -839,11 +1003,10 @@ def build_chain_quality_assessment(
         stars = 1
     if recommendation_count > 0:
         stars = min(stars, 3)
-    review_status = str(recommendation_status or "NOT_EVALUATED").upper()
-    if review_status in {"NOT_EVALUATED", "UNAVAILABLE"}:
+    if recommendation_state == "UNAVAILABLE":
         stars = min(stars, 4)
     if stars == 5 and not (
-        str(audit_status).upper() == "EVALUATED"
+        audit_complete
         and verdict == "NO_LOW_CONDUCTANCE_CUT"
         and strength not in {"MODERATE", "STRONG"}
         and recommendation_count == 0
@@ -858,9 +1021,9 @@ def build_chain_quality_assessment(
         1: "Rủi ro gộp sai cao",
     }
     reasons: list[str] = []
-    if total_device_count:
+    if topology_complete and total_device_count:
         reasons.append(f"{mapped_device_count}/{total_device_count} thiết bị đã nằm trong topology.")
-    if pair_total:
+    if topology_complete and pair_total:
         reasons.append(
             f"{connected_pair_count}/{pair_total} cặp resource có đường kết nối trong giới hạn phân tích."
         )
@@ -872,28 +1035,34 @@ def build_chain_quality_assessment(
         reasons.append("Audit chưa tìm thấy ranh giới tách đủ yếu.")
     if recommendation_count:
         reasons.append(f"Counterfactual tìm thấy {recommendation_count} phương án tốt hơn.")
-    elif review_status == "UNAVAILABLE":
+    elif recommendation_state == "UNAVAILABLE":
         reasons.insert(
             0,
             "Counterfactual đã chạy nhưng khuyến nghị chưa đủ điều kiện phát hành."
             if recommendation_evaluation_completed
             else "Counterfactual chưa thể hoàn tất đánh giá phương án.",
         )
-    elif review_status == "NOT_EVALUATED":
+    elif not recommendation_evaluation_completed:
         reasons.insert(0, "Counterfactual chưa chạy nên chưa thể loại trừ phương án tốt hơn.")
+    readiness_notices = [
+        reason_text[code]
+        for code in readiness.missing_reasons
+        if code in {"TOPOLOGY_NOT_USED", "AUDIT_UNAVAILABLE", "AUDIT_NOT_EVALUATED"}
+    ]
 
     return {
+        **common,
         "method": method,
         "status": "EVALUATED",
         "stars": stars,
         "label": labels[stars],
-        "reasons": reasons[:3],
+        "reasons": list(dict.fromkeys([*readiness_notices, *reasons]))[:3],
         "available_dimension_count": len(dimensions),
     }
 
 
-CHAIN_OVERVIEW_PROJECTION_VERSION = "CHAIN_OVERVIEW_V3"
-CHAIN_QUALITY_PIPELINE_VERSION = "DETERMINISTIC_QUALITY_V3"
+CHAIN_OVERVIEW_PROJECTION_VERSION = "CHAIN_OVERVIEW_V6"
+CHAIN_QUALITY_PIPELINE_VERSION = "DETERMINISTIC_QUALITY_V6"
 
 
 def build_chain_overview_projection(context: dict[str, Any]) -> dict[str, Any]:
@@ -930,7 +1099,9 @@ def build_chain_overview_projection(context: dict[str, Any]) -> dict[str, Any]:
         topology_projection = {
             key: topology.get(key)
             for key in (
+                "status",
                 "mapped",
+                "mapped_alarm_count",
                 "total",
                 "mapped_device_count",
                 "total_device_count",
@@ -939,7 +1110,10 @@ def build_chain_overview_projection(context: dict[str, Any]) -> dict[str, Any]:
                 "dependency_verified",
                 "connected_pair_count",
                 "pair_total",
+                "evaluated_pair_count",
+                "eligible_pair_count",
                 "max_path_hops",
+                "analysis_truncated",
                 "mapped_resources",
                 "display_paths",
                 "display_paths_truncated",
@@ -1397,12 +1571,25 @@ def extract_cohesion_context(
         str(getattr(alarm, "alarm_id", "")): str(getattr(alarm, "device_code", "") or "")
         for alarm in raw_alarms
     }
+    topology_source_status = _topology_source_status(topo)
     topology_connectivity = _build_topology_connectivity(
         raw_mappings=raw_mappings,
         raw_edges=raw_edges,
         member_ids=member_ids,
         alarm_devices=alarm_devices,
     )
+    mapped_alarm_count = len(topology_connectivity["mapped_alarm_ids"])
+    if topology_source_status == "AVAILABLE" and mapped_alarm_count < alarm_count:
+        topology_source_status = "PARTIAL"
+    topology_connectivity["status"] = topology_source_status
+    topology_connectivity["analysis_truncated"] = _topology_analysis_truncated(topo)
+    topology_connectivity["mapped_alarm_count"] = mapped_alarm_count
+    topology_connectivity["evaluated_pair_count"] = (
+        topology_connectivity["pair_total"]
+        if topology_source_status == "AVAILABLE"
+        else 0
+    )
+    topology_connectivity["eligible_pair_count"] = topology_connectivity["pair_total"]
     connected_pair_count = topology_connectivity["connected_pair_count"]
 
     structural_insights: list[dict[str, str]] = []
@@ -1769,15 +1956,23 @@ def extract_cohesion_context(
         mapped_device_count / total_device_count if total_device_count else None
     )
     quality_assessment = (
-        quality_assessment_override
+        (
+            quality_assessment_override.get("assessment")
+            if isinstance(quality_assessment_override, dict)
+            and isinstance(quality_assessment_override.get("assessment"), dict)
+            else quality_assessment_override
+        )
         if isinstance(quality_assessment_override, dict)
         else build_chain_quality_assessment(
             alarm_count=alarm_count,
             role_counts=role_counts,
+            mapped_alarm_count=topology_connectivity["mapped_alarm_count"],
             mapped_device_count=mapped_device_count,
             total_device_count=total_device_count,
+            topology_status=topology_connectivity["status"],
             connected_pair_count=topology_connectivity["connected_pair_count"],
             pair_total=topology_connectivity["pair_total"],
+            evaluated_pair_count=topology_connectivity["evaluated_pair_count"],
             audit_status=audit_status,
             audit_verdict=audit_verdict,
             over_merge_strength=(over_merge_info or {}).get("strength"),
@@ -1829,7 +2024,9 @@ def extract_cohesion_context(
             "top_descriptors": top_descriptors,
         },
         "topology": {
+            "status": topology_connectivity["status"],
             "mapped": mapped_count,
+            "mapped_alarm_count": topology_connectivity["mapped_alarm_count"],
             "total": alarm_count,
             "mapped_device_count": mapped_device_count,
             "total_device_count": total_device_count,
@@ -1841,8 +2038,11 @@ def extract_cohesion_context(
             "mapped_resources": topology_connectivity["mapped_resources"],
             "display_paths": topology_connectivity["display_paths"],
             "display_paths_truncated": topology_connectivity["display_paths_truncated"],
+            "analysis_truncated": topology_connectivity["analysis_truncated"],
             "connected_pair_count": topology_connectivity["connected_pair_count"],
             "pair_total": topology_connectivity["pair_total"],
+            "evaluated_pair_count": topology_connectivity["evaluated_pair_count"],
+            "eligible_pair_count": topology_connectivity["eligible_pair_count"],
             "max_path_hops": topology_connectivity["max_path_hops"],
             "shared_transit_resources": topology_connectivity["shared_transit_resources"],
             "dependency_verified": False,
@@ -2240,6 +2440,7 @@ def generate_cohesion_narrative(
     audit_error_reason: str | None = None,
     deep_dive_analysis: Any | None = None,
     persisted_quality_assessment: dict[str, Any] | None = None,
+    evidence_review_result: dict[str, Any] | None = None,
     language: str = "vi",
 ) -> CohesionNarrativeResult:
     """Generate a grounded narrative, optionally polished by an LLM."""
@@ -2257,6 +2458,35 @@ def generate_cohesion_narrative(
         deep_dive_analysis=hydrate_persisted_deep_dive(deep_dive_analysis),
         quality_assessment_override=persisted_quality_assessment,
     )
+
+    evidence_records: list[dict[str, Any]] = []
+    evidence_identity: dict[str, Any] | None = None
+    overview_projection = (
+        persisted_quality_assessment.get("overview_projection")
+        if isinstance(persisted_quality_assessment, dict)
+        else None
+    )
+    if isinstance(overview_projection, dict):
+        from libs.contracts.analysis_identity import analysis_identity_from_projection
+        from .evidence_projection import attach_evidence_references, build_evidence_records
+
+        adapted_identity = analysis_identity_from_projection(overview_projection)
+        if adapted_identity.available and adapted_identity.identity is not None:
+            evidence_identity = adapted_identity.identity.to_payload()
+            evidence_records = build_evidence_records(
+                identity=adapted_identity.identity,
+                overview_projection=overview_projection,
+                pair_evidence=None,
+                audit_artifact=audit_artifact,
+                review_result=evidence_review_result,
+            )
+            attach_evidence_references(
+                identity=evidence_identity,
+                quality_assessment=context.get("quality_assessment"),
+                analytical_findings=context.get("analytical_findings"),
+                records=evidence_records,
+            )
+            context["evidence_analysis_identity"] = evidence_identity
 
     # This deterministic text is supplied to the model as grounding context;
     # it is not used as a replacement for the provider's answer.
@@ -2390,6 +2620,15 @@ def generate_cohesion_narrative(
             f"Finding {finding['finding_id']} [{finding['kind']}/{finding['status']}]: "
             f"{finding['claim']}"
         )
+        refs = finding.get("evidence_ids")
+        if isinstance(refs, list) and refs:
+            claims.append(
+                f"Exact evidence record references for {finding['finding_id']}: "
+                + ", ".join(str(evidence_id) for evidence_id in refs)
+            )
+    quality_refs = (context.get("quality_assessment") or {}).get("evidence_ids")
+    if isinstance(quality_refs, list) and quality_refs:
+        claims.append("Exact evidence records for the deterministic quality assessment: " + ", ".join(quality_refs))
     connected_pair_count = int(context.get("topology", {}).get("connected_pair_count", 0) or 0)
     if connected_pair_count:
         pair_total = int(context.get("topology", {}).get("pair_total", 0) or 0)
@@ -2446,6 +2685,25 @@ def generate_cohesion_narrative(
             requested_language=language,
             preserve_provider_output=True,
         )
+        referenced_ids = set(re.findall(r"\bev1_[A-Za-z0-9_-]+", rendered.message or ""))
+        allowed_ids = {str(record.get("evidence_id")) for record in evidence_records}
+        unknown_ids = sorted(referenced_ids - allowed_ids)
+        if unknown_ids:
+            context["evidence_reference_validation"] = {
+                "status": "INVALID",
+                "reason": "GROUNDING_UNKNOWN_EVIDENCE_REFERENCE",
+            }
+            return CohesionNarrativeResult(
+                chain_id=chain_id,
+                narrative="",
+                model=rendered.model,
+                provider_status="GROUNDING_UNSUPPORTED_EVIDENCE_REFERENCE",
+                context=context,
+            )
+        context["evidence_reference_validation"] = {
+            "status": "VALID",
+            "checked_reference_count": len(referenced_ids),
+        }
         return CohesionNarrativeResult(
             chain_id=chain_id,
             narrative=rendered.message,

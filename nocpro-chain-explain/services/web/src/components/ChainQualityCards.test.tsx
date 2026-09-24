@@ -36,6 +36,7 @@ const context = {
   quality_assessment: {
     method: 'HEURISTIC_V1',
     status: 'EVALUATED',
+    readiness: 'READY',
     stars: 4,
     label: 'Khá vững',
     reasons: [],
@@ -79,6 +80,51 @@ describe('chain quality overview cards', () => {
     const html = renderToStaticMarkup(<ChainQualityCard context={lockedContext} />)
     expect(html).toContain('Đã thử 9 PA · 2 PA qua kiểm tra an toàn')
     expect(html).not.toContain('Chưa chạy so sánh phương án')
+  })
+
+  it('does not render placeholder stars when readiness is incomplete', () => {
+    const partialContext = {
+      ...context,
+      quality_assessment: {
+        method: 'HEURISTIC_V1',
+        status: 'UNAVAILABLE',
+        readiness: 'PARTIAL',
+        stars: null,
+        label: 'Chưa đủ dữ liệu để chấm',
+        reasons: ['Counterfactual Review chưa hoàn tất đánh giá.'],
+        reason_codes: ['REVIEW_NOT_COMPLETED'],
+        available_dimension_count: 2,
+      },
+    } satisfies CohesionNarrativeView['context']
+
+    const html = renderToStaticMarkup(<ChainQualityCard context={partialContext} />)
+    expect(html).toContain('Chưa đủ dữ liệu để chấm')
+    expect(html).toContain('Counterfactual Review chưa hoàn tất đánh giá.')
+    expect(html).not.toContain('☆☆☆☆☆')
+  })
+
+  it('links an incomplete readiness reason to only its evidence IDs', () => {
+    const evidenceId = `ev1_${'b'.repeat(64)}`
+    const partialContext = {
+      ...context,
+      quality_assessment: {
+        method: 'HEURISTIC_V1',
+        status: 'UNAVAILABLE',
+        readiness: 'PARTIAL',
+        stars: null,
+        label: 'Chưa đủ dữ liệu để chấm',
+        reasons: ['Counterfactual Review chưa hoàn tất đánh giá.'],
+        reason_codes: ['REVIEW_NOT_COMPLETED'],
+        reason_evidence_ids: { REVIEW_NOT_COMPLETED: [evidenceId] },
+        available_dimension_count: 2,
+      },
+    } satisfies CohesionNarrativeView['context']
+
+    const html = renderToStaticMarkup(
+      <ChainQualityCard context={partialContext} onOpenEvidence={() => {}} />,
+    )
+    expect(html).toContain('Xem evidence của lý do này (1)')
+    expect(html).toContain('Mở 1 evidence cho lý do REVIEW_NOT_COMPLETED')
   })
 
   it('uses a CORE member as an evidence representative without calling it root cause', () => {

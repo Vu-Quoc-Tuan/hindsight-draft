@@ -5,9 +5,13 @@ import json
 from types import SimpleNamespace
 
 import httpx2
+import pytest
 from nocpro_api import create_app
 from nocpro_api.catalog import load_preset_payload
 from nocpro_api.cohesion_advisor import (
+    _resolve_recommendations,
+    _quality_stars_for_score,
+    _topology_source_status,
     build_chain_quality_assessment,
     build_deterministic_cohesion_narrative,
     extract_cohesion_context,
@@ -177,11 +181,15 @@ def test_chain_6335571_findings_are_evidence_bounded():
     assert "6m 36s" in findings["TEMPORAL_PROGRESSION"]["claim"]
     assert "CAUSAL_DIRECTION_UNVERIFIED" in findings["TEMPORAL_PROGRESSION"]["limitations"]
     assert context["topology"]["mapped"] == 71
+    assert context["topology"]["status"] == "AVAILABLE"
+    assert context["topology"]["mapped_alarm_count"] == 71
     assert context["topology"]["mapped_device_count"] == 7
     assert context["topology"]["total_device_count"] == 7
     assert context["topology"]["device_mapping_ratio"] == 1.0
     assert context["topology"]["resource_types"] == ["IT"]
     assert context["topology"]["connected_pair_count"] == 21
+    assert context["topology"]["evaluated_pair_count"] == 21
+    assert context["topology"]["eligible_pair_count"] == 21
     assert len(context["topology"]["display_paths"]) == 6
     assert "connected_pairs" not in context["topology"]
     assert context["topology"]["display_paths_truncated"] is False
@@ -216,6 +224,21 @@ def test_chain_6335571_findings_are_evidence_bounded():
         "không có điểm đứt gãy",
     ):
         assert unsupported not in rendered
+
+
+def test_topology_analysis_completeness_is_not_display_path_truncation():
+    assert _topology_source_status({}) == "UNAVAILABLE"
+    assert _topology_source_status({"edges": []}) == "PARTIAL"
+    assert _topology_source_status({
+        "edges": [],
+        "mappings": [],
+        "display_paths_truncated": True,
+    }) == "AVAILABLE"
+    assert _topology_source_status({
+        "edges": [],
+        "mappings": [],
+        "edges_truncated": True,
+    }) == "PARTIAL"
 
 
 def test_audit_finding_explains_no_low_conductance_cut_in_plain_language():
@@ -260,15 +283,19 @@ def test_chain_quality_assessment_rates_complete_cohesive_evidence_five_stars():
     assessment = build_chain_quality_assessment(
         alarm_count=71,
         role_counts={"CORE": 60, "PERIPHERAL": 11},
+        mapped_alarm_count=71,
         mapped_device_count=7,
         total_device_count=7,
+        topology_status="AVAILABLE",
         connected_pair_count=21,
         pair_total=21,
+        evaluated_pair_count=21,
         audit_status="EVALUATED",
         audit_verdict="NO_LOW_CONDUCTANCE_CUT",
         over_merge_strength="NONE",
         recommendation_count=0,
         recommendation_status="NO_CLEAR_ALTERNATIVE",
+        recommendation_evaluation_completed=True,
     )
 
     assert assessment["status"] == "EVALUATED"
@@ -281,10 +308,13 @@ def test_chain_quality_assessment_does_not_turn_missing_evidence_into_one_star()
     assessment = build_chain_quality_assessment(
         alarm_count=10,
         role_counts={"CORE": 4, "INSUFFICIENT_DATA": 6},
+        mapped_alarm_count=0,
         mapped_device_count=0,
         total_device_count=4,
+        topology_status="PARTIAL",
         connected_pair_count=0,
         pair_total=0,
+        evaluated_pair_count=0,
         audit_status="NOT_EVALUATED",
         audit_verdict=None,
         over_merge_strength=None,
@@ -294,17 +324,43 @@ def test_chain_quality_assessment_does_not_turn_missing_evidence_into_one_star()
 
     assert assessment["status"] == "UNAVAILABLE"
     assert assessment["stars"] is None
-    assert assessment["label"] == "Chưa thể chấm"
+    assert assessment["label"] == "Chưa đủ dữ liệu để chấm"
+
+
+def test_four_core_members_without_mapping_or_independent_evidence_get_no_stars():
+    assessment = build_chain_quality_assessment(
+        alarm_count=4,
+        role_counts={"CORE": 4},
+        mapped_alarm_count=0,
+        mapped_device_count=0,
+        total_device_count=2,
+        topology_status="PARTIAL",
+        connected_pair_count=0,
+        pair_total=0,
+        evaluated_pair_count=0,
+        audit_status="NOT_EVALUATED",
+        audit_verdict=None,
+        over_merge_strength=None,
+        recommendation_count=0,
+        recommendation_status="NOT_EVALUATED",
+    )
+
+    assert assessment["stars"] is None
+    assert assessment["status"] == "UNAVAILABLE"
+    assert "INSUFFICIENT_INDEPENDENT_EVIDENCE" in assessment["reason_codes"]
 
 
 def test_unavailable_over_merge_does_not_count_as_an_independent_quality_dimension():
     assessment = build_chain_quality_assessment(
         alarm_count=2,
         role_counts={"CORE": 2},
+        mapped_alarm_count=0,
         mapped_device_count=0,
         total_device_count=0,
+        topology_status="UNAVAILABLE",
         connected_pair_count=0,
         pair_total=0,
+        evaluated_pair_count=0,
         audit_status="NOT_APPLICABLE",
         audit_verdict="SKIPPED_SMALL_CHAIN",
         over_merge_strength="UNAVAILABLE",
@@ -321,15 +377,19 @@ def test_chain_quality_assessment_caps_split_and_over_merge_signals():
     assessment = build_chain_quality_assessment(
         alarm_count=20,
         role_counts={"CORE": 20},
+        mapped_alarm_count=20,
         mapped_device_count=5,
         total_device_count=5,
+        topology_status="AVAILABLE",
         connected_pair_count=10,
         pair_total=10,
+        evaluated_pair_count=10,
         audit_status="EVALUATED",
         audit_verdict="CANDIDATE_SPLIT",
         over_merge_strength="MODERATE",
         recommendation_count=1,
         recommendation_status="AVAILABLE",
+        recommendation_evaluation_completed=True,
     )
 
     assert assessment["status"] == "EVALUATED"
@@ -337,14 +397,17 @@ def test_chain_quality_assessment_caps_split_and_over_merge_signals():
     assert assessment["label"] == "Có dấu hiệu nên tách"
 
 
-def test_chain_quality_assessment_does_not_award_five_stars_before_counterfactual_runs():
+def test_chain_quality_assessment_does_not_rate_before_counterfactual_completes():
     assessment = build_chain_quality_assessment(
         alarm_count=20,
         role_counts={"CORE": 20},
+        mapped_alarm_count=20,
         mapped_device_count=5,
         total_device_count=5,
+        topology_status="AVAILABLE",
         connected_pair_count=10,
         pair_total=10,
+        evaluated_pair_count=10,
         audit_status="EVALUATED",
         audit_verdict="NO_LOW_CONDUCTANCE_CUT",
         over_merge_strength="NONE",
@@ -352,8 +415,160 @@ def test_chain_quality_assessment_does_not_award_five_stars_before_counterfactua
         recommendation_status="NOT_EVALUATED",
     )
 
+    assert assessment["status"] == "UNAVAILABLE"
+    assert assessment["stars"] is None
+    assert assessment["readiness"] == "PARTIAL"
+    assert "REVIEW_NOT_COMPLETED" in assessment["reason_codes"]
+
+
+def test_quality_assessment_keeps_measured_zero_topology_connectivity_in_score():
+    assessment = build_chain_quality_assessment(
+        alarm_count=4,
+        role_counts={"CORE": 4},
+        mapped_alarm_count=4,
+        mapped_device_count=2,
+        total_device_count=2,
+        topology_status="AVAILABLE",
+        connected_pair_count=0,
+        pair_total=1,
+        evaluated_pair_count=1,
+        audit_status="UNAVAILABLE",
+        audit_verdict=None,
+        over_merge_strength=None,
+        recommendation_count=0,
+        recommendation_status="NO_CLEAR_ALTERNATIVE",
+        recommendation_evaluation_completed=True,
+    )
+
+    assert assessment["readiness"] == "READY"
+    assert assessment["evidence_coverage"]["topology"]["evaluated_pairs"] == 1
+    assert assessment["available_dimension_count"] == 4
+    assert "AUDIT_UNAVAILABLE" in assessment["reason_codes"]
+
+
+def test_exact_audit_supports_a_topology_free_assessment_and_names_that_limit():
+    assessment = build_chain_quality_assessment(
+        alarm_count=4,
+        role_counts={"CORE": 4},
+        mapped_alarm_count=0,
+        mapped_device_count=0,
+        total_device_count=2,
+        topology_status="UNAVAILABLE",
+        connected_pair_count=0,
+        pair_total=0,
+        evaluated_pair_count=0,
+        audit_status="EVALUATED",
+        audit_verdict="NO_LOW_CONDUCTANCE_CUT",
+        over_merge_strength=None,
+        recommendation_count=0,
+        recommendation_status="NO_CLEAR_ALTERNATIVE",
+        recommendation_evaluation_completed=True,
+    )
+
+    assert assessment["readiness"] == "READY"
+    assert assessment["status"] == "EVALUATED"
+    assert assessment["stars"] is not None
+    assert "TOPOLOGY_NOT_USED" in assessment["reason_codes"]
+    assert "Không dùng topology trong lần chấm này." in assessment["reasons"]
+
+
+def test_incomplete_topology_does_not_count_as_an_independent_family():
+    assessment = build_chain_quality_assessment(
+        alarm_count=4,
+        role_counts={"CORE": 4},
+        mapped_alarm_count=3,
+        mapped_device_count=1,
+        total_device_count=2,
+        topology_status="PARTIAL",
+        connected_pair_count=0,
+        pair_total=0,
+        evaluated_pair_count=0,
+        audit_status="NOT_EVALUATED",
+        audit_verdict=None,
+        over_merge_strength=None,
+        recommendation_count=0,
+        recommendation_status="NO_CLEAR_ALTERNATIVE",
+        recommendation_evaluation_completed=True,
+    )
+
+    assert assessment["readiness"] == "INSUFFICIENT"
+    assert assessment["stars"] is None
+    assert "INSUFFICIENT_INDEPENDENT_EVIDENCE" in assessment["reason_codes"]
+
+
+def test_audit_incomplete_keeps_a_complete_topology_assessment_partial():
+    assessment = build_chain_quality_assessment(
+        alarm_count=4,
+        role_counts={"CORE": 4},
+        mapped_alarm_count=4,
+        mapped_device_count=2,
+        total_device_count=2,
+        topology_status="AVAILABLE",
+        connected_pair_count=1,
+        pair_total=1,
+        evaluated_pair_count=1,
+        audit_status="PARTIAL",
+        audit_verdict=None,
+        over_merge_strength=None,
+        recommendation_count=0,
+        recommendation_status="NO_CLEAR_ALTERNATIVE",
+        recommendation_evaluation_completed=True,
+    )
+
+    assert assessment["status"] == "UNAVAILABLE"
+    assert assessment["readiness"] == "PARTIAL"
+    assert assessment["stars"] is None
+    assert "AUDIT_INCOMPLETE" in assessment["reason_codes"]
+
+
+def test_completed_but_unavailable_review_keeps_existing_four_star_cap():
+    assessment = build_chain_quality_assessment(
+        alarm_count=4,
+        role_counts={"CORE": 4},
+        mapped_alarm_count=4,
+        mapped_device_count=2,
+        total_device_count=2,
+        topology_status="AVAILABLE",
+        connected_pair_count=1,
+        pair_total=1,
+        evaluated_pair_count=1,
+        audit_status="EVALUATED",
+        audit_verdict="NO_LOW_CONDUCTANCE_CUT",
+        over_merge_strength="NONE",
+        recommendation_count=0,
+        recommendation_status="UNAVAILABLE",
+        recommendation_evaluation_completed=True,
+    )
+
+    assert assessment["readiness"] == "READY"
     assert assessment["stars"] == 4
-    assert any("Counterfactual" in reason for reason in assessment["reasons"])
+
+
+def test_quality_star_threshold_boundaries_remain_unchanged():
+    assert [_quality_stars_for_score(score) for score in (
+        0.299999, 0.30, 0.499999, 0.50, 0.699999, 0.70, 0.849999, 0.85,
+    )] == [1, 2, 2, 3, 3, 4, 4, 5]
+
+
+def test_quality_assessment_rejects_inconsistent_role_counts():
+    with pytest.raises(ValueError, match="account for every chain alarm"):
+        build_chain_quality_assessment(
+            alarm_count=4,
+            role_counts={"CORE": 3},
+            mapped_alarm_count=4,
+            mapped_device_count=2,
+            total_device_count=2,
+            topology_status="AVAILABLE",
+            connected_pair_count=1,
+            pair_total=1,
+            evaluated_pair_count=1,
+            audit_status="EVALUATED",
+            audit_verdict="NO_LOW_CONDUCTANCE_CUT",
+            over_merge_strength="NONE",
+            recommendation_count=0,
+            recommendation_status="NO_CLEAR_ALTERNATIVE",
+            recommendation_evaluation_completed=True,
+        )
 
 
 def test_context_selects_core_member_as_evidence_representative_not_root_cause():
@@ -462,7 +677,7 @@ def test_completed_locked_counterfactual_is_reported_as_evaluated_not_unrun():
         workspace.close()
 
     assert context["recommendations"]["status"] == "UNAVAILABLE"
-    assert context["recommendations"]["evaluation_completed"] is True
+    assert context["recommendations"]["evaluation_completed"] is False
     assert context["recommendations"]["evaluated_count"] == 2
     assert context["recommendations"]["rejected_count"] == 1
     narrative = build_deterministic_cohesion_narrative(context, language="vi")
@@ -471,6 +686,31 @@ def test_completed_locked_counterfactual_is_reported_as_evaluated_not_unrun():
     assert "policy" not in narrative.lower()
     assert "thiết bị đã ánh xạ" not in narrative
     assert "evidence mạnh nhất" not in narrative
+
+
+def test_zero_candidate_review_requires_explicit_completion_of_all_operations():
+    operations = {
+        name: {"status": "AVAILABLE", "search_mode": "BOUNDED"}
+        for name in ("REMOVE_MEMBER", "SPLIT_CHAIN", "MOVE_MEMBER", "MERGE_CHAINS")
+    }
+    completed = _resolve_recommendations({
+        "recommendations": [],
+        "evaluated_candidates": [],
+        "operation_status": operations,
+        "recommendation_status": "NO_CLEAR_ALTERNATIVE",
+    })
+    incomplete = _resolve_recommendations({
+        "recommendations": [],
+        "evaluated_candidates": [],
+        "operation_status": {**operations, "MERGE_CHAINS": {
+            "status": "UNAVAILABLE", "search_mode": "NOT_RUN"
+        }},
+        "status": "UNAVAILABLE",
+    })
+
+    assert completed["evaluation_completed"] is True
+    assert completed["evaluated_count"] == 0
+    assert incomplete["evaluation_completed"] is False
 
 
 def test_candidate_split_narrative_names_both_groups_linkage_and_weak_boundary():
@@ -795,6 +1035,162 @@ def test_ai_investigation_keeps_raw_provider_prose_when_grounding_rejects_it(mon
     assert result.narrative == raw_provider_message
     assert result.model == "test-model"
     assert result.provider_status == "GROUNDING_FORBIDDEN_CLAIM"
+
+
+def test_ai_investigation_fails_closed_on_unbundled_evidence_reference(monkeypatch):
+    from libs.contracts.analysis_identity import AnalysisIdentity
+
+    payload, _profile = load_preset_payload("real_alarm_ip_demo")
+    workspace = Workspace()
+    raw_message = f"Evidence ev1_{'0' * 64} proves the route."
+
+    def fake_render_grounded(**_kwargs):
+        from nocpro_api.grounded_llm import GroundedRenderResult
+
+        return GroundedRenderResult(
+            message=raw_message,
+            model="test-model",
+            provider_status="OK",
+            used_provider=True,
+        )
+
+    monkeypatch.setattr("nocpro_api.cohesion_advisor.render_grounded", fake_render_grounded)
+    try:
+        workspace.replace_snapshot(payload)
+        package = workspace.require_package()
+        review_config_version = (
+            workspace.config.counterfactual.config_version
+            if workspace.config.counterfactual is not None
+            else "UNAVAILABLE"
+        )
+        identity = AnalysisIdentity(
+            snapshot_id=package.snapshot.snapshot_id,
+            snapshot_version=package.snapshot.snapshot_version,
+            chain_id="6913556",
+            topology_version=None,
+            analysis_config_version=workspace.config.config_version,
+            review_config_version=review_config_version,
+            pipeline_version="DETERMINISTIC_QUALITY_V6",
+            input_fingerprint="test-evidence-fingerprint",
+        )
+        result = generate_cohesion_narrative(
+            workspace,
+            "6913556",
+            persisted_quality_assessment={
+                "assessment": {"reason_codes": ["INSUFFICIENT_ROLE_COVERAGE"]},
+                "overview_projection": {
+                    "analysis_identity": identity.to_payload(),
+                    "topology": None,
+                    "quality_assessment": {
+                        "reason_codes": ["INSUFFICIENT_ROLE_COVERAGE"],
+                        "evidence_coverage": {
+                            "membership": {"evaluated": 1, "total": 2},
+                        },
+                    },
+                    "recommendations": {"status": "NOT_EVALUATED"},
+                },
+            },
+        )
+    finally:
+        workspace.close()
+
+    assert result.narrative == ""
+    assert result.provider_status == "GROUNDING_UNSUPPORTED_EVIDENCE_REFERENCE"
+    assert result.context["evidence_reference_validation"] == {
+        "status": "INVALID",
+        "reason": "GROUNDING_UNKNOWN_EVIDENCE_REFERENCE",
+    }
+
+
+def test_ai_investigation_receives_and_accepts_reference_from_current_evidence_bundle(monkeypatch):
+    from libs.contracts.analysis_identity import AnalysisIdentity
+    from nocpro_api.evidence_projection import build_evidence_records
+
+    payload, _profile = load_preset_payload("real_alarm_ip_demo")
+    workspace = Workspace()
+    captured: dict[str, object] = {}
+    try:
+        workspace.replace_snapshot(payload)
+        package = workspace.require_package()
+        review_config_version = (
+            workspace.config.counterfactual.config_version
+            if workspace.config.counterfactual is not None
+            else "UNAVAILABLE"
+        )
+        identity = AnalysisIdentity(
+            snapshot_id=package.snapshot.snapshot_id,
+            snapshot_version=package.snapshot.snapshot_version,
+            chain_id="6913556",
+            topology_version=None,
+            analysis_config_version=workspace.config.config_version,
+            review_config_version=review_config_version,
+            pipeline_version="DETERMINISTIC_QUALITY_V6",
+            input_fingerprint="test-evidence-fingerprint-valid",
+        )
+        projection = {
+            "analysis_identity": identity.to_payload(),
+            "topology": {
+                "status": "AVAILABLE",
+                "mapped": 2,
+                "total": 2,
+                "display_paths": [{
+                    "source": "R-A",
+                    "target": "R-B",
+                    "path": ["R-A", "R-B"],
+                    "hop_count": 1,
+                    "max_hops": 4,
+                    "relation_type": "IP_ADJACENCY",
+                    "traversal_semantic": "UNDIRECTED_STRUCTURAL_CONNECTIVITY",
+                    "mapping_statuses": ["EXACT", "VERIFIED_ALIAS"],
+                }],
+            },
+            "quality_assessment": {
+                "reason_codes": [],
+                "evidence_coverage": {"membership": {"evaluated": 2, "total": 2}},
+            },
+            "recommendations": {"status": "NOT_EVALUATED"},
+        }
+        evidence_records = build_evidence_records(
+            identity=identity,
+            overview_projection=projection,
+            pair_evidence=None,
+            audit_artifact=None,
+            review_result=None,
+        )
+        path_evidence_id = next(
+            record["evidence_id"] for record in evidence_records
+            if record["kind"] == "TOPOLOGY_PATH" and record["status"] == "AVAILABLE"
+        )
+
+        def fake_render_grounded(*, fact_refs, **_kwargs):
+            captured["fact_refs"] = fact_refs
+            from nocpro_api.grounded_llm import GroundedRenderResult
+
+            return GroundedRenderResult(
+                message=f"Evidence reference: {path_evidence_id}",
+                model="test-model",
+                provider_status="OK",
+                used_provider=True,
+            )
+
+        monkeypatch.setattr("nocpro_api.cohesion_advisor.render_grounded", fake_render_grounded)
+        result = generate_cohesion_narrative(
+            workspace,
+            "6913556",
+            persisted_quality_assessment={
+                "assessment": {"reason_codes": []},
+                "overview_projection": projection,
+            },
+        )
+    finally:
+        workspace.close()
+
+    assert path_evidence_id in str(captured["fact_refs"])
+    assert result.narrative == f"Evidence reference: {path_evidence_id}"
+    assert result.context["evidence_reference_validation"] == {
+        "status": "VALID",
+        "checked_reference_count": 1,
+    }
 
 
 def test_ai_investigation_does_not_reject_a_grounded_detailed_answer_by_sentence_count(

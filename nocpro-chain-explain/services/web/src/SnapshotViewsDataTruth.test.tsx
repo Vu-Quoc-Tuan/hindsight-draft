@@ -90,7 +90,7 @@ describe('snapshot views use only factual chain summary fields', () => {
           not_applicable_count: 1, star_counts: { '1': 0, '2': 0, '3': 0, '4': 1, '5': 0 },
           attention_chains: [],
           chain_assessments: [
-            { chain_id: 'C-REAL', member_count: 3, title: 'Observed chain', duration_seconds: 120, status: 'EVALUATED', stars: 4, label: 'Vững', reason: null },
+            { chain_id: 'C-REAL', member_count: 3, title: 'Observed chain', duration_seconds: 120, status: 'EVALUATED', stars: 4, label: 'Vững', reason: null, readiness: 'READY' },
             { chain_id: 'C-SINGLE', member_count: 1, title: 'Observed singleton', duration_seconds: null, status: 'NOT_APPLICABLE', stars: null, label: 'Singleton không chấm', reason: 'Singleton không áp dụng chấm độ vững.' },
           ],
         }}
@@ -113,6 +113,29 @@ describe('snapshot views use only factual chain summary fields', () => {
     expect(html).not.toContain('CRITICAL')
     expect(html).not.toContain('Attribute explorer')
     expect(html).not.toContain('Tìm chain ID hoặc tiêu đề')
+  })
+
+  it('shows a reason instead of placeholder stars for unrated chains', () => {
+    const html = renderToStaticMarkup(
+      <AllChainsView
+        chainList={chainList}
+        qualitySummary={{
+          snapshot_id: 'S-REAL', snapshot_version: 'v2', total_chain_count: 2,
+          eligible_chain_count: 1, sturdy_count: 0, review_count: 0,
+          evaluating_count: 0, unevaluated_count: 0, unavailable_count: 1,
+          not_applicable_count: 1, star_counts: {}, attention_chains: [],
+          chain_assessments: [
+            { chain_id: 'C-REAL', member_count: 3, title: 'Observed chain', duration_seconds: 120, status: 'UNAVAILABLE', stars: null, label: 'Chưa đủ dữ liệu để chấm', reason: 'Counterfactual Review chưa hoàn tất.', readiness: 'PARTIAL', reason_codes: ['REVIEW_NOT_COMPLETED'] },
+            { chain_id: 'C-SINGLE', member_count: 1, title: 'Observed singleton', duration_seconds: null, status: 'NOT_APPLICABLE', stars: null, label: 'Singleton không chấm', reason: 'Singleton không áp dụng chấm độ vững.', readiness: 'NOT_APPLICABLE' },
+          ],
+        }}
+        onSelectChain={() => {}}
+      />,
+    )
+
+    expect(html).toContain('Chưa đủ dữ liệu để chấm')
+    expect(html).toContain('Counterfactual Review chưa hoàn tất.')
+    expect(html).not.toContain('☆☆☆☆☆')
   })
 
   it('separates sturdy, review, running and waiting chain quality states', () => {
@@ -176,6 +199,23 @@ describe('snapshot views use only factual chain summary fields', () => {
     expect(html).toContain('1 đang chạy')
   })
 
+  it('keeps an empty snapshot catalog finite and explicit', () => {
+    const html = renderToStaticMarkup(
+      <SnapshotsPortfolioView
+        snapshots={[]}
+        summaries={[]}
+        activeSnapshotId={null}
+        selectingSnapshotId={null}
+        onSelectSnapshot={() => {}}
+      />,
+    )
+
+    expect(html).toContain('0 snapshot')
+    expect(html).toContain('Tổng snapshot')
+    expect(html).not.toContain('NaN')
+    expect(html).not.toContain('Infinity')
+  })
+
   it('derives live snapshot status buckets and percentages from current summaries', () => {
     const snapshots = ['S-OK', 'S-REVIEW', 'S-RUNNING', 'S-MISSING'].map(snapshot_id => ({
       snapshot_id,
@@ -212,6 +252,42 @@ describe('snapshot views use only factual chain summary fields', () => {
     expect(html).toContain('25.0%')
   })
 
+  it('keeps portfolio status priority and classifies one unavailable snapshot separately from healthy', () => {
+    const snapshots = ['S-REVIEW', 'S-RUNNING', 'S-UNAVAILABLE', 'S-HEALTHY'].map(snapshot_id => ({
+      snapshot_id,
+      name: snapshot_id,
+      profile: 'IP_NETWORK' as const,
+      alarm_count: 4,
+      chain_count: 1,
+      description: 'Observed data',
+      badge: 'Live',
+    }))
+    const base = {
+      snapshot_version: 'v1', total_chain_count: 1, eligible_chain_count: 1,
+      sturdy_count: 0, review_count: 0, evaluating_count: 0, unevaluated_count: 0,
+      unavailable_count: 0, not_applicable_count: 0, star_counts: {}, attention_chains: [],
+    }
+    const html = renderToStaticMarkup(
+      <SnapshotsPortfolioView
+        snapshots={snapshots}
+        summaries={[
+          { ...base, snapshot_id: 'S-REVIEW', review_count: 1, evaluating_count: 1 },
+          { ...base, snapshot_id: 'S-RUNNING', evaluating_count: 1, unavailable_count: 1 },
+          { ...base, snapshot_id: 'S-UNAVAILABLE', unavailable_count: 1 },
+          { ...base, snapshot_id: 'S-HEALTHY', sturdy_count: 1 },
+        ]}
+        activeSnapshotId={null}
+        selectingSnapshotId={null}
+        onSelectSnapshot={() => {}}
+      />,
+    )
+
+    expect(html).toContain('Ổn: 1 (25.0%)')
+    expect(html).toContain('Cần xem: 1 (25.0%)')
+    expect(html).toContain('Đang đánh giá: 1 (25.0%)')
+    expect(html).toContain('Chưa đủ dữ liệu: 1 (25.0%)')
+  })
+
   it('treats unavailable assessments as processed without giving them a score', () => {
     const html = renderToStaticMarkup(
       <SnapshotsPortfolioView
@@ -235,6 +311,7 @@ describe('snapshot views use only factual chain summary fields', () => {
     expect(html).toContain('Đã xử lý')
     expect(html).toContain('20/20')
     expect(html).toContain('100%')
+    expect(html).toContain('Chưa đủ dữ liệu')
     expect(html).toContain('19 có điểm')
     expect(html).toContain('1 thiếu evidence')
     expect(html).toContain('width:5%')

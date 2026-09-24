@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 
 import { formatDuration } from '../format'
-import type { ChainList, ChainQualitySummary } from '../types'
+import type { ChainList, ChainQualityAssessment, ChainQualitySummary } from '../types'
 
 interface AllChainsViewProps {
   chainList: ChainList | null
@@ -23,6 +23,12 @@ function starText(stars: number | null): string {
   return stars == null ? '☆☆☆☆☆' : `${'★'.repeat(stars)}${'☆'.repeat(5 - stars)}`
 }
 
+function ratedStars(assessment: ChainQualityAssessment | undefined): number | null {
+  return assessment?.status === 'EVALUATED' && assessment.readiness === 'READY'
+    ? assessment.stars
+    : null
+}
+
 export function AllChainsView({ chainList, qualitySummary, qualitySummaryError, onSelectChain }: AllChainsViewProps) {
   const [filter, setFilter] = useState<ChainFilter>('ALL')
   const [starFilter, setStarFilter] = useState<StarFilter>('ALL')
@@ -36,8 +42,9 @@ export function AllChainsView({ chainList, qualitySummary, qualitySummaryError, 
     return chains.filter(chain => {
       if (filter === 'MULTI' && chain.is_singleton) return false
       if (filter === 'SINGLETON' && !chain.is_singleton) return false
-      if (starFilter === 'UNRATED') return qualityByChain.get(chain.chain_id)?.stars == null
-      if (starFilter !== 'ALL') return qualityByChain.get(chain.chain_id)?.stars === starFilter
+      const stars = ratedStars(qualityByChain.get(chain.chain_id))
+      if (starFilter === 'UNRATED') return stars == null
+      if (starFilter !== 'ALL') return stars === starFilter
       return true
     })
   }, [chains, filter, qualityByChain, starFilter])
@@ -135,18 +142,33 @@ export function AllChainsView({ chainList, qualitySummary, qualitySummaryError, 
           <span className="font-code-sm text-xs text-on-surface-variant">{visibleChains.length} kết quả</span>
         </div>
         <div className="divide-y divide-[#151f33]">
-          {visibleChains.map(chain => (
+          {visibleChains.map(chain => {
+            const assessment = qualityByChain.get(chain.chain_id)
+            const stars = ratedStars(assessment)
+            const unratedLabel = assessment?.readiness === 'PARTIAL' || assessment?.readiness === 'INSUFFICIENT'
+              ? 'Chưa đủ dữ liệu để chấm'
+              : assessment?.label ?? 'Chưa chấm'
+            return (
             <button key={chain.chain_id} type="button" onClick={() => onSelectChain(chain.chain_id)} className="grid w-full grid-cols-1 gap-3 px-space-md py-3.5 text-left transition-colors hover:bg-[#101a2e] md:grid-cols-[minmax(120px,0.7fr)_minmax(220px,1.8fr)_minmax(120px,0.7fr)_minmax(190px,1fr)_auto] md:items-center">
               <span className="font-code-sm text-sm font-bold text-primary">{chain.chain_id}</span>
               <span className="min-w-0"><span className="block truncate text-sm font-semibold text-on-surface" title={chain.title}>{chain.title || 'Không có tiêu đề'}</span><span className="font-code-sm text-[10px] uppercase tracking-wider text-on-surface-variant">{chain.is_singleton ? 'Singleton' : 'Multi-alarm chain'}</span></span>
-              <span className="flex items-center gap-2" aria-label={qualityByChain.get(chain.chain_id)?.stars == null ? (qualityByChain.get(chain.chain_id)?.label ?? 'Chưa chấm') : `${qualityByChain.get(chain.chain_id)?.stars} trên 5 sao`}>
-                <span className="text-lg tracking-[0.1em] text-amber-300" aria-hidden="true">{starText(qualityByChain.get(chain.chain_id)?.stars ?? null)}</span>
-                <span className="font-code-sm text-[11px] text-on-surface-variant">{qualityByChain.get(chain.chain_id)?.stars != null ? `${qualityByChain.get(chain.chain_id)?.stars}/5` : (qualityByChain.get(chain.chain_id)?.label ?? 'Chưa chấm')}</span>
+              <span className="flex items-center gap-2" aria-label={stars == null ? unratedLabel : `${stars} trên 5 sao`}>
+                {stars != null ? (
+                  <>
+                    <span className="text-lg tracking-[0.1em] text-amber-300" aria-hidden="true">{starText(stars)}</span>
+                    <span className="font-code-sm text-[11px] text-on-surface-variant">{stars}/5</span>
+                  </>
+                ) : (
+                  <span className="font-code-sm text-[11px] text-slate-300" title={assessment?.reason ?? undefined}>
+                    {unratedLabel}
+                  </span>
+                )}
               </span>
               <span className="font-code-sm text-xs text-on-surface-variant">{chain.member_count} cảnh báo · {formatDuration(chain.duration_seconds)}<br /><span className="text-[10px]">{compactTimestamp(chain.start_time)}</span></span>
               <span className="font-code-sm text-xs font-bold text-secondary">Mở →</span>
             </button>
-          ))}
+            )
+          })}
           {visibleChains.length === 0 ? <div className="py-16 text-center text-on-surface-variant"><span className="material-symbols-outlined mb-2 block text-3xl">search_off</span>Không có chain phù hợp.</div> : null}
         </div>
       </section>

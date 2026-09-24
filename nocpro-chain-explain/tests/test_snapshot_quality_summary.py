@@ -7,6 +7,32 @@ def row(**values):
     return SimpleNamespace(**values)
 
 
+def quality_projection(chain_id: str, topology_version: str | None = None) -> dict:
+    identity = {
+        "identity_version": "analysis-identity-v1",
+        "snapshot_id": "S1",
+        "snapshot_version": "v1",
+        "chain_id": chain_id,
+        "topology_version": topology_version,
+        "analysis_config_version": "v1",
+        "review_config_version": "review-v1",
+        "pipeline_version": "DETERMINISTIC_QUALITY_V6",
+        "input_fingerprint": f"fingerprint-{chain_id}",
+    }
+    return {
+        "projection_version": "CHAIN_OVERVIEW_V6",
+        "pipeline_version": "DETERMINISTIC_QUALITY_V6",
+        "snapshot_id": "S1",
+        "snapshot_version": "v1",
+        "chain_id": chain_id,
+        "config_version": "v1",
+        "review_config_version": "review-v1",
+        "topology_version": topology_version,
+        "input_fingerprint": f"fingerprint-{chain_id}",
+        "analysis_identity": identity,
+    }
+
+
 def test_quality_summary_separates_persisted_running_waiting_and_singletons():
     chains = [
         row(snapshot_id="S1", snapshot_version="v1", chain_id="strong", member_count=4, chain_name="Strong", event_span_seconds=40),
@@ -16,21 +42,13 @@ def test_quality_summary_separates_persisted_running_waiting_and_singletons():
         row(snapshot_id="S1", snapshot_version="v1", chain_id="singleton", member_count=1, chain_name="Singleton", event_span_seconds=10),
     ]
     assessments = [
-        row(snapshot_id="S1", snapshot_version="v1", chain_id="strong", payload={
-            "status": "EVALUATED", "stars": 4,
-            "overview_projection": {
-                "projection_version": "CHAIN_OVERVIEW_V3",
-                "pipeline_version": "DETERMINISTIC_QUALITY_V3",
-                "config_version": "v1",
-            },
+        row(snapshot_id="S1", snapshot_version="v1", chain_id="strong", input_fingerprint="fingerprint-strong", payload={
+            "status": "EVALUATED", "readiness": "READY", "readiness_policy_version": "quality-readiness-v1", "reason_codes": [], "evidence_coverage": {}, "stars": 4,
+            "overview_projection": quality_projection("strong"),
         }),
-        row(snapshot_id="S1", snapshot_version="v1", chain_id="review", payload={
-            "status": "EVALUATED", "stars": 2,
-            "overview_projection": {
-                "projection_version": "CHAIN_OVERVIEW_V3",
-                "pipeline_version": "DETERMINISTIC_QUALITY_V3",
-                "config_version": "v1",
-            },
+        row(snapshot_id="S1", snapshot_version="v1", chain_id="review", input_fingerprint="fingerprint-review", payload={
+            "status": "EVALUATED", "readiness": "READY", "readiness_policy_version": "quality-readiness-v1", "reason_codes": [], "evidence_coverage": {}, "stars": 2,
+            "overview_projection": quality_projection("review"),
         }),
     ]
     jobs = [row(
@@ -53,6 +71,7 @@ def test_quality_summary_separates_persisted_running_waiting_and_singletons():
     assert summary.review_count == 1
     assert summary.evaluating_count == 1
     assert summary.unevaluated_count == 1
+    assert summary.sturdy_count + summary.review_count + summary.evaluating_count + summary.unevaluated_count + summary.unavailable_count == summary.eligible_chain_count
     assert summary.not_applicable_count == 1
     assert summary.star_counts == {"1": 0, "2": 1, "3": 0, "4": 1, "5": 0}
     assert [item.chain_id for item in summary.attention_chains] == ["review", "running", "waiting"]
@@ -72,14 +91,15 @@ def test_persisted_result_wins_over_an_active_job_for_same_chain():
         snapshot_id="S1",
         snapshot_version="v1",
         chain_id="done",
+        input_fingerprint="fingerprint-done",
         payload={
             "status": "EVALUATED",
+            "readiness": "READY",
+            "readiness_policy_version": "quality-readiness-v1",
+            "reason_codes": [],
+            "evidence_coverage": {},
             "stars": 5,
-            "overview_projection": {
-                "config_version": "v1",
-                "projection_version": "CHAIN_OVERVIEW_V3",
-                "pipeline_version": "DETERMINISTIC_QUALITY_V3",
-            },
+            "overview_projection": quality_projection("done"),
         },
     )]
     jobs = [row(
@@ -121,7 +141,7 @@ def test_stale_active_job_does_not_mask_waiting_quality_result():
         snapshot_id="S1",
         snapshot_version="v1",
         chain_id="done",
-        payload={"status": "EVALUATED", "stars": 4},
+        payload={"status": "EVALUATED", "readiness": "READY", "readiness_policy_version": "quality-readiness-v1", "reason_codes": [], "evidence_coverage": {}, "stars": 4},
     )]
     jobs = [row(
         snapshot_id="S1",
@@ -152,16 +172,17 @@ def test_unavailable_result_is_terminal_and_not_waiting():
             snapshot_id="S1",
             snapshot_version="v1",
             chain_id="missing",
+            input_fingerprint="fingerprint-missing",
             payload={
                 "status": "UNAVAILABLE",
+                "readiness": "INSUFFICIENT",
+                "readiness_policy_version": "quality-readiness-v1",
+                "reason_codes": ["INSUFFICIENT_ROLE_COVERAGE"],
+                "evidence_coverage": {},
                 "stars": None,
                 "label": "Chưa thể chấm",
                 "reasons": ["Chưa đủ thành viên có evidence để đánh giá vai trò."],
-                "overview_projection": {
-                    "config_version": "v1",
-                    "projection_version": "CHAIN_OVERVIEW_V3",
-                    "pipeline_version": "DETERMINISTIC_QUALITY_V3",
-                },
+                "overview_projection": quality_projection("missing"),
             },
         )
     ]
@@ -171,6 +192,7 @@ def test_unavailable_result_is_terminal_and_not_waiting():
     assert summary.unavailable_count == 1
     assert summary.evaluating_count == 0
     assert summary.unevaluated_count == 1
+    assert summary.sturdy_count + summary.review_count + summary.evaluating_count + summary.unevaluated_count + summary.unavailable_count == summary.eligible_chain_count
     assert [(item.chain_id, item.status) for item in summary.attention_chains] == [
         ("missing", "UNAVAILABLE"),
         ("waiting", "WAITING"),

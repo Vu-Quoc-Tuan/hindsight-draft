@@ -134,16 +134,38 @@ function recommendationText(context: Context): string {
 export function ChainQualityCard({
   context,
   onOpenRecommendations,
+  onOpenEvidence,
   status = context ? 'READY' : 'PENDING',
 }: {
   context: Context | null
   onOpenRecommendations?: () => void
+  onOpenEvidence?: (evidenceIds?: string[]) => void
   status?: CardStatus
 }) {
   const assessment = context?.quality_assessment
   const stars = assessment?.stars
+  const readiness = assessment?.readiness
+  const hasReadyRating =
+    status === 'READY'
+    && assessment?.status === 'EVALUATED'
+    && readiness === 'READY'
+    && stars != null
   const recommendationCount = context?.recommendations?.count ?? 0
-  const starText = stars == null ? '☆☆☆☆☆' : `${'★'.repeat(stars)}${'☆'.repeat(5 - stars)}`
+  const starText = hasReadyRating ? `${'★'.repeat(stars!)}${'☆'.repeat(5 - stars!)}` : ''
+  const reasonCode = assessment?.reason_codes?.[0]
+  const reasonEvidenceIds = reasonCode
+    ? assessment?.reason_evidence_ids?.[reasonCode] ?? []
+    : []
+  const reasonEvidenceControl = onOpenEvidence && reasonEvidenceIds.length > 0 ? (
+    <button
+      type="button"
+      onClick={() => onOpenEvidence(reasonEvidenceIds)}
+      className="mt-1 rounded text-[10px] font-semibold text-cyan-300 underline decoration-cyan-700 underline-offset-2 hover:text-cyan-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-secondary"
+      aria-label={`Mở ${reasonEvidenceIds.length} evidence cho lý do ${reasonCode}`}
+    >
+      Xem evidence của lý do này ({reasonEvidenceIds.length})
+    </button>
+  ) : null
 
   return (
     <div className="bg-[#0b1322] border border-[#1b2b48] hover:border-amber-400/50 p-space-md rounded-lg shadow-sm flex flex-col justify-between transition-all">
@@ -157,14 +179,51 @@ export function ChainQualityCard({
             HEURISTIC
           </span>
         </div>
-        {status === 'READY' && assessment ? (
+        {status === 'READY' && assessment && hasReadyRating ? (
           <>
-            <div className="flex items-center gap-2 mt-1" aria-label={stars == null ? (assessment?.label ?? 'Chưa thể chấm') : `${stars} trên 5 sao`}>
-              <span className="text-xl tracking-[0.12em] text-amber-300" aria-hidden="true">{starText}</span>
-              {stars != null && <span className="font-mono text-xs text-on-surface-variant">{stars}/5</span>}
-            </div>
+            {onOpenEvidence ? (
+              <button
+                type="button"
+                onClick={() => onOpenEvidence(assessment.evidence_ids)}
+                aria-label={`Mở evidence đánh giá ${stars} trên 5 sao`}
+                className="mt-1 flex items-center gap-2 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-secondary"
+              >
+                <span className="text-xl tracking-[0.12em] text-amber-300" aria-hidden="true">{starText}</span>
+                <span className="font-mono text-xs text-on-surface-variant">{stars}/5</span>
+              </button>
+            ) : (
+              <div className="mt-1 flex items-center gap-2" aria-label={`${stars} trên 5 sao`}>
+                <span className="text-xl tracking-[0.12em] text-amber-300" aria-hidden="true">{starText}</span>
+                <span className="font-mono text-xs text-on-surface-variant">{stars}/5</span>
+              </div>
+            )}
             <p className="text-xs text-on-surface font-semibold mt-2">{assessment?.label ?? 'Chưa thể chấm'}</p>
+            {assessment.reasons?.[0] ? (
+              <div className="mt-1">
+                <p className="text-[11px] text-on-surface-variant">{assessment.reasons[0]}</p>
+                {reasonEvidenceControl}
+              </div>
+            ) : null}
           </>
+        ) : status === 'READY' && assessment ? (
+          <div className="mt-3">
+            {onOpenEvidence ? (
+              <button
+                type="button"
+                onClick={() => onOpenEvidence(assessment.evidence_ids)}
+                className="rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-secondary"
+                aria-label="Mở evidence giải thích vì sao chưa đủ dữ liệu chấm sao"
+              >
+                <span className="text-sm font-semibold text-slate-200">Chưa đủ dữ liệu để chấm</span>
+              </button>
+            ) : (
+              <p className="text-sm font-semibold text-slate-200">Chưa đủ dữ liệu để chấm</p>
+            )}
+            <p className="mt-1 text-xs text-on-surface-variant">
+              {assessment.reasons?.[0] ?? 'Kết quả đánh giá chưa có readiness READY.'}
+            </p>
+            {reasonEvidenceControl}
+          </div>
         ) : (
           <p className="text-xs text-on-surface-variant mt-3">
             {statusMessage(status, 'Đang tổng hợp evidence để chấm…', 'Chưa thể chấm deterministic')}
