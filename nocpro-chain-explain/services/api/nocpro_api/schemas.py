@@ -22,10 +22,15 @@ class SnapshotLoadedView(ApiModel):
     alarm_count: int
     chain_count: int
     incremental_snapshot: IncrementalPolicyView
+    # The selected snapshot already has its immutable chain catalog in memory;
+    # returning it avoids a second UI waterfall (POST select -> GET chains).
+    chains: list["ChainSummaryView"] | None = None
+    topology_version: str | None = None
 
 
 class SnapshotCatalogItemView(ApiModel):
     snapshot_id: str
+    snapshot_version: str | None = None
     name: str
     profile: Literal["IP_NETWORK", "IT_SERVICES", "ALARM_ONLY"]
     alarm_count: int
@@ -44,6 +49,7 @@ class SnapshotCatalogListView(ApiModel):
 
 class SelectSnapshotRequest(ApiModel):
     snapshot_id: str
+    snapshot_version: str | None = None
 
 
 class ChainSummaryView(ApiModel):
@@ -60,6 +66,52 @@ class ChainListView(ApiModel):
     snapshot_id: str
     snapshot_version: str
     chains: list[ChainSummaryView]
+    topology_version: str | None = None
+
+
+class ChainQualityAssessmentView(ApiModel):
+    chain_id: str
+    member_count: int
+    title: str
+    duration_seconds: float | None
+    status: str
+    stars: int | None
+    label: str
+    reason: str | None
+
+
+class ChainQualitySummaryView(ApiModel):
+    snapshot_id: str
+    snapshot_version: str
+    total_chain_count: int
+    eligible_chain_count: int
+    sturdy_count: int
+    review_count: int
+    evaluating_count: int
+    unevaluated_count: int
+    unavailable_count: int = 0
+    not_applicable_count: int
+    star_counts: dict[str, int]
+    attention_chains: list[ChainQualityAssessmentView]
+    chain_assessments: list[ChainQualityAssessmentView] = Field(default_factory=list)
+
+
+class SnapshotQualitySummaryListView(ApiModel):
+    summaries: list[ChainQualitySummaryView]
+
+
+class ChainOverviewCardsView(ApiModel):
+    snapshot_id: str
+    snapshot_version: str
+    chain_id: str
+    status: Literal["READY", "PENDING", "UNAVAILABLE", "NOT_APPLICABLE"]
+    projection_version: str | None = None
+    reason: str | None = None
+    topology_version: str | None = None
+    representative_member: dict[str, Any] | None = None
+    topology: dict[str, Any] | None = None
+    quality_assessment: dict[str, Any] | None = None
+    recommendations: dict[str, Any] | None = None
 
 
 class DescriptorView(ApiModel):
@@ -473,12 +525,15 @@ class DeepDiveView(ApiModel):
 
 class JobView(ApiModel):
     job_id: str
+    snapshot_id: str
+    snapshot_version: str
     chain_id: str
     status: str
     progress_percent: int = Field(ge=0, le=100)
     cache_hit: bool
     result: DeepDiveView | None
     error: str | None
+    topology_version: str | None = None
 
 
 class ReviewIdentityView(ApiModel):
@@ -492,6 +547,7 @@ class ReviewIdentityView(ApiModel):
     tier1b_artifact_fingerprint: str
     structural_audit_artifact_fingerprint: str | None
     external_validation_artifact_fingerprint: str | None
+    topology_version: str | None = None
 
 
 class CounterfactualMetricValueView(ApiModel):
@@ -755,7 +811,7 @@ class AssistantResponseView(ApiModel):
     actions: list[AssistantActionView]
     model: str
     provider_status: str
-    response_mode: Literal["LLM_PRIMARY", "DETERMINISTIC_FALLBACK"] = "DETERMINISTIC_FALLBACK"
+    response_mode: Literal["LLM_PRIMARY", "DETERMINISTIC_FALLBACK", "PROVIDER_UNAVAILABLE"] = "PROVIDER_UNAVAILABLE"
     tools_used: list[str] = Field(default_factory=list)
     chart_data: dict[str, Any] | None = None
 

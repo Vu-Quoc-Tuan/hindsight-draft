@@ -3,14 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 from collections.abc import Awaitable, Callable
 from hashlib import sha256
+import importlib
 import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from typing import TypeVar
 
 import httpx2
+from contracts.v1.enums import MappingMethod, MappingStatus
+from contracts.v1.models import AlarmEntityResolution
 
 from nocpro_api import create_app
+import nocpro_api.routes as api_routes
 from nocpro_api.workspace import Workspace
 from nocpro_api.persistence import (
     IngestResult,
@@ -144,6 +151,319 @@ def test_snapshot_ingest_lists_and_explains_chains():
     assert body["descriptors"]
 
 
+def test_chain_analysis_does_not_infer_topology_profile_from_snapshot_name(monkeypatch):
+    payload = _payload()
+    payload["snapshot"]["snapshot_id"] = "quip-demo"
+    for row in payload["alarms"] + payload["chains"] + payload["memberships"]:
+        row["snapshot_id"] = "quip-demo"
+    workspace = Workspace()
+    workspace.replace_snapshot(payload)
+    topology_repository = SimpleNamespace(
+        get_active_version=AsyncMock(
+            return_value=SimpleNamespace(topology_version="ip-active-v1")
+        ),
+        get_alarm_entity_resolutions=AsyncMock(return_value=[]),
+        get_host_modules_map=AsyncMock(return_value=({}, {})),
+        save_alarm_entity_resolutions=AsyncMock(),
+    )
+    monkeypatch.setattr(
+        api_routes, "topology_repo", lambda _request: topology_repository
+    )
+
+    async def exercise(client: httpx2.AsyncClient):
+        return await client.get("/api/v1/chains/C1")
+
+    response = run_api_test(exercise, workspace=workspace)
+
+    assert response.status_code == 200
+    resolutions = [
+        resolution
+        for member in response.json()["members"]
+        for resolution in member["entity_resolutions"]
+    ]
+    assert len(resolutions) == 3
+    assert all(
+        resolution["topology_profile_id"] is None for resolution in resolutions
+    )
+    topology_repository.get_active_version.assert_not_awaited()
+    topology_repository.get_alarm_entity_resolutions.assert_not_awaited()
+    topology_repository.get_host_modules_map.assert_not_awaited()
+    topology_repository.save_alarm_entity_resolutions.assert_not_awaited()
+
+
+def test_chain_analysis_skips_topology_map_when_persisted_resolutions_cover_chain(
+    monkeypatch,
+):
+    payload = _payload()
+    payload["snapshot"]["topology_ref"] = {
+        "profile_id": "IT_SERVICES",
+        "topology_version": "it-v1",
+    }
+    workspace = Workspace()
+    workspace.replace_snapshot(payload)
+    persisted = [
+        AlarmEntityResolution(
+            alarm_id=f"a{index}",
+            entity_role="OBSERVED_HOST",
+            raw_value="D1",
+            status=MappingStatus.UNMAPPED,
+            method=MappingMethod.NONE,
+            topology_profile_id="IT_SERVICES",
+            topology_version="it-v1",
+        )
+        for index in range(1, 4)
+    ]
+    topology_repository = SimpleNamespace(
+        get_active_version=AsyncMock(),
+        get_alarm_entity_resolutions=AsyncMock(return_value=persisted),
+        get_host_modules_map=AsyncMock(side_effect=AssertionError("map must not load")),
+        save_alarm_entity_resolutions=AsyncMock(),
+    )
+    monkeypatch.setattr(
+        api_routes, "topology_repo", lambda _request: topology_repository
+    )
+    monkeypatch.setattr(
+        api_routes.AlarmEntityResolver,
+        "from_package",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("fully persisted chain must not rebuild a package resolver")
+        ),
+    )
+
+    async def exercise(client: httpx2.AsyncClient):
+        return await client.get("/api/v1/chains/C1")
+
+    response = run_api_test(exercise, workspace=workspace)
+
+    assert response.status_code == 200
+    topology_repository.get_active_version.assert_not_awaited()
+    topology_repository.get_alarm_entity_resolutions.assert_awaited_once_with(
+        ["a1", "a2", "a3"], "IT_SERVICES", "it-v1"
+    )
+    topology_repository.get_host_modules_map.assert_not_awaited()
+    topology_repository.save_alarm_entity_resolutions.assert_not_awaited()
+
+
+def test_chain_analysis_loads_topology_map_only_for_unpersisted_alarms(monkeypatch):
+    payload = _payload()
+    payload["snapshot"]["topology_ref"] = {
+        "profile_id": "IT_SERVICES",
+        "topology_version": "it-v1",
+    }
+    workspace = Workspace()
+    workspace.replace_snapshot(payload)
+    persisted = [
+        AlarmEntityResolution(
+            alarm_id="a1",
+            entity_role="OBSERVED_HOST",
+            raw_value="D1",
+            status=MappingStatus.UNMAPPED,
+            method=MappingMethod.NONE,
+            topology_profile_id="IT_SERVICES",
+            topology_version="it-v1",
+        )
+    ]
+    topology_repository = SimpleNamespace(
+        get_active_version=AsyncMock(),
+        get_alarm_entity_resolutions=AsyncMock(return_value=persisted),
+        get_host_modules_map=AsyncMock(return_value=({}, {})),
+        save_alarm_entity_resolutions=AsyncMock(),
+    )
+    monkeypatch.setattr(
+        api_routes, "topology_repo", lambda _request: topology_repository
+    )
+
+    async def exercise(client: httpx2.AsyncClient):
+        return await client.get("/api/v1/chains/C1")
+
+    response = run_api_test(exercise, workspace=workspace)
+
+    assert response.status_code == 200
+    topology_repository.get_active_version.assert_not_awaited()
+    topology_repository.get_alarm_entity_resolutions.assert_awaited_once_with(
+        ["a1", "a2", "a3"], "IT_SERVICES", "it-v1"
+    )
+    topology_repository.get_host_modules_map.assert_awaited_once_with(
+        "IT_SERVICES", topology_version="it-v1"
+    )
+    saved = topology_repository.save_alarm_entity_resolutions.await_args.args[0]
+    assert {resolution.alarm_id for resolution in saved} == {"a2", "a3"}
+
+
+def test_chain_overview_cards_reads_persisted_projection_without_provider():
+    workspace = Workspace()
+    workspace.replace_snapshot(_payload())
+    repository = SimpleNamespace(
+        chain_quality_assessment=AsyncMock(
+            return_value=SimpleNamespace(
+                status="EVALUATED",
+                stars=4,
+                input_fingerprint="fp-1",
+                payload={
+                    "method": "HEURISTIC_V1",
+                    "status": "EVALUATED",
+                    "stars": 4,
+                    "label": "Khá vững",
+                    "overview_projection": {
+                            "projection_version": "CHAIN_OVERVIEW_V3",
+                            "pipeline_version": "DETERMINISTIC_QUALITY_V3",
+                            "snapshot_id": "s1",
+                            "snapshot_version": "1",
+                            "topology_version": "topology-1",
+                            "config_version": workspace.config.config_version,
+                            "input_fingerprint": "fp-1",
+                        "representative_member": {
+                            "status": "AVAILABLE",
+                            "alarm_id": "a1",
+                            "alarm_name": "LINK DOWN",
+                            "device_code": "D1",
+                            "role": "CORE",
+                        },
+                        "topology": {
+                            "mapped_device_count": 1,
+                            "total_device_count": 1,
+                            "device_mapping_ratio": 1,
+                            "connected_pair_count": 1,
+                            "pair_total": 1,
+                            "mapped_resources": ["R1", "R2"],
+                            "display_paths_truncated": False,
+                            "display_paths": [{
+                                "source": "R1",
+                                "target": "R2",
+                                "source_devices": ["D1"],
+                                "target_devices": ["D2"],
+                                "hop_count": 1,
+                                "path": ["R1", "R2"],
+                                "relation_type": "IP_ADJACENCY",
+                                "traversal_semantic": "UNDIRECTED_STRUCTURAL_CONNECTIVITY",
+                            }],
+                        },
+                        "quality_assessment": {
+                            "method": "HEURISTIC_V1",
+                            "status": "EVALUATED",
+                            "stars": 4,
+                            "label": "Khá vững",
+                            "reasons": [],
+                            "available_dimension_count": 5,
+                        },
+                        "recommendations": {
+                            "status": "AVAILABLE",
+                            "count": 0,
+                            "split_recommended": False,
+                        },
+                    },
+                },
+            )
+        )
+    )
+    workspace.repository = repository
+
+    async def exercise(client: httpx2.AsyncClient):
+        response = await client.get("/api/v1/chains/C1/overview-cards")
+        return response
+
+    response = run_api_test(exercise, workspace=workspace)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "READY"
+    assert body["representative_member"]["alarm_id"] == "a1"
+    assert body["topology"]["mapped_device_count"] == 1
+    assert body["topology_version"] == "topology-1"
+    assert body["topology"]["display_paths"][0]["path"] == ["R1", "R2"]
+    assert body["topology"]["display_paths_truncated"] is False
+    repository.chain_quality_assessment.assert_awaited_once()
+
+
+def test_chain_overview_cards_reports_pending_without_projection():
+    workspace = Workspace()
+    workspace.replace_snapshot(_payload())
+    workspace.repository = SimpleNamespace(
+        chain_quality_assessment=AsyncMock(
+            return_value=SimpleNamespace(status="EVALUATED", stars=4, payload={})
+        )
+    )
+
+    async def exercise(client: httpx2.AsyncClient):
+        return await client.get("/api/v1/chains/C1/overview-cards")
+
+    response = run_api_test(exercise, workspace=workspace)
+    assert response.status_code == 200
+    assert response.json()["status"] == "PENDING"
+    assert response.json()["reason"] == "DETERMINISTIC_OVERVIEW_PROJECTION_PENDING"
+
+
+def test_selecting_the_active_snapshot_is_a_noop():
+    workspace = Workspace()
+    workspace.replace_snapshot(_payload())
+    workspace.ingest_snapshot = AsyncMock(side_effect=AssertionError("must not ingest active snapshot"))
+
+    async def exercise(client: httpx2.AsyncClient):
+        return await client.post("/api/v1/snapshots/select", json={"snapshot_id": "s1"})
+
+    response = run_api_test(exercise, workspace=workspace)
+    assert response.status_code == 200
+    assert response.json()["snapshot_id"] == "s1"
+    assert response.json()["snapshot_version"] == "1"
+    workspace.ingest_snapshot.assert_not_awaited()
+
+
+def test_workspace_promotes_exact_prepared_activation_without_recomputing():
+    """A background-prepared exact payload is promoted without a cold parse."""
+    payload = _payload()
+    prepared_payload = copy.deepcopy(payload)
+    def rewrite_snapshot_identity(value):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key == "snapshot_id":
+                    value[key] = "s2"
+                elif key == "snapshot_version":
+                    value[key] = "2"
+                else:
+                    rewrite_snapshot_identity(child)
+        elif isinstance(value, list):
+            for child in value:
+                rewrite_snapshot_identity(child)
+
+    rewrite_snapshot_identity(prepared_payload)
+
+    workspace = Workspace()
+    workspace.replace_snapshot(payload)
+    prepared_package, prepared_result = workspace.compute_snapshot(prepared_payload)
+    workspace.store_prepared_activation(
+        prepared_payload,
+        prepared_package,
+        prepared_result,
+        config_version=workspace.config.config_version,
+    )
+
+    class Repository:
+        async def ingest_direct(self, incoming):
+            snapshot = incoming["snapshot"]
+            return IngestResult(
+                snapshot["snapshot_id"],
+                snapshot["snapshot_version"],
+                "COMPLETE",
+                duplicate=True,
+                completed_now=False,
+            )
+
+    workspace.repository = Repository()
+    workspace.coordinator = SimpleNamespace()
+    workspace.compute_snapshot = lambda _payload: (_ for _ in ()).throw(
+        AssertionError("prepared activation must not recompute")
+    )
+
+    async def exercise():
+        result = await workspace.ingest_snapshot(prepared_payload)
+        assert result is prepared_result
+        assert workspace.active_identity() == ("s2", "2")
+
+    try:
+        asyncio.run(exercise())
+    finally:
+        workspace.close()
+
+
 def test_workspace_activates_an_already_persisted_snapshot_on_explicit_selection():
     """Catalog selection must not fail merely because its payload was persisted earlier.
 
@@ -265,6 +585,84 @@ def test_configured_initial_snapshot_overrides_a_stale_startup_snapshot(
             app.state.workspace.close()
 
     asyncio.run(exercise())
+
+
+def test_configured_initial_snapshot_is_activated_before_recovery_worker(
+    monkeypatch,
+):
+    app_module = importlib.import_module("nocpro_api.app")
+    events: list[str] = []
+
+    class FakeDatabase:
+        def __init__(self, _url: str):
+            self.sessions = object()
+
+        async def close(self):
+            return None
+
+    class FakeRepository:
+        def __init__(self, _sessions, **_kwargs):
+            return None
+
+    class FakeTopologyRepository:
+        def __init__(self, _sessions):
+            return None
+
+    class FakeCoordinator:
+        def __init__(self, repository, _service, **_kwargs):
+            self.repository = repository
+
+        async def hydrate_active(self):
+            return None
+
+    class FakeWorkspace:
+        def __init__(self):
+            self.package = None
+            self.config = SimpleNamespace(
+                chunk_retention=SimpleNamespace(mode="KEEP")
+            )
+
+        def attach_persistence(self, _repository, _coordinator):
+            return None
+
+        async def ingest_snapshot(self, _payload):
+            await asyncio.sleep(0)
+            events.append("activate_initial_snapshot")
+
+        def close(self):
+            return None
+
+        async def flush_review_persistence(self):
+            return None
+
+        async def flush_deep_dive_persistence(self):
+            return None
+
+        async def flush_audit_persistence(self):
+            return None
+
+    async def fake_recovery_loop(*_args, **_kwargs):
+        events.append("start_recovery")
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(app_module, "Database", FakeDatabase)
+    monkeypatch.setattr(app_module, "SnapshotRepository", FakeRepository)
+    monkeypatch.setattr(app_module, "TopologyRepository", FakeTopologyRepository)
+    monkeypatch.setattr(app_module, "Tier1ACoordinator", FakeCoordinator)
+    monkeypatch.setattr(app_module, "_recovery_loop", fake_recovery_loop)
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://test")
+    monkeypatch.setenv("KAFKA_ENABLED", "false")
+    monkeypatch.setenv("AUTO_CALIBRATE_ON_STARTUP", "false")
+    monkeypatch.setenv("NOCPRO_INITIAL_SNAPSHOT_ID", "real_alarm_ip_demo")
+
+    async def exercise():
+        app = create_app(workspace=FakeWorkspace())
+        async with app.router.lifespan_context(app):
+            await asyncio.sleep(0)
+
+    asyncio.run(exercise())
+
+    assert events == ["activate_initial_snapshot", "start_recovery"]
 
 
 def test_evolution_is_unavailable_for_a_single_direct_snapshot():
@@ -532,6 +930,8 @@ def test_deep_dive_is_submitted_and_polled_as_a_job():
 
     assert polled.status_code == 200
     assert polled.json()["status"] == "SUCCEEDED"
+    assert polled.json()["snapshot_id"] == "s1"
+    assert polled.json()["snapshot_version"] == "1"
     assert polled.json()["result"]["chain_id"] == "C1"
     assert polled.json()["result"]["audit_graph_mode"] == "EXACT_FULL"
     assert polled.json()["result"]["similarity_status"] == "UNAVAILABLE"

@@ -830,10 +830,17 @@ def topology_hypotheses_view(
     )
 
 
-def job_view(view: Tier2JobView) -> JobView:
+def job_view(
+    view: Tier2JobView,
+    *,
+    topology_version: str | None = None,
+) -> JobView:
     if isinstance(view, Tier2JobView):
         payload = {
             "job_id": view.job_id,
+            "snapshot_id": view.cache_key.snapshot_id,
+            "snapshot_version": view.cache_key.snapshot_version,
+            "topology_version": view.cache_key.topology_version,
             "chain_id": view.chain_id,
             "status": view.status.value,
             "progress_percent": view.progress_percent,
@@ -848,6 +855,9 @@ def job_view(view: Tier2JobView) -> JobView:
     else:
         payload = {
             "job_id": view.job_id,
+            "snapshot_id": view.snapshot_id,
+            "snapshot_version": view.snapshot_version,
+            "topology_version": getattr(view, "topology_version", topology_version),
             "chain_id": view.chain_id,
             "status": view.status,
             "progress_percent": view.progress_percent,

@@ -3,22 +3,29 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from functools import partial
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from graybox import adapt_graybox_metadata
 from libs.contracts import ContractIngestError
+from libs.contracts.topology_identity import effective_topology_version, snapshot_topology_profile
 
 from .schemas import (
     CandidateDisplayEventBatchSubmission,
     CandidateDisplayEventBatchView,
     ChainListView,
+    ChainOverviewCardsView,
+    ChainQualitySummaryView,
+    ChainQualityAssessmentView,
     ChainSummaryView,
     CounterfactualJobView,
     OperatorFeedbackSubmission,
@@ -40,6 +47,7 @@ from .schemas import (
     SelectSnapshotRequest,
     SnapshotCatalogListView,
     SnapshotLoadedView,
+    SnapshotQualitySummaryListView,
     SystemPairFactView,
     ApplyThresholdInput,
     ProposalClarityComparisonView,
@@ -63,7 +71,11 @@ from .serializers import (
     job_view,
     pair_evidence_view,
 )
-from .workspace import SnapshotNotLoaded, Workspace
+from .workspace import SnapshotNotLoaded, Workspace, _topology_version
+from .cohesion_advisor import (
+    CHAIN_OVERVIEW_PROJECTION_VERSION,
+)
+from .quality_freshness import projection_staleness_reason
 from .entity_resolver import AlarmEntityResolver
 from .review_principal import (
     ReviewReasonPolicyUnavailable,
@@ -73,11 +85,22 @@ from .review_principal import (
 )
 from review_learning.contracts import SimilarCaseRetrievalResult
 from sqlalchemy import select
-from .persistence.models import CohesionNarrativeCache
+from .persistence.models import (
+    Chain,
+    ChainQualityAssessmentRecord,
+    CohesionNarrativeCache,
+    CounterfactualJobRecord,
+    DeepDiveJobRecord,
+    Snapshot,
+    SnapshotIngest,
+)
 
 
 router = APIRouter(prefix="/api/v1")
 logger = logging.getLogger(__name__)
+MAX_REVIEW_AI_ENRICHMENTS = 3
+MAX_REVIEW_AI_CONCURRENCY = 2
+COHESION_NARRATIVE_VERSION = "grounded-investigation-v5"
 
 
 
@@ -89,15 +112,130 @@ def topology_repo(request: Request):
     return getattr(request.app.state, "topology_repository", None)
 
 
+async def _active_unpinned_topology_is_stale(
+    service: Workspace, request: Request, package: Any
+) -> bool:
+    """An already-open unpinned snapshot may lag a Kafka topology activation."""
+    repository = getattr(service, "repository", None)
+    topo_repository = topology_repo(request)
+    if repository is None or topo_repository is None:
+        return False
+    snapshot_id = package.snapshot.snapshot_id
+    snapshot_version = package.snapshot.snapshot_version
+    async with repository.sessions() as session:
+        source = await session.get(SnapshotIngest, (snapshot_id, snapshot_version))
+    if source is None or source.topology_version_ref:
+        return False
+    profile = snapshot_topology_profile(snapshot_id, source.topology_profile_id)
+    if profile is None:
+        return False
+    current_version = await effective_topology_version(
+        snapshot_id,
+        pinned_version=None,
+        explicit_profile=profile,
+        repository=topo_repository,
+    )
+    return current_version != _topology_version(package)
+
+
+def _cohesion_input_fingerprint(
+    service: Workspace,
+    *,
+    audit_artifact: Any | None,
+    deep_dive_job: Any | None,
+    review_job: Any | None,
+) -> str:
+    """Identify every mutable input represented by a cached cohesion narrative."""
+    payload = {
+        "narrative_version": COHESION_NARRATIVE_VERSION,
+        "config_version": getattr(getattr(service, "config", None), "config_version", None),
+        "topology_version": _topology_version(getattr(service, "package", None)),
+        "audit": getattr(audit_artifact, "artifact_fingerprint", None)
+        or getattr(audit_artifact, "artifact_id", None),
+        "deep_dive": getattr(deep_dive_job, "job_id", None)
+        or getattr(deep_dive_job, "cache_fingerprint", None),
+        "review": getattr(review_job, "job_id", None)
+        or getattr(review_job, "cache_fingerprint", None),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _should_preserve_cached_cohesion(
+    cached_row: Any | None,
+    generated_result: Any,
+    input_fingerprint: str,
+) -> bool:
+    """Keep a matching provider-success row only for provider outages.
+
+    A raw provider response with a ``GROUNDING_*`` diagnostic is deliberately
+    not hidden behind an older cache row: the Cohesion inspection path exists so
+    operators can see exactly what the current model returned.
+    """
+    if cached_row is None:
+        return False
+    generated_status = str(getattr(generated_result, "provider_status", None) or "")
+    generated_model = str(getattr(generated_result, "model", None) or "")
+    if generated_status == "GROUNDING_BYPASS" or (
+        generated_status.startswith("GROUNDING_")
+        and generated_model != "DETERMINISTIC_EVIDENCE"
+    ):
+        return False
+    if getattr(cached_row, "input_fingerprint", None) != input_fingerprint:
+        return False
+    def is_complete_provider_result(value: Any) -> bool:
+        narrative = str(getattr(value, "narrative", "")).strip()
+        # Migrate away from rows written by older builds that persisted the
+        # deterministic fallback as if it were provider prose.
+        is_legacy_fallback = narrative.startswith(
+            (
+                "Chưa tạo được nhận định AI đáp ứng kiểm tra grounding.",
+                "No AI investigation insight passed grounding validation.",
+            )
+        )
+        return (
+            getattr(value, "provider_status", None) == "OK"
+            and getattr(value, "model", None) != "DETERMINISTIC_EVIDENCE"
+            and not is_legacy_fallback
+            and re.search(r"[.!?…。][\"'”’)]*$", narrative) is not None
+        )
+
+    cached_is_good = is_complete_provider_result(cached_row)
+    generated_is_good = is_complete_provider_result(generated_result)
+    return cached_is_good and not generated_is_good
+
+
 async def _run_grounded_provider(function: Any, **kwargs: Any) -> Any:
-    """Run one blocking provider call without retaining a default-executor thread."""
+    """Run one blocking provider call without retaining the loop default pool.
+
+    The provider implementation is synchronous.  Submitting directly to a
+    short-lived executor avoids coupling the request to asyncio's
+    ``run_in_executor`` future bridge, which can leave an ASGI test loop waiting
+    even after the worker has completed.  Polling the concurrent future yields
+    to the loop while preserving the original exception/result semantics.
+    """
     call = partial(function, **kwargs)
-    loop = asyncio.get_running_loop()
     with ThreadPoolExecutor(
         max_workers=1,
         thread_name_prefix="nocpro-grounded-llm",
     ) as executor:
-        return await loop.run_in_executor(executor, call)
+        future = executor.submit(call)
+        while not future.done():
+            await asyncio.sleep(0.01)
+        return future.result()
+
+
+async def _run_blocking(function: Any, *args: Any, **kwargs: Any) -> Any:
+    """Offload one synchronous read without retaining the loop default pool."""
+    call = partial(function, *args, **kwargs)
+    with ThreadPoolExecutor(
+        max_workers=1,
+        thread_name_prefix="nocpro-api-read",
+    ) as executor:
+        future = executor.submit(call)
+        while not future.done():
+            await asyncio.sleep(0.01)
+        return future.result()
 
 
 def translate_error(exc: Exception) -> HTTPException:
@@ -155,29 +293,51 @@ async def list_snapshots(request: Request) -> SnapshotCatalogListView:
     # so the catalog auto-updates when new snapshots arrive via Kafka
     if service.repository is not None:
         try:
-            preset_ids = {p["snapshot_id"] for p in presets}
-            live_rows = await service.repository.list_live_snapshots()
+            preset_identities = {
+                (p["snapshot_id"], p.get("snapshot_version")) for p in presets
+            }
+            live_rows = []
+            page_size = 200
+            offset = 0
+            while True:
+                page = await service.repository.list_live_snapshots(
+                    limit=page_size,
+                    offset=offset,
+                )
+                live_rows.extend(page)
+                if len(page) < page_size:
+                    break
+                offset += page_size
             _PROFILE_MAP = {
                 "IP_NETWORK": "IP_NETWORK",
-                "ip_network": "IP_NETWORK",
                 "IT_SERVICES": "IT_SERVICES",
-                "it_services": "IT_SERVICES",
                 "ALARM_ONLY": "ALARM_ONLY",
-                "alarm_only": "ALARM_ONLY",
             }
             for row in live_rows:
                 sid = row["snapshot_id"]
-                if sid in preset_ids:
-                    continue  # preset takes priority for named snapshots
-                raw_profile = row.get("topology_profile_id") or row.get("source_kind") or ""
-                profile = _PROFILE_MAP.get(raw_profile, "IP_NETWORK")
+                identity = (sid, row["snapshot_version"])
+                if identity in preset_identities:
+                    continue  # the artifact-backed preset takes priority
+                raw_profile = str(
+                    row.get("topology_profile_id") or row.get("source_kind") or ""
+                )
+                mapped_profile = _PROFILE_MAP.get(raw_profile.upper())
+                profile = mapped_profile or "ALARM_ONLY"
                 presets.append({
                     "snapshot_id": sid,
+                    "snapshot_version": row["snapshot_version"],
                     "name": sid,
                     "profile": profile,
                     "alarm_count": row["alarm_count"],
                     "chain_count": row["chain_count"],
-                    "description": f"Live snapshot ingested via Kafka (version {row['snapshot_version']})",
+                    "description": (
+                        f"Live snapshot ingested via Kafka (version {row['snapshot_version']})"
+                        if mapped_profile
+                        else (
+                            f"Live snapshot ingested via Kafka (version {row['snapshot_version']}); "
+                            f"unknown topology profile: {raw_profile or 'missing'}"
+                        )
+                    ),
                     "badge": "Live",
                     "available": True,
                     "unavailable_reason": None,
@@ -192,6 +352,384 @@ async def list_snapshots(request: Request) -> SnapshotCatalogListView:
     )
 
 
+async def _persisted_quality_summaries(service: Workspace) -> list[ChainQualitySummaryView]:
+    """Summarize only persisted assessments and active analysis jobs.
+
+    Singleton chains are deliberately outside the quality denominator because
+    HEURISTIC_V1 marks them NOT_APPLICABLE.  A missing cache row means that no
+    chain-quality result has been persisted; it is not treated as a bad chain.
+    """
+    if service.repository is None:
+        return []
+
+    async with service.repository.sessions() as session:
+        chain_rows = list((await session.scalars(select(Chain))).all())
+        snapshot_ids = {row.snapshot_id for row in chain_rows}
+        if not snapshot_ids:
+            return []
+        snapshot_versions = {
+            (row.snapshot_id, row.snapshot_version): row.topology_version
+            for row in (await session.execute(select(
+                Snapshot.snapshot_id, Snapshot.snapshot_version, Snapshot.topology_version,
+            ).where(Snapshot.snapshot_id.in_(snapshot_ids)))).all()
+        }
+        ingest_topology = {
+            (row.snapshot_id, row.snapshot_version): row
+            for row in (await session.execute(select(
+                SnapshotIngest.snapshot_id,
+                SnapshotIngest.snapshot_version,
+                SnapshotIngest.topology_profile_id,
+                SnapshotIngest.topology_version_ref,
+            ).where(SnapshotIngest.snapshot_id.in_(snapshot_ids)))).all()
+        }
+        quality_rows = list(
+            (
+                await session.scalars(
+                    select(ChainQualityAssessmentRecord)
+                    .where(ChainQualityAssessmentRecord.snapshot_id.in_(snapshot_ids))
+                )
+            ).all()
+        )
+        active_deep_dive_jobs = list(
+            (
+                await session.scalars(
+                    select(DeepDiveJobRecord)
+                    .where(DeepDiveJobRecord.status.in_(("QUEUED", "RUNNING")))
+                    .where(DeepDiveJobRecord.snapshot_id.in_(snapshot_ids))
+                    .order_by(DeepDiveJobRecord.updated_at.desc())
+                )
+            ).all()
+        )
+        active_review_jobs = list(
+            (
+                await session.scalars(
+                    select(CounterfactualJobRecord)
+                    .where(CounterfactualJobRecord.status.in_(("QUEUED", "RUNNING")))
+                    .where(CounterfactualJobRecord.snapshot_id.in_(snapshot_ids))
+                    .order_by(CounterfactualJobRecord.updated_at.desc())
+                )
+            ).all()
+        )
+
+    topology_repository = getattr(getattr(service, "coordinator", None), "topology_repository", None)
+    active_by_profile: dict[str, str | None] = {}
+    expected_topology_versions: dict[tuple[str, str], str | None] = {}
+    for identity in {(row.snapshot_id, row.snapshot_version) for row in chain_rows}:
+        ingested = ingest_topology.get(identity)
+        if ingested is None:
+            expected_topology_versions[identity] = snapshot_versions.get(identity)
+            continue
+        expected_topology_versions[identity] = await effective_topology_version(
+            identity[0],
+            pinned_version=ingested.topology_version_ref,
+            explicit_profile=ingested.topology_profile_id,
+            repository=topology_repository,
+            active_by_profile=active_by_profile,
+        )
+
+    return _build_persisted_quality_summaries(
+        chain_rows,
+        quality_rows,
+        [*active_deep_dive_jobs, *active_review_jobs],
+        expected_config_version=getattr(service.config, "config_version", None),
+        expected_topology_versions=expected_topology_versions,
+    )
+
+
+def _build_persisted_quality_summaries(
+    chain_rows: list[Any],
+    quality_rows: list[Any],
+    active_jobs: list[Any],
+    *,
+    expected_config_version: str | None = None,
+    expected_topology_versions: dict[tuple[str, str], str | None] | None = None,
+) -> list[ChainQualitySummaryView]:
+    chains_by_snapshot: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in chain_rows:
+        chains_by_snapshot.setdefault(
+            (row.snapshot_id, row.snapshot_version), {}
+        )[row.chain_id] = row
+
+    latest_assessment: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for row in quality_rows:
+        key = (row.snapshot_id, row.snapshot_version, row.chain_id)
+        assessment = row.payload if isinstance(row.payload, dict) else None
+        if isinstance(assessment, dict):
+            latest_assessment[key] = assessment
+
+    evaluating: set[tuple[str, str, str]] = set()
+    for row in active_jobs:
+        if _active_quality_job_is_current(
+            row,
+            expected_config_version=expected_config_version,
+            expected_topology_version=expected_topology_versions.get(
+                (row.snapshot_id, row.snapshot_version)
+            ) if expected_topology_versions is not None else None,
+            topology_version_known=(
+                expected_topology_versions is not None
+                and (row.snapshot_id, row.snapshot_version) in expected_topology_versions
+            ),
+        ):
+            evaluating.add((row.snapshot_id, row.snapshot_version, row.chain_id))
+
+    summaries: list[ChainQualitySummaryView] = []
+    for (snapshot_id, snapshot_version), rows_by_chain in sorted(chains_by_snapshot.items()):
+        eligible_ids = {
+            chain_id for chain_id, row in rows_by_chain.items()
+            if row.member_count > 1
+        }
+        sturdy_ids: set[str] = set()
+        review_ids: set[str] = set()
+        unavailable_ids: set[str] = set()
+        star_counts = {str(star): 0 for star in range(1, 6)}
+        for chain_id in eligible_ids:
+            assessment = latest_assessment.get((snapshot_id, snapshot_version, chain_id))
+            if not assessment:
+                continue
+            status = str(assessment.get("status", "")).upper()
+            if status not in {"EVALUATED", "UNAVAILABLE"}:
+                continue
+            if not _quality_assessment_is_current(
+                assessment,
+                expected_config_version=expected_config_version,
+                expected_topology_version=(expected_topology_versions or {}).get((snapshot_id, snapshot_version)),
+                topology_version_known=expected_topology_versions is not None and (snapshot_id, snapshot_version) in expected_topology_versions,
+                snapshot_id=snapshot_id,
+                snapshot_version=snapshot_version,
+            ):
+                # A quality row is immutable evidence for the config that
+                # produced it.  Do not present an older projection as a
+                # current portfolio result after calibration/restart.
+                continue
+            if status == "UNAVAILABLE":
+                unavailable_ids.add(chain_id)
+                continue
+            stars = assessment.get("stars")
+            if not isinstance(stars, (int, float)):
+                continue
+            rounded_stars = max(1, min(5, int(stars)))
+            star_counts[str(rounded_stars)] += 1
+            (sturdy_ids if stars >= 4 else review_ids).add(chain_id)
+
+        evaluated_ids = sturdy_ids | review_ids
+        evaluating_ids = {
+            chain_id for chain_id in eligible_ids - evaluated_ids - unavailable_ids
+            if (snapshot_id, snapshot_version, chain_id) in evaluating
+        }
+        unevaluated_count = max(
+            0,
+            len(eligible_ids)
+            - len(evaluated_ids)
+            - len(unavailable_ids)
+            - len(evaluating_ids),
+        )
+
+        chain_assessments: list[ChainQualityAssessmentView] = []
+        for chain_id in eligible_ids:
+            row = rows_by_chain[chain_id]
+            assessment = latest_assessment.get((snapshot_id, snapshot_version, chain_id))
+            if assessment and str(assessment.get("status", "")).upper() in {
+                "EVALUATED",
+                "UNAVAILABLE",
+            }:
+                if not _quality_assessment_is_current(
+                    assessment,
+                    expected_config_version=expected_config_version,
+                    expected_topology_version=(expected_topology_versions or {}).get((snapshot_id, snapshot_version)),
+                    topology_version_known=expected_topology_versions is not None and (snapshot_id, snapshot_version) in expected_topology_versions,
+                    snapshot_id=snapshot_id,
+                    snapshot_version=snapshot_version,
+                ):
+                    # Do not leak stale stars or reasons into the all-chains
+                    # list while the current config is awaiting evaluation.
+                    assessment = None
+            stars = assessment.get("stars") if assessment else None
+            reasons = assessment.get("reasons") if assessment else None
+            if chain_id in review_ids:
+                status = "REVIEW"
+                label = str(assessment.get("label") or "Cần xem")
+                reason = str(reasons[0]) if isinstance(reasons, list) and reasons else None
+            elif chain_id in evaluating_ids:
+                status = "EVALUATING"
+                label = "Đang đánh giá"
+                reason = "Deep Dive hoặc Counterfactual đang chạy ngầm."
+            elif chain_id in unavailable_ids:
+                status = "UNAVAILABLE"
+                label = str(assessment.get("label") or "Thiếu evidence")
+                reason = str(reasons[0]) if isinstance(reasons, list) and reasons else None
+            elif chain_id not in evaluated_ids:
+                status = "WAITING"
+                label = "Chờ đánh giá"
+                reason = "Chưa có kết quả deterministic được lưu."
+            else:
+                status = "EVALUATED"
+                label = str(assessment.get("label") or "Đã đánh giá") if assessment else "Đã đánh giá"
+                reason = None
+            chain_assessments.append(ChainQualityAssessmentView(
+                chain_id=chain_id,
+                member_count=row.member_count,
+                title=str(getattr(row, "chain_name", None) or f"Chain {chain_id}"),
+                duration_seconds=(
+                    float(getattr(row, "event_span_seconds", None))
+                    if getattr(row, "event_span_seconds", None) is not None
+                    else None
+                ),
+                status=status,
+                stars=int(stars) if isinstance(stars, (int, float)) else None,
+                label=label,
+                reason=reason,
+            ))
+        for chain_id in sorted(set(rows_by_chain) - eligible_ids):
+            row = rows_by_chain[chain_id]
+            chain_assessments.append(ChainQualityAssessmentView(
+                chain_id=chain_id,
+                member_count=row.member_count,
+                title=str(getattr(row, "chain_name", None) or f"Chain {chain_id}"),
+                duration_seconds=(
+                    float(getattr(row, "event_span_seconds", None))
+                    if getattr(row, "event_span_seconds", None) is not None
+                    else None
+                ),
+                status="NOT_APPLICABLE",
+                stars=None,
+                label="Singleton không chấm",
+                reason="Singleton không áp dụng chấm độ vững.",
+            ))
+        chain_assessments.sort(key=lambda item: item.chain_id)
+        attention = [item for item in chain_assessments if item.status not in {"EVALUATED", "NOT_APPLICABLE"}]
+        attention.sort(key=lambda item: (
+            {"REVIEW": 0, "UNAVAILABLE": 1, "EVALUATING": 2, "WAITING": 3}.get(item.status, 4),
+            item.stars if item.stars is not None else 6,
+            -item.member_count,
+            item.chain_id,
+        ))
+        summaries.append(ChainQualitySummaryView(
+            snapshot_id=snapshot_id,
+            snapshot_version=snapshot_version,
+            total_chain_count=len(rows_by_chain),
+            eligible_chain_count=len(eligible_ids),
+            sturdy_count=len(sturdy_ids),
+            review_count=len(review_ids),
+            evaluating_count=len(evaluating_ids),
+            unevaluated_count=unevaluated_count,
+            unavailable_count=len(unavailable_ids),
+            not_applicable_count=len(rows_by_chain) - len(eligible_ids),
+            star_counts=star_counts,
+            attention_chains=attention[:5],
+            chain_assessments=chain_assessments,
+        ))
+    return summaries
+
+
+def _quality_assessment_is_current(
+    assessment: dict[str, Any], *, expected_config_version: str | None,
+    expected_topology_version: str | None = None,
+    topology_version_known: bool = False,
+    snapshot_id: str | None = None,
+    snapshot_version: str | None = None,
+) -> bool:
+    """Only expose stars for the same config, topology, and snapshot identity."""
+    return projection_staleness_reason(
+        assessment.get("overview_projection"),
+        snapshot_id=snapshot_id,
+        snapshot_version=snapshot_version,
+        config_version=expected_config_version,
+        topology_version=expected_topology_version,
+        topology_version_known=topology_version_known,
+    ) is None
+
+
+def _active_quality_job_is_current(
+    job: Any,
+    *,
+    expected_config_version: str | None,
+    expected_topology_version: str | None = None,
+    topology_version_known: bool = False,
+) -> bool:
+    """Only count active work for the current config and topology identity."""
+    identity = getattr(job, "identity_payload", None)
+    if isinstance(identity, dict):
+        job_config_version = identity.get("config_version")
+        job_topology_version = identity.get("topology_version")
+    else:
+        job_config_version = getattr(job, "analysis_config_version", None)
+        job_topology_version = getattr(job, "topology_version", None)
+
+    if expected_config_version is not None:
+        config_matches = (
+            job_config_version == expected_config_version
+            if isinstance(identity, dict)
+            else isinstance(job_config_version, str)
+            and (
+                job_config_version == expected_config_version
+                or job_config_version.startswith(f"{expected_config_version}|")
+            )
+        )
+        if not config_matches:
+            return False
+    if topology_version_known and job_topology_version != expected_topology_version:
+        return False
+    return True
+
+
+@router.get(
+    "/snapshots/quality-summaries",
+    response_model=SnapshotQualitySummaryListView,
+)
+async def list_snapshot_quality_summaries(
+    request: Request,
+) -> SnapshotQualitySummaryListView:
+    try:
+        service = workspace(request)
+        # The overview is also the heartbeat for deterministic quality.  A
+        # terminal worker failure must be retried without requiring a manual
+        # reload or opening every chain detail page.  Scheduling keeps this
+        # status endpoint responsive while the reconciliation runs.
+        service.schedule_snapshot_quality_resume()
+        summaries = await _persisted_quality_summaries(service)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+    return SnapshotQualitySummaryListView(summaries=summaries)
+
+
+def _chain_summary_views(service: Workspace) -> list[ChainSummaryView]:
+    result = service.list_chains()
+    return [
+        ChainSummaryView(
+            chain_id=item.chain_id,
+            member_count=item.member_count,
+            is_singleton=item.is_singleton,
+            title=item.auto_title,
+            start_time=item.start_time,
+            end_time=item.end_time,
+            duration_seconds=item.duration_seconds,
+        )
+        for item in sorted(result.chains.values(), key=lambda value: value.chain_id)
+    ]
+
+
+def _active_topology_version(service: Workspace) -> str | None:
+    package = service.current_package()
+    if package is None:
+        return None
+    topology = getattr(package, "topology", None)
+    version = topology.get("topology_version") if isinstance(topology, dict) else None
+    if version is None:
+        topology_ref = getattr(package.snapshot, "topology_ref", None)
+        version = getattr(topology_ref, "topology_version", None)
+    return str(version) if version is not None else None
+
+
+async def _ingest_selected_snapshot(service: Workspace, payload: dict[str, Any]):
+    """Serialize UI snapshot selections so last request cannot be overwritten."""
+    lock = getattr(service, "_snapshot_selection_lock", None)
+    if lock is None:
+        lock = asyncio.Lock()
+        setattr(service, "_snapshot_selection_lock", lock)
+    async with lock:
+        return await service.ingest_snapshot(payload)
+
+
 
 @router.post(
     "/snapshots/select",
@@ -203,33 +741,92 @@ async def select_snapshot(
 ) -> SnapshotLoadedView:
     service = workspace(request)
     try:
+        active_identity = service.active_identity()
         try:
             payload, _ = load_preset_payload(body.snapshot_id)
+            raw_snapshot = payload.get("snapshot") if isinstance(payload, dict) else None
+            preset_version = raw_snapshot.get("snapshot_version") if isinstance(raw_snapshot, dict) else None
+            if body.snapshot_version is not None and str(preset_version) != body.snapshot_version:
+                raise KeyError(
+                    f"Unknown snapshot identity: {body.snapshot_id!r}@{body.snapshot_version!r}"
+                )
         except (KeyError, ValueError):
             if service.repository is not None:
-                payload = await service.repository.get_ready_snapshot_payload(body.snapshot_id)
+                if body.snapshot_version is None:
+                    payload = await service.repository.get_ready_snapshot_payload(body.snapshot_id)
+                else:
+                    payload = await service.repository.get_ready_snapshot_payload(
+                        body.snapshot_id, body.snapshot_version
+                    )
                 if payload is None:
                     raise KeyError(f"Unknown snapshot_id: {body.snapshot_id!r}")
+            elif (
+                active_identity is not None
+                and active_identity[0] == body.snapshot_id
+                and (body.snapshot_version is None or active_identity[1] == body.snapshot_version)
+            ):
+                # Test/demo workspaces can already hold an explicitly injected
+                # snapshot that is not part of the preset catalog.  Preserve
+                # the active no-op contract when there is no alternate source
+                # from which a newer same-ID version could be resolved.
+                current = service.list_chains()
+                return SnapshotLoadedView(
+                    snapshot_id=current.snapshot_id,
+                    snapshot_version=active_identity[1],
+                    topology_version=_active_topology_version(service),
+                    alarm_count=current.alarm_count,
+                    chain_count=current.chain_count,
+                    incremental_snapshot={
+                        "mode": service.config.incremental_snapshot.mode.value,
+                        "reason": service.config.incremental_snapshot.reason,
+                    },
+                    chains=_chain_summary_views(service),
+                )
             else:
                 raise
-        result = await service.ingest_snapshot(payload)
+        raw_snapshot = payload.get("snapshot") if isinstance(payload, dict) else None
+        requested_identity = (
+            str(raw_snapshot.get("snapshot_id")),
+            str(raw_snapshot.get("snapshot_version")),
+        ) if isinstance(raw_snapshot, dict) else None
+        # Compare the exact catalog identity, not just snapshot_id.  Kafka can
+        # publish a new version under the same ID; treating that as a no-op
+        # would leave the UI on stale evidence after a refresh.
+        if active_identity is not None and requested_identity == active_identity:
+            current = service.list_chains()
+            return SnapshotLoadedView(
+                snapshot_id=current.snapshot_id,
+                snapshot_version=active_identity[1],
+                topology_version=_active_topology_version(service),
+                alarm_count=current.alarm_count,
+                chain_count=current.chain_count,
+                incremental_snapshot={
+                    "mode": service.config.incremental_snapshot.mode.value,
+                    "reason": service.config.incremental_snapshot.reason,
+                },
+                chains=_chain_summary_views(service),
+            )
+        result = await _ingest_selected_snapshot(service, payload)
     except Exception as exc:
         raise translate_error(exc) from exc
     return SnapshotLoadedView(
         snapshot_id=result.snapshot_id,
         snapshot_version=service.require_package().snapshot.snapshot_version,
+        topology_version=_active_topology_version(service),
         alarm_count=result.alarm_count,
         chain_count=result.chain_count,
         incremental_snapshot={
             "mode": service.config.incremental_snapshot.mode.value,
             "reason": service.config.incremental_snapshot.reason,
         },
+        chains=_chain_summary_views(service),
     )
 
 
 @router.post(
     "/snapshots",
     response_model=SnapshotLoadedView,
+    response_model_exclude_none=True,
     status_code=status.HTTP_201_CREATED,
 )
 async def load_snapshot(
@@ -243,6 +840,7 @@ async def load_snapshot(
     return SnapshotLoadedView(
         snapshot_id=result.snapshot_id,
         snapshot_version=service.require_package().snapshot.snapshot_version,
+        topology_version=_active_topology_version(service),
         alarm_count=result.alarm_count,
         chain_count=result.chain_count,
         incremental_snapshot={
@@ -253,48 +851,132 @@ async def load_snapshot(
 
 
 @router.get("/chains", response_model=ChainListView)
-async def list_chains(request: Request, background_tasks: BackgroundTasks) -> ChainListView:
+async def list_chains(request: Request) -> ChainListView:
     try:
         service = workspace(request)
         result = service.list_chains()
-        background_tasks.add_task(service.precompute_snapshot_deep_dive)
+        # In the normal persisted deployment the snapshot-wide runner owns
+        # this queue.  Keep the in-process fallback for demo mode, but honour
+        # the explicit quality switch so tests/disabled deployments do not
+        # leave Tier-2 executor threads running after a simple list request.
+        if getattr(service, "auto_chain_quality", False):
+            service.precompute_snapshot_deep_dive()
     except Exception as exc:
         raise translate_error(exc) from exc
     return ChainListView(
         snapshot_id=result.snapshot_id,
         snapshot_version=workspace(request).require_package().snapshot.snapshot_version,
-        chains=[
-            ChainSummaryView(
-                chain_id=item.chain_id,
-                member_count=item.member_count,
-                is_singleton=item.is_singleton,
-                title=item.auto_title,
-                start_time=item.start_time,
-                end_time=item.end_time,
-                duration_seconds=item.duration_seconds,
-            )
-            for item in sorted(result.chains.values(), key=lambda value: value.chain_id)
-        ],
+        topology_version=_active_topology_version(workspace(request)),
+        chains=_chain_summary_views(workspace(request)),
     )
 
 
 @router.post("/snapshots/precompute-deep-dive")
 async def trigger_precompute_deep_dive(
-    request: Request, background_tasks: BackgroundTasks
+    request: Request,
 ) -> dict[str, Any]:
     try:
         service = workspace(request)
-        background_tasks.add_task(service.precompute_snapshot_deep_dive)
-        return {"status": "QUEUED"}
+        return service.precompute_snapshot_deep_dive()
     except Exception as exc:
         raise translate_error(exc) from exc
+
+
+@router.get(
+    "/chains/{chain_id}/overview-cards",
+    response_model=ChainOverviewCardsView,
+)
+async def get_chain_overview_cards(
+    chain_id: str, request: Request
+) -> ChainOverviewCardsView:
+    """Read the persisted deterministic Overview projection without AI work."""
+    service = workspace(request)
+    package = service.require_package()
+    snapshot_id = package.snapshot.snapshot_id
+    snapshot_version = package.snapshot.snapshot_version
+    if chain_id not in package.chains:
+        raise KeyError(f"unknown chain_id {chain_id!r}")
+
+    if await _active_unpinned_topology_is_stale(service, request, package):
+        return ChainOverviewCardsView(
+            snapshot_id=snapshot_id,
+            snapshot_version=snapshot_version,
+            chain_id=chain_id,
+            status="PENDING",
+            reason="DETERMINISTIC_OVERVIEW_TOPOLOGY_MISMATCH",
+        )
+
+    if len(package.members_of(chain_id)) <= 1:
+        return ChainOverviewCardsView(
+            snapshot_id=snapshot_id,
+            snapshot_version=snapshot_version,
+            chain_id=chain_id,
+            status="NOT_APPLICABLE",
+            reason="SINGLETON_CHAIN",
+        )
+
+    quality_record = None
+    if service.repository is not None:
+        quality_record = await service.repository.chain_quality_assessment(
+            snapshot_id=snapshot_id,
+            snapshot_version=snapshot_version,
+            chain_id=chain_id,
+        )
+    payload = getattr(quality_record, "payload", None)
+    projection = payload.get("overview_projection") if isinstance(payload, dict) else None
+    if not isinstance(projection, dict):
+        return ChainOverviewCardsView(
+            snapshot_id=snapshot_id,
+            snapshot_version=snapshot_version,
+            chain_id=chain_id,
+            status="PENDING",
+            reason="DETERMINISTIC_OVERVIEW_PROJECTION_PENDING",
+        )
+
+    stale_reason = projection_staleness_reason(
+        projection,
+        snapshot_id=snapshot_id,
+        snapshot_version=snapshot_version,
+        config_version=getattr(service.config, "config_version", None),
+        topology_version=_topology_version(package),
+        topology_version_known=snapshot_topology_profile(
+            snapshot_id,
+            getattr(getattr(package.snapshot, "topology_ref", None), "profile_id", None),
+        ) is not None,
+        input_fingerprint=getattr(quality_record, "input_fingerprint", None),
+    )
+    if stale_reason is not None:
+        return ChainOverviewCardsView(
+            snapshot_id=snapshot_id,
+            snapshot_version=snapshot_version,
+            chain_id=chain_id,
+            status="PENDING",
+            reason=f"DETERMINISTIC_OVERVIEW_{stale_reason}",
+            projection_version=(
+                str(projection.get("projection_version") or "")
+                if stale_reason == "PROJECTION_STALE" else None
+            ),
+        )
+
+    return ChainOverviewCardsView(
+        snapshot_id=snapshot_id,
+        snapshot_version=snapshot_version,
+        chain_id=chain_id,
+        status="READY",
+        projection_version=CHAIN_OVERVIEW_PROJECTION_VERSION,
+        topology_version=projection.get("topology_version"),
+        representative_member=projection.get("representative_member"),
+        topology=projection.get("topology"),
+        quality_assessment=projection.get("quality_assessment"),
+        recommendations=projection.get("recommendations"),
+    )
 
 
 @router.get("/chains/{chain_id}")
 async def explain_chain(chain_id: str, request: Request):
     service = workspace(request)
     try:
-        result = await asyncio.to_thread(service.analyze, chain_id)
+        result = await _run_blocking(service.analyze, chain_id)
         pkg = service.require_package()
 
         entity_resolutions_by_alarm = {}
@@ -306,30 +988,13 @@ async def explain_chain(chain_id: str, request: Request):
         topo_ref = getattr(getattr(pkg, "snapshot", None), "topology_ref", None) or getattr(pkg, "topology_ref", None)
         profile_id = getattr(topo_ref, "profile_id", None)
         target_topo_ver = getattr(topo_ref, "topology_version", None)
-        if not profile_id:
-            snap_id = getattr(getattr(pkg, "snapshot", None), "snapshot_id", "") or ""
-            if "ip" in snap_id.lower():
-                profile_id = "IP_NETWORK"
-            else:
-                profile_id = "IT_SERVICES"
-
         topo_ver = target_topo_ver
         persisted_by_alarm: dict[str, list[AlarmEntityResolution]] = {}
 
-        if repo is not None:
-            active = await repo.get_active_version(profile_id)
-            if active is not None:
-                topo_ver = target_topo_ver or active.topology_version
-                host_mod_map, host_can_map = await repo.get_host_modules_map(
-                    profile_id, topology_version=topo_ver
-                )
-                resolver = AlarmEntityResolver(
-                    profile_id=profile_id,
-                    topology_version=topo_ver,
-                    host_modules_map=host_mod_map,
-                    host_canonical_id_map=host_can_map,
-                )
-
+        if repo is not None and profile_id:
+            if not topo_ver:
+                active = await repo.get_active_version(profile_id)
+                topo_ver = active.topology_version if active is not None else None
             if topo_ver:
                 try:
                     persisted = await repo.get_alarm_entity_resolutions(
@@ -339,11 +1004,6 @@ async def explain_chain(chain_id: str, request: Request):
                         persisted_by_alarm.setdefault(r.alarm_id, []).append(r)
                 except Exception as e:
                     logger.warning("Failed to fetch persisted entity resolutions: %s", e)
-
-        if resolver is None:
-            resolver = AlarmEntityResolver.from_package(pkg)
-            if not topo_ver:
-                topo_ver = resolver.topology_version
 
         # 1. Use persisted resolutions for alarms already resolved
         for alarm_id in chain_alarm_ids:
@@ -357,31 +1017,48 @@ async def explain_chain(chain_id: str, request: Request):
 
         # 2. Only resolve alarms not already in persistence
         missing_alarm_ids = [aid for aid in chain_alarm_ids if aid not in persisted_by_alarm]
-        for alarm_id in missing_alarm_ids:
-            if alarm_id in pkg.alarms:
-                alarm = pkg.alarms[alarm_id]
-                raw_dict = (
-                    alarm.raw
-                    if hasattr(alarm, "raw") and isinstance(alarm.raw, dict)
-                    else {}
+        if missing_alarm_ids:
+            if repo is not None and profile_id and topo_ver:
+                host_mod_map, host_can_map = await repo.get_host_modules_map(
+                    profile_id, topology_version=topo_ver
                 )
-                raw_content = (
-                    raw_dict.get("content")
-                    or getattr(alarm, "raw_content", None)
-                    or raw_dict.get("addition_info")
+                resolver = AlarmEntityResolver(
+                    profile_id=profile_id,
+                    topology_version=topo_ver,
+                    host_modules_map=host_mod_map,
+                    host_canonical_id_map=host_can_map,
                 )
-                observed_host, resolutions = resolver.resolve_alarm(
-                    alarm_id,
-                    raw_content=raw_content,
-                    alarm_name=alarm.alarm_name,
-                    device_code=alarm.device_code,
-                    node_reference=alarm.node_reference,
-                    raw_fields=raw_dict,
+            else:
+                resolver = AlarmEntityResolver.from_package(
+                    pkg,
+                    profile_id=profile_id,
+                    topology_version=topo_ver,
                 )
-                entity_resolutions_by_alarm[alarm_id] = (observed_host, resolutions)
-                new_resolutions.extend(resolutions)
+            for alarm_id in missing_alarm_ids:
+                if alarm_id in pkg.alarms:
+                    alarm = pkg.alarms[alarm_id]
+                    raw_dict = (
+                        alarm.raw
+                        if hasattr(alarm, "raw") and isinstance(alarm.raw, dict)
+                        else {}
+                    )
+                    raw_content = (
+                        raw_dict.get("content")
+                        or getattr(alarm, "raw_content", None)
+                        or raw_dict.get("addition_info")
+                    )
+                    observed_host, resolutions = resolver.resolve_alarm(
+                        alarm_id,
+                        raw_content=raw_content,
+                        alarm_name=alarm.alarm_name,
+                        device_code=alarm.device_code,
+                        node_reference=alarm.node_reference,
+                        raw_fields=raw_dict,
+                    )
+                    entity_resolutions_by_alarm[alarm_id] = (observed_host, resolutions)
+                    new_resolutions.extend(resolutions)
 
-        if repo is not None and new_resolutions:
+        if repo is not None and profile_id and topo_ver and new_resolutions:
             try:
                 await repo.save_alarm_entity_resolutions(new_resolutions)
             except Exception as e:
@@ -411,7 +1088,7 @@ async def explain_pair(
 ) -> PairWhyView:
     service = workspace(request)
     try:
-        values = await asyncio.to_thread(service.pair_why, chain_id, alarm_a, alarm_b)
+        values = await _run_blocking(service.pair_why, chain_id, alarm_a, alarm_b)
         graybox = adapt_graybox_metadata(service.require_package(), chain_id)
     except Exception as exc:
         raise translate_error(exc) from exc
@@ -484,7 +1161,11 @@ async def get_latest_deep_dive(
         result = await service.latest_deep_dive(chain_id)
         await service.flush_deep_dive_persistence()
         await service.flush_audit_persistence()
-        return job_view(result) if result is not None else None
+        return (
+            job_view(result, topology_version=_active_topology_version(service))
+            if result is not None
+            else None
+        )
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -563,6 +1244,7 @@ async def get_latest_review(
                     ComparativeExplanation,
                     enrich_comparative_explanation_with_ai,
                 )
+                eligible_candidates = []
                 for cand in view.result.get("evaluated_candidates", []):
                     if (
                         isinstance(cand, dict)
@@ -570,8 +1252,15 @@ async def get_latest_review(
                         and cand.get("comparative_explanation")
                         and not cand["comparative_explanation"].get("ai_narrative")
                     ):
-                        c_exp = cand["comparative_explanation"]
-                        obj_exp = ComparativeExplanation(
+                        eligible_candidates.append(cand)
+                    if len(eligible_candidates) >= MAX_REVIEW_AI_ENRICHMENTS:
+                        break
+
+                enrichment_semaphore = asyncio.Semaphore(MAX_REVIEW_AI_CONCURRENCY)
+
+                async def enrich_candidate(cand: dict[str, Any]) -> None:
+                    c_exp = cand["comparative_explanation"]
+                    obj_exp = ComparativeExplanation(
                             operation=c_exp.get("operation", "UNKNOWN"),
                             summary_action=c_exp.get("summary_action", ""),
                             why_better=c_exp.get("why_better", ""),
@@ -580,6 +1269,7 @@ async def get_latest_review(
                             language=c_exp.get("language", lang),
                             context_facts=c_exp.get("context_facts"),
                         )
+                    async with enrichment_semaphore:
                         enriched_exp = await enrich_comparative_explanation_with_ai(
                             obj_exp,
                             candidate_id=cand.get("candidate_id", ""),
@@ -593,7 +1283,9 @@ async def get_latest_review(
                             member_ids=cand.get("member_ids"),
                             structural_facts=cand.get("structural_facts"),
                         )
-                        cand["comparative_explanation"] = enriched_exp.as_dict()
+                    cand["comparative_explanation"] = enriched_exp.as_dict()
+
+                await asyncio.gather(*(enrich_candidate(cand) for cand in eligible_candidates))
         return view
     except Exception as exc:
         raise translate_error(exc) from exc
@@ -640,7 +1332,8 @@ async def get_review_job_proposals_clarity(
         try:
             from .grounded_llm import is_provider_configured, render_grounded
             if is_provider_configured() and overall_rationale:
-                rendered = render_grounded(
+                rendered = await _run_grounded_provider(
+                    render_grounded,
                     draft=overall_rationale,
                     facts={
                         "top_proposal": comparison_res.top_proposal_operation,
@@ -649,10 +1342,12 @@ async def get_review_job_proposals_clarity(
                     },
                     fact_refs=[job.chain_id, comparison_res.top_proposal_operation or ""],
                     purpose="ADVISOR",
+                    requested_language=lang,
+                    preserve_provider_output=True,
                 )
                 ai_model = rendered.model
                 ai_provider_status = rendered.provider_status
-                if rendered.used_provider and rendered.provider_status == "OK":
+                if rendered.used_provider and rendered.message:
                     overall_rationale = rendered.message
         except Exception as exc:
             logger.warning("Optional AI render for proposal clarity skipped: %s", exc)
@@ -900,7 +1595,7 @@ async def get_candidate_similar_cases(
     response_model=AISuggestionView,
 )
 async def get_chain_ai_suggestion(
-    chain_id: str, request: Request, lang: str = Query("en")
+    chain_id: str, request: Request, lang: str = Query("vi")
 ) -> AISuggestionView:
     try:
         service = workspace(request)
@@ -1001,7 +1696,7 @@ async def get_chain_ai_suggestion(
 async def get_chain_cohesion_narrative(
     chain_id: str,
     request: Request,
-    lang: str = Query("en"),
+    lang: str = Query("vi"),
     force_refresh: bool = Query(False),
 ) -> CohesionNarrativeView:
     try:
@@ -1009,6 +1704,15 @@ async def get_chain_cohesion_narrative(
         active_id = service.active_identity() if hasattr(service, "active_identity") else None
         snapshot_id = active_id[0] if active_id else "default_snapshot"
         snapshot_version = active_id[1] if active_id else "v1"
+        package = service.current_package()
+        if package is not None and await _active_unpinned_topology_is_stale(service, request, package):
+            return CohesionNarrativeView(
+                chain_id=chain_id,
+                narrative="",
+                model="DETERMINISTIC_EVIDENCE",
+                provider_status="STALE_TOPOLOGY",
+                context={"reason": "Snapshot đang mở dùng topology cũ; mở lại snapshot để cập nhật."},
+            )
 
         audit_artifact = None
         audit_error_reason: str | None = None
@@ -1024,6 +1728,7 @@ async def get_chain_cohesion_narrative(
             audit_error_reason = "AUDIT_LOOKUP_FAILED"
 
         deep_dive_analysis = None
+        deep_dive_job = None
         try:
             deep_dive_job = await service.latest_deep_dive(chain_id)
             if (
@@ -1031,38 +1736,18 @@ async def get_chain_cohesion_narrative(
                 and getattr(deep_dive_job, "status", None)
                 and getattr(deep_dive_job.status, "value", str(deep_dive_job.status)) == "SUCCEEDED"
             ):
-                deep_dive_analysis = deep_dive_job.result
+                from .cohesion_advisor import hydrate_persisted_deep_dive
+
+                deep_dive_analysis = hydrate_persisted_deep_dive(deep_dive_job.result)
                 if audit_artifact is None and getattr(deep_dive_job, "audit_artifact", None):
                     audit_artifact = deep_dive_job.audit_artifact
         except Exception:
             logger.debug("Failed to retrieve latest deep dive job for chain %s", chain_id, exc_info=True)
 
-        # Check DB cache if available and not force_refresh
-        if service.repository is not None and not force_refresh:
-            try:
-                async with service.repository.sessions() as session:
-                    cache_stmt = select(CohesionNarrativeCache).where(
-                        CohesionNarrativeCache.snapshot_id == snapshot_id,
-                        CohesionNarrativeCache.snapshot_version == snapshot_version,
-                        CohesionNarrativeCache.chain_id == chain_id,
-                        CohesionNarrativeCache.language == lang,
-                    )
-                    cached_row = (await session.scalars(cache_stmt)).first()
-                    if cached_row is not None:
-                        # If cached has P2, OR if P2 is still not completed (audit_artifact and deep_dive_analysis are None):
-                        if cached_row.has_p2 or (audit_artifact is None and deep_dive_analysis is None):
-                            return CohesionNarrativeView(
-                                chain_id=cached_row.chain_id,
-                                narrative=cached_row.narrative,
-                                model=cached_row.model,
-                                provider_status=cached_row.provider_status,
-                                context=cached_row.context,
-                            )
-            except Exception:
-                logger.debug("Cohesion narrative DB cache lookup failed", exc_info=True)
-
         review_result = None
+        latest_rev = None
         try:
+            package = service.current_package()
             latest_rev = await service.latest_review(chain_id)
             if latest_rev and latest_rev.result:
                 from tier2.counterfactual.public_contract import public_review_result
@@ -1076,6 +1761,86 @@ async def get_chain_cohesion_narrative(
         except Exception:
             logger.exception("Failed to retrieve latest review for chain %s", chain_id)
 
+        persisted_quality_assessment = None
+        if service.repository is not None:
+            try:
+                quality_record = await service.repository.chain_quality_assessment(
+                    snapshot_id=snapshot_id,
+                    snapshot_version=snapshot_version,
+                    chain_id=chain_id,
+                )
+                current_package = service.require_package()
+                if quality_record is not None and isinstance(quality_record.payload, dict) and _quality_assessment_is_current(
+                    quality_record.payload,
+                    expected_config_version=getattr(service.config, "config_version", None),
+                    expected_topology_version=_topology_version(current_package),
+                    topology_version_known=snapshot_topology_profile(
+                        snapshot_id,
+                        getattr(getattr(current_package.snapshot, "topology_ref", None), "profile_id", None),
+                    ) is not None,
+                    snapshot_id=snapshot_id,
+                    snapshot_version=snapshot_version,
+                ):
+                    persisted_quality_assessment = quality_record.payload
+            except Exception:
+                logger.debug(
+                    "Failed to retrieve persisted quality for chain %s",
+                    chain_id,
+                    exc_info=True,
+                )
+
+        input_fingerprint = _cohesion_input_fingerprint(
+            service,
+            audit_artifact=audit_artifact,
+            deep_dive_job=deep_dive_job,
+            review_job=latest_rev,
+        )
+
+        # Cache rows created under a different config, audit, deep-dive, or
+        # review identity are deliberately misses.  Legacy rows have the
+        # migration marker and cannot satisfy this predicate.
+        cached_row = None
+        if service.repository is not None:
+            try:
+                async with service.repository.sessions() as session:
+                    cache_stmt = select(CohesionNarrativeCache).where(
+                        CohesionNarrativeCache.snapshot_id == snapshot_id,
+                        CohesionNarrativeCache.snapshot_version == snapshot_version,
+                        CohesionNarrativeCache.chain_id == chain_id,
+                        CohesionNarrativeCache.language == lang,
+                        CohesionNarrativeCache.input_fingerprint == input_fingerprint,
+                    )
+                    cached_row = (await session.scalars(cache_stmt)).first()
+                    # Do not resurrect legacy deterministic fallback prose from
+                    # the narrative cache. Only a non-empty provider result may
+                    # short-circuit the current render; grounding warnings are
+                    # intentionally cacheable because they expose the raw model
+                    # output with its diagnostic status.
+                    cached_narrative = str(getattr(cached_row, "narrative", "") or "").strip()
+                    cached_is_legacy_fallback = cached_narrative.startswith(
+                        (
+                            "Chưa tạo được nhận định AI đáp ứng kiểm tra grounding.",
+                            "No AI investigation insight passed grounding validation.",
+                        )
+                    )
+                    cached_is_provider_output = bool(
+                        cached_row is not None
+                        and cached_narrative
+                        and str(getattr(cached_row, "model", "") or "")
+                        and getattr(cached_row, "model", None) != "DETERMINISTIC_EVIDENCE"
+                        and not cached_is_legacy_fallback
+                    )
+                    if cached_row is not None and cached_is_provider_output and not force_refresh:
+                        return CohesionNarrativeView(
+                            chain_id=cached_row.chain_id,
+                            narrative=cached_row.narrative,
+                            model=cached_row.model,
+                            provider_status=cached_row.provider_status,
+                            context=cached_row.context,
+                        )
+            except Exception:
+                logger.debug("Cohesion narrative DB cache lookup failed", exc_info=True)
+
         from .cohesion_advisor import generate_cohesion_narrative
         result = await _run_grounded_provider(
             generate_cohesion_narrative,
@@ -1085,6 +1850,7 @@ async def get_chain_cohesion_narrative(
             review_result=review_result,
             audit_error_reason=audit_error_reason,
             deep_dive_analysis=deep_dive_analysis,
+            persisted_quality_assessment=persisted_quality_assessment,
             language=lang,
         )
 
@@ -1092,8 +1858,18 @@ async def get_chain_cohesion_narrative(
         if isinstance(result.context, dict):
             result.context["has_p2"] = has_p2
 
-        # Save to DB cache
-        if service.repository is not None:
+        if _should_preserve_cached_cohesion(cached_row, result, input_fingerprint):
+            return CohesionNarrativeView(
+                chain_id=cached_row.chain_id,
+                narrative=cached_row.narrative,
+                model=cached_row.model,
+                provider_status=cached_row.provider_status,
+                context=cached_row.context,
+            )
+
+        # Never persist an explicitly unvalidated dev probe.  Otherwise a later
+        # normal request could serve raw provider prose as if it were grounded.
+        if service.repository is not None and result.provider_status != "GROUNDING_BYPASS":
             try:
                 async with service.repository.sessions() as session:
                     cache_record = CohesionNarrativeCache(
@@ -1101,6 +1877,7 @@ async def get_chain_cohesion_narrative(
                         snapshot_version=snapshot_version,
                         chain_id=chain_id,
                         language=lang,
+                        input_fingerprint=input_fingerprint,
                         has_p2=has_p2,
                         narrative=result.narrative,
                         analytical_findings=result.context.get("analytical_findings", []) if isinstance(result.context, dict) else [],
@@ -1326,7 +2103,7 @@ async def get_topology_subgraph(
     profile_id: str | None = None,
     profile: str | None = None,
     seeds: str = "",
-    hops: int = Query(default=2, ge=1, le=5),
+    hops: int = Query(default=2, ge=1, le=4),
     limit: int = Query(default=150, ge=1, le=500),
     version: str | None = None,
 ) -> dict[str, Any]:
@@ -1347,6 +2124,12 @@ async def get_topology_subgraph(
         "profile_id": selected_profile,
         "nodes": [],
         "edges": [],
+        "requested_seed_count": len(set(seed_list)),
+        "resolved_seed_count": 0,
+        "retained_seed_count": 0,
+        "dropped_seed_count": 0,
+        "truncated": False,
+        "truncation_reasons": [],
     }
 
 

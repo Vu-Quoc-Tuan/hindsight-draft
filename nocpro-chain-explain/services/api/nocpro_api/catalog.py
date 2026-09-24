@@ -174,12 +174,32 @@ def check_item_availability(item: CatalogItem) -> tuple[bool, str | None]:
     return True, None
 
 
+def _preset_snapshot_version(item: CatalogItem) -> str | None:
+    """Read the immutable version from the preset artifact itself.
+
+    The catalog metadata intentionally stays small, but snapshot identity is
+    the pair ``(snapshot_id, snapshot_version)``.  Deriving the version from
+    the artifact prevents a second, drift-prone hardcoded identity field.
+    """
+    full_path = _resolve_preset_path(item)
+    if not full_path.is_file():
+        return None
+    try:
+        payload = json.loads(full_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    snapshot = payload.get("snapshot") if isinstance(payload, dict) else None
+    version = snapshot.get("snapshot_version") if isinstance(snapshot, dict) else None
+    return str(version) if version is not None else None
+
+
 def list_catalog_presets() -> list[dict[str, Any]]:
     presets = []
     for item in _CATALOG:
         avail, reason = check_item_availability(item)
         presets.append({
             "snapshot_id": item.snapshot_id,
+            "snapshot_version": _preset_snapshot_version(item),
             "name": item.name,
             "profile": item.profile,
             "alarm_count": item.alarm_count,

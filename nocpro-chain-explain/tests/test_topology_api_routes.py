@@ -149,3 +149,27 @@ async def test_topology_subgraph(app: FastAPI):
     assert len(data["edges"]) == 1
     assert data["nodes"][1]["is_seed"] is True
 
+
+@pytest.mark.anyio
+async def test_topology_subgraph_accepts_four_hops_and_pins_version(app: FastAPI):
+    res = await _get(
+        app,
+        "/api/v1/topology/subgraph?profile_id=IT_SERVICES&seeds=host1&hops=4&version=v1",
+    )
+
+    assert res.status_code == 200
+    app.state.topology_repository.get_subgraph.assert_awaited_once_with(
+        "IT_SERVICES", seeds=["host1"], max_hops=4, max_nodes=150, topology_version="v1"
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("hops", [0, 5])
+async def test_topology_subgraph_rejects_hops_outside_supported_range(app: FastAPI, hops: int):
+    res = await _get(
+        app,
+        f"/api/v1/topology/subgraph?profile_id=IT_SERVICES&seeds=10.210.48.136&hops={hops}",
+    )
+
+    assert res.status_code == 422
+    app.state.topology_repository.get_subgraph.assert_not_awaited()

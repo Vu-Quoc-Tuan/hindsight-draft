@@ -28,6 +28,12 @@ def pytest_configure(config: pytest.Config) -> None:
     )
 
 
+@pytest.fixture(autouse=True)
+def disable_automatic_quality_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep unrelated unit tests from draining background Counterfactual queues."""
+    monkeypatch.setenv("NOCPRO_AUTO_CHAIN_QUALITY", "false")
+
+
 @pytest.fixture(scope="session")
 def mock_root() -> Path:
     if not MOCK_ROOT.is_dir():
