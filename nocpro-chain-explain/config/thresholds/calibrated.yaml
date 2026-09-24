@@ -9,7 +9,7 @@ ingest:
 temporal:
   burst:
     gap_seconds:
-      value: 483
+      value: 408
       source: DATA_DRIVEN
   delay:
     bandwidth_seconds:
@@ -155,9 +155,9 @@ similar_chains:
     value: 5
     source: DOCUMENTED_DEFAULT
 notes:
-- Calibrated at 2026-09-19T02:57:16.911147+00:00 from PostgreSQL system of record.
-- Loaded 4 snapshots containing 512 chains (1050 alarms).
-- Evaluated 140 multi-alarm chains (0 skipped due to member bounds, 11 calculation
+- Calibrated at 2026-09-21T23:52:00.057374+00:00 from PostgreSQL system of record.
+- Loaded 21 snapshots containing 1397 chains (2663 alarms).
+- Evaluated 425 multi-alarm chains (0 skipped due to member bounds, 22 calculation
   errors).
 - Calibrated DATA_DRIVEN values preserve empirical distribution evidence; DOCUMENTED_DEFAULT
   indicates fallback.

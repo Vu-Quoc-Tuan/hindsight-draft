@@ -11,6 +11,7 @@ from review_learning import (
     ndcg_at_k,
 )
 from scripts.review_learning.train_ranker import evaluate_operation_slices
+from scripts.review_learning.evaluate_ranker import evaluate_operation_slices as evaluate_cli_operation_slices
 
 
 def test_dcg_and_ndcg_at_k():
@@ -66,6 +67,8 @@ def test_operation_slice_evaluation():
 
     dummy_scores = [float(-i) for i in range(corpus.train.num_candidates)]
     slices = evaluate_operation_slices(corpus.train, dummy_scores)
+    assert slices == evaluate_cli_operation_slices(corpus.train, dummy_scores)
+    assert slices == evaluate_operation_slices(corpus.train, dummy_scores, abstention_threshold=0.0)
 
     assert "REMOVE_MEMBER" in slices
     assert "SPLIT_CHAIN" in slices
