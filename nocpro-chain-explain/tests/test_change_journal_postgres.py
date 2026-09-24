@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from nocpro_api.persistence.change_journal import (
     append_change,
@@ -103,6 +103,54 @@ async def _drop_test_schema(engine, schema: str) -> None:
             await connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
     finally:
         await engine.dispose()
+
+
+async def _race_after_missing_locked_reads(
+    monkeypatch: pytest.MonkeyPatch,
+    model: type,
+    expected_ids: tuple[str, str],
+    writers,
+) -> list[object]:
+    """Release two writers only after their own locked lookups found no row."""
+    original_get = AsyncSession.get
+    arrived = asyncio.Event()
+    release = asyncio.Event()
+    missing_reads: list[tuple[AsyncSession, str]] = []
+    tasks: list[asyncio.Task] = []
+
+    async def gated_get(self, entity, ident, **kwargs):
+        row = await original_get(self, entity, ident, **kwargs)
+        if (
+            entity is model
+            and ident in expected_ids
+            and kwargs.get("with_for_update")
+            and row is None
+        ):
+            missing_reads.append((self, ident))
+            if len(missing_reads) == 2:
+                arrived.set()
+            await asyncio.wait_for(release.wait(), timeout=5)
+        return row
+
+    monkeypatch.setattr(AsyncSession, "get", gated_get)
+    try:
+        tasks = [asyncio.create_task(writer()) for writer in writers]
+        await asyncio.wait_for(arrived.wait(), timeout=5)
+        assert len(missing_reads) == 2
+        assert sorted(ident for _, ident in missing_reads) == sorted(expected_ids)
+        assert missing_reads[0][0] is not missing_reads[1][0]
+        release.set()
+        return await asyncio.wait_for(
+            asyncio.gather(*tasks, return_exceptions=True), timeout=10
+        )
+    finally:
+        release.set()
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        monkeypatch.setattr(AsyncSession, "get", original_get)
 
 
 def test_postgres_clock_lock_orders_revisions_by_commit_and_rolls_back_cleanly() -> None:
@@ -283,7 +331,9 @@ def test_postgres_quality_replay_does_not_publish_duplicate_terminal_events(
     asyncio.run(exercise())
 
 
-def test_postgres_concurrent_succeeded_review_bundle_replay_is_idempotent() -> None:
+def test_postgres_concurrent_succeeded_review_bundle_replay_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Concurrent first writers must serialize on persisted identities, not process locks."""
     database_url = _safe_test_database_url()
 
@@ -339,18 +389,18 @@ def test_postgres_concurrent_succeeded_review_bundle_replay_is_idempotent() -> N
                 hard_gate_status="PASSED",
                 pareto_state="FRONTIER_SELECTED",
             )]
-            start = asyncio.Event()
-
             async def writer() -> None:
-                await start.wait()
                 await repository.persist_succeeded_job_and_review_bundle(
                     payload, review_session, exposures
                 )
 
-            first = asyncio.create_task(writer())
-            second = asyncio.create_task(writer())
-            start.set()
-            await asyncio.wait_for(asyncio.gather(first, second), timeout=10)
+            replay_results = await _race_after_missing_locked_reads(
+                monkeypatch,
+                CounterfactualJobRecord,
+                (job_id, job_id),
+                (writer, writer),
+            )
+            assert replay_results == [None, None]
 
             stored_job = await repository.counterfactual_job(job_id)
             stored_session = await repository.get_review_session(review_id)
@@ -358,6 +408,20 @@ def test_postgres_concurrent_succeeded_review_bundle_replay_is_idempotent() -> N
             assert stored_job is not None and stored_job.result == payload["result"]
             assert stored_session is not None and stored_session.job_id == job_id
             assert len(stored_exposures) == 1
+            assert (
+                stored_exposures[0].candidate_fingerprint
+                == exposures[0].candidate_fingerprint
+            )
+            async with sessions() as db_session:
+                assert await db_session.scalar(
+                    select(func.count()).select_from(CounterfactualJobRecord)
+                ) == 1
+                assert await db_session.scalar(
+                    select(func.count()).select_from(ReviewSessionModel)
+                ) == 1
+                assert await db_session.scalar(
+                    select(func.count()).select_from(CandidateExposureModel)
+                ) == 1
 
             with pytest.raises(ValueError, match="result integrity conflict"):
                 await repository.persist_succeeded_job_and_review_bundle(
@@ -365,14 +429,50 @@ def test_postgres_concurrent_succeeded_review_bundle_replay_is_idempotent() -> N
                     review_session,
                     exposures,
                 )
-            other_job_id = f"job-{uuid4().hex}"
-            with pytest.raises(ImmutableReviewConflict, match="persisted review session"):
+            competing_review_id = f"review-{uuid4().hex}"
+            competing_job_ids = (f"job-{uuid4().hex}", f"job-{uuid4().hex}")
+            competing_exposures = [replace(exposures[0], review_id=competing_review_id)]
+
+            async def competing_writer(competing_job_id: str) -> None:
                 await repository.persist_succeeded_job_and_review_bundle(
-                    {**payload, "job_id": other_job_id},
-                    replace(review_session, job_id=other_job_id),
-                    exposures,
+                    {**payload, "job_id": competing_job_id},
+                    replace(
+                        review_session,
+                        review_id=competing_review_id,
+                        job_id=competing_job_id,
+                    ),
+                    competing_exposures,
                 )
-            assert await repository.counterfactual_job(other_job_id) is None
+
+            conflict_results = await _race_after_missing_locked_reads(
+                monkeypatch,
+                ReviewSessionModel,
+                (competing_review_id, competing_review_id),
+                (
+                    lambda: competing_writer(competing_job_ids[0]),
+                    lambda: competing_writer(competing_job_ids[1]),
+                ),
+            )
+            assert sum(result is None for result in conflict_results) == 1
+            conflicts = [result for result in conflict_results if result is not None]
+            assert len(conflicts) == 1
+            assert isinstance(conflicts[0], ImmutableReviewConflict)
+            assert "persisted review session" in str(conflicts[0])
+            winning_index = conflict_results.index(None)
+            winning_job_id = competing_job_ids[winning_index]
+            losing_job_id = competing_job_ids[1 - winning_index]
+            winning_job = await repository.counterfactual_job(winning_job_id)
+            assert winning_job is not None and winning_job.result == payload["result"]
+            assert await repository.counterfactual_job(losing_job_id) is None
+            winning_session = await repository.get_review_session(competing_review_id)
+            assert winning_session is not None and winning_session.job_id == winning_job_id
+            winning_exposures = await repository.get_candidate_exposures(competing_review_id)
+            assert len(winning_exposures) == 1
+            assert (
+                winning_exposures[0].candidate_fingerprint
+                == competing_exposures[0].candidate_fingerprint
+            )
+            assert winning_exposures[0].candidate_id == competing_exposures[0].candidate_id
         finally:
             await _drop_test_schema(engine, schema)
 
