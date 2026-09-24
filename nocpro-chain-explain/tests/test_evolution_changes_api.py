@@ -32,12 +32,34 @@ def edge(parent=PARENT):
     }
 
 
-def receipt(endpoint, receipt_id):
+def receipt(
+    endpoint,
+    receipt_id,
+    *,
+    created_at=None,
+    compatible=False,
+    score=0.7,
+    method="deterministic-v1",
+    status="EVALUATED",
+    readiness="READY",
+):
+    identity = dict(zip(("snapshot_id", "snapshot_version", "chain_id"), endpoint))
+    assessment = {}
+    if compatible:
+        identity.update({
+            "analysis_config_version": "analysis-v1",
+            "review_config_version": "review-v1",
+            "pipeline_version": "pipeline-v1",
+            "topology_version": "topology-v1",
+        })
+        assessment.update({
+            "status": status, "readiness": readiness, "method": method,
+            "readiness_policy_version": "quality-readiness-v1", "score": score, "stars": 4,
+        })
     return SimpleNamespace(
         receipt_id=receipt_id, artifact_revision=receipt_id,
-        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        analysis_identity=dict(zip(("snapshot_id", "snapshot_version", "chain_id"), endpoint)),
-        assessment={}, source_artifact_refs={},
+        created_at=created_at or datetime(2026, 1, 1, tzinfo=timezone.utc),
+        analysis_identity=identity, assessment=assessment, source_artifact_refs={},
     )
 
 
@@ -115,6 +137,38 @@ async def test_selection_errors_and_unknown_edge(harness):
 
 
 @pytest.mark.anyio
+async def test_stale_context_precedes_missing_edge_and_receipt_mismatch(harness):
+    app, repo, _ = harness
+    service = app.state.workspace
+    package = service.require_package()
+    switched = SimpleNamespace(snapshot=package.snapshot, chains=package.chains)
+
+    calls = 0
+
+    def switch_after_edge():
+        nonlocal calls
+        calls += 1
+        return package if calls == 1 else switched
+
+    service.require_package = switch_after_edge
+    repo.get_evolution_edge.return_value = None
+    assert (await get(app, PATH + SELECTED)).status_code == 409
+
+    calls = 0
+    service.require_package = lambda: package
+    repo.get_evolution_edge.return_value = edge()
+    repo.quality_evaluation_receipt.return_value = receipt(("other", "v1", "c1"), "r-wrong")
+
+    def switch_after_receipt():
+        nonlocal calls
+        calls += 1
+        return package if calls <= 2 else switched
+
+    service.require_package = switch_after_receipt
+    assert (await get(app, PATH + SELECTED + "&parent_receipt_id=r-wrong")).status_code == 409
+
+
+@pytest.mark.anyio
 async def test_membership_survives_missing_receipts_and_mismatch_rejected(harness):
     app, repo, _ = harness
     response = await get(app, PATH + SELECTED)
@@ -132,14 +186,19 @@ async def test_membership_survives_missing_receipts_and_mismatch_rejected(harnes
 @pytest.mark.anyio
 async def test_ambiguous_receipts_offer_choices_and_explicit_selection(harness):
     app, repo, _ = harness
+    repo.evolution_membership_summary.return_value = {
+        "added_count": 0, "removed_count": 0, "retained_count": 2,
+        "added_alarm_ids": [], "removed_alarm_ids": [], "truncated": False,
+    }
     repo.list_evolution_endpoint_receipts.side_effect = [
         ([receipt(PARENT, "p1"), receipt(PARENT, "p2")], False),
-        ([receipt(CHILD, "c1")], False),
+        ([], False),
     ]
     response = await get(app, PATH + SELECTED)
     assert response.status_code == 200
     body = response.json()
     assert "RECEIPT_SELECTION_REQUIRED" in body["reason_codes"]
+    assert body["status"] == "UNAVAILABLE"
     assert [item["receipt_id"] for item in body["parent_receipt_choices"]] == ["p1", "p2"]
     assert body["quality"]["before_receipt_id"] is None
     repo.quality_evaluation_receipt.return_value = receipt(PARENT, "p1")
@@ -148,6 +207,67 @@ async def test_ambiguous_receipts_offer_choices_and_explicit_selection(harness):
     chosen = await get(app, PATH + SELECTED + "&parent_receipt_id=p1")
     assert chosen.status_code == 200
     assert chosen.json()["quality"]["before_receipt_id"] == "p1"
+
+
+@pytest.mark.anyio
+async def test_equivalent_receipts_default_to_newest_compatible_receipt(harness):
+    app, repo, _ = harness
+    older = receipt(PARENT, "p-old", created_at=datetime(2026, 1, 1, tzinfo=timezone.utc), compatible=True, score=0.5)
+    newer = receipt(PARENT, "p-new", created_at=datetime(2026, 1, 2, tzinfo=timezone.utc), compatible=True, score=0.6)
+    child = receipt(CHILD, "c-new", created_at=datetime(2026, 1, 3, tzinfo=timezone.utc), compatible=True, score=0.8)
+    repo.list_evolution_endpoint_receipts.side_effect = [([newer, older], False), ([child], False)]
+
+    response = await get(app, PATH + SELECTED)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "RECEIPT_SELECTION_REQUIRED" not in body["reason_codes"]
+    assert body["quality"]["comparable"] is True
+    assert body["quality"]["before_receipt_id"] == "p-new"
+    assert body["quality"]["after_receipt_id"] == "c-new"
+
+
+@pytest.mark.anyio
+async def test_non_equivalent_receipts_require_an_explicit_choice(harness):
+    app, repo, _ = harness
+    newest = receipt(PARENT, "p-new", compatible=True, method="deterministic-v2")
+    older = receipt(PARENT, "p-old", compatible=True, method="deterministic-v1")
+    child = receipt(CHILD, "c-new", compatible=True)
+    repo.list_evolution_endpoint_receipts.side_effect = [([newest, older], False), ([child], False)]
+
+    response = await get(app, PATH + SELECTED)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "PARTIAL"
+    assert "RECEIPT_SELECTION_REQUIRED" in body["reason_codes"]
+    assert [item["receipt_id"] for item in body["parent_receipt_choices"]] == ["p-new", "p-old"]
+    assert body["quality"]["before_receipt_id"] is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("overrides", [
+    {"status": "NOT_EVALUATED", "readiness": "NOT_READY"},
+    {"score": None},
+])
+@pytest.mark.parametrize("candidate_count", [1, 2])
+async def test_incomplete_receipts_require_an_explicit_choice(harness, overrides, candidate_count):
+    app, repo, _ = harness
+    newest = receipt(PARENT, "p-new", compatible=True, **overrides)
+    older = receipt(PARENT, "p-old", compatible=True, **overrides)
+    child = receipt(CHILD, "c-new", compatible=True)
+    candidates = [newest, older][:candidate_count]
+    repo.list_evolution_endpoint_receipts.side_effect = [(candidates, False), ([child], False)]
+
+    response = await get(app, PATH + SELECTED)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "RECEIPT_SELECTION_REQUIRED" in body["reason_codes"]
+    assert [item["receipt_id"] for item in body["parent_receipt_choices"]] == [
+        item.receipt_id for item in candidates
+    ]
+    assert body["quality"]["before_receipt_id"] is None
 
 
 @pytest.mark.anyio

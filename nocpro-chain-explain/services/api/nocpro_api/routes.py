@@ -1587,6 +1587,35 @@ def _evolution_receipt_choices(receipts: list[Any]) -> list[dict[str, str]]:
     ]
 
 
+def _evolution_receipt_compatibility_signature(receipt: Any) -> tuple[str, ...] | None:
+    """Return only the complete fields that govern direct quality comparison."""
+    assessment = getattr(receipt, "assessment", None)
+    identity = getattr(receipt, "analysis_identity", None)
+    def field(value: Any, name: str) -> Any:
+        return value.get(name) if isinstance(value, dict) else getattr(value, name, None)
+
+    assessment_status = field(assessment, "status")
+    readiness = field(assessment, "readiness")
+    score = field(assessment, "score")
+    if assessment_status != "EVALUATED" or readiness != "READY":
+        return None
+    if type(score) not in (int, float) or not 0 <= score <= 1:
+        return None
+    fields = (
+        assessment_status,
+        readiness,
+        field(assessment, "method"),
+        field(assessment, "readiness_policy_version"),
+        field(identity, "analysis_config_version"),
+        field(identity, "review_config_version"),
+        field(identity, "pipeline_version"),
+        field(identity, "topology_version"),
+    )
+    if any(not isinstance(value, str) or not value.strip() for value in fields):
+        return None
+    return fields
+
+
 @router.get("/chains/{chain_id}/evolution/changes", response_model=EvolutionChangesView)
 async def explain_evolution_changes(
     chain_id: str,
@@ -1663,12 +1692,14 @@ async def explain_evolution_changes(
 
         parent = (parent_snapshot_id, parent_snapshot_version, parent_chain_id)
         edge = await repo.get_evolution_edge(child=child, parent=parent)
+        ensure_current_package()
         if edge is None:
             raise HTTPException(status_code=404, detail="LINEAGE_EDGE_NOT_FOUND")
 
         async def select_receipt(endpoint: tuple[str, str, str], receipt_id: str | None):
             if receipt_id is not None:
                 receipt = await repo.quality_evaluation_receipt(receipt_id)
+                ensure_current_package()
                 if receipt is None or not isinstance(receipt.analysis_identity, dict) or any(
                     receipt.analysis_identity.get(name) != value
                     for name, value in zip(("snapshot_id", "snapshot_version", "chain_id"), endpoint)
@@ -1676,9 +1707,17 @@ async def explain_evolution_changes(
                     raise HTTPException(status_code=422, detail="RECEIPT_ENDPOINT_MISMATCH")
                 return receipt, [], False, False
             candidates, candidate_truncated = await repo.list_evolution_endpoint_receipts(endpoint=endpoint)
+            ensure_current_package()
             if len(candidates) == 1 and not candidate_truncated:
-                return candidates[0], [], False, False
+                if _evolution_receipt_compatibility_signature(candidates[0]) is not None:
+                    return candidates[0], [], False, False
+                return None, _evolution_receipt_choices(candidates), False, True
             ambiguous = len(candidates) > 1 or candidate_truncated
+            if len(candidates) > 1 and not candidate_truncated:
+                signatures = [_evolution_receipt_compatibility_signature(item) for item in candidates]
+                if signatures[0] is not None and all(value == signatures[0] for value in signatures[1:]):
+                    # The repository orders newest first by (created_at, receipt_id).
+                    return candidates[0], [], False, False
             return None, _evolution_receipt_choices(candidates) if ambiguous else [], candidate_truncated, ambiguous
 
         parent_receipt, parent_choices, parent_truncated, parent_ambiguous = await select_receipt(parent, parent_receipt_id)
@@ -1692,7 +1731,8 @@ async def explain_evolution_changes(
         )
         if parent_ambiguous or child_ambiguous:
             facts["reason_codes"].append("RECEIPT_SELECTION_REQUIRED")
-            facts["status"] = "PARTIAL"
+            if facts["status"] == "AVAILABLE":
+                facts["status"] = "PARTIAL"
         facts.update({
             "parent_source_kind": edge["parent_source_kind"],
             "child_source_kind": edge["child_source_kind"],

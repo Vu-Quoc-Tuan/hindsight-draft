@@ -47,9 +47,17 @@ def test_direct_predecessors_cap_at_100_and_use_exact_child_key():
         sql = str(statement.compile(dialect=postgresql.dialect()))
         assert "LIMIT" in sql and "lineage_status" in sql
         assert statement.compile(dialect=postgresql.dialect()).params["child_chain_id_1"] == "c2"
-        session.execute.return_value = SimpleNamespace(first=lambda: rows[0])
+        selected_row = (
+            SimpleNamespace(
+                parent_snapshot_id="s1", parent_snapshot_version="v1", parent_chain_id="c1",
+                child_snapshot_id="s2", child_snapshot_version="v2", child_chain_id="c2",
+                edge_type="MERGE", overlap_count=1,
+            ),
+            datetime.now(timezone.utc), datetime.now(timezone.utc), "REAL", "REAL",
+        )
+        session.execute.return_value = SimpleNamespace(first=lambda: selected_row)
         selected = await repo.get_evolution_edge(child=CHILD, parent=PARENT)
-        assert selected["parent_chain_id"] == "c000"
+        assert selected["parent_chain_id"] == "c1"
         exact = session.execute.await_args.args[0].compile(dialect=postgresql.dialect())
         assert exact.params["parent_chain_id_1"] == "c1"
     asyncio.run(exercise())
