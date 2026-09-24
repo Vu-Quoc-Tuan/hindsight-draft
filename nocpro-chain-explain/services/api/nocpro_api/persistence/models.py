@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKeyConstraint,
@@ -14,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    Uuid,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -28,6 +31,45 @@ def _compile_jsonb_sqlite(type_, compiler, **kw):
 
 class Base(DeclarativeBase):
     pass
+
+
+class ChangeEventClockModel(Base):
+    """Transactional serialization point for ordered invalidation events."""
+
+    __tablename__ = "change_event_clock"
+
+    singleton_id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=False
+    )
+    epoch: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    revision: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    __table_args__ = (
+        CheckConstraint("singleton_id = 1", name="ck_change_event_clock_singleton"),
+        CheckConstraint("revision >= 0", name="ck_change_event_clock_revision"),
+    )
+
+
+class ChangeEventModel(Base):
+    """Small, durable invalidation records; never stores business payloads."""
+
+    __tablename__ = "change_events"
+
+    epoch: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    revision: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    snapshot_id: Mapped[str | None] = mapped_column(Text)
+    snapshot_version: Mapped[str | None] = mapped_column(Text)
+    chain_id: Mapped[str | None] = mapped_column(Text)
+    topology_version: Mapped[str | None] = mapped_column(Text)
+    identity_digest: Mapped[str | None] = mapped_column(String(64))
+    invalidates: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    __table_args__ = (
+        Index("ix_change_events_created_at", "created_at"),
+        CheckConstraint("revision > 0", name="ck_change_events_revision"),
+    )
 
 
 class SnapshotIngest(Base):

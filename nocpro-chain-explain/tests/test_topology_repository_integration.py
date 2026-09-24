@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+from uuid import uuid4
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 import zstandard
@@ -24,7 +25,9 @@ from nocpro_api.ingest.topology_wire import (
     sha256_hex,
 )
 from nocpro_api.persistence.models import Base
+from nocpro_api.persistence.models import ChangeEventClockModel
 from nocpro_api.persistence.topology_repository import TopologyRepository
+from nocpro_api.persistence.change_journal import journal_position, read_changes_after
 
 pytestmark = pytest.mark.anyio
 
@@ -36,6 +39,10 @@ async def repo():
         await conn.run_sync(Base.metadata.create_all)
 
     sessions = async_sessionmaker(engine, expire_on_commit=False)
+    async with sessions.begin() as session:
+        session.add(
+            ChangeEventClockModel(singleton_id=1, epoch=uuid4(), revision=0)
+        )
     repository = TopologyRepository(sessions)
     yield repository
     await engine.dispose()
@@ -304,6 +311,27 @@ async def test_topology_repository_chunk_and_barrier_lifecycle(repo: TopologyRep
 
     profiles = await repo.list_profiles()
     assert "IT_SERVICES" in profiles
+
+
+async def test_topology_activation_emits_once_and_duplicate_ready_event_is_silent(
+    repo: TopologyRepository, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("NOCPRO_LIVE_UPDATES_ENABLED", "true")
+    payload = _make_it_topology()
+    await _materialize_topology(repo, payload, offset=900)
+
+    position = await journal_position(repo.sessions)
+    assert position.revision == 1
+    events = await read_changes_after(repo.sessions, position.epoch, 0)
+    assert len(events) == 1
+    assert events[0].event_type == "topology.changed"
+    assert events[0].topology_version == payload["topology_version"]
+    assert events[0].identity_digest is not None
+    assert "topology" in events[0].invalidates
+
+    # A READY topology replay is idempotent and must not emit another event.
+    await _materialize_topology(repo, payload, offset=910)
+    assert (await journal_position(repo.sessions)).revision == 1
 
 
 async def test_topology_repository_dual_path_assembly_early_barrier(repo: TopologyRepository):

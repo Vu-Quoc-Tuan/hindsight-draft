@@ -16,6 +16,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from libs.contracts import IngestedPackage, load_validated_package
+from libs.contracts.analysis_identity import analysis_identity_from_projection
 from evolution import (
     GlobalEpisodeDag,
     GlobalLineageComponent as DomainLineageComponent,
@@ -46,6 +47,8 @@ from temporal_delay import (
     model_from_dict as delay_model_from_dict,
     model_to_dict as delay_model_to_dict,
 )
+
+from .change_journal import append_change_if_enabled
 
 
 from tier2.audit_artifact import (
@@ -945,9 +948,81 @@ class SnapshotRepository:
                 "payload": statement.excluded.payload,
                 "updated_at": func.now(),
             },
+            where=or_(
+                ChainQualityAssessmentRecord.assessment_version.is_distinct_from(
+                    statement.excluded.assessment_version
+                ),
+                ChainQualityAssessmentRecord.input_fingerprint.is_distinct_from(
+                    statement.excluded.input_fingerprint
+                ),
+                ChainQualityAssessmentRecord.status.is_distinct_from(
+                    statement.excluded.status
+                ),
+                ChainQualityAssessmentRecord.stars.is_distinct_from(
+                    statement.excluded.stars
+                ),
+                ChainQualityAssessmentRecord.label.is_distinct_from(
+                    statement.excluded.label
+                ),
+                ChainQualityAssessmentRecord.available_dimension_count.is_distinct_from(
+                    statement.excluded.available_dimension_count
+                ),
+                ChainQualityAssessmentRecord.stage.is_distinct_from(
+                    statement.excluded.stage
+                ),
+                ChainQualityAssessmentRecord.deep_dive_job_id.is_distinct_from(
+                    statement.excluded.deep_dive_job_id
+                ),
+                ChainQualityAssessmentRecord.counterfactual_job_id.is_distinct_from(
+                    statement.excluded.counterfactual_job_id
+                ),
+                ChainQualityAssessmentRecord.recommendation_status.is_distinct_from(
+                    statement.excluded.recommendation_status
+                ),
+                ChainQualityAssessmentRecord.payload.is_distinct_from(
+                    statement.excluded.payload
+                ),
+            ),
         )
         async with self.sessions.begin() as session:
-            await session.execute(statement)
+            changed_chain_id = (
+                await session.execute(
+                    statement.returning(ChainQualityAssessmentRecord.chain_id)
+                )
+            ).scalar_one_or_none()
+            if changed_chain_id is not None:
+                projection = persisted_payload.get("overview_projection")
+                adapted = analysis_identity_from_projection(projection)
+                identity = adapted.identity if adapted.available else None
+                identity_digest = (
+                    hashlib.sha256(
+                        json.dumps(
+                            identity.to_payload(),
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                            sort_keys=True,
+                        ).encode("utf-8")
+                    ).hexdigest()
+                    if identity is not None
+                    else None
+                )
+                await append_change_if_enabled(
+                    session,
+                    event_type="quality.changed",
+                    snapshot_id=values["snapshot_id"],
+                    snapshot_version=values["snapshot_version"],
+                    chain_id=values["chain_id"],
+                    topology_version=(
+                        identity.topology_version if identity is not None else None
+                    ),
+                    identity_digest=identity_digest,
+                    invalidates=[
+                        "quality-summary",
+                        "chain-list",
+                        "chain-detail",
+                        "evolution",
+                    ],
+                )
         stored = await self.chain_quality_assessment(
             snapshot_id=values["snapshot_id"],
             snapshot_version=values["snapshot_version"],
@@ -2064,6 +2139,15 @@ class SnapshotRepository:
             if row.status == "INVALID":
                 return self._result(row, duplicate=duplicate)
             payload = await self._try_complete(session, row)
+            if payload is not None:
+                await append_change_if_enabled(
+                    session,
+                    event_type="snapshot.changed",
+                    snapshot_id=row.snapshot_id,
+                    snapshot_version=row.snapshot_version,
+                    topology_version=row.topology_version_ref,
+                    invalidates=["catalog", "chain-list", "quality-summary", "evolution"],
+                )
             return self._result(
                 row,
                 duplicate=duplicate,
@@ -2320,6 +2404,14 @@ class SnapshotRepository:
             )
             session.add(row)
             await self._persist_canonical(session, package, payload, checksum)
+            await append_change_if_enabled(
+                session,
+                event_type="snapshot.changed",
+                snapshot_id=identity[0],
+                snapshot_version=identity[1],
+                topology_version=topo_version_ref,
+                invalidates=["catalog", "chain-list", "quality-summary", "evolution"],
+            )
             return self._result(row, completed_now=True, canonical_payload=payload)
 
     async def _persist_canonical(

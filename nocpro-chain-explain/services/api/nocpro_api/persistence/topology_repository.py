@@ -32,6 +32,7 @@ from ..topology.engine import (
     project_adjacency_tree,
     project_relation_tree,
 )
+from .change_journal import append_change_if_enabled
 from .models import (
     AlarmEntityResolutionRecord,
     TopologyActiveVersionRecord,
@@ -533,6 +534,10 @@ class TopologyRepository:
                     ver_meta.produced_at, current_ver_rec.produced_at
                 )
 
+        active_changed = should_update_active and (
+            current_active is None
+            or current_active.topology_version != topology_version
+        )
         if should_update_active:
             active_stmt = (
                 _insert_stmt(TopologyActiveVersionRecord, session)
@@ -564,6 +569,26 @@ class TopologyRepository:
                 updated_at=func.now(),
             )
         )
+
+        if active_changed:
+            topology_identity = json.dumps(
+                {"profile_id": profile_id, "topology_version": topology_version},
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+            await append_change_if_enabled(
+                session,
+                event_type="topology.changed",
+                topology_version=topology_version,
+                identity_digest=sha256_hex(topology_identity),
+                invalidates=[
+                    "topology",
+                    "chain-detail",
+                    "quality-summary",
+                    "evolution",
+                ],
+            )
 
         LOGGER.info(
             "Topology %s:%s successfully materialized: %d nodes, %d edges, %d aliases (active=%s)",
