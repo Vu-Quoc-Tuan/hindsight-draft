@@ -5,23 +5,80 @@ Produces a natural, expert-toned operational narrative summarizing:
 2. Chain WHY / descriptors (strong dimensions, dominant descriptors).
 3. Topology mapping (mapped resources, verified resource types).
 4. Structural audit findings (conductance, candidate cuts, partition status).
-5. Counterfactual recommendations (split alternatives).
+5. Operational context kept separate from the Counterfactual summary card.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import re
-from collections import Counter, deque
+from collections import Counter
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from itertools import combinations
+from types import SimpleNamespace
 from typing import Any
 
 from audit import AuditVerdict
+from libs.contracts.topology_mapping import resolve_topology_mappings
+from libs.contracts.topology_paths import select_path_forest, shortest_paths_to_targets
 from .grounded_llm import render_grounded
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_COHESION_AI_TIMEOUT_SECONDS = 60.0
+_MIN_COHESION_AI_TIMEOUT_SECONDS = 8.0
+_MAX_COHESION_AI_TIMEOUT_SECONDS = 120.0
+MAX_OVERVIEW_DISPLAY_PATHS = 100
+
+
+def hydrate_persisted_deep_dive(value: Any) -> Any:
+    """Restore attribute access for the JSON Deep Dive projection.
+
+    Deep Dive jobs are persisted as the public JSON projection.  After an API
+    restart the cohesion extractor used to receive that dict while only
+    looking for domain-object attributes, silently dropping all P2 facts and
+    falling back to the preliminary recommendation.  Rehydrate only the
+    bounded projection (never arbitrary code or pickled objects).
+    """
+    if not isinstance(value, dict):
+        return value
+
+    def convert(item: Any) -> Any:
+        if isinstance(item, dict):
+            return SimpleNamespace(**{str(key): convert(val) for key, val in item.items()})
+        if isinstance(item, list):
+            return [convert(child) for child in item]
+        return item
+
+    payload = dict(value)
+    # The persisted public schema flattens OverMergeVerdict into these two
+    # fields.  Recreate the small shape consumed by the deterministic context
+    # extractor so a restart has the same evidence as an in-process run.
+    if "over_merge" not in payload and (
+        "over_merge_strength" in payload or "over_merge_narrative" in payload
+    ):
+        payload["over_merge"] = {
+            "strength": payload.get("over_merge_strength"),
+            "narrative": payload.get("over_merge_narrative", ""),
+        }
+    return convert(payload)
+
+
+def _cohesion_ai_timeout_seconds() -> float:
+    """Return a bounded provider deadline for the evidence-heavy cohesion prompt."""
+    raw_value = os.environ.get(
+        "AI_COHESION_TIMEOUT_SECONDS",
+        str(_DEFAULT_COHESION_AI_TIMEOUT_SECONDS),
+    )
+    try:
+        configured = float(raw_value)
+    except (TypeError, ValueError):
+        configured = _DEFAULT_COHESION_AI_TIMEOUT_SECONDS
+    return min(
+        _MAX_COHESION_AI_TIMEOUT_SECONDS,
+        max(_MIN_COHESION_AI_TIMEOUT_SECONDS, configured),
+    )
 
 
 @dataclass(frozen=True)
@@ -148,28 +205,98 @@ def _build_temporal_progression(raw_alarms: list[Any]) -> dict[str, Any]:
     }
 
 
-def _shortest_undirected_path(
-    adjacency: dict[str, set[str]],
-    source: str,
-    target: str,
-    *,
-    max_hops: int,
-) -> list[str] | None:
-    if source == target:
-        return [source]
-    queue: deque[list[str]] = deque([[source]])
-    seen = {source}
-    while queue:
-        path = queue.popleft()
-        if len(path) - 1 >= max_hops:
-            continue
-        for neighbour in sorted(adjacency.get(path[-1], ())):
-            if neighbour == target:
-                return [*path, neighbour]
-            if neighbour not in seen:
-                seen.add(neighbour)
-                queue.append([*path, neighbour])
-    return None
+def _build_alarm_observation_groups(raw_alarms: list[Any]) -> list[dict[str, Any]]:
+    """Compress raw alarms into bounded device/type observations for synthesis."""
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    for alarm in raw_alarms:
+        raw = alarm.raw if hasattr(alarm, "raw") and isinstance(alarm.raw, dict) else {}
+        device = str(
+            getattr(alarm, "device_code", None)
+            or raw.get("device_code")
+            or raw.get("device_name")
+            or "UNKNOWN_DEVICE"
+        )
+        alarm_name = str(
+            getattr(alarm, "alarm_name", None)
+            or raw.get("alarm_name")
+            or "Unknown Alarm"
+        )
+        entry = grouped.setdefault((device, alarm_name), {
+            "device": device,
+            "alarm_name": alarm_name,
+            "count": 0,
+            "first_observed": None,
+            "last_observed": None,
+            "components": set(),
+            "locations": set(),
+            "remote_nodes": set(),
+            "severities": set(),
+            "ports": set(),
+            "peer_hints": set(),
+            "device_types": set(),
+            "network_classes": set(),
+            "alarm_groups": set(),
+            "content_examples": set(),
+        })
+        entry["count"] += 1
+        start = _alarm_start(alarm)
+        if start:
+            if entry["first_observed"] is None or start < entry["first_observed"]:
+                entry["first_observed"] = start
+            if entry["last_observed"] is None or start > entry["last_observed"]:
+                entry["last_observed"] = start
+        for field, target in (
+            ("component", "components"),
+            ("location_code", "locations"),
+            ("remote_node", "remote_nodes"),
+        ):
+            value = getattr(alarm, field, None) or raw.get(field)
+            if value:
+                entry[target].add(str(value))
+        severity = getattr(alarm, "severity_name", None) or raw.get("severity_name")
+        if severity:
+            entry["severities"].add(str(severity))
+        for field, target in (
+            ("port", "ports"),
+            ("addition_info", "peer_hints"),
+            ("link_name", "peer_hints"),
+            ("device_type_name", "device_types"),
+            ("network_class_name", "network_classes"),
+            ("group_name", "alarm_groups"),
+        ):
+            value = raw.get(field)
+            if value:
+                entry[target].add(str(value))
+        content = re.sub(r"\s+", " ", str(raw.get("content") or "")).strip()
+        if content:
+            entry["content_examples"].add(content[:140])
+
+    observations: list[dict[str, Any]] = []
+    for entry in grouped.values():
+        observations.append({
+            "device": entry["device"],
+            "alarm_name": entry["alarm_name"],
+            "count": entry["count"],
+            "first_observed": entry["first_observed"],
+            "last_observed": entry["last_observed"],
+            "components": sorted(entry["components"])[:3],
+            "locations": sorted(entry["locations"])[:3],
+            "remote_nodes": sorted(entry["remote_nodes"])[:3],
+            "severities": sorted(entry["severities"])[:3],
+            "ports": sorted(entry["ports"])[:3],
+            "peer_hints": sorted(entry["peer_hints"])[:3],
+            "device_types": sorted(entry["device_types"])[:2],
+            "network_classes": sorted(entry["network_classes"])[:2],
+            "alarm_groups": sorted(entry["alarm_groups"])[:2],
+            "content_examples": sorted(entry["content_examples"])[:1],
+        })
+    observations.sort(key=lambda item: (
+        str(item["first_observed"] or "9999"),
+        -int(item["count"]),
+        str(item["device"]),
+        str(item["alarm_name"]),
+    ))
+    return observations[:16]
 
 
 def _build_topology_connectivity(
@@ -190,12 +317,9 @@ def _build_topology_connectivity(
     resource_types: set[str] = set()
     resource_devices: dict[str, set[str]] = {}
     mapped_alarm_ids: set[str] = set()
-    for mapping in raw_mappings or ():
-        alarm_id = str(_record_value(mapping, "alarm_id", ""))
-        resource_id = _record_value(mapping, "resource_id")
-        if alarm_id not in member_ids or not resource_id:
-            continue
-        resource_id = str(resource_id)
+    resolved_mappings = resolve_topology_mappings(raw_mappings or (), member_ids) or {}
+    for alarm_id, mapping in resolved_mappings.items():
+        resource_id = mapping["resource_id"]
         mapped_alarm_ids.add(alarm_id)
         resource_by_alarm[alarm_id] = resource_id
         topology_layer = (
@@ -223,39 +347,53 @@ def _build_topology_connectivity(
     resources = sorted(set(resource_by_alarm.values()))
     paths: list[dict[str, Any]] = []
     transit_counter: Counter[str] = Counter()
-    for source, target in combinations(resources, 2):
-        best_path: list[str] | None = None
-        best_relation: str | None = None
-        for relation, adjacency in adjacency_by_relation.items():
-            candidate = _shortest_undirected_path(
-                adjacency, source, target, max_hops=max_hops
-            )
-            if candidate is not None and (
-                best_path is None or len(candidate) < len(best_path)
-            ):
-                best_path = candidate
-                best_relation = relation
-        if best_path is None:
+    for source_index, source in enumerate(resources):
+        targets = resources[source_index + 1:]
+        if not targets:
             continue
-        transit_counter.update(best_path[1:-1])
-        paths.append({
-            "source": source,
-            "target": target,
-            "source_devices": sorted(resource_devices.get(source, ())),
-            "target_devices": sorted(resource_devices.get(target, ())),
-            "hop_count": len(best_path) - 1,
-            "path": best_path,
-            "relation_type": best_relation,
-            "traversal_semantic": "UNDIRECTED_STRUCTURAL_CONNECTIVITY",
-        })
+        best_paths: dict[str, tuple[list[str], str]] = {}
+        for relation, adjacency in sorted(adjacency_by_relation.items()):
+            candidates = shortest_paths_to_targets(
+                adjacency, source, set(targets), max_hops=max_hops
+            )
+            for target, candidate in candidates.items():
+                prior = best_paths.get(target)
+                if prior is None or len(candidate) < len(prior[0]):
+                    best_paths[target] = candidate, relation
+        for target in targets:
+            best = best_paths.get(target)
+            if best is None:
+                continue
+            best_path, best_relation = best
+            transit_counter.update(best_path[1:-1])
+            paths.append({
+                "source": source,
+                "target": target,
+                "source_devices": sorted(resource_devices.get(source, ())),
+                "target_devices": sorted(resource_devices.get(target, ())),
+                "hop_count": len(best_path) - 1,
+                "path": best_path,
+                "relation_type": best_relation,
+                "traversal_semantic": "UNDIRECTED_STRUCTURAL_CONNECTIVITY",
+            })
 
     pair_total = len(resources) * (len(resources) - 1) // 2
+    complete_display_forest = select_path_forest(paths)
+    display_paths = complete_display_forest[:MAX_OVERVIEW_DISPLAY_PATHS]
+    mapped_device_ids = sorted({
+        alarm_devices[alarm_id]
+        for alarm_id in mapped_alarm_ids
+        if alarm_devices.get(alarm_id)
+    })
     return {
         "mapped_alarm_ids": mapped_alarm_ids,
+        "mapped_device_ids": mapped_device_ids,
         "resource_by_alarm": resource_by_alarm,
         "resource_types": sorted(resource_types),
         "mapped_resources": resources,
         "paths": paths,
+        "display_paths": display_paths,
+        "display_paths_truncated": len(complete_display_forest) > len(display_paths),
         "pair_total": pair_total,
         "connected_pair_count": len(paths),
         "max_path_hops": max((path["hop_count"] for path in paths), default=None),
@@ -263,6 +401,577 @@ def _build_topology_connectivity(
             {"resource_id": resource_id, "path_count": count}
             for resource_id, count in transit_counter.most_common(5)
         ],
+    }
+
+
+_EVIDENCE_GROUP_LABELS_VI = {
+    "temporal_burst": "xuất hiện gần nhau về thời gian",
+    "temporal_delay": "thứ tự thời gian tương thích",
+    "dependency_hop": "có đường liên kết topology",
+    "dependency_topology_embedding": "có ngữ cảnh topology tương tự",
+    "semantic": "có nội dung cảnh báo tương đồng",
+    "reference": "cùng tham chiếu đối tượng",
+    "device": "cùng thiết bị",
+    "card": "cùng card/module",
+    "site": "cùng site",
+    "remote": "cùng đầu xa",
+    "historical": "có mẫu lịch sử tương đồng",
+}
+
+
+def _summarize_partition_side(
+    member_ids: set[str],
+    alarm_by_id: dict[str, Any],
+) -> dict[str, Any]:
+    device_counts: Counter[str] = Counter()
+    alarm_type_counts: Counter[str] = Counter()
+    observed: list[tuple[datetime, str, str, str]] = []
+    for alarm_id in sorted(member_ids):
+        alarm = alarm_by_id.get(alarm_id)
+        if alarm is None:
+            continue
+        raw = alarm.raw if hasattr(alarm, "raw") and isinstance(alarm.raw, dict) else {}
+        device = str(
+            getattr(alarm, "device_code", None)
+            or raw.get("device_code")
+            or raw.get("device_name")
+            or ""
+        ).strip()
+        alarm_name = str(
+            getattr(alarm, "alarm_name", None)
+            or raw.get("alarm_name")
+            or "Unknown Alarm"
+        ).strip()
+        if device:
+            device_counts[device] += 1
+        if alarm_name:
+            alarm_type_counts[alarm_name] += 1
+        start_raw = _alarm_start(alarm)
+        start = _parse_time(start_raw)
+        if start is not None and start_raw is not None:
+            observed.append((start, start_raw, device, alarm_name))
+
+    observed.sort(key=lambda item: item[0])
+    first = observed[0] if observed else None
+    return {
+        "alarm_count": len(member_ids),
+        "resolved_alarm_count": sum(device_counts.values()),
+        "devices": [
+            {"device": device, "alarm_count": count}
+            for device, count in device_counts.most_common(4)
+        ],
+        "alarm_types": [
+            {"alarm_name": name, "alarm_count": count}
+            for name, count in alarm_type_counts.most_common(3)
+        ],
+        "first_observed": (
+            {
+                "start_time": first[1],
+                "device": first[2],
+                "alarm_name": first[3],
+            }
+            if first is not None
+            else None
+        ),
+    }
+
+
+def _build_audit_partition_summary(
+    *,
+    raw_alarms: list[Any],
+    best_cut: Any,
+    visualization: Any | None,
+    topology_connectivity: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Describe both cut sides and their observed cross-links without causal uplift."""
+    cut_members = {
+        str(member_id)
+        for member_id in (getattr(best_cut, "members", ()) or ())
+        if member_id is not None
+    }
+    alarm_by_id: dict[str, Any] = {}
+    for alarm in raw_alarms:
+        raw = alarm.raw if hasattr(alarm, "raw") and isinstance(alarm.raw, dict) else {}
+        alarm_id = getattr(alarm, "alarm_id", None) or raw.get("alarm_id")
+        if alarm_id is not None:
+            alarm_by_id[str(alarm_id)] = alarm
+    all_members = set(alarm_by_id)
+    side_a_members = cut_members & all_members
+    side_b_members = all_members - side_a_members
+    if not side_a_members or not side_b_members:
+        return None
+
+    side_a = _summarize_partition_side(side_a_members, alarm_by_id)
+    side_b = _summarize_partition_side(side_b_members, alarm_by_id)
+
+    def member_devices(member_ids: set[str]) -> set[str]:
+        values: set[str] = set()
+        for member_id in member_ids:
+            alarm = alarm_by_id.get(member_id)
+            if alarm is None:
+                continue
+            raw = alarm.raw if hasattr(alarm, "raw") and isinstance(alarm.raw, dict) else {}
+            device = (
+                getattr(alarm, "device_code", None)
+                or raw.get("device_code")
+                or raw.get("device_name")
+            )
+            if device:
+                values.add(str(device))
+        return values
+
+    side_a_devices = member_devices(side_a_members)
+    side_b_devices = member_devices(side_b_members)
+
+    cross_topology_paths: list[dict[str, Any]] = []
+    for path in topology_connectivity.get("paths", []):
+        source_devices = set(path.get("source_devices") or [])
+        target_devices = set(path.get("target_devices") or [])
+        crosses = (
+            bool(source_devices & side_a_devices) and bool(target_devices & side_b_devices)
+        ) or (
+            bool(source_devices & side_b_devices) and bool(target_devices & side_a_devices)
+        )
+        if crosses:
+            cross_topology_paths.append({
+                "source_devices": sorted(source_devices),
+                "target_devices": sorted(target_devices),
+                "hop_count": path.get("hop_count"),
+                "relation_type": path.get("relation_type"),
+                "path": list(path.get("path") or []),
+                "traversal_semantic": path.get("traversal_semantic"),
+            })
+
+    first_a = side_a.get("first_observed") or {}
+    first_b = side_b.get("first_observed") or {}
+    onset_a = _parse_time(first_a.get("start_time"))
+    onset_b = _parse_time(first_b.get("start_time"))
+    onset_gap_seconds = (
+        abs(int((onset_b - onset_a).total_seconds()))
+        if onset_a is not None and onset_b is not None
+        else None
+    )
+
+    cross_edges = 0
+    internal_edges = 0
+    cross_weight = 0.0
+    internal_weight = 0.0
+    cross_groups: Counter[str] = Counter()
+    visualization_status = str(getattr(visualization, "status", ""))
+    if visualization is not None and visualization_status == "AVAILABLE":
+        for edge in getattr(visualization, "edges", ()) or ():
+            weight = float(getattr(edge, "weight", 0.0) or 0.0)
+            if bool(getattr(edge, "crosses_best_cut", False)):
+                cross_edges += 1
+                cross_weight += weight
+                cross_groups.update(
+                    str(group) for group in (getattr(edge, "supporting_groups", ()) or ())
+                )
+            else:
+                internal_edges += 1
+                internal_weight += weight
+
+    supporting_groups = [
+        {
+            "group": group,
+            "label_vi": _EVIDENCE_GROUP_LABELS_VI.get(group, group.replace("_", " ")),
+            "edge_count": count,
+        }
+        for group, count in cross_groups.most_common()
+    ]
+    visualization_truncated = bool(getattr(visualization, "truncated", False))
+    return {
+        "status": "AVAILABLE",
+        "cut_source": str(getattr(best_cut, "source", "") or ""),
+        "cut_label": getattr(best_cut, "label", None),
+        "side_a": side_a,
+        "side_b": side_b,
+        "linkage": {
+            "onset_gap_seconds": onset_gap_seconds,
+            "topology_paths": cross_topology_paths[:3],
+            "supporting_groups": supporting_groups,
+        },
+        "separation": {
+            "cross_edge_count": cross_edges,
+            "internal_edge_count": internal_edges,
+            "cross_edge_weight": round(cross_weight, 4),
+            "internal_edge_weight": round(internal_weight, 4),
+            "edge_counts_are_complete": visualization_status == "AVAILABLE" and not visualization_truncated,
+            "visualization_truncated": visualization_truncated,
+        },
+    }
+
+
+def _resolve_recommendations(review_result: dict[str, Any] | None) -> dict[str, Any]:
+    """Resolve selected recommendation ids against their evaluated candidates."""
+    if not isinstance(review_result, dict):
+        return {
+            "status": "NOT_EVALUATED",
+            "count": 0,
+            "evaluation_completed": False,
+            "evaluated_count": 0,
+            "rejected_count": 0,
+            "reason": None,
+            "calibration_status": None,
+            "split_recommended": False,
+            "best_alternative": None,
+        }
+
+    evaluated_candidates = [
+        candidate
+        for candidate in review_result.get("evaluated_candidates", [])
+        if isinstance(candidate, dict) and candidate.get("candidate_id")
+    ]
+    evaluated = {
+        str(candidate.get("candidate_id")): candidate
+        for candidate in evaluated_candidates
+    }
+    selected: list[dict[str, Any]] = []
+    for recommendation in review_result.get("recommendations", []):
+        if not isinstance(recommendation, dict):
+            continue
+        candidate_id = str(recommendation.get("candidate_id") or "")
+        selected.append(evaluated.get(candidate_id, recommendation))
+
+    operations = {
+        str(candidate.get("operation") or "").upper()
+        for candidate in selected
+    }
+    split_recommended = bool(
+        operations.intersection({"SPLIT_CHAIN", "REMOVE_MEMBER", "MOVE_MEMBER"})
+    )
+    best_alternative: dict[str, Any] | None = None
+    if selected:
+        best = selected[0]
+        explanation = best.get("comparative_explanation")
+        explanation = explanation if isinstance(explanation, dict) else {}
+        best_alternative = {
+            "candidate_id": best.get("candidate_id"),
+            "operation": best.get("operation"),
+            "summary_action": explanation.get("summary_action"),
+            "why_better": explanation.get("why_better"),
+        }
+
+    raw_status = str(review_result.get("recommendation_status") or "").upper()
+    status = raw_status or ("AVAILABLE" if selected else "NO_RECOMMENDATION")
+    evaluation_status = str(review_result.get("status") or "").upper()
+    evaluation_completed = bool(evaluated_candidates) or evaluation_status in {
+        "AVAILABLE",
+        "UNAVAILABLE",
+    }
+    rejected_count = sum(
+        1
+        for candidate in evaluated_candidates
+        if str((candidate.get("hard_gate_result") or {}).get("status") or "").upper() == "REJECTED"
+        or str(candidate.get("evaluation_status") or candidate.get("status") or "").upper()
+        in {"HARD_GATE_REJECTED", "EXTERNALLY_CONTRADICTED"}
+    )
+    return {
+        "status": status,
+        "count": len(selected),
+        "evaluation_completed": evaluation_completed,
+        "evaluated_count": len(evaluated_candidates),
+        "rejected_count": rejected_count,
+        "reason": review_result.get("reason"),
+        "calibration_status": review_result.get("calibration_status"),
+        "split_recommended": split_recommended,
+        "best_alternative": best_alternative,
+    }
+
+
+def select_representative_member(
+    members: dict[str, Any],
+    alarms: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Select the strongest evidence representative, never a root-cause proxy."""
+    role_rank = {"CORE": 2, "PERIPHERAL": 1}
+    candidates: list[tuple[tuple[float, float, float, float, float, str], dict[str, Any]]] = []
+    for alarm_id, member in members.items():
+        role = getattr(member, "role", None)
+        verdict = getattr(role, "verdict", None)
+        role_value = str(getattr(verdict, "value", verdict or "")).upper()
+        if role_value not in role_rank:
+            continue
+        support = getattr(getattr(member, "support", None), "support", None)
+        gate = getattr(role, "gate", None)
+        coverage = getattr(gate, "availability_coverage", None)
+        computable_groups = getattr(gate, "computable_groups", None)
+        representativeness = getattr(member, "representativeness", None)
+        alarm = alarms.get(str(alarm_id))
+        candidates.append((
+            (
+                -float(role_rank[role_value]),
+                -float(support if support is not None else -1.0),
+                -float(coverage if coverage is not None else -1.0),
+                -float(computable_groups if computable_groups is not None else -1.0),
+                -float(representativeness if representativeness is not None else -1.0),
+                str(alarm_id),
+            ),
+            {
+                "status": "AVAILABLE",
+                "alarm_id": str(alarm_id),
+                "alarm_name": getattr(alarm, "alarm_name", None) if alarm is not None else None,
+                "device_code": (
+                    getattr(alarm, "device_code", None) or getattr(alarm, "node_reference", None)
+                    if alarm is not None else None
+                ),
+                "role": role_value,
+                "membership_support": support,
+                "availability_coverage": coverage,
+                "computable_groups": computable_groups,
+                "representativeness": representativeness,
+                "selection_semantic": "EVIDENCE_REPRESENTATIVE_NOT_ROOT_CAUSE",
+            },
+        ))
+    if not candidates:
+        return {
+            "status": "UNAVAILABLE",
+            "selection_semantic": "NO_CORE_OR_PERIPHERAL_EVIDENCE_REPRESENTATIVE",
+            "reason": "NO_CORE_OR_PERIPHERAL_MEMBER",
+        }
+    return min(candidates, key=lambda item: item[0])[1]
+
+
+def build_chain_quality_assessment(
+    *,
+    alarm_count: int,
+    role_counts: dict[str, Any],
+    mapped_device_count: int,
+    total_device_count: int,
+    connected_pair_count: int,
+    pair_total: int,
+    audit_status: str,
+    audit_verdict: str | None,
+    over_merge_strength: str | None,
+    recommendation_count: int,
+    recommendation_status: str,
+    recommendation_evaluation_completed: bool = False,
+) -> dict[str, Any]:
+    """Rate grouping robustness from available evidence, never as probability."""
+    method = "HEURISTIC_V1"
+    if alarm_count <= 1:
+        return {
+            "method": method,
+            "status": "NOT_APPLICABLE",
+            "stars": None,
+            "label": "Không áp dụng",
+            "reasons": ["Chuỗi chỉ có một cảnh báo."],
+            "available_dimension_count": 0,
+        }
+
+    normalized_roles = {
+        str(getattr(key, "value", key)).upper(): int(value or 0)
+        for key, value in (role_counts or {}).items()
+    }
+    insufficient = normalized_roles.get("INSUFFICIENT_DATA", 0)
+    weak = normalized_roles.get("WEAK", 0)
+    role_total = sum(max(0, count) for count in normalized_roles.values())
+    evaluated_members = max(0, role_total - insufficient)
+    role_coverage = evaluated_members / max(1, alarm_count)
+    if role_coverage < 0.5:
+        return {
+            "method": method,
+            "status": "UNAVAILABLE",
+            "stars": None,
+            "label": "Chưa thể chấm",
+            "reasons": ["Chưa đủ thành viên có evidence để đánh giá vai trò."],
+            "available_dimension_count": 1,
+        }
+
+    dimensions: list[tuple[str, float, float]] = [
+        ("role_coverage", role_coverage, 0.15),
+        ("member_consistency", 1.0 - (weak / max(1, evaluated_members)), 0.20),
+    ]
+    if total_device_count > 0:
+        dimensions.append((
+            "device_mapping",
+            min(1.0, mapped_device_count / total_device_count),
+            0.15,
+        ))
+    if pair_total > 0:
+        dimensions.append((
+            "topology_connectivity",
+            min(1.0, connected_pair_count / pair_total),
+            0.15,
+        ))
+    verdict = str(audit_verdict or "").upper()
+    if str(audit_status).upper() == "EVALUATED":
+        dimensions.append((
+            "structural_audit",
+            1.0 if verdict == "NO_LOW_CONDUCTANCE_CUT" else 0.0,
+            0.25,
+        ))
+    strength = str(over_merge_strength or "").upper()
+    if strength in {"NONE", "WEAK", "MODERATE", "STRONG"}:
+        dimensions.append((
+            "over_merge",
+            {"NONE": 1.0, "WEAK": 0.7, "MODERATE": 0.25, "STRONG": 0.0}.get(strength, 0.5),
+            0.10,
+        ))
+
+    if len(dimensions) < 3:
+        return {
+            "method": method,
+            "status": "UNAVAILABLE",
+            "stars": None,
+            "label": "Chưa thể chấm",
+            "reasons": ["Chưa đủ nguồn evidence độc lập để chấm độ vững."],
+            "available_dimension_count": len(dimensions),
+        }
+
+    weight_total = sum(weight for _, _, weight in dimensions)
+    score = sum(value * weight for _, value, weight in dimensions) / weight_total
+    if score >= 0.85:
+        stars = 5
+    elif score >= 0.70:
+        stars = 4
+    elif score >= 0.50:
+        stars = 3
+    elif score >= 0.30:
+        stars = 2
+    else:
+        stars = 1
+
+    strength = str(over_merge_strength or "").upper()
+    if verdict == "CANDIDATE_SPLIT" or strength == "MODERATE":
+        stars = min(stars, 2)
+    if strength == "STRONG":
+        stars = 1
+    if recommendation_count > 0:
+        stars = min(stars, 3)
+    review_status = str(recommendation_status or "NOT_EVALUATED").upper()
+    if review_status in {"NOT_EVALUATED", "UNAVAILABLE"}:
+        stars = min(stars, 4)
+    if stars == 5 and not (
+        str(audit_status).upper() == "EVALUATED"
+        and verdict == "NO_LOW_CONDUCTANCE_CUT"
+        and strength not in {"MODERATE", "STRONG"}
+        and recommendation_count == 0
+    ):
+        stars = 4
+
+    labels = {
+        5: "Rất vững",
+        4: "Khá vững",
+        3: "Cần xem thêm",
+        2: "Có dấu hiệu nên tách",
+        1: "Rủi ro gộp sai cao",
+    }
+    reasons: list[str] = []
+    if total_device_count:
+        reasons.append(f"{mapped_device_count}/{total_device_count} thiết bị đã nằm trong topology.")
+    if pair_total:
+        reasons.append(
+            f"{connected_pair_count}/{pair_total} cặp resource có đường kết nối trong giới hạn phân tích."
+        )
+    if weak:
+        reasons.append(f"Có {weak} thành viên yếu trong {evaluated_members} thành viên đã đánh giá.")
+    if verdict == "CANDIDATE_SPLIT":
+        reasons.append("Audit phát hiện một ranh giới có thể tách chuỗi.")
+    elif verdict == "NO_LOW_CONDUCTANCE_CUT":
+        reasons.append("Audit chưa tìm thấy ranh giới tách đủ yếu.")
+    if recommendation_count:
+        reasons.append(f"Counterfactual tìm thấy {recommendation_count} phương án tốt hơn.")
+    elif review_status == "UNAVAILABLE":
+        reasons.insert(
+            0,
+            "Counterfactual đã chạy nhưng khuyến nghị chưa đủ điều kiện phát hành."
+            if recommendation_evaluation_completed
+            else "Counterfactual chưa thể hoàn tất đánh giá phương án.",
+        )
+    elif review_status == "NOT_EVALUATED":
+        reasons.insert(0, "Counterfactual chưa chạy nên chưa thể loại trừ phương án tốt hơn.")
+
+    return {
+        "method": method,
+        "status": "EVALUATED",
+        "stars": stars,
+        "label": labels[stars],
+        "reasons": reasons[:3],
+        "available_dimension_count": len(dimensions),
+    }
+
+
+CHAIN_OVERVIEW_PROJECTION_VERSION = "CHAIN_OVERVIEW_V3"
+CHAIN_QUALITY_PIPELINE_VERSION = "DETERMINISTIC_QUALITY_V3"
+
+
+def build_chain_overview_projection(context: dict[str, Any]) -> dict[str, Any]:
+    """Return the small deterministic payload needed by the chain Overview cards.
+
+    This projection is deliberately independent from the narrative prompt and
+    excludes the potentially large WHY, path and analytical-findings sections.
+    It is safe to persist and serve without invoking a provider.
+    """
+    representative = context.get("representative_member")
+    representative_projection = None
+    if isinstance(representative, dict):
+        representative_projection = {
+            key: representative.get(key)
+            for key in (
+                "status",
+                "alarm_id",
+                "alarm_name",
+                "device_code",
+                "role",
+                "membership_support",
+                "availability_coverage",
+                "computable_groups",
+                "representativeness",
+                "selection_semantic",
+                "reason",
+            )
+            if key in representative
+        }
+
+    topology = context.get("topology")
+    topology_projection = {}
+    if isinstance(topology, dict):
+        topology_projection = {
+            key: topology.get(key)
+            for key in (
+                "mapped",
+                "total",
+                "mapped_device_count",
+                "total_device_count",
+                "device_mapping_ratio",
+                "resource_types",
+                "dependency_verified",
+                "connected_pair_count",
+                "pair_total",
+                "max_path_hops",
+                "mapped_resources",
+                "display_paths",
+                "display_paths_truncated",
+            )
+            if key in topology
+        }
+
+    recommendations = context.get("recommendations")
+    recommendations_projection = {}
+    if isinstance(recommendations, dict):
+        recommendations_projection = {
+            key: recommendations.get(key)
+            for key in (
+                "status",
+                "count",
+                "evaluation_completed",
+                "evaluated_count",
+                "rejected_count",
+                "reason",
+                "calibration_status",
+                "split_recommended",
+                "best_alternative",
+            )
+            if key in recommendations
+        }
+
+    return {
+        "projection_version": CHAIN_OVERVIEW_PROJECTION_VERSION,
+        "representative_member": representative_projection,
+        "topology": topology_projection,
+        "quality_assessment": context.get("quality_assessment"),
+        "recommendations": recommendations_projection,
     }
 
 
@@ -340,12 +1049,17 @@ def _build_analytical_findings(
         evidence = [
             f"{connected_count}/{pair_total} cặp resource có đường transit trong giới hạn 4 hop."
         ]
-        for path in paths[:2]:
+        for path in topology_connectivity.get("display_paths", [])[:2]:
             source_label = ", ".join(path.get("source_devices") or [path["source"]])
             target_label = ", ".join(path.get("target_devices") or [path["target"]])
             evidence.append(
                 f"{source_label} ↔ {target_label}: {' → '.join(path['path'])} "
                 f"({path['hop_count']} hop, {path['relation_type']})."
+            )
+        if topology_connectivity.get("display_paths_truncated"):
+            evidence.append(
+                f"Chỉ lưu {MAX_OVERVIEW_DISPLAY_PATHS} đường đại diện đầu tiên trong display forest; "
+                "các số liệu kết nối vẫn tính trên toàn bộ cặp resource đủ điều kiện."
             )
         shared = topology_connectivity.get("shared_transit_resources", [])
         if shared:
@@ -360,8 +1074,8 @@ def _build_analytical_findings(
             status="AVAILABLE",
             title="Ngữ cảnh topology dùng chung",
             claim=(
-                f"{len(topology_connectivity.get('mapped_resources', []))} resource đã ánh xạ "
-                f"nằm trong cùng vùng kết nối transit; đường dài nhất quan sát được là "
+                f"Có {connected_count}/{pair_total} cặp resource đã ánh xạ có đường transit "
+                f"trong giới hạn 4 hop; đường dài nhất quan sát được là "
                 f"{topology_connectivity.get('max_path_hops')} hop."
             ),
             evidence=evidence,
@@ -525,6 +1239,7 @@ def extract_cohesion_context(
     review_result: dict[str, Any] | None = None,
     audit_error_reason: str | None = None,
     deep_dive_analysis: Any | None = None,
+    quality_assessment_override: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Extract structured facts across the authoritative data sources."""
     package = service.require_package()
@@ -532,6 +1247,9 @@ def extract_cohesion_context(
         analysis = service.analyze(chain_id)
 
     # Attempt to resolve deep dive analysis if not passed directly
+    if deep_dive_analysis is not None:
+        deep_dive_analysis = hydrate_persisted_deep_dive(deep_dive_analysis)
+
     if deep_dive_analysis is None and hasattr(service, "jobs"):
         try:
             job = service.jobs.latest_succeeded(
@@ -540,7 +1258,7 @@ def extract_cohesion_context(
                 chain_id,
             )
             if job is not None and job.result is not None:
-                deep_dive_analysis = job.result
+                deep_dive_analysis = hydrate_persisted_deep_dive(job.result)
                 if audit_artifact is None and getattr(job, "audit_artifact", None) is not None:
                     audit_artifact = job.audit_artifact
         except Exception:
@@ -601,6 +1319,7 @@ def extract_cohesion_context(
             return str(s or "9999")
         sorted_by_time = sorted(raw_alarms, key=_get_st)
         first_a = sorted_by_time[0]
+        first_raw = first_a.raw if hasattr(first_a, "raw") and isinstance(first_a.raw, dict) else {}
         first_id = getattr(first_a, "alarm_id", None) or first_raw.get("alarm_id") or ""
         first_name = getattr(first_a, "alarm_name", None) or first_raw.get("alarm_name") or "Unknown Alarm"
         first_dev = getattr(first_a, "device_code", None) or first_raw.get("device_code") or first_raw.get("device_name") or ""
@@ -665,6 +1384,7 @@ def extract_cohesion_context(
         cohesion_factors.append(f"ghi nhận trên {len(distinct_devs)} thiết bị ({', '.join(distinct_devs[:3])})")
 
     temporal_progression = _build_temporal_progression(list(raw_alarms))
+    alarm_observation_groups = _build_alarm_observation_groups(list(raw_alarms))
 
     # -------------------------------------------------------------------------
     # 1b. Mapped, bounded topology connectivity discovery
@@ -683,11 +1403,11 @@ def extract_cohesion_context(
         member_ids=member_ids,
         alarm_devices=alarm_devices,
     )
-    connected_pairs = topology_connectivity["paths"]
+    connected_pair_count = topology_connectivity["connected_pair_count"]
 
     structural_insights: list[dict[str, str]] = []
-    if connected_pairs:
-        pair_count = topology_connectivity["connected_pair_count"]
+    if connected_pair_count:
+        pair_count = connected_pair_count
         pair_total = topology_connectivity["pair_total"]
         max_path_hops = topology_connectivity["max_path_hops"]
         cohesion_factors.append(
@@ -839,6 +1559,7 @@ def extract_cohesion_context(
         "phi": None,
         "epsilon": None,
         "best_cut_label": None,
+        "partition_summary": None,
     }
 
     if audit_error_reason:
@@ -859,6 +1580,12 @@ def extract_cohesion_context(
                 best_cut, "phi", getattr(best_cut, "conductance", None)
             )
             audit_detail["best_cut_label"] = getattr(best_cut, "label", None)
+            audit_detail["partition_summary"] = _build_audit_partition_summary(
+                raw_alarms=list(raw_alarms),
+                best_cut=best_cut,
+                visualization=getattr(audit_artifact, "visualization", None),
+                topology_connectivity=topology_connectivity,
+            )
 
         # Artifact status for valid computed review audit artifacts is "AVAILABLE"
         if artifact_status in ("AVAILABLE", "SUCCEEDED", "COMPLETE", "VALID"):
@@ -889,12 +1616,8 @@ def extract_cohesion_context(
     # -------------------------------------------------------------------------
     # 5. Counterfactual Recommendations
     # -------------------------------------------------------------------------
-    split_recommended = False
-    if isinstance(review_result, dict):
-        for rec in review_result.get("recommendations", []):
-            if isinstance(rec, dict) and rec.get("operation") in ("SPLIT_CHAIN", "REMOVE_MEMBER", "MOVE_MEMBER"):
-                split_recommended = True
-                break
+    recommendation_summary = _resolve_recommendations(review_result)
+    split_recommended = recommendation_summary["split_recommended"]
 
     # -------------------------------------------------------------------------
     # 1b. Role breakdown from Tier-1B Analysis
@@ -914,6 +1637,14 @@ def extract_cohesion_context(
             insufficient_members.append(str(a_id))
         elif v_str == "CORE":
             core_members.append(str(a_id))
+
+    representative_member = select_representative_member(
+        members_map,
+        {
+            str(getattr(alarm, "alarm_id", "")): alarm
+            for alarm in raw_alarms
+        },
+    )
 
     # -------------------------------------------------------------------------
     # 4b. Tier-2 Deep Dive Capabilities (Dominator, Propagation, OverMerge, Attribution)
@@ -1015,7 +1746,12 @@ def extract_cohesion_context(
             else (
                 "Chuỗi có độ gắn kết cao và thuần nhất; khuyến nghị kỹ sư NOC tập trung xử lý tại thiết bị khởi phát và rà soát các liên kết downstream theo đường transit."
                 if audit_status == "EVALUATED"
-                else "Đang ở giai đoạn phân tích sơ bộ; khuyến nghị theo dõi thiết bị khởi phát và chờ kết quả kiểm định chuyên sâu P2."
+                else (
+                    "Counterfactual đã hoàn tất nhưng Audit Graph P2 chưa chạy; "
+                    "khuyến nghị theo dõi thiết bị khởi phát và chờ kiểm định cấu trúc."
+                    if recommendation_summary["evaluation_completed"]
+                    else "Đang ở giai đoạn phân tích sơ bộ; khuyến nghị theo dõi thiết bị khởi phát và chờ kết quả kiểm định chuyên sâu P2."
+                )
             )
         )
     )
@@ -1026,6 +1762,30 @@ def extract_cohesion_context(
         "over_merge_alert": bool(over_merge_info and over_merge_info.get("structural_separation") and str(over_merge_info.get("strength", "")).upper() in ("STRONG", "MODERATE")),
         "actionable_takeaway": actionable_takeaway,
     }
+
+    mapped_device_count = len(topology_connectivity["mapped_device_ids"])
+    total_device_count = len(distinct_devs)
+    device_mapping_ratio = (
+        mapped_device_count / total_device_count if total_device_count else None
+    )
+    quality_assessment = (
+        quality_assessment_override
+        if isinstance(quality_assessment_override, dict)
+        else build_chain_quality_assessment(
+            alarm_count=alarm_count,
+            role_counts=role_counts,
+            mapped_device_count=mapped_device_count,
+            total_device_count=total_device_count,
+            connected_pair_count=topology_connectivity["connected_pair_count"],
+            pair_total=topology_connectivity["pair_total"],
+            audit_status=audit_status,
+            audit_verdict=audit_verdict,
+            over_merge_strength=(over_merge_info or {}).get("strength"),
+            recommendation_count=recommendation_summary["count"],
+            recommendation_status=recommendation_summary["status"],
+            recommendation_evaluation_completed=recommendation_summary["evaluation_completed"],
+        )
+    )
 
     return {
         "chain": {
@@ -1057,6 +1817,8 @@ def extract_cohesion_context(
             "insufficient_count": len(insufficient_members),
             "insufficient_members": insufficient_members[:4],
         },
+        "representative_member": representative_member,
+        "alarm_observation_groups": alarm_observation_groups,
         "cohesion_factors": cohesion_factors,
         "structural_insights": structural_insights,
         "temporal_progression": temporal_progression,
@@ -1069,8 +1831,16 @@ def extract_cohesion_context(
         "topology": {
             "mapped": mapped_count,
             "total": alarm_count,
+            "mapped_device_count": mapped_device_count,
+            "total_device_count": total_device_count,
+            "device_mapping_ratio": (
+                round(device_mapping_ratio, 4)
+                if device_mapping_ratio is not None else None
+            ),
             "resource_types": sorted(list(resource_types))[:4],
-            "connected_pairs": connected_pairs,
+            "mapped_resources": topology_connectivity["mapped_resources"],
+            "display_paths": topology_connectivity["display_paths"],
+            "display_paths_truncated": topology_connectivity["display_paths_truncated"],
             "connected_pair_count": topology_connectivity["connected_pair_count"],
             "pair_total": topology_connectivity["pair_total"],
             "max_path_hops": topology_connectivity["max_path_hops"],
@@ -1085,10 +1855,10 @@ def extract_cohesion_context(
             "conductance": round(conductance, 3) if conductance is not None else None,
             "epsilon": audit_detail["epsilon"],
             "best_cut_label": audit_detail["best_cut_label"],
+            "partition_summary": audit_detail["partition_summary"],
         },
-        "recommendations": {
-            "split_recommended": split_recommended,
-        },
+        "recommendations": recommendation_summary,
+        "quality_assessment": quality_assessment,
         "tier2_p2": {
             "dominator": dominator_info,
             "propagation": propagation_info,
@@ -1105,8 +1875,6 @@ def build_deterministic_cohesion_narrative(context: dict[str, Any], language: st
     alarm_summary = context.get("alarm_summary", {})
     topology = context.get("topology", {})
     audit = context.get("audit", {})
-    recs = context.get("recommendations", {})
-
     chain_id = chain.get("chain_id", "Unknown")
     alarm_count = chain.get("alarm_count", 1)
     is_singleton = chain.get("is_singleton", False)
@@ -1119,7 +1887,6 @@ def build_deterministic_cohesion_narrative(context: dict[str, Any], language: st
     audit_status = audit.get("status", "NOT_EVALUATED")
     audit_verdict = audit.get("verdict")
     audit_reason = audit.get("reason")
-    split_recommended = recs.get("split_recommended", False)
 
     if language == "vi":
         if is_singleton:
@@ -1127,76 +1894,136 @@ def build_deterministic_cohesion_narrative(context: dict[str, Any], language: st
                 "Chuỗi này chỉ chứa 1 cảnh báo được ghi nhận. "
                 "Phân tích độ gắn kết và lan truyền đa thành viên không áp dụng."
             )
-        findings = context.get("analytical_findings", [])
-        findings_by_id = {
-            str(item.get("finding_id")): item
-            for item in findings
-            if item.get("status") == "AVAILABLE" and item.get("claim")
-        }
-        temporal_claim = findings_by_id.get("TEMPORAL_PROGRESSION", {}).get("claim")
-        topology_claim = findings_by_id.get("SHARED_TOPOLOGY_CONTEXT", {}).get("claim")
-        audit_claim = findings_by_id.get("AUDIT_COHESION", {}).get("claim")
-        dom_claim = findings_by_id.get("TOPOLOGY_DOMINATOR_WITNESS", {}).get("claim")
-        prop_claim = findings_by_id.get("TOPOLOGY_PROPAGATION_FLOW", {}).get("claim")
-        om_claim = findings_by_id.get("OVER_MERGE_EVALUATION", {}).get("claim")
+        partition = audit.get("partition_summary") or {}
+        if candidate_cut and partition.get("status") == "AVAILABLE":
+            side_a = partition.get("side_a") or {}
+            side_b = partition.get("side_b") or {}
 
-        if temporal_claim or topology_claim or audit_claim:
-            sentences: list[str] = []
-            # Câu 1: Bối cảnh sự cố & dòng thời gian
-            first = f"Chuỗi {chain_id} gồm {alarm_count} cảnh báo"
-            if chain.get("duration_desc"):
-                first += f" trong {chain['duration_desc']}"
-            if temporal_claim:
-                first += f"; {str(temporal_claim).rstrip('.').lower()}"
-            sentences.append(first + ".")
-
-            # Câu 2: Quan hệ topo & Dominator witness / Luồng lan truyền
-            topo_parts: list[str] = []
-            if topology_claim:
-                topo_parts.append(str(topology_claim).rstrip("."))
-            if dom_claim:
-                topo_parts.append(str(dom_claim).rstrip("."))
-            elif prop_claim:
-                topo_parts.append(str(prop_claim).rstrip("."))
-            if topo_parts:
-                sentences.append("; ".join(topo_parts) + ".")
-
-            # Câu 3: Đánh giá gắn kết Audit & Over-merge
-            conclusion_parts: list[str] = []
-            if audit_claim:
-                conclusion_parts.append(str(audit_claim).rstrip("."))
-            if om_claim:
-                conclusion_parts.append(str(om_claim).rstrip("."))
-            if "PROPAGATION_COMPATIBLE_PATTERN" in findings_by_id and not dom_claim:
-                conclusion_parts.append(
-                    "Mẫu hình phù hợp với lan truyền, nhưng chưa xác nhận thiết bị khởi phát là nguyên nhân gốc"
+            def side_phrase(side: dict[str, Any]) -> str:
+                side_devices = side.get("devices") or []
+                side_types = side.get("alarm_types") or []
+                device_text = ", ".join(str(item.get("device")) for item in side_devices[:3])
+                type_text = ", ".join(
+                    f"'{item.get('alarm_name')}'"
+                    for item in side_types[:2]
+                    if item.get("alarm_name")
                 )
-            if conclusion_parts:
-                sentences.append(" ".join(conclusion_parts) + ".")
+                phrase = f"{int(side.get('alarm_count', 0) or 0)} cảnh báo"
+                if device_text:
+                    phrase += f" quanh {device_text}"
+                if type_text:
+                    phrase += f", chủ yếu là {type_text}"
+                return phrase
 
-            # Câu 4: Khuyến nghị hành động NOC
-            action = context.get("operational_insights", {}).get("actionable_takeaway")
-            if action:
-                sentences.append(action)
+            first = (
+                "Audit nhận diện một ranh giới giữa hai cụm quan sát: "
+                f"một cụm gồm {side_phrase(side_a)}; cụm còn lại gồm {side_phrase(side_b)}."
+            )
 
-            return " ".join(sentences[:4])
+            linkage = partition.get("linkage") or {}
+            linkage_parts: list[str] = []
+            onset_gap = linkage.get("onset_gap_seconds")
+            if onset_gap is not None:
+                linkage_parts.append(f"hai cụm bắt đầu cách nhau {_format_offset(int(onset_gap))}")
+            paths = linkage.get("topology_paths") or []
+            if paths:
+                path = paths[0]
+                path_text = " → ".join(str(node) for node in path.get("path") or [])
+                hop_count = int(path.get("hop_count") or 0)
+                if hop_count == 1:
+                    topology_text = "hai phía nối trực tiếp trong topology"
+                else:
+                    topology_text = f"hai phía nối nhau qua {hop_count} hop topology"
+                if path_text:
+                    topology_text += f" ({path_text})"
+                linkage_parts.append(topology_text)
+            evidence_groups = linkage.get("supporting_groups") or []
+            if evidence_groups:
+                group_text = ", ".join(
+                    str(item.get("label_vi")) for item in evidence_groups[:3]
+                )
+                linkage_parts.append(f"cạnh nối giữa hai cụm dựa trên {group_text}")
+            second = (
+                "Hai cụm được đặt trong cùng chain vì " + "; ".join(linkage_parts) + "."
+                if linkage_parts
+                else "Hai cụm đang nằm trong cùng chain, nhưng chưa có đủ chi tiết để giải thích cơ chế liên kết giữa chúng."
+            )
+
+            separation = partition.get("separation") or {}
+            cross_edges = int(separation.get("cross_edge_count", 0) or 0)
+            internal_edges = int(separation.get("internal_edge_count", 0) or 0)
+            complete = bool(separation.get("edge_counts_are_complete"))
+            if complete and internal_edges > 0:
+                weakness = (
+                    f"chỉ {cross_edges} cạnh evidence đi xuyên giữa hai cụm, trong khi "
+                    f"{internal_edges} cạnh còn lại giữ các cảnh báo trong từng cụm"
+                )
+            elif cross_edges > 0:
+                weakness = (
+                    f"phần graph quan sát được chỉ có {cross_edges} cạnh evidence đi xuyên giữa hai cụm"
+                )
+            else:
+                weakness = "evidence đi xuyên giữa hai cụm không đủ mạnh so với liên kết bên trong từng cụm"
+            third = (
+                f"Điểm yếu nằm ở ranh giới này: {weakness}; cần đối chiếu phiên, cổng hoặc đối tượng mạng tương ứng "
+                "trước khi xử lý toàn bộ như một sự cố duy nhất."
+            )
+            return f"{first} {second} {third}"
+
+        temporal = context.get("temporal_progression") or {}
+        waves = temporal.get("waves") or []
+        cross_layer = any(
+            insight.get("type") == "CROSS_LAYER"
+            for insight in context.get("structural_insights", [])
+            if isinstance(insight, dict)
+        )
+        pattern_parts: list[str] = []
+        if top_alarms:
+            pattern_parts.append(
+                f"{top_alarms[0][1]}/{alarm_count} cảnh báo thuộc nhóm '{top_alarms[0][0]}'"
+            )
+        if waves:
+            first_wave_devices = ", ".join(waves[0].get("devices") or [])
+            if first_wave_devices:
+                pattern_parts.append(f"đợt đầu xuất hiện đồng thời trên {first_wave_devices}")
+        if len(waves) > 1:
+            later_wave = waves[1]
+            offset_seconds = int(later_wave.get("offset_seconds") or 0)
+            offset_text = (
+                f"{offset_seconds // 60}m {offset_seconds % 60}s"
+                if offset_seconds >= 60
+                else f"{offset_seconds}s"
+            )
+            later_devices = ", ".join(later_wave.get("devices") or [])
+            later_names = ", ".join(later_wave.get("alarm_names") or [])
+            if later_devices:
+                later_detail = f"sau {offset_text}, {later_devices} mới xuất hiện"
+                if later_names:
+                    later_detail += f" cảnh báo '{later_names}'"
+                pattern_parts.append(later_detail)
+
+        pattern_label = "mẫu liên tầng" if cross_layer else "mẫu đồng diễn"
+        if pattern_parts:
+            first = f"Dữ liệu cho thấy một {pattern_label}: {'; '.join(pattern_parts[:3])}."
         else:
-            fallback_facts: list[str] = []
-            if top_alarms:
-                fallback_facts.append(
-                    f"Ghi nhận {top_alarms[0][1]} sự kiện '{top_alarms[0][0]}'."
-                )
-            if devices:
-                fallback_facts.append(f"Phạm vi quan sát gồm {len(devices)} thiết bị.")
-            weak_count = int(context.get("roles", {}).get("weak_count", 0) or 0)
-            if weak_count:
-                fallback_facts.append(f"Tier-1B phân loại {weak_count} thành viên WEAK.")
-            if split_recommended:
-                fallback_facts.append(
-                    "Một phương án tách chuỗi (SPLIT) được ghi nhận để người vận hành xem xét."
-                )
-            observed = " ".join(fallback_facts) or f"Chuỗi {chain_id} gồm {alarm_count} cảnh báo được ghi nhận."
-            return f"Chuỗi {chain_id} gồm {alarm_count} cảnh báo. {observed}".strip()
+            first = "Chưa có đủ diễn tiến chi tiết để rút ra mẫu sự cố rõ ràng."
+
+        structural_parts: list[str] = []
+        max_hops = topology.get("max_path_hops")
+        connected_pair_count = int(topology.get("connected_pair_count", 0) or 0)
+        pair_total = int(topology.get("pair_total", 0) or 0)
+        if connected_pair_count and max_hops is not None:
+            structural_parts.append(
+                f"Có {connected_pair_count}/{pair_total} cặp resource đã ánh xạ có đường transit "
+                f"topology trong giới hạn {max_hops} hop"
+            )
+        if audit_status == "EVALUATED" and audit_verdict == AuditVerdict.NO_LOW_CONDUCTANCE_CUT.value:
+            structural_parts.append("Audit chưa tìm thấy ranh giới đủ yếu để tách nhóm evidence")
+        elif audit_status == "EVALUATED" and audit_verdict == AuditVerdict.CANDIDATE_SPLIT.value:
+            structural_parts.append("Audit phát hiện ranh giới có thể tách chuỗi")
+
+        second_parts = [part for part in structural_parts[:2] if part]
+        return first if not second_parts else f"{first} {'; '.join(second_parts)}."
 
     # 1. Singleton narrative (Strict adherence to data truth: no speculative isolation or propagation claims)
     if is_singleton:
@@ -1230,16 +2057,11 @@ def build_deterministic_cohesion_narrative(context: dict[str, Any], language: st
     sentence_1 = f"Chain {chain_id} is a {net_str}cluster {composition_clause}{dev_clause}{res_clause}."
 
     # 3. Structural audit & recommendation sentence
-    if split_recommended:
-        sentence_2 = (
-            "A structural partition boundary was identified, and a split alternative "
-            "has been recommended for review."
-        )
-    elif candidate_cut or audit_verdict == AuditVerdict.CANDIDATE_SPLIT.value:
+    if candidate_cut or audit_verdict == AuditVerdict.CANDIDATE_SPLIT.value:
         cond_str = f" (conductance {conductance:.2f})" if conductance is not None else ""
         sentence_2 = (
             f"Structural audit detected a low-conductance separation boundary between member groups{cond_str}, "
-            "though no split alternative is currently recommended."
+            "meaning the observed evidence is stronger within the groups than across their boundary."
         )
     elif audit_status == "EVALUATED" and audit_verdict == AuditVerdict.NO_LOW_CONDUCTANCE_CUT.value:
         sentence_2 = "Structural audit evaluated candidate partitions and detected no low-conductance partition boundaries."
@@ -1255,13 +2077,159 @@ def build_deterministic_cohesion_narrative(context: dict[str, Any], language: st
     return f"{sentence_1} {sentence_2}"
 
 
-def _briefing_is_concise(message: str, *, language: str) -> bool:
+def _build_investigation_evidence(context: dict[str, Any]) -> dict[str, Any]:
+    """Select bounded, high-value evidence for LLM investigation synthesis."""
+    topology = context.get("topology") or {}
+    p2 = context.get("tier2_p2") or {}
+    binding_observations = [
+        {
+            "type": item.get("type"),
+            "label": item.get("label"),
+            "detail": item.get("detail"),
+        }
+        for item in (context.get("structural_insights") or [])[:8]
+        if isinstance(item, dict)
+    ]
+    findings = [
+        {
+            "finding_id": item.get("finding_id"),
+            "kind": item.get("kind"),
+            "status": item.get("status"),
+            "claim": item.get("claim"),
+            "limitations": (item.get("limitations") or [])[:4],
+        }
+        for item in (context.get("analytical_findings") or [])[:6]
+        if isinstance(item, dict)
+    ]
+    return {
+        "observation_window": context.get("chain") or {},
+        "alarm_groups": (context.get("alarm_observation_groups") or [])[:8],
+        "device_onsets": (context.get("temporal_progression") or {}).get("device_onsets", [])[:12],
+        "grouping_dimensions": context.get("why") or {},
+        "binding_observations": binding_observations,
+        "topology": {
+            "paths": (topology.get("display_paths") or [])[:2],
+            "connected_pair_count": topology.get("connected_pair_count", 0),
+            "pair_total": topology.get("pair_total", 0),
+            "max_path_hops": topology.get("max_path_hops"),
+            "display_paths_truncated": topology.get("display_paths_truncated", False),
+            "shared_transit_resources": (topology.get("shared_transit_resources") or [])[:5],
+            "dependency_verified": topology.get("dependency_verified", False),
+        },
+        "audit": context.get("audit") or {},
+        "member_roles": context.get("roles") or {},
+        "representative_member": context.get("representative_member"),
+        "tier2": {
+            "dominator": p2.get("dominator"),
+            "propagation": p2.get("propagation"),
+            "evidence_attribution": p2.get("evidence_attribution"),
+            "over_merge": p2.get("over_merge"),
+        },
+        "findings": findings,
+        "interpretation_rules": {
+            "topology_path": "structural connectivity only, not causal direction",
+            "temporal_order": "observation order only, not propagation proof",
+            "representative_member": "strong evidence representative, not root cause",
+            "audit_cut": "possible over-merge boundary, not an automatic split decision",
+        },
+    }
+
+
+def _deterministic_investigation_message(
+    context: dict[str, Any], *, language: str
+) -> str:
+    """Build optional context for the provider without creating a user fallback.
+
+    This text is only sent as bounded grounding context.  If the provider is
+    unavailable or its prose is rejected, the caller returns an empty
+    narrative and a diagnostic status instead of exposing this draft as if it
+    were AI output.
+    """
+    is_singleton = bool(context.get("chain", {}).get("is_singleton"))
+    if is_singleton:
+        return ""
+
+    progression = context.get("temporal_progression") or {}
+    t0 = progression.get("t0") or {}
+    later = next(
+        (
+            wave for wave in progression.get("waves", [])
+            if isinstance(wave, dict) and float(wave.get("offset_seconds") or 0) > 0
+        ),
+        None,
+    )
+    topology = context.get("topology") or {}
+    path = next(iter(topology.get("display_paths") or []), None)
+    audit = context.get("audit") or {}
+    sentences: list[str] = []
+
+    if language == "vi":
+        if t0 and later:
+            later_devices = ", ".join(later.get("devices") or []) or "thiết bị kế tiếp"
+            later_alarms = ", ".join(later.get("alarm_names") or []) or "cảnh báo kế tiếp"
+            seconds = int(float(later.get("offset_seconds") or 0))
+            sentences.append(
+                f"Điểm cần kiểm tra là '{t0.get('alarm_name')}' được ghi nhận trước trên "
+                f"{t0.get('device')}, còn '{later_alarms}' xuất hiện trên {later_devices} sau "
+                f"{seconds} giây; đây là thứ tự quan sát, chưa phải bằng chứng về hướng lan truyền."
+            )
+        if isinstance(path, dict):
+            source_devices = ", ".join(path.get("source_devices") or []) or str(path.get("source"))
+            target_devices = ", ".join(path.get("target_devices") or []) or str(path.get("target"))
+            sentences.append(
+                f"Hai phía {source_devices} và {target_devices} có đường cấu trúc {path.get('relation_type')} "
+                f"dài {path.get('hop_count')} hop; đường này giải thích vì sao chúng được đặt trong cùng phạm vi kiểm tra, "
+                "nhưng không xác nhận quan hệ phụ thuộc có hướng."
+            )
+        if audit.get("candidate_cut"):
+            partition = audit.get("partition_summary") or {}
+            side_a = partition.get("side_a") or {}
+            side_b = partition.get("side_b") or {}
+            devices_a = ", ".join(str(item.get("device")) for item in side_a.get("devices", [])[:3])
+            devices_b = ", ".join(str(item.get("device")) for item in side_b.get("devices", [])[:3])
+            if devices_a and devices_b:
+                sentences.append(
+                    f"Điểm yếu của chain nằm giữa nhóm {devices_a} và nhóm {devices_b}: Audit tìm thấy ranh giới cấu trúc, "
+                    "nên cần đối chiếu phiên, cổng hoặc component chung trước khi xử lý như một sự cố duy nhất."
+                )
+        elif str(audit.get("verdict") or "").upper() == "NO_LOW_CONDUCTANCE_CUT":
+            sentences.append(
+                "Các cạnh evidence hiện chưa tạo thành hai cụm tách biệt đủ rõ; nên đối chiếu đối tượng chung trên đường topology "
+                "thay vì suy ra nguyên nhân chỉ từ thứ tự thời gian."
+            )
+        return " ".join(sentences[:3])
+
+    if t0 and later:
+        sentences.append(
+            f"The first observed alarm was {t0.get('alarm_name')} on {t0.get('device')}; "
+            f"the next wave appeared {int(float(later.get('offset_seconds') or 0))} seconds later, "
+            "which establishes observed order but not propagation."
+        )
+    if isinstance(path, dict):
+        sentences.append(
+            f"A bounded {path.get('relation_type')} path of {path.get('hop_count')} hops links the observed resources; "
+            "this supports shared structural scope, not causal direction."
+        )
+    return " ".join(sentences)
+
+
+def _briefing_avoids_card_metadata(message: str, *, language: str) -> bool:
     if not message.strip():
         return False
     if language != "vi":
         return True
-    sentences = [part for part in re.split(r"(?<=[.!?])\s+", message.strip()) if part]
-    return len(sentences) <= 5 and len(message) <= 1800 and "Các 7 " not in message
+    forbidden_card_terms = (
+        "counterfactual",
+        "hard gate",
+        "policy chưa",
+        "mức sao",
+        "/5 sao",
+    )
+    lowered = message.lower()
+    return (
+        "Các 7 " not in message
+        and not any(term in lowered for term in forbidden_card_terms)
+    )
 
 
 def generate_cohesion_narrative(
@@ -1271,7 +2239,8 @@ def generate_cohesion_narrative(
     review_result: dict[str, Any] | None = None,
     audit_error_reason: str | None = None,
     deep_dive_analysis: Any | None = None,
-    language: str = "en",
+    persisted_quality_assessment: dict[str, Any] | None = None,
+    language: str = "vi",
 ) -> CohesionNarrativeResult:
     """Generate a grounded narrative, optionally polished by an LLM."""
     service.require_package()
@@ -1285,10 +2254,13 @@ def generate_cohesion_narrative(
         audit_artifact=audit_artifact,
         review_result=review_result,
         audit_error_reason=audit_error_reason,
-        deep_dive_analysis=deep_dive_analysis,
+        deep_dive_analysis=hydrate_persisted_deep_dive(deep_dive_analysis),
+        quality_assessment_override=persisted_quality_assessment,
     )
 
-    deterministic_draft = build_deterministic_cohesion_narrative(context, language=language)
+    # This deterministic text is supplied to the model as grounding context;
+    # it is not used as a replacement for the provider's answer.
+    deterministic_draft = _deterministic_investigation_message(context, language=language)
 
     # Prepare grounding claims
     claims: list[str] = [
@@ -1330,10 +2302,19 @@ def generate_cohesion_narrative(
         claims.append(f"Network classes: {', '.join(context['alarm_summary']['network_classes'])}")
     if context["alarm_summary"]["devices"]:
         claims.append(f"Devices ({len(context['alarm_summary']['devices'])}): {', '.join(context['alarm_summary']['devices'])}")
+    representative = context.get("representative_member") or {}
+    if representative.get("status") == "AVAILABLE":
+        claims.append(
+            "Evidence representative (not root cause): "
+            f"{representative.get('alarm_name') or representative.get('alarm_id')} on "
+            f"{representative.get('device_code') or 'unknown device'}; "
+            f"role={representative.get('role')}; "
+            f"support={representative.get('membership_support')}"
+        )
     if context["topology"]["resource_types"]:
         claims.append(f"Topology resources: {', '.join(context['topology']['resource_types'])}")
     claims.append(f"Mapped alarms: {context['topology']['mapped']} of {context['topology']['total']}")
-    for pair in context.get("topology", {}).get("connected_pairs", []):
+    for pair in (context.get("topology", {}).get("display_paths") or [])[:2]:
         claims.append(
             f"Bounded topology path: {pair['source']} reaches {pair['target']} in "
             f"{pair['hop_count']} hops via {pair['relation_type']}; traversal semantic is "
@@ -1346,7 +2327,37 @@ def generate_cohesion_narrative(
         claims.append(f"Cut threshold epsilon: {context['audit']['epsilon']}")
     if context["audit"].get("verdict"):
         claims.append(f"Audit verdict: {context['audit']['verdict']}")
-    claims.append(f"Split recommended: {context['recommendations']['split_recommended']}")
+    partition = context["audit"].get("partition_summary") or {}
+    if partition.get("status") == "AVAILABLE":
+        for side_name in ("side_a", "side_b"):
+            side = partition.get(side_name) or {}
+            devices = ", ".join(
+                f"{item.get('device')} ({item.get('alarm_count')} alarms)"
+                for item in side.get("devices", [])
+            )
+            alarm_types = ", ".join(
+                f"{item.get('alarm_name')} ({item.get('alarm_count')})"
+                for item in side.get("alarm_types", [])
+            )
+            claims.append(
+                f"Audit partition {side_name}: {side.get('alarm_count')} alarms; "
+                f"devices={devices or 'unknown'}; alarm types={alarm_types or 'unknown'}"
+            )
+        linkage = partition.get("linkage") or {}
+        if linkage.get("onset_gap_seconds") is not None:
+            claims.append(f"Audit partition onset gap seconds: {linkage['onset_gap_seconds']}")
+        for group in linkage.get("supporting_groups", []):
+            claims.append(
+                f"Cross-partition evidence: {group.get('label_vi')} "
+                f"on {group.get('edge_count')} displayed edges"
+            )
+        separation = partition.get("separation") or {}
+        claims.append(
+            "Audit partition edge balance: "
+            f"cross={separation.get('cross_edge_count')}, "
+            f"internal={separation.get('internal_edge_count')}, "
+            f"complete={separation.get('edge_counts_are_complete')}"
+        )
 
     # Tier-2 P2 facts
     p2 = context.get("tier2_p2", {})
@@ -1379,10 +2390,12 @@ def generate_cohesion_narrative(
             f"Finding {finding['finding_id']} [{finding['kind']}/{finding['status']}]: "
             f"{finding['claim']}"
         )
-    if context.get("topology", {}).get("connected_pairs"):
+    connected_pair_count = int(context.get("topology", {}).get("connected_pair_count", 0) or 0)
+    if connected_pair_count:
+        pair_total = int(context.get("topology", {}).get("pair_total", 0) or 0)
         claims.append(
-            f"Observed bounded structural topology paths across "
-            f"{len(context['topology']['connected_pairs'])} resource pairs"
+            f"Observed bounded structural topology paths for {connected_pair_count}/"
+            f"{pair_total} eligible mapped resource pairs"
         )
     op = context.get("operational_insights", {})
     if op.get("actionable_takeaway"):
@@ -1393,20 +2406,23 @@ def generate_cohesion_narrative(
     # System instruction tailored for Senior NOC Incident Commander
     if language == "vi":
         instruction = (
-            "Đóng vai trò Chỉ huy Sự cố NOC cấp cao (Senior NOC Incident Commander). "
-            "Tổng hợp các sự kiện, cấu trúc topo và kiểm định audit đã cung cấp thành một bản tin nhận định vận hành súc tích từ 3 đến 4 câu mạch lạc. "
-            "Bản tin phải làm rõ 4 điểm then chốt: "
-            "(1) Diễn tiến sự cố & thiết bị khởi phát T0 cùng dòng thời gian lan truyền; "
-            "(2) Tương quan mạng và kết nối topo (liên tầng vật lý/giao thức, dominator witness, hoặc đường transit); "
-            "(3) Độ gắn kết Audit Graph (Conductance Phi so với Epsilon, nhận định sự cố đơn lẻ hay có dấu hiệu gộp thừa over-merge); "
-            "(4) Khuyến nghị hành động kỹ thuật cụ thể cho kỹ sư trực ca (thiết bị ưu tiên xử lý, hoặc đề xuất tách chuỗi nếu có ranh giới cắt). "
-            "Không đọc lại danh sách số liệu thô; diễn đạt tự nhiên, chuyên sâu về vận hành viễn thông/mạng. "
-            "Tuyệt đối tuân thủ ADR-0024: chỉ sử dụng các tên thiết bị, số liệu và sự kiện có trong grounding data; không suy diễn nguyên nhân gốc khi chưa kiểm định."
+            "Viết một nhận định điều tra tập trung vào insight quan trọng nhất. Ưu tiên một đoạn văn gọn, bỏ thông tin lặp lại từ các card; "
+            "nếu quan hệ phức tạp, dùng đủ câu để giải thích evidence, điểm yếu và bước kiểm tra tiếp theo. "
+            "Không bỏ dữ kiện thiết yếu chỉ để rút ngắn và không mở đầu bằng tỷ lệ cảnh báo. "
+            "Trước hết chọn insight kỹ thuật mạnh nhất nhưng chưa hiển nhiên từ alarm_groups, diễn tiến thời gian, WHY, topology, Audit và Tier-2. "
+            "Giải thích cơ sở liên hệ các alarm bằng các loại evidence độc lập khi có sẵn; đồng thời nêu evidence phản biện "
+            "hoặc điểm yếu khiến chưa thể coi đó là quan hệ nhân quả. Nếu có partition, mô tả cụ thể mỗi phía và chính xác evidence nào nối qua ranh giới. "
+            "Kết thúc bằng một kiểm tra vận hành cụ thể gắn với thiết bị, đường topology, phiên, cổng hoặc component đã có trong facts. "
+            "Nếu evidence không đủ để tạo insight mới, hãy nói thẳng điều còn thiếu thay vì kể lại số liệu. Không nhắc Counterfactual, mức sao, hard gate "
+            "hay trạng thái hiệu chuẩn. Không gọi thành viên đại diện là nguyên nhân gốc. Chỉ nói chung cluster, phụ thuộc có hướng "
+            "hoặc đường lan truyền đã được xác nhận khi facts thực sự xác nhận; nếu mới hợp lý về mặt kỹ thuật thì gọi là giả thuyết "
+            "và nêu bằng chứng còn thiếu. Không khẳng định hướng lan truyền từ thứ tự thời gian."
         )
     else:
         instruction = (
             "Act as a Senior NOC Incident Commander. "
-            "Synthesize the provided facts, topology paths, and audit verification into a concise 3-4 sentence operational briefing. "
+            "Synthesize the provided facts, topology paths, and audit verification into a focused operational briefing. "
+            "Omit repeated dashboard facts, but use enough prose to explain complex evidence and its limitations. "
             "Cover 4 key pillars: "
             "(1) Incident onset T0 and temporal progression across devices; "
             "(2) Network correlation and topology transit (cross-layer signals, dominator witness, or shared transit); "
@@ -1416,7 +2432,7 @@ def generate_cohesion_narrative(
         )
 
     prompt_facts = {
-        "context": context,
+        "investigation_evidence": _build_investigation_evidence(context),
         "instruction": instruction,
     }
 
@@ -1425,16 +2441,11 @@ def generate_cohesion_narrative(
             draft=deterministic_draft,
             facts=prompt_facts,
             fact_refs=claims,
-            purpose="ADVISOR",
+            purpose="COHESION",
+            timeout_seconds=_cohesion_ai_timeout_seconds(),
+            requested_language=language,
+            preserve_provider_output=True,
         )
-        if not _briefing_is_concise(rendered.message, language=language):
-            return CohesionNarrativeResult(
-                chain_id=chain_id,
-                narrative=deterministic_draft,
-                model="DETERMINISTIC_EVIDENCE",
-                provider_status="OUTPUT_REJECTED",
-                context=context,
-            )
         return CohesionNarrativeResult(
             chain_id=chain_id,
             narrative=rendered.message,
@@ -1443,12 +2454,11 @@ def generate_cohesion_narrative(
             context=context,
         )
     except Exception as exc:
-        logger.warning("LLM render failed, falling back to deterministic narrative: %s", exc)
+        logger.warning("LLM investigation synthesis failed: %s", exc)
         return CohesionNarrativeResult(
             chain_id=chain_id,
-            narrative=deterministic_draft,
-            model="DETERMINISTIC_EVIDENCE",
+            narrative="",
+            model="",
             provider_status="UNAVAILABLE",
             context=context,
         )
-
