@@ -431,9 +431,9 @@ def test_postgres_concurrent_succeeded_review_bundle_replay_is_idempotent(
                 )
             competing_review_id = f"review-{uuid4().hex}"
             competing_job_ids = (f"job-{uuid4().hex}", f"job-{uuid4().hex}")
-            competing_exposures = [replace(exposures[0], review_id=competing_review_id)]
-            competing_exposures[0] = replace(
-                competing_exposures[0],
+            first_competing_exposure = replace(
+                exposures[0],
+                review_id=competing_review_id,
                 original_rank=4,
                 displayed_rank=2,
                 deterministic_eligibility="ELIGIBLE_WITH_REVIEW",
@@ -446,8 +446,23 @@ def test_postgres_concurrent_succeeded_review_bundle_replay_is_idempotent(
                 feature_schema_version="cf-features-v7",
                 feature_payload={"features": {"impact": 0.625, "confidence": 0.9375}},
             )
+            competing_exposures = (
+                first_competing_exposure,
+                replace(
+                    first_competing_exposure,
+                    candidate_fingerprint="e" * 64,
+                    original_rank=5,
+                    displayed_rank=3,
+                    feature_fingerprint="f" * 64,
+                    deterministic_context={"score": 0.75, "signals": ["alternate"]},
+                    case_context={"case_id": "case-race-alternate", "labels": ["reviewed"]},
+                    temporal_context={"observed_at": "2026-09-24T11:11:12Z", "age_hours": 2},
+                    feature_payload={"features": {"impact": 0.5, "confidence": 0.875}},
+                ),
+            )
 
-            async def competing_writer(competing_job_id: str) -> None:
+            async def competing_writer(writer_index: int) -> None:
+                competing_job_id = competing_job_ids[writer_index]
                 await repository.persist_succeeded_job_and_review_bundle(
                     {**payload, "job_id": competing_job_id},
                     replace(
@@ -455,7 +470,7 @@ def test_postgres_concurrent_succeeded_review_bundle_replay_is_idempotent(
                         review_id=competing_review_id,
                         job_id=competing_job_id,
                     ),
-                    competing_exposures,
+                    [competing_exposures[writer_index]],
                 )
 
             conflict_results = await _race_after_missing_locked_reads(
@@ -463,8 +478,8 @@ def test_postgres_concurrent_succeeded_review_bundle_replay_is_idempotent(
                 ReviewSessionModel,
                 (competing_review_id, competing_review_id),
                 (
-                    lambda: competing_writer(competing_job_ids[0]),
-                    lambda: competing_writer(competing_job_ids[1]),
+                    lambda: competing_writer(0),
+                    lambda: competing_writer(1),
                 ),
             )
             assert sum(result is None for result in conflict_results) == 1
@@ -483,7 +498,7 @@ def test_postgres_concurrent_succeeded_review_bundle_replay_is_idempotent(
             winning_exposures = await repository.get_candidate_exposures(competing_review_id)
             assert len(winning_exposures) == 1
             winning_exposure = winning_exposures[0]
-            expected_exposure = competing_exposures[0]
+            expected_exposure = competing_exposures[winning_index]
             for field in (
                 "review_id",
                 "candidate_id",
