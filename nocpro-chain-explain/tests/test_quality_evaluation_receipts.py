@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
-from unittest.mock import AsyncMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -34,6 +35,7 @@ def test_revision_is_canonical_and_excludes_publication_metadata():
     assert _receipt_revision(shuffled, refs) == revision
     assert _receipt_revision({**assessment, "score": 0.82532}, refs) != revision
     assert _receipt_revision(assessment, {**refs, "review_artifact_fingerprint": "b" * 64}) != revision
+    assert _receipt_revision(assessment, {**refs, "review_result_fingerprint": "c" * 64}) != revision
     assert _receipt_revision(assessment, {**refs, "review_job_id": "new-job"}) == revision
     assert _receipt_revision({**assessment, "readiness_policy_version": "quality-readiness-v2"}, refs) != revision
 
@@ -82,6 +84,8 @@ def test_verified_receipt_requires_exact_source_and_preserves_precision():
             "input_fingerprint": identity["input_fingerprint"],
             "assessment_version": "HEURISTIC_V1", "assessment": _assessment(),
             "overview_projection": projection, "counterfactual_job_id": "job-1",
+            "review_result": {"review": "complete"},
+            "deep_dive_result": None,
         }
         from nocpro_api.persistence.models import CounterfactualJobRecord
         review = CounterfactualJobRecord(
@@ -100,8 +104,22 @@ def test_verified_receipt_requires_exact_source_and_preserves_precision():
         }
         assert receipt["source_artifact_refs"]["audit_artifact_id"] is None
         assert receipt["source_artifact_refs"]["audit_artifact_fingerprint"] is None
+        assert receipt["source_artifact_refs"]["review_result_fingerprint"] == _canonical_sha256(review.result_payload)
+        assert receipt["source_artifact_refs"]["deep_dive_result_fingerprint"] is None
         assert receipt["identity_digest"] == _canonical_sha256(identity)
         assert receipt["artifact_revision"] == _receipt_revision(receipt["assessment"], receipt["source_artifact_refs"])
+        unavailable_assessment = {
+            **payload["assessment"], "status": "UNAVAILABLE", "readiness": "INSUFFICIENT",
+            "stars": None, "score": None, "dimensions": [],
+            "available_dimension_count": 0,
+            "reason_codes": ["INSUFFICIENT_INDEPENDENT_EVIDENCE"],
+        }
+        unavailable = await repository._verified_quality_receipt_values(
+            session, {**payload, "assessment": unavailable_assessment}
+        )
+        assert unavailable is not None
+        assert unavailable["assessment"]["status"] == "UNAVAILABLE"
+        assert unavailable["assessment"]["reason_codes"] == ["INSUFFICIENT_INDEPENDENT_EVIDENCE"]
         for incomplete in (
             {"score": None}, {"dimensions": []},
             {"score": float("nan")},
@@ -120,6 +138,54 @@ def test_verified_receipt_requires_exact_source_and_preserves_precision():
         assert await repository._verified_quality_receipt_values(session, payload) is None
         session.get.return_value = None
         assert await repository._verified_quality_receipt_values(session, payload) is None
+        session.get.return_value = review
+        review.status = "SUCCEEDED"
+        changed_result = {**payload, "review_result": {"review": "changed"}}
+        assert await repository._verified_quality_receipt_values(session, changed_result) is None
+        assert await repository._verified_quality_receipt_values(
+            session, {key: value for key, value in payload.items() if key != "review_result"}
+        ) is None
+        review.result_payload = {"review": "different"}
+        assert await repository._verified_quality_receipt_values(session, payload) is None
+        review.result_payload = {"review": "complete"}
+
+        from nocpro_api.persistence.models import DeepDiveJobRecord
+        deep = DeepDiveJobRecord(
+            job_id="deep-1", snapshot_id="s1", snapshot_version="v1", chain_id="c1",
+            cache_fingerprint="d" * 64, analysis_config_version="cfg-1",
+            topology_version="topo-1", status="SUCCEEDED", progress_percent=100,
+            cache_hit=False, result_payload={"analysis": {"value": 1}},
+        )
+        with_deep = deepcopy(payload)
+        with_deep["deep_dive_job_id"] = deep.job_id
+        with_deep["deep_dive_result"] = deepcopy(deep.result_payload)
+        deep_source = {
+            **source, "deep_dive_job_id": deep.job_id,
+            "deep_dive_cache_fingerprint": deep.cache_fingerprint,
+        }
+        with_deep["input_fingerprint"] = _canonical_sha256(deep_source)
+        with_deep["overview_projection"]["input_fingerprint"] = with_deep["input_fingerprint"]
+        with_deep["overview_projection"]["analysis_identity"]["input_fingerprint"] = with_deep["input_fingerprint"]
+
+        async def source_row(model, key):
+            if model is CounterfactualJobRecord:
+                return review
+            if model is DeepDiveJobRecord:
+                return deep
+            return None
+
+        session.get.side_effect = source_row
+        deep_receipt = await repository._verified_quality_receipt_values(session, with_deep)
+        assert deep_receipt is not None
+        assert deep_receipt["source_artifact_refs"]["deep_dive_result_fingerprint"] == _canonical_sha256(deep.result_payload)
+        deep.result_payload = {"analysis": {"value": 2}}
+        assert await repository._verified_quality_receipt_values(session, with_deep) is None
+        with_deep["deep_dive_result"] = deepcopy(deep.result_payload)
+        changed_deep_receipt = await repository._verified_quality_receipt_values(session, with_deep)
+        assert changed_deep_receipt is not None
+        assert changed_deep_receipt["artifact_revision"] != deep_receipt["artifact_revision"]
+        session.get.side_effect = None
+        session.get.return_value = review
 
         from audit import AuditVerdict, StructuralAuditResult
         from tier2.audit_artifact import (
@@ -215,6 +281,97 @@ def test_verified_receipt_requires_exact_source_and_preserves_precision():
     asyncio.run(exercise())
 
 
+def test_missing_receipt_blocks_quality_before_any_write():
+    async def exercise():
+        sessions = MagicMock()
+        session = sessions.begin.return_value.__aenter__.return_value
+        repository = SnapshotRepository(sessions)
+        repository._verified_quality_receipt_values = AsyncMock(return_value=None)
+        payload = {
+            "snapshot_id": "s1", "snapshot_version": "v1", "chain_id": "c1",
+            "input_fingerprint": "a" * 64, "assessment_version": "HEURISTIC_V1",
+            "assessment": _assessment(),
+        }
+        with pytest.raises(RuntimeError, match="quality receipt provenance unavailable"):
+            await repository.persist_chain_quality_assessment(payload)
+        session.execute.assert_not_awaited()
+
+    asyncio.run(exercise())
+
+
+def test_succeeded_job_result_replay_is_immutable_on_both_review_write_paths():
+    from nocpro_api.persistence.models import CounterfactualJobRecord, DeepDiveJobRecord
+
+    async def exercise():
+        sessions = MagicMock()
+        session = sessions.begin.return_value.__aenter__.return_value
+        repository = SnapshotRepository(sessions)
+        review_payload = {
+            "job_id": "review-1", "snapshot_id": "s1", "snapshot_version": "v1",
+            "chain_id": "c1", "cache_fingerprint": "a" * 64,
+            "identity": {"id": "one"}, "status": "SUCCEEDED",
+            "progress_percent": 100, "cache_hit": False,
+            "result": {"facts": {"a": 1, "b": 2}},
+        }
+        review = CounterfactualJobRecord(
+            job_id="review-1", snapshot_id="s1", snapshot_version="v1",
+            chain_id="c1", cache_fingerprint="a" * 64,
+            identity_payload={"id": "one"}, status="SUCCEEDED", progress_percent=100,
+            cache_hit=False, result_payload={"facts": {"b": 2, "a": 1}},
+        )
+        deep_payload = {
+            "job_id": "deep-1", "snapshot_id": "s1", "snapshot_version": "v1",
+            "chain_id": "c1", "cache_fingerprint": "b" * 64,
+            "analysis_config_version": "cfg-1", "topology_version": "topo-1",
+            "status": "SUCCEEDED", "progress_percent": 100, "cache_hit": False,
+            "result": {"analysis": 1},
+        }
+        deep = DeepDiveJobRecord(
+            job_id="deep-1", snapshot_id="s1", snapshot_version="v1",
+            chain_id="c1", cache_fingerprint="b" * 64,
+            analysis_config_version="cfg-1", topology_version="topo-1",
+            status="SUCCEEDED", progress_percent=100, cache_hit=False,
+            result_payload={"analysis": 1},
+        )
+
+        async def row(model, key, **kwargs):
+            return review if model is CounterfactualJobRecord else deep
+
+        session.get.side_effect = row
+        repository.counterfactual_job = AsyncMock(return_value=repository._stored_counterfactual(review))
+        repository.deep_dive_job = AsyncMock(return_value=repository._stored_deep_dive(deep))
+        assert (await repository.persist_counterfactual_job(review_payload)).result == review.result_payload
+        assert (await repository.persist_deep_dive_job(deep_payload)).result == deep.result_payload
+        session.execute.assert_not_awaited()
+        with pytest.raises(ValueError, match="result integrity conflict"):
+            await repository.persist_counterfactual_job({**review_payload, "result": {"facts": {"a": 9}}})
+        with pytest.raises(ValueError, match="result integrity conflict"):
+            await repository.persist_deep_dive_job({**deep_payload, "result": {"analysis": 9}})
+        with pytest.raises(ValueError, match="result integrity conflict"):
+            await repository.persist_succeeded_job_and_review_bundle(
+                {**review_payload, "result": {"facts": {"a": 9}}}, None, ()
+            )
+        from nocpro_api.persistence.models import ReviewSessionModel
+        bundle = SimpleNamespace(
+            review_id="bundle-1", candidate_set_fingerprint="c" * 64,
+            snapshot_id="s1", snapshot_version="v1", chain_id="c1",
+            lineage_component_id=None,
+        )
+        async def bundle_row(model, key, **kwargs):
+            if model is CounterfactualJobRecord:
+                return review
+            if model is ReviewSessionModel:
+                return bundle
+            return None
+        session.get.side_effect = bundle_row
+        session.scalars = AsyncMock(return_value=MagicMock(all=MagicMock(return_value=[])))
+        await repository.persist_succeeded_job_and_review_bundle(review_payload, bundle, ())
+        assert review.result_payload == {"facts": {"b": 2, "a": 1}}
+        session.execute.assert_not_awaited()
+
+    asyncio.run(exercise())
+
+
 @pytest.mark.postgres
 def test_postgres_receipt_replay_conflict_and_quality_journal_are_atomic(monkeypatch):
     """Runs only against the explicitly configured local PostgreSQL test DB."""
@@ -233,6 +390,7 @@ def test_postgres_receipt_replay_conflict_and_quality_journal_are_atomic(monkeyp
     from nocpro_api.persistence.models import (
         Base, ChainQualityAssessmentRecord, ChangeEventClockModel,
         ChangeEventModel, QualityEvaluationReceiptRecord,
+        CounterfactualJobRecord, DeepDiveJobRecord,
     )
     import os
     from sqlalchemy.engine import make_url
@@ -259,6 +417,7 @@ def test_postgres_receipt_replay_conflict_and_quality_journal_are_atomic(monkeyp
                 await connection.run_sync(lambda sync: Base.metadata.create_all(sync, tables=[
                     ChainQualityAssessmentRecord.__table__,
                     ChangeEventClockModel.__table__, ChangeEventModel.__table__,
+                    CounterfactualJobRecord.__table__, DeepDiveJobRecord.__table__,
                 ]))
                 await connection.execute(text(f'SET LOCAL search_path TO "{schema}"'))
                 migration_config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
@@ -292,9 +451,52 @@ def test_postgres_receipt_replay_conflict_and_quality_journal_are_atomic(monkeyp
                 "source_artifact_refs": {"review_artifact_fingerprint": "a" * 64},
             }
             repository._verified_quality_receipt_values = AsyncMock(return_value=receipt)
+            repository._verified_quality_receipt_values.return_value = None
+            with pytest.raises(RuntimeError, match="quality receipt provenance unavailable"):
+                await repository.persist_chain_quality_assessment(payload)
+            assert await repository.chain_quality_assessment(
+                snapshot_id="s1", snapshot_version="v1", chain_id="c1"
+            ) is None
+            assert (await journal_position(sessions)).revision == 0
+            assert await repository.list_quality_evaluation_receipts(identity_digest=receipt["identity_digest"]) == []
+            repository._verified_quality_receipt_values.return_value = receipt
             await repository.persist_chain_quality_assessment(payload)
             assert len(await repository.list_quality_evaluation_receipts(identity_digest=receipt["identity_digest"])) == 1
             assert (await journal_position(sessions)).revision == 1
+
+            for writer, reader, job_payload in (
+                (repository.persist_counterfactual_job, repository.counterfactual_job, {
+                    "job_id": uuid4().hex, "snapshot_id": "s1", "snapshot_version": "v1",
+                    "chain_id": "c1", "cache_fingerprint": "a" * 64,
+                    "identity": {"source": "review"}, "status": "SUCCEEDED",
+                    "progress_percent": 100, "cache_hit": False,
+                    "result": {"facts": {"a": 1, "b": 2}},
+                }),
+                (repository.persist_deep_dive_job, repository.deep_dive_job, {
+                    "job_id": uuid4().hex, "snapshot_id": "s1", "snapshot_version": "v1",
+                    "chain_id": "c1", "cache_fingerprint": "b" * 64,
+                    "analysis_config_version": "cfg-1", "topology_version": "topo-1",
+                    "status": "SUCCEEDED", "progress_percent": 100, "cache_hit": False,
+                    "result": {"facts": {"a": 1, "b": 2}},
+                }),
+            ):
+                await writer(job_payload)
+                replay = {**job_payload, "result": {"facts": {"b": 2, "a": 1}}}
+                await writer(replay)
+                with pytest.raises(ValueError, match="result integrity conflict"):
+                    await writer({**job_payload, "result": {"facts": {"a": 9}}})
+                assert (await reader(job_payload["job_id"])).result == job_payload["result"]
+
+            repository._verified_quality_receipt_values.return_value = None
+            with pytest.raises(RuntimeError, match="quality receipt provenance unavailable"):
+                await repository.persist_chain_quality_assessment(
+                    {**payload, "assessment": {**_assessment(), "stars": 3}}
+                )
+            assert (await journal_position(sessions)).revision == 1
+            assert (await repository.chain_quality_assessment(
+                snapshot_id="s1", snapshot_version="v1", chain_id="c1"
+            )).stars == 4
+            repository._verified_quality_receipt_values.return_value = receipt
             for mutation in (
                 update(QualityEvaluationReceiptRecord).where(
                     QualityEvaluationReceiptRecord.receipt_id == receipt["receipt_id"]

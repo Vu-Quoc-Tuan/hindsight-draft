@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -17,10 +18,11 @@ from nocpro_api.persistence.change_journal import (
 from nocpro_api.persistence.models import (
     Base,
     ChainQualityAssessmentRecord,
+    QualityEvaluationReceiptRecord,
     ChangeEventClockModel,
     ChangeEventModel,
 )
-from nocpro_api.persistence.repository import SnapshotRepository
+from nocpro_api.persistence.repository import SnapshotRepository, _canonical_sha256
 
 
 pytestmark = pytest.mark.postgres
@@ -61,6 +63,7 @@ async def _create_test_schema(database_url: str, *, include_quality: bool = Fals
         ]
         if include_quality:
             tables.append(ChainQualityAssessmentRecord.__table__)
+            tables.append(QualityEvaluationReceiptRecord.__table__)
         async with scoped_engine.begin() as connection:
             await connection.run_sync(
                 lambda sync_connection: Base.metadata.create_all(
@@ -231,6 +234,18 @@ def test_postgres_quality_replay_does_not_publish_duplicate_terminal_events(
                 "counterfactual_job_id": None,
                 "recommendation_status": "NO_CLEAR_ALTERNATIVE",
             }
+            def verified_receipt(_session, materialization):
+                assessment = materialization["assessment"]
+                return {
+                    "receipt_id": uuid4().hex,
+                    "identity_digest": _canonical_sha256(identity),
+                    "artifact_revision": _canonical_sha256(assessment),
+                    "analysis_identity": identity,
+                    "assessment": assessment,
+                    "source_artifact_refs": {"test_source_fingerprint": "a" * 64},
+                }
+
+            repository._verified_quality_receipt_values = AsyncMock(side_effect=verified_receipt)
             await repository.persist_chain_quality_assessment(payload)
             after_first = await journal_position(sessions)
             await repository.persist_chain_quality_assessment(payload)

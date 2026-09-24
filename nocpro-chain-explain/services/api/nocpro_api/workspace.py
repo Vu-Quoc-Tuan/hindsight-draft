@@ -52,6 +52,7 @@ from tier2 import (
     ReviewAuditArtifact,
     SimilarityQueryContext,
     Tier2JobManager,
+    Tier2JobView,
     chain_membership_fingerprint,
     unavailable_audit_visualization,
 )
@@ -813,8 +814,13 @@ class Workspace:
             deep_dive_view = None
         if deep_dive_view is None and self.repository is not None:
             deep_dive_view = await self.latest_deep_dive(chain_id)
-        deep_dive_analysis = (
-            deep_dive_view.result if deep_dive_view is not None else None
+        from .serializers import job_view
+
+        deep_dive_analysis = deep_dive_view.result if deep_dive_view is not None else None
+        deep_dive_source_result = (
+            deep_dive_analysis if isinstance(deep_dive_analysis, dict)
+            else job_view(deep_dive_view).model_dump(mode="json")["result"]
+            if isinstance(deep_dive_view, Tier2JobView) else None
         )
         audit_artifact = getattr(deep_dive_view, "audit_artifact", None)
         # The in-memory Tier-2 view carries the Audit artifact directly, but a
@@ -827,18 +833,12 @@ class Workspace:
             audit_artifact = audit_lookup.audit_artifact
         if audit_artifact is not None:
             await self.flush_audit_persistence()
-        # Repository-backed review jobs already contain the public JSON
-        # projection.  In-memory jobs still expose the immutable domain
-        # result, so project only that shape instead of attempting to treat a
-        # persisted dict as a domain object during startup reconciliation.
+        # Use the same public JSON stored by the Review job writer for both
+        # quality inputs and the receipt's exact source comparison.
         review_result = (
             dict(review_view.result)
             if isinstance(review_view.result, dict)
-            else public_review_result(
-                review_view.result,
-                package=package,
-                language="vi",
-            )
+            else public_review_result(review_view.result)
         )
         from .cohesion_advisor import (
             CHAIN_QUALITY_PIPELINE_VERSION,
@@ -1017,6 +1017,8 @@ class Workspace:
                     recommendations.get("status") or "NOT_EVALUATED"
                 ),
                 "assessment": assessment,
+                "review_result": review_result,
+                "deep_dive_result": deep_dive_source_result,
                 "overview_projection": projection_payload,
                 "chain_membership_fingerprint": chain_membership_fingerprint(
                     package.members_of(chain_id)

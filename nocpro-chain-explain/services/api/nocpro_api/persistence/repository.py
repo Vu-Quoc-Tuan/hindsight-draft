@@ -110,6 +110,18 @@ def _canonical_sha256(value: Any) -> str:
     ).hexdigest()
 
 
+def _assert_succeeded_result_replay(existing: Any, values: dict[str, Any], kind: str) -> None:
+    """A successful source job can be replayed, but its result cannot change."""
+    if existing.status == "SUCCEEDED" and values["status"] == "SUCCEEDED":
+        if (
+            existing.result_payload is None
+            or values["result_payload"] is None
+            or _canonical_sha256(existing.result_payload)
+            != _canonical_sha256(values["result_payload"])
+        ):
+            raise ValueError(f"{kind} result integrity conflict after SUCCEEDED")
+
+
 def _receipt_revision(assessment: dict[str, Any], source_refs: dict[str, Any]) -> str:
     """Hash stable assessment facts and exact sources, never publication metadata."""
     def stable(value: Any) -> Any:
@@ -609,6 +621,8 @@ class SnapshotRepository:
         status_rank = {"QUEUED": 0, "RUNNING": 1, "SUCCEEDED": 2, "FAILED": 2}
         if payload["status"] not in status_rank:
             raise ValueError("unknown counterfactual job status")
+        if payload["status"] == "SUCCEEDED" and payload.get("result") is None:
+            raise ValueError("successful counterfactual job must persist a result")
         values = {
             "job_id": payload["job_id"],
             "snapshot_id": payload["snapshot_id"],
@@ -643,6 +657,9 @@ class SnapshotRepository:
                 )
                 if immutable != proposed:
                     raise ValueError("counterfactual job identity is immutable")
+                _assert_succeeded_result_replay(existing, values, "counterfactual job")
+                if existing.status == "SUCCEEDED" and values["status"] == "SUCCEEDED":
+                    return self._stored_counterfactual(existing)
                 if status_rank[existing.status] > status_rank[values["status"]]:
                     return self._stored_counterfactual(existing)
                 if (
@@ -673,15 +690,33 @@ class SnapshotRepository:
                     "error": statement.excluded.error,
                     "updated_at": func.now(),
                 },
-                where=or_(
-                    incoming_rank > existing_rank,
-                    and_(
-                        incoming_rank == existing_rank,
-                        CounterfactualJobRecord.status == statement.excluded.status,
+                where=and_(
+                    CounterfactualJobRecord.status != "SUCCEEDED",
+                    or_(
+                        incoming_rank > existing_rank,
+                        and_(
+                            incoming_rank == existing_rank,
+                            CounterfactualJobRecord.status == statement.excluded.status,
+                        ),
                     ),
                 ),
-            )
-            await session.execute(statement)
+            ).returning(CounterfactualJobRecord.job_id)
+            written = (await session.execute(statement)).scalar_one_or_none()
+            if written is None:
+                current = await session.get(
+                    CounterfactualJobRecord, payload["job_id"], with_for_update=True
+                )
+                if current is None:
+                    raise RuntimeError("counterfactual job upsert conflict without source row")
+                if (
+                    current.snapshot_id, current.snapshot_version, current.chain_id,
+                    current.cache_fingerprint, current.identity_payload,
+                ) != (
+                    values["snapshot_id"], values["snapshot_version"], values["chain_id"],
+                    values["cache_fingerprint"], values["identity_payload"],
+                ):
+                    raise ValueError("counterfactual job identity is immutable")
+                _assert_succeeded_result_replay(current, values, "counterfactual job")
         stored = await self.counterfactual_job(payload["job_id"])
         if stored is None:
             raise RuntimeError("persisted counterfactual job is unavailable")
@@ -742,6 +777,9 @@ class SnapshotRepository:
                 )
                 if immutable != proposed:
                     raise ValueError("Deep Dive job identity is immutable")
+                _assert_succeeded_result_replay(existing, values, "Deep Dive job")
+                if existing.status == "SUCCEEDED" and values["status"] == "SUCCEEDED":
+                    return self._stored_deep_dive(existing)
                 if status_rank[existing.status] > status_rank[values["status"]]:
                     return self._stored_deep_dive(existing)
                 if (
@@ -782,15 +820,35 @@ class SnapshotRepository:
                     "error": statement.excluded.error,
                     "updated_at": func.now(),
                 },
-                where=or_(
-                    incoming_rank > existing_rank,
-                    and_(
-                        incoming_rank == existing_rank,
-                        DeepDiveJobRecord.status == statement.excluded.status,
+                where=and_(
+                    DeepDiveJobRecord.status != "SUCCEEDED",
+                    or_(
+                        incoming_rank > existing_rank,
+                        and_(
+                            incoming_rank == existing_rank,
+                            DeepDiveJobRecord.status == statement.excluded.status,
+                        ),
                     ),
                 ),
-            )
-            await session.execute(statement)
+            ).returning(DeepDiveJobRecord.job_id)
+            written = (await session.execute(statement)).scalar_one_or_none()
+            if written is None:
+                current = await session.get(
+                    DeepDiveJobRecord, payload["job_id"], with_for_update=True
+                )
+                if current is None:
+                    raise RuntimeError("Deep Dive job upsert conflict without source row")
+                if (
+                    current.snapshot_id, current.snapshot_version, current.chain_id,
+                    current.cache_fingerprint, current.analysis_config_version,
+                    current.topology_version,
+                ) != (
+                    values["snapshot_id"], values["snapshot_version"], values["chain_id"],
+                    values["cache_fingerprint"], values["analysis_config_version"],
+                    values["topology_version"],
+                ):
+                    raise ValueError("Deep Dive job identity is immutable")
+                _assert_succeeded_result_replay(current, values, "Deep Dive job")
         stored = await self.deep_dive_job(payload["job_id"])
         if stored is None:
             raise RuntimeError("persisted Deep Dive job is unavailable")
@@ -1025,32 +1083,33 @@ class SnapshotRepository:
         )
         async with self.sessions.begin() as session:
             receipt_values = await self._verified_quality_receipt_values(session, payload)
+            if receipt_values is None:
+                raise RuntimeError("quality receipt provenance unavailable")
             changed_chain_id = (
                 await session.execute(
                     statement.returning(ChainQualityAssessmentRecord.chain_id)
                 )
             ).scalar_one_or_none()
-            if receipt_values is not None:
-                receipt_insert = pg_insert(QualityEvaluationReceiptRecord).values(**receipt_values)
-                inserted = (await session.execute(
-                    receipt_insert.on_conflict_do_nothing(
-                        index_elements=[
-                            QualityEvaluationReceiptRecord.identity_digest,
-                            QualityEvaluationReceiptRecord.artifact_revision,
-                        ]
-                    ).returning(QualityEvaluationReceiptRecord.receipt_id)
-                )).scalar_one_or_none()
-                if inserted is None:
-                    existing = (await session.execute(
-                        select(QualityEvaluationReceiptRecord).where(
-                            QualityEvaluationReceiptRecord.identity_digest == receipt_values["identity_digest"],
-                            QualityEvaluationReceiptRecord.artifact_revision == receipt_values["artifact_revision"],
-                        )
-                    )).scalar_one()
-                    if any(getattr(existing, key) != receipt_values[key] for key in (
-                        "analysis_identity", "assessment", "source_artifact_refs"
-                    )):
-                        raise RuntimeError("quality receipt integrity conflict")
+            receipt_insert = pg_insert(QualityEvaluationReceiptRecord).values(**receipt_values)
+            inserted = (await session.execute(
+                receipt_insert.on_conflict_do_nothing(
+                    index_elements=[
+                        QualityEvaluationReceiptRecord.identity_digest,
+                        QualityEvaluationReceiptRecord.artifact_revision,
+                    ]
+                ).returning(QualityEvaluationReceiptRecord.receipt_id)
+            )).scalar_one_or_none()
+            if inserted is None:
+                existing = (await session.execute(
+                    select(QualityEvaluationReceiptRecord).where(
+                        QualityEvaluationReceiptRecord.identity_digest == receipt_values["identity_digest"],
+                        QualityEvaluationReceiptRecord.artifact_revision == receipt_values["artifact_revision"],
+                    )
+                )).scalar_one()
+                if any(getattr(existing, key) != receipt_values[key] for key in (
+                    "analysis_identity", "assessment", "source_artifact_refs"
+                )):
+                    raise RuntimeError("quality receipt integrity conflict")
             if changed_chain_id is not None:
                 projection = persisted_payload.get("overview_projection")
                 adapted = analysis_identity_from_projection(projection)
@@ -1155,6 +1214,15 @@ class SnapshotRepository:
             or revision_ref.get("fingerprint") != review.cache_fingerprint
         ):
             return None
+        review_result = payload.get("review_result")
+        if not isinstance(review_result, dict):
+            return None
+        try:
+            review_result_fingerprint = _canonical_sha256(review.result_payload)
+            if _canonical_sha256(review_result) != review_result_fingerprint:
+                return None
+        except (TypeError, ValueError):
+            return None
         review_identity = analysis_identity_from_review(
             review.identity_payload,
             pipeline_version=str(review.identity_payload.get("engine_version") or ""),
@@ -1173,6 +1241,7 @@ class SnapshotRepository:
             return None
         deep_id = payload.get("deep_dive_job_id")
         deep_fingerprint = None
+        deep_result_fingerprint = None
         if deep_id is not None:
             deep = await session.get(DeepDiveJobRecord, deep_id)
             if (
@@ -1184,6 +1253,17 @@ class SnapshotRepository:
             ):
                 return None
             deep_fingerprint = deep.cache_fingerprint
+            deep_result = payload.get("deep_dive_result")
+            if not isinstance(deep_result, dict):
+                return None
+            try:
+                deep_result_fingerprint = _canonical_sha256(deep.result_payload)
+                if _canonical_sha256(deep_result) != deep_result_fingerprint:
+                    return None
+            except (TypeError, ValueError):
+                return None
+        elif payload.get("deep_dive_result") is not None:
+            return None
         fingerprint_payload = {
             "pipeline_version": identity.pipeline_version,
             "config_version": identity.analysis_config_version,
@@ -1276,9 +1356,11 @@ class SnapshotRepository:
             "quality_input_fingerprint": identity.input_fingerprint,
             "review_job_id": job_id,
             "review_artifact_fingerprint": review.cache_fingerprint,
+            "review_result_fingerprint": review_result_fingerprint,
             "tier1b_artifact_fingerprint": review_identity.identity.input_fingerprint,
             "deep_dive_job_id": deep_id,
             "deep_dive_cache_fingerprint": deep_fingerprint,
+            "deep_dive_result_fingerprint": deep_result_fingerprint,
             "audit_artifact_id": audit_id,
             "audit_artifact_fingerprint": audit_fingerprint,
         }
@@ -1545,8 +1627,10 @@ class SnapshotRepository:
                     raise ValueError(
                         f"Job {job_payload['job_id']}: identity attributes are immutable"
                     )
-                for key, val in job_values.items():
-                    setattr(existing_job, key, val)
+                _assert_succeeded_result_replay(existing_job, job_values, "counterfactual job")
+                if existing_job.status != "SUCCEEDED":
+                    for key, val in job_values.items():
+                        setattr(existing_job, key, val)
             else:
                 db_session.add(CounterfactualJobRecord(**job_values))
 
