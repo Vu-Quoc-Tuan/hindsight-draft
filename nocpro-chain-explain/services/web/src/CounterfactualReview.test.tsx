@@ -198,7 +198,7 @@ describe('CounterfactualReview', () => {
     expect(html).toContain('2 supported blocks')
   })
 
-  it('renders interactive operator feedback buttons only for Pareto recommendations', () => {
+  it('renders interactive operator feedback buttons for every evaluated candidate', () => {
     const recommendedJob: CounterfactualJob = {
       ...job,
       result: job.result
@@ -215,12 +215,19 @@ describe('CounterfactualReview', () => {
     expect(html).toContain('Từ chối đề xuất')
   })
 
-  it('restricts feedback buttons and shows notice on non-recommended candidates', () => {
-    const html = renderToStaticMarkup(<CounterfactualReview chainId="C1" initialJob={job} />)
+  it('allows operator feedback on an evaluated non-recommended candidate', () => {
+    const html = renderToStaticMarkup(
+      <CounterfactualReview
+        chainId="C1"
+        initialJob={job}
+        onFeedbackSubmit={async () => {}}
+      />
+    )
 
-    expect(html).not.toContain('Phản hồi chuyên gia (Operator Feedback):')
-    expect(html).not.toContain('Chấp thuận đề xuất')
-    expect(html).toContain(
+    expect(html).toContain('Phản hồi chuyên gia (Operator Feedback):')
+    expect(html).toContain('Chấp thuận đề xuất')
+    expect(html).toContain('Từ chối đề xuất')
+    expect(html).not.toContain(
       'Chỉ các đề xuất thuộc biên Pareto (recommendation) mới mở tiếp nhận phản hồi vận hành.'
     )
   })
@@ -249,7 +256,7 @@ describe('CounterfactualReview', () => {
       chain_id: 'C1',
       candidate_id: 'remove-X',
       operation: 'REMOVE_MEMBER',
-      decision: 'APPROVED' as const,
+      decision: 'APPROVE' as const,
       operator_id: 'lead_engineer_viettel',
       reason: 'Đã xác minh không liên quan tuyến truyền dẫn',
       partition_delta: { before: [], after: [] },
@@ -265,8 +272,11 @@ describe('CounterfactualReview', () => {
     )
 
     expect(html).toContain('ĐÃ CHẤP THUẬN ĐỀ XUẤT')
+    expect(html).toContain('review-feedback-verdict--approved')
     expect(html).toContain('lead_engineer_viettel')
     expect(html).toContain('Đã xác minh không liên quan tuyến truyền dẫn')
+    expect(html).toContain('Sửa đánh giá')
+    expect(html).toContain('Thu hồi')
     expect(html).toContain('Proposal only')
     expect(html).not.toContain('gửi lệnh NocPro live')
     expect(html).not.toContain('Từ chối đề xuất')

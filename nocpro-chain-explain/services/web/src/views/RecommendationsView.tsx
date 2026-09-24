@@ -2,23 +2,31 @@ import { useState } from 'react'
 import { CounterfactualReview } from '../CounterfactualReview'
 
 import { ValidationView } from './ValidationView'
-import type { ChainAnalysis } from '../types'
+import type { ChainAnalysis, CounterfactualJob } from '../types'
 import { InfoTip } from '../components/InfoTip'
 import { ExplainClarityComparisonModal } from '../components/ExplainClarityComparisonModal'
 import { ManualChainSplitModal } from '../components/ManualChainSplitModal'
 
 export function RecommendationsView({
   analysis,
+  snapshotId,
+  snapshotVersion,
+  topologyVersion,
   readOnly = false,
   initialSubTab = 'recommendations',
   onOpenReviewLearning,
   onThresholdApplied,
+  onReviewSucceeded,
 }: {
   analysis: ChainAnalysis
+  snapshotId?: string | null
+  snapshotVersion?: string | null
+  topologyVersion?: string | null
   readOnly?: boolean
   initialSubTab?: 'recommendations' | 'validation'
   onOpenReviewLearning?: () => void
   onThresholdApplied?: () => void
+  onReviewSucceeded?: (job: CounterfactualJob) => void
 }) {
   const [prevInitialSubTab, setPrevInitialSubTab] = useState(initialSubTab)
   const [activeTab, setActiveTab] = useState<'recommendations' | 'validation'>(initialSubTab)
@@ -115,18 +123,26 @@ export function RecommendationsView({
       {activeTab === 'recommendations' ? (
         <div className="overflow-hidden rounded-xl border border-surface-container-high bg-surface-container shadow-md">
           <CounterfactualReview
-            key={`${analysis.chain_id}-${reviewReloadKey}`}
+            key={`${snapshotId ?? 'NO_SNAPSHOT'}@${snapshotVersion ?? 'NO_VERSION'}#${topologyVersion ?? 'NO_TOPOLOGY'}-${analysis.chain_id}-${reviewReloadKey}`}
             chainId={analysis.chain_id}
+            snapshotId={snapshotId}
+            snapshotVersion={snapshotVersion}
+            topologyVersion={topologyVersion}
             readOnly={readOnly}
             hideHeader={true}
             onNavigateToValidation={() => setActiveTab('validation')}
             onOpenReviewLearning={onOpenReviewLearning}
             onOpenManualSplit={() => setShowManualSplitModal(true)}
+            onReviewSucceeded={onReviewSucceeded}
           />
         </div>
       ) : (
         <ValidationView
+          key={`${snapshotId ?? 'NO_SNAPSHOT'}@${snapshotVersion ?? 'NO_VERSION'}#${topologyVersion ?? 'NO_TOPOLOGY'}-${analysis.chain_id}`}
           analysis={analysis}
+          snapshotId={snapshotId}
+          snapshotVersion={snapshotVersion}
+          topologyVersion={topologyVersion}
           onOpenManualSplit={() => setShowManualSplitModal(true)}
         />
       )}

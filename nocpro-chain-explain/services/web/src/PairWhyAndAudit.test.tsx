@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest'
 
 import { AuditStructureView } from './views/AuditStructureView'
 import { ChainDetailView } from './views/ChainDetailView'
-import type { ChainAnalysis, DeepDive, Job } from './types'
+import { PairScopeView } from './views/why/PairScopeView'
+import type { ChainAnalysis, DeepDive, Job, PairWhy } from './types'
 
 const analysis: ChainAnalysis = {
   chain_id: 'C-REAL',
@@ -66,6 +67,90 @@ const deepDive = {
 } satisfies DeepDive
 
 describe('Pair WHY and structural Audit data truth', () => {
+  it('renders the backend Dep_hop witness as structural path evidence', () => {
+    const pairWhy: PairWhy = {
+      chain_id: 'C-REAL',
+      alarm_id_a: 'A',
+      alarm_id_b: 'B',
+      evidence: [{
+        channel_family: 'Dep_hop',
+        provider_id: 'Dep_hop',
+        dependency_semantic: null,
+        state: 'SUPPORT',
+        score: 0.5,
+        threshold: 0.25,
+        negative_score: 0,
+        detail: 'hop distance 1 over [\'IP_ADJACENCY\']',
+        derivation_tag: 'dependency_hop',
+        provenance_class: 'EXTERNAL_OPERATIONAL',
+        provenance_subtype: 'TOPOLOGY_EXTERNAL',
+        source_ref: 'topology.csv',
+        source_id: 'topology-1',
+        source_version: 'v4',
+        scenario_id: null,
+        generator_version: null,
+        evidence_metadata: {
+          topology_path: {
+            nodes: ['R1', 'R2'],
+            hop_count: 1,
+            relation_types: ['IP_ADJACENCY'],
+            traversal_semantic: 'STRUCTURAL_TOPOLOGY_PATH_NOT_CAUSAL',
+          },
+        },
+      }],
+      system_fact: { status: 'UNAVAILABLE', attribute_ref: null, raw_score: null, semantic: null },
+    }
+    const html = renderToStaticMarkup(
+      <PairScopeView
+        members={analysis.members}
+        selectedMemberIds={['A', 'B']}
+        setSelectedMemberIds={() => {}}
+        pairWhy={pairWhy}
+        pairWhyState="LOADED"
+        pairWhyReason={null}
+        onSwitchScope={() => {}}
+      />,
+    )
+
+    expect(html).toContain('R1 → R2')
+    expect(html).toContain('1 hop · IP_ADJACENCY')
+    expect(html).toContain('không xác nhận quan hệ nhân quả')
+  })
+
+  it('does not show a stale topology path for an unavailable WHY channel', () => {
+    const pairWhy: PairWhy = {
+      chain_id: 'C-REAL', alarm_id_a: 'A', alarm_id_b: 'B',
+      evidence: [{
+        channel_family: 'Dep_hop', provider_id: 'Dep_hop', dependency_semantic: null,
+        state: 'UNAVAILABLE', score: null, threshold: 0.25, negative_score: null,
+        detail: 'no path within D_max=3', derivation_tag: 'dependency_hop',
+        provenance_class: 'EXTERNAL_OPERATIONAL', provenance_subtype: 'TOPOLOGY_EXTERNAL',
+        source_ref: null, source_id: null, source_version: null, scenario_id: null,
+        generator_version: null,
+        evidence_metadata: {
+          topology_path: {
+            nodes: ['R1', 'R2'], hop_count: 1, relation_types: ['IP_ADJACENCY'],
+            traversal_semantic: 'STRUCTURAL_TOPOLOGY_PATH_NOT_CAUSAL',
+          },
+        },
+      }],
+      system_fact: { status: 'UNAVAILABLE', attribute_ref: null, raw_score: null, semantic: null },
+    }
+    const html = renderToStaticMarkup(
+      <PairScopeView
+        members={analysis.members}
+        selectedMemberIds={['A', 'B']}
+        setSelectedMemberIds={() => {}}
+        pairWhy={pairWhy}
+        pairWhyState="LOADED"
+        pairWhyReason={null}
+        onSwitchScope={() => {}}
+      />,
+    )
+
+    expect(html).not.toContain('Đường topology:')
+  })
+
   it('renders unavailable member values as N/A instead of invented values', () => {
     const html = renderToStaticMarkup(
       <ChainDetailView analysis={analysis} activeSubTab="MEMBERS" onSubTabChange={() => {}} />,
@@ -78,7 +163,9 @@ describe('Pair WHY and structural Audit data truth', () => {
   })
 
   it('does not fabricate a structural result before a Deep Dive exists', () => {
-    const html = renderToStaticMarkup(<AuditStructureView analysis={analysis} />)
+    const html = renderToStaticMarkup(
+      <AuditStructureView analysis={analysis} snapshotId="s1" snapshotVersion="1" />,
+    )
 
     expect(html).toContain('Structural Audit unavailable')
     expect(html).not.toContain('0.038')
@@ -86,8 +173,10 @@ describe('Pair WHY and structural Audit data truth', () => {
   })
 
   it('renders exact Audit and attribution fields from the matching job result', () => {
-    const job: Job = { job_id: 'J1', chain_id: 'C-REAL', status: 'SUCCEEDED', progress_percent: 100, cache_hit: false, result: deepDive, error: null }
-    const html = renderToStaticMarkup(<AuditStructureView analysis={analysis} job={job} />)
+    const job: Job = { job_id: 'J1', snapshot_id: 's1', snapshot_version: '1', chain_id: 'C-REAL', status: 'SUCCEEDED', progress_percent: 100, cache_hit: false, result: deepDive, error: null }
+    const html = renderToStaticMarkup(
+      <AuditStructureView analysis={analysis} snapshotId="s1" snapshotVersion="1" job={job} />,
+    )
 
     expect(html).toContain('SPLIT_CANDIDATE')
     expect(html).toContain('cut-real')
@@ -105,15 +194,33 @@ describe('Pair WHY and structural Audit data truth', () => {
       audit_artifact_id: null, audit_artifact_fingerprint: null,
       visualization: { ...deepDive.audit_visualization, status: 'UNAVAILABLE' as const, reason: 'AUDIT_ARTIFACT_NOT_AVAILABLE', shown_node_count: 0, shown_edge_count: 0, hidden_node_count: 2, hidden_edge_count: 1, truncated: true, nodes: [], edges: [] },
     }
-    const html = renderToStaticMarkup(<AuditStructureView analysis={analysis} auditVisualization={unavailable} />)
+    const html = renderToStaticMarkup(
+      <AuditStructureView analysis={analysis} snapshotId="s1" snapshotVersion="1" auditVisualization={unavailable} />,
+    )
 
     expect(html).toContain('AUDIT_ARTIFACT_NOT_AVAILABLE')
     expect(html).not.toContain('<svg')
   })
 
   it('rejects a completed result belonging to another chain context', () => {
-    const stale: Job = { job_id: 'J2', chain_id: 'C-OLD', status: 'SUCCEEDED', progress_percent: 100, cache_hit: false, result: { ...deepDive, chain_id: 'C-OLD' }, error: null }
-    const html = renderToStaticMarkup(<AuditStructureView analysis={analysis} job={stale} />)
+    const stale: Job = { job_id: 'J2', snapshot_id: 's1', snapshot_version: '1', chain_id: 'C-OLD', status: 'SUCCEEDED', progress_percent: 100, cache_hit: false, result: { ...deepDive, chain_id: 'C-OLD' }, error: null }
+    const html = renderToStaticMarkup(
+      <AuditStructureView analysis={analysis} snapshotId="s1" snapshotVersion="1" job={stale} />,
+    )
+
+    expect(html).toContain('Structural Audit unavailable')
+    expect(html).not.toContain('cut-real')
+  })
+
+  it('rejects a completed job from another snapshot with the same chain ID', () => {
+    const stale: Job = {
+      job_id: 'J3', snapshot_id: 'old-snapshot', snapshot_version: '1',
+      chain_id: 'C-REAL', status: 'SUCCEEDED', progress_percent: 100,
+      cache_hit: false, result: deepDive, error: null,
+    }
+    const html = renderToStaticMarkup(
+      <AuditStructureView analysis={analysis} snapshotId="s1" snapshotVersion="1" job={stale} />,
+    )
 
     expect(html).toContain('Structural Audit unavailable')
     expect(html).not.toContain('cut-real')

@@ -16,7 +16,9 @@ import type {
   OperatorFeedback,
   SimilarCaseRetrievalResult,
 } from './types'
-import { getConciseCandidateTitle } from './views/ValidationView'
+import { isReviewApproved } from './types'
+import { getConciseCandidateTitle } from './reviewPresentation'
+import { getCachedReviewJob, setCachedReviewJob } from './reviewJobCache'
 
 const metricLabels: Array<[keyof CounterfactualMetricVector, string]> = [
   ['weak_member_count', 'Số cảnh báo yếu (Weak)'],
@@ -51,6 +53,7 @@ function CandidateCard({
   feedback,
   jobId,
   onFeedbackSubmit,
+  onFeedbackRetract,
 }: {
   candidate: CounterfactualCandidate
   recommended: boolean
@@ -61,7 +64,9 @@ function CandidateCard({
     decision: 'APPROVED' | 'REJECTED',
     operatorId?: string,
     reason?: string,
+    supersedesFeedbackId?: string,
   ) => Promise<void>
+  onFeedbackRetract?: (candidateId: string, feedbackId: string) => Promise<void>
 }) {
   const status = candidate.evaluation_status ?? candidate.status ?? 'NOT_EVALUATED'
   const rejectionReason = candidate.hard_gate_result?.reason ?? candidate.reason
@@ -83,6 +88,7 @@ function CandidateCard({
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [retracting, setRetracting] = useState(false)
 
   const [showSimilarCases, setShowSimilarCases] = useState(false)
   const [loadingSimilar, setLoadingSimilar] = useState(false)
@@ -108,8 +114,27 @@ function CandidateCard({
 
   const handleOpenForm = (decision: 'APPROVED' | 'REJECTED') => {
     setSelectedDecision(decision)
+    setReason(feedback?.reason ?? '')
     setShowForm(true)
     setSubmitError(null)
+  }
+
+  const handleEdit = () => {
+    handleOpenForm(isReviewApproved(feedback?.decision) ? 'APPROVED' : 'REJECTED')
+  }
+
+  const handleRetract = async () => {
+    if (!feedback || !onFeedbackRetract) return
+    if (!window.confirm('Bạn có chắc muốn thu hồi phản hồi của phương án này? Lịch sử audit vẫn được giữ lại.')) return
+    setRetracting(true)
+    setSubmitError(null)
+    try {
+      await onFeedbackRetract(candidate.candidate_id, feedback.feedback_id)
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Không thể thu hồi phản hồi')
+    } finally {
+      setRetracting(false)
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -123,6 +148,7 @@ function CandidateCard({
         selectedDecision,
         operatorId,
         reason,
+        feedback?.feedback_id,
       )
       setShowForm(false)
     } catch (err) {
@@ -248,18 +274,28 @@ function CandidateCard({
       </div>
 
       {feedback ? (
-        <div className={`review-feedback-verdict review-feedback-verdict--${feedback.decision.toLowerCase()}`}>
+        <div className={`review-feedback-verdict review-feedback-verdict--${isReviewApproved(feedback.decision) ? 'approved' : 'rejected'}`}>
           <div className="review-feedback-verdict-header">
             <span className="review-feedback-badge">
-              {feedback.decision === 'APPROVED' ? '✓ ĐÃ CHẤP THUẬN ĐỀ XUẤT' : '✗ ĐÃ TỪ CHỐI ĐỀ XUẤT'}
+              {isReviewApproved(feedback.decision) ? '✓ ĐÃ CHẤP THUẬN ĐỀ XUẤT' : '✗ ĐÃ TỪ CHỐI ĐỀ XUẤT'}
             </span>
             <span className="review-feedback-operator">
               Kỹ sư: <strong>{feedback.operator_id}</strong>
             </span>
           </div>
           {feedback.reason ? <p className="review-feedback-reason">“{feedback.reason}”</p> : null}
+          {onFeedbackRetract ? (
+            <div className="review-feedback-actions">
+              <button type="button" className="review-btn-action review-btn-approve" onClick={handleEdit} disabled={retracting}>
+                ✎ Sửa đánh giá
+              </button>
+              <button type="button" className="review-btn-action review-btn-reject" onClick={() => void handleRetract()} disabled={retracting}>
+                {retracting ? 'Đang thu hồi…' : '↩ Thu hồi'}
+              </button>
+            </div>
+          ) : null}
         </div>
-      ) : recommended && onFeedbackSubmit ? (
+      ) : onFeedbackSubmit ? (
         showForm ? (
           <form className="review-feedback-form" onSubmit={handleSubmit}>
             <div className="review-feedback-form-title">
@@ -339,7 +375,7 @@ function CandidateCard({
         </div>
       ) : (
         <div className="review-feedback-non-recommended">
-          <small>Chỉ các đề xuất thuộc biên Pareto (recommendation) mới mở tiếp nhận phản hồi vận hành.</small>
+          <small>Chế độ xem hiện tại không mở ghi phản hồi vận hành; khi vào chế độ review, mọi phương án đã đánh giá đều có thể được chấp thuận hoặc từ chối.</small>
         </div>
       )}
 
@@ -472,6 +508,7 @@ function OperationSection({
   feedbacks,
   jobId,
   onFeedbackSubmit,
+  onFeedbackRetract,
 }: {
   operation: CounterfactualOperation
   recommendationIds: Set<string>
@@ -482,7 +519,9 @@ function OperationSection({
     decision: 'APPROVED' | 'REJECTED',
     operatorId?: string,
     reason?: string,
+    supersedesFeedbackId?: string,
   ) => Promise<void>
+  onFeedbackRetract?: (candidateId: string, feedbackId: string) => Promise<void>
 }) {
   const activeCandidates = operation.candidates.filter((candidate) => {
     const status = candidate.evaluation_status ?? candidate.status
@@ -520,6 +559,7 @@ function OperationSection({
             feedback={feedbacks[candidate.candidate_id]}
             jobId={jobId}
             onFeedbackSubmit={onFeedbackSubmit}
+            onFeedbackRetract={onFeedbackRetract}
           />
         ))}
         {rejectedCandidates.length > 0 ? (
@@ -533,6 +573,8 @@ function OperationSection({
                   recommended={false}
                   feedback={feedbacks[candidate.candidate_id]}
                   jobId={jobId}
+                  onFeedbackSubmit={onFeedbackSubmit}
+                  onFeedbackRetract={onFeedbackRetract}
                 />
               ))}
             </div>
@@ -542,36 +584,6 @@ function OperationSection({
       </div>
     </section>
   )
-}
-
-const reviewJobCache = new Map<string, CounterfactualJob>()
-
-export function getCachedReviewJob(chainId: string): CounterfactualJob | null {
-  if (reviewJobCache.has(chainId)) return reviewJobCache.get(chainId)!
-  if (typeof window !== 'undefined' && window.sessionStorage) {
-    try {
-      const raw = window.sessionStorage.getItem(`nocpro_review_${chainId}`)
-      if (raw) {
-        const parsed = JSON.parse(raw) as CounterfactualJob
-        reviewJobCache.set(chainId, parsed)
-        return parsed
-      }
-    } catch {
-      // ignore
-    }
-  }
-  return null
-}
-
-export function setCachedReviewJob(chainId: string, job: CounterfactualJob) {
-  reviewJobCache.set(chainId, job)
-  if (typeof window !== 'undefined' && window.sessionStorage) {
-    try {
-      window.sessionStorage.setItem(`nocpro_review_${chainId}`, JSON.stringify(job))
-    } catch {
-      // ignore
-    }
-  }
 }
 
 export function CounterfactualLoadingView({
@@ -626,6 +638,9 @@ export function CounterfactualLoadingView({
 
 export function CounterfactualReview({
   chainId,
+  snapshotId,
+  snapshotVersion,
+  topologyVersion,
   initialJob = null,
   initialFeedbacks = {},
   readOnly = false,
@@ -633,18 +648,42 @@ export function CounterfactualReview({
   onNavigateToValidation: _onNavigateToValidation,
   onOpenReviewLearning,
   onOpenManualSplit,
+  onReviewSucceeded,
+  onFeedbackSubmit: onFeedbackSubmitOverride,
+  onFeedbackRetract: onFeedbackRetractOverride,
 }: {
   chainId: string
+  snapshotId?: string | null
+  snapshotVersion?: string | null
+  topologyVersion?: string | null
   initialJob?: CounterfactualJob | null
   initialFeedbacks?: Record<string, OperatorFeedback>
-  /** Assistant navigation may only display persisted results; it never starts Review. */
+  /** Hosts may explicitly request a read-only view; normal app navigation keeps review actions enabled. */
   readOnly?: boolean
   hideHeader?: boolean
   onNavigateToValidation?: () => void
   onOpenReviewLearning?: () => void
   onOpenManualSplit?: () => void
+  onReviewSucceeded?: (job: CounterfactualJob) => void
+  /** Optional injection for review hosts/tests; normal usage persists through the built-in API handlers. */
+  onFeedbackSubmit?: (
+    candidateId: string,
+    decision: 'APPROVED' | 'REJECTED',
+    operatorId?: string,
+    reason?: string,
+    supersedesFeedbackId?: string,
+  ) => Promise<void>
+  onFeedbackRetract?: (candidateId: string, feedbackId: string) => Promise<void>
 }) {
-  const cachedInitial = initialJob ?? getCachedReviewJob(chainId)
+  const initialJobMatchesContext = initialJob != null
+    && initialJob.chain_id === chainId
+    && initialJob.identity?.chain_id === chainId
+    && (!snapshotId || initialJob.identity?.snapshot_id === snapshotId)
+    && (!snapshotVersion || initialJob.identity?.snapshot_version === snapshotVersion)
+    && (topologyVersion === undefined || initialJob.identity?.topology_version === topologyVersion)
+  const cachedInitial = initialJobMatchesContext
+    ? initialJob
+    : getCachedReviewJob(chainId, snapshotId, snapshotVersion, topologyVersion)
   const [job, setJob] = useState<CounterfactualJob | null>(cachedInitial)
   const [feedbacks, setFeedbacks] = useState<Record<string, OperatorFeedback>>(initialFeedbacks)
   const [manualFeedbacks, setManualFeedbacks] = useState<OperatorFeedback[]>([])
@@ -657,6 +696,7 @@ export function CounterfactualReview({
   const [copiedFeedbackId, setCopiedFeedbackId] = useState<string | null>(null)
   const [retractStatusMsg, setRetractStatusMsg] = useState<string | null>(null)
   const pollRetryCountRef = useRef(0)
+  const notifiedReviewJobIdRef = useRef<string | null>(null)
 
   const handleUndoManualCorrection = async (feedbackId: string) => {
     if (!job?.job_id) return
@@ -674,7 +714,9 @@ export function CounterfactualReview({
       setManualFeedbacks((prev) => prev.filter((fb) => fb.feedback_id !== feedbackId))
       setFeedbacks((prev) => {
         const next = { ...prev }
-        delete next[feedbackId]
+        for (const [candidateId, feedback] of Object.entries(next)) {
+          if (feedback.feedback_id === feedbackId) delete next[candidateId]
+        }
         return next
       })
       setRetractStatusMsg('Đã hủy thành công phương án phân hoạch.')
@@ -716,31 +758,48 @@ export function CounterfactualReview({
   }
 
   useEffect(() => {
-    if (initialJob?.chain_id === chainId) return
     const controller = new AbortController()
     async function load() {
       setNoPersistedReview(false)
       setError(null)
       try {
         let current: CounterfactualJob
-        try {
-          current = await api.latestReview(chainId, controller.signal)
-        } catch (cause) {
-          if (!(cause instanceof ApiError && cause.status === 404)) throw cause
-          if (readOnly) {
-            if (!controller.signal.aborted) setNoPersistedReview(true)
-            return
+        if (initialJobMatchesContext && initialJob) {
+          // Hosts such as the chain shell can provide the already-loaded job.
+          // Still fetch its persisted feedback; previously this early-return
+          // skipped that request, so edit/retract controls disappeared after
+          // navigation or a refresh.
+          current = initialJob
+        } else {
+          try {
+            current = await api.latestReview(chainId, controller.signal)
+          } catch (cause) {
+            if (!(cause instanceof ApiError && cause.status === 404)) throw cause
+            if (readOnly) {
+              if (!controller.signal.aborted) setNoPersistedReview(true)
+              return
+            }
+            const submission = await api.submitReview(chainId)
+            current = await api.reviewJob(submission.job_id, controller.signal)
           }
-          const submission = await api.submitReview(chainId)
-          current = await api.reviewJob(submission.job_id, controller.signal)
         }
         if (!controller.signal.aborted) {
-          if (current.chain_id !== chainId || current.identity.chain_id !== chainId) {
+          if (
+            current.chain_id !== chainId
+            || current.identity.chain_id !== chainId
+            || (snapshotId && current.identity.snapshot_id !== snapshotId)
+            || (snapshotVersion && current.identity.snapshot_version !== snapshotVersion)
+            || (topologyVersion !== undefined && current.identity.topology_version !== topologyVersion)
+          ) {
             setError('REVIEW_CONTEXT_MISMATCH')
             return
           }
           setJob(current)
-          setCachedReviewJob(chainId, current)
+          setCachedReviewJob(chainId, snapshotId, snapshotVersion, topologyVersion, current)
+          if (current.status === 'SUCCEEDED' && notifiedReviewJobIdRef.current !== current.job_id) {
+            notifiedReviewJobIdRef.current = current.job_id
+            onReviewSucceeded?.(current)
+          }
           setError(null)
           // Also fetch existing feedbacks for this job
           if (current.job_id) {
@@ -774,7 +833,7 @@ export function CounterfactualReview({
     }
     void load()
     return () => controller.abort()
-  }, [chainId, initialJob, readOnly, reloadKey])
+  }, [chainId, snapshotId, snapshotVersion, topologyVersion, initialJob, onReviewSucceeded, readOnly, reloadKey])
 
   useEffect(() => {
     if (!job || !['QUEUED', 'RUNNING'].includes(job.status)) {
@@ -785,9 +844,24 @@ export function CounterfactualReview({
     const timer = window.setTimeout(() => {
       api.reviewJob(job.job_id, controller.signal)
         .then((nextJob) => {
+          if (controller.signal.aborted) return
+          if (
+            nextJob.chain_id !== chainId
+            || nextJob.identity.chain_id !== chainId
+            || (snapshotId && nextJob.identity.snapshot_id !== snapshotId)
+            || (snapshotVersion && nextJob.identity.snapshot_version !== snapshotVersion)
+            || (topologyVersion !== undefined && nextJob.identity.topology_version !== topologyVersion)
+          ) {
+            setError('REVIEW_CONTEXT_MISMATCH')
+            return
+          }
           pollRetryCountRef.current = 0
           setJob(nextJob)
-          setCachedReviewJob(chainId, nextJob)
+          setCachedReviewJob(chainId, snapshotId, snapshotVersion, topologyVersion, nextJob)
+          if (nextJob.status === 'SUCCEEDED' && notifiedReviewJobIdRef.current !== nextJob.job_id) {
+            notifiedReviewJobIdRef.current = nextJob.job_id
+            onReviewSucceeded?.(nextJob)
+          }
         })
         .catch((cause: unknown) => {
           if (controller.signal.aborted) return
@@ -804,21 +878,35 @@ export function CounterfactualReview({
       controller.abort()
       window.clearTimeout(timer)
     }
-  }, [job])
+  }, [chainId, snapshotId, snapshotVersion, topologyVersion, job, onReviewSucceeded])
 
   const handleFeedbackSubmit = async (
     candidateId: string,
     decision: 'APPROVED' | 'REJECTED',
     _operatorId?: string,
     reason?: string,
+    supersedesFeedbackId?: string,
   ) => {
     if (!job?.job_id) return
-    const fb = await api.submitReviewFeedback(job.job_id, {
+    const payload = {
       candidate_id: candidateId,
       decision,
       reason,
-    })
+    }
+    const fb = supersedesFeedbackId
+      ? await api.supersedeFeedback(job.job_id, supersedesFeedbackId, payload)
+      : await api.submitReviewFeedback(job.job_id, payload)
     setFeedbacks((prev) => ({ ...prev, [candidateId]: fb }))
+  }
+
+  const handleFeedbackRetract = async (candidateId: string, feedbackId: string) => {
+    if (!job?.job_id) return
+    await api.retractFeedback(job.job_id, feedbackId, 'Người dùng thu hồi phản hồi phương án')
+    setFeedbacks((prev) => {
+      const next = { ...prev }
+      delete next[candidateId]
+      return next
+    })
   }
 
   if (loading && !job) return (
@@ -849,7 +937,7 @@ export function CounterfactualReview({
     <section className="review-shell review-unavailable">
       <span>NOT_RUN</span>
       <h2>Chưa có kết quả Counterfactual được lưu trữ.</h2>
-      <p>Góc nhìn Assistant ở chế độ chỉ đọc và không tự tạo tác vụ Review. Hãy mở trực tiếp Review để chạy đánh giá các phương án phân hoạch.</p>
+      <p>Chưa có tác vụ Review đã lưu cho chuỗi này. Hãy mở Review để chạy đánh giá các phương án phân hoạch.</p>
     </section>
   )
   if (!job) return null
@@ -862,6 +950,8 @@ export function CounterfactualReview({
   )
 
   const result = job.result
+  const feedbackSubmit = readOnly ? undefined : (onFeedbackSubmitOverride ?? handleFeedbackSubmit)
+  const feedbackRetract = readOnly ? undefined : (onFeedbackRetractOverride ?? handleFeedbackRetract)
   const recommendationIds = new Set(result.recommendations.map((item) => item.candidate_id))
   const evaluatedCandidates = result.evaluated_candidates ?? []
   const isRejectedCandidate = (candidate: CounterfactualCandidate) => {
@@ -1033,7 +1123,8 @@ export function CounterfactualReview({
                   recommended={true}
                   feedback={feedbacks[candidate.candidate_id]}
                   jobId={job.job_id}
-                  onFeedbackSubmit={readOnly ? undefined : handleFeedbackSubmit}
+                  onFeedbackSubmit={feedbackSubmit}
+                  onFeedbackRetract={feedbackRetract}
                 />
               ))}
           </div>
@@ -1252,7 +1343,8 @@ export function CounterfactualReview({
             recommendationIds={recommendationIds}
             feedbacks={feedbacks}
             jobId={job.job_id}
-            onFeedbackSubmit={readOnly ? undefined : handleFeedbackSubmit}
+            onFeedbackSubmit={feedbackSubmit}
+            onFeedbackRetract={feedbackRetract}
           />
         ))}
       </div>

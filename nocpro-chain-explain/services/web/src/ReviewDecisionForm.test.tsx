@@ -1,7 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { ReviewDecisionForm } from './components/ReviewDecisionForm'
-import { SimilarReviewCases } from './components/SimilarReviewCases'
 
 describe('ReviewDecisionForm', () => {
   it('renders all 6 review decisions and zero mutation notice', () => {
@@ -50,21 +49,7 @@ describe('ReviewDecisionForm', () => {
 
     expect(html).toContain('Active Feedback on this Candidate: APPROVE')
     expect(html).toContain('test_reviewer')
-    expect(html).toContain('Supersede')
-    expect(html).toContain('Retract')
-  })
-})
-
-describe('SimilarReviewCases', () => {
-  it('renders disclaimer and multi-block header', () => {
-    const html = renderToStaticMarkup(
-      <SimilarReviewCases
-        jobId="job_123"
-        candidateId="cand_abc"
-      />
-    )
-
-    expect(html).toContain('Historical Similar Cases (Multi-Block)')
-    expect(html).toContain('Historical reference only — not probability or automated recommendation')
+    expect(html).toContain('Sửa / thay thế')
+    expect(html).toContain('Thu hồi')
   })
 })

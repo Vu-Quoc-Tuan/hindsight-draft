@@ -6,6 +6,7 @@ import type {
   OperatorFeedback,
   ManualCorrectionPayload,
 } from '../types'
+import { isReviewApproved } from '../types'
 
 interface ReviewDecisionFormProps {
   jobId: string
@@ -47,10 +48,18 @@ export function ReviewDecisionForm({
   onFeedbackRetracted,
 }: ReviewDecisionFormProps) {
   const [policy, setPolicy] = useState<ReasonPolicy | null>(null)
-  const [selectedDecision, setSelectedDecision] = useState<ReviewDecision>('APPROVE')
-  const [userReasonCode, setUserReasonCode] = useState<string | null>(null)
-  const [confidence, setConfidence] = useState<number>(1.0)
-  const [notes, setNotes] = useState<string>('')
+  const [selectedDecision, setSelectedDecision] = useState<ReviewDecision>(() => (
+    existingFeedback
+      ? (isReviewApproved(existingFeedback.decision) ? 'APPROVE' : 'REJECT')
+      : 'APPROVE'
+  ))
+  const [userReasonCode, setUserReasonCode] = useState<string | null>(
+    () => existingFeedback?.reason_codes?.[0] ?? null,
+  )
+  const [confidence, setConfidence] = useState<number>(
+    () => existingFeedback?.confidence ?? 1.0,
+  )
+  const [notes, setNotes] = useState<string>(() => existingFeedback?.reason ?? '')
   const [isSuperseding, setIsSuperseding] = useState<boolean>(false)
   const [retractReason, setRetractReason] = useState<string>('')
   const [showRetractModal, setShowRetractModal] = useState<boolean>(false)
@@ -218,14 +227,14 @@ export function ReviewDecisionForm({
               onClick={() => setIsSuperseding(true)}
               className="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded font-medium transition-colors cursor-pointer"
             >
-              Supersede
+              Sửa / thay thế
             </button>
             <button
               type="button"
               onClick={() => setShowRetractModal(true)}
               className="px-2.5 py-1 text-xs bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-300 rounded font-medium transition-colors cursor-pointer"
             >
-              Retract
+              Thu hồi
             </button>
           </div>
         </div>

@@ -6,11 +6,8 @@ type ChainSummary = {
 }
 
 async function openChain(page: Page, chainId: string) {
-  await page.getByRole('button', { name: 'Chains Explorer' }).click()
-  const row = page.getByRole('row').filter({
-    has: page.getByRole('cell', { name: chainId, exact: true }),
-  })
-  await row.getByRole('button', { name: 'Inspect →' }).click()
+  await page.getByRole('button', { name: 'All Chains', exact: true }).click()
+  await page.getByText(chainId, { exact: true }).click()
 }
 
 test('completed Deep Dive hydrates after browser reload without resubmission', async ({ page }) => {
@@ -37,7 +34,7 @@ test('completed Deep Dive hydrates after browser reload without resubmission', a
   await openChain(page, chain!.chain_id)
   await page.getByRole('button', { name: 'Audit & Structure' }).click()
 
-  const runButton = page.getByRole('button', { name: 'Run Deep Dive' }).first()
+  const runButton = page.getByRole('button', { name: /Chạy Deep Dive|Run Deep Dive/ }).first()
   await expect(runButton).toBeVisible()
   await runButton.click()
   await expect(

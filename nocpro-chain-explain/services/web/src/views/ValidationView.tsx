@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { api } from '../api'
-import { getCachedReviewJob, setCachedReviewJob } from '../CounterfactualReview'
+import { getCachedReviewJob, setCachedReviewJob } from '../reviewJobCache'
 import {
   generatePartitionTicketReport,
   downloadPartitionDiffJson,
@@ -8,67 +8,28 @@ import {
 } from '../partitionExport'
 import type {
   ChainAnalysis,
-  CounterfactualJob,
   CounterfactualCandidate,
+  CounterfactualJob,
   OperatorFeedback,
 } from '../types'
+import { isReviewApproved } from '../types'
 import { ReviewDecisionForm } from '../components/ReviewDecisionForm'
-
-export function getConciseCandidateTitle(candidate: CounterfactualCandidate): string {
-  if (candidate.operation === 'SPLIT_CHAIN') {
-    const after = candidate.partition_delta?.after || []
-    const sizes = after
-      .map(([_, alarms]) => (Array.isArray(alarms) ? alarms.length : 0))
-      .filter((s) => s > 0)
-    if (sizes.length >= 2) {
-      return `Chia chain thành ${sizes.length} chain nhỏ (${sizes.join(' và ')} alarm)`
-    }
-    return `Chia chain thành các chain nhỏ`
-  }
-
-  if (candidate.operation === 'REMOVE_MEMBER') {
-    const memberIds = candidate.member_ids || []
-    if (memberIds.length === 1) {
-      return `Cắt ${memberIds[0]} ra khỏi chain`
-    } else if (memberIds.length > 1) {
-      return `Cắt ${memberIds.length} alarm ra khỏi chain`
-    }
-    const beforeAlarms = candidate.partition_delta?.before?.[0]?.[1] || []
-    const afterAlarms = candidate.partition_delta?.after?.[0]?.[1] || []
-    const diff = beforeAlarms.filter((a) => !afterAlarms.includes(a))
-    if (diff.length === 1) {
-      return `Cắt ${diff[0]} ra khỏi chain`
-    } else if (diff.length > 1) {
-      return `Cắt ${diff.length} alarm ra khỏi chain`
-    }
-    return `Cắt alarm ra khỏi chain`
-  }
-
-  if (candidate.operation === 'MOVE_MEMBER') {
-    const member = candidate.member_ids?.[0] || 'alarm'
-    const target = candidate.target_chain_id ? `chain ${candidate.target_chain_id}` : 'chain khác'
-    return `Chuyển ${member} sang ${target}`
-  }
-
-  if (candidate.operation === 'MERGE_CHAINS') {
-    const merged = candidate.merged_chain_ids || []
-    if (merged.length >= 2) {
-      return `Gộp chain ${merged.join(' và ')}`
-    }
-    return `Gộp với chain lân cận`
-  }
-
-  return candidate.comparative_explanation?.summary_action || 'Điều chỉnh phân hoạch chuỗi sự cố'
-}
+import { getConciseCandidateTitle } from '../reviewPresentation'
 
 export function ValidationView({
   analysis,
+  snapshotId,
+  snapshotVersion,
+  topologyVersion,
   onOpenManualSplit: _onOpenManualSplit,
 }: {
   analysis: ChainAnalysis
+  snapshotId?: string | null
+  snapshotVersion?: string | null
+  topologyVersion?: string | null
   onOpenManualSplit?: () => void
 }) {
-  const cached = getCachedReviewJob(analysis.chain_id)
+  const cached = getCachedReviewJob(analysis.chain_id, snapshotId, snapshotVersion, topologyVersion)
   const [job, setJob] = useState<CounterfactualJob | null>(cached)
   const [loading, setLoading] = useState<boolean>(cached == null)
   const [error, setError] = useState<string | null>(null)
@@ -98,8 +59,19 @@ export function ValidationView({
       .then(([reviewRes, feedbackRes]) => {
         if (cancelled) return
         if (reviewRes.status === 'fulfilled') {
+          if (
+            reviewRes.value.chain_id !== analysis.chain_id
+            || reviewRes.value.identity.chain_id !== analysis.chain_id
+            || (snapshotId && reviewRes.value.identity.snapshot_id !== snapshotId)
+            || (snapshotVersion && reviewRes.value.identity.snapshot_version !== snapshotVersion)
+            || (topologyVersion !== undefined && reviewRes.value.identity.topology_version !== topologyVersion)
+          ) {
+            setError('REVIEW_CONTEXT_MISMATCH')
+            setLoading(false)
+            return
+          }
           setJob(reviewRes.value)
-          setCachedReviewJob(analysis.chain_id, reviewRes.value)
+          setCachedReviewJob(analysis.chain_id, snapshotId, snapshotVersion, topologyVersion, reviewRes.value)
           const recs = reviewRes.value?.result?.recommendations ?? []
           const evaluated = reviewRes.value?.result?.evaluated_candidates ?? []
           const defaultCandidate = recs[0] ?? evaluated[0]
@@ -125,7 +97,7 @@ export function ValidationView({
       cancelled = true
       controller.abort()
     }
-  }, [analysis.chain_id])
+  }, [analysis.chain_id, snapshotId, snapshotVersion, topologyVersion])
 
   // Poll if review is actively computing
   useEffect(() => {
@@ -134,8 +106,19 @@ export function ValidationView({
     const timer = window.setTimeout(() => {
       api.reviewJob(job.job_id, controller.signal)
         .then((updated) => {
+          if (controller.signal.aborted) return
+          if (
+            updated.chain_id !== analysis.chain_id
+            || updated.identity.chain_id !== analysis.chain_id
+            || (snapshotId && updated.identity.snapshot_id !== snapshotId)
+            || (snapshotVersion && updated.identity.snapshot_version !== snapshotVersion)
+            || (topologyVersion !== undefined && updated.identity.topology_version !== topologyVersion)
+          ) {
+            setError('REVIEW_CONTEXT_MISMATCH')
+            return
+          }
           setJob(updated)
-          setCachedReviewJob(analysis.chain_id, updated)
+          setCachedReviewJob(analysis.chain_id, snapshotId, snapshotVersion, topologyVersion, updated)
           const recs = updated?.result?.recommendations ?? []
           const evaluated = updated?.result?.evaluated_candidates ?? []
           const first = recs[0] ?? evaluated[0]
@@ -151,7 +134,7 @@ export function ValidationView({
       controller.abort()
       window.clearTimeout(timer)
     }
-  }, [job, selectedCandidateId, analysis.chain_id])
+  }, [job, selectedCandidateId, analysis.chain_id, snapshotId, snapshotVersion, topologyVersion])
 
   // Impression logging: log candidate display events
   useEffect(() => {
@@ -186,8 +169,18 @@ export function ValidationView({
       setLoading(true)
       const res = await api.submitReview(analysis.chain_id)
       const initialJob = await api.reviewJob(res.job_id)
+      if (
+        initialJob.chain_id !== analysis.chain_id
+        || initialJob.identity.chain_id !== analysis.chain_id
+        || (snapshotId && initialJob.identity.snapshot_id !== snapshotId)
+        || (snapshotVersion && initialJob.identity.snapshot_version !== snapshotVersion)
+        || (topologyVersion !== undefined && initialJob.identity.topology_version !== topologyVersion)
+      ) {
+        setError('REVIEW_CONTEXT_MISMATCH')
+        return
+      }
       setJob(initialJob)
-      setCachedReviewJob(analysis.chain_id, initialJob)
+      setCachedReviewJob(analysis.chain_id, snapshotId, snapshotVersion, topologyVersion, initialJob)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not launch review evaluation')
     } finally {
@@ -332,12 +325,12 @@ export function ValidationView({
                 {fb && (
                   <span
                     className={`px-1.5 py-0.2 text-[10px] rounded font-bold ${
-                      fb.decision === 'APPROVED'
+                      isReviewApproved(fb.decision)
                         ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                         : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                     }`}
                   >
-                    {fb.decision === 'APPROVED' ? '✓ Đã duyệt' : '✗ Từ chối'}
+                    {isReviewApproved(fb.decision) ? '✓ Đã duyệt' : '✗ Từ chối'}
                   </span>
                 )}
               </button>
@@ -531,6 +524,7 @@ export function ValidationView({
           {job?.job_id ? (
             <>
               <ReviewDecisionForm
+                key={`${job.job_id}:${analysis.chain_id}:${activeCandidate?.candidate_id ?? 'none'}:${activeCandidateFeedback?.feedback_id ?? 'new'}`}
                 jobId={job.job_id}
                 chainId={analysis.chain_id}
                 chainAlarms={analysis.members.map((m) => m.alarm_id)}

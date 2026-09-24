@@ -5,6 +5,8 @@ import { InfoTip } from '../components/InfoTip'
 
 interface AuditStructureViewProps {
   analysis: ChainAnalysis
+  snapshotId: string
+  snapshotVersion: string
   job?: Job | null
   auditVisualization?: AuditVisualizationArtifact | null
   onRunDeepDive?: () => void
@@ -104,8 +106,19 @@ function AuditResult({
   )
 }
 
-export function AuditStructureView({ analysis, job = null, auditVisualization = null, onRunDeepDive }: AuditStructureViewProps) {
-  const matchingJob = job?.chain_id === analysis.chain_id ? job : null
+export function AuditStructureView({
+  analysis,
+  snapshotId,
+  snapshotVersion,
+  job = null,
+  auditVisualization = null,
+  onRunDeepDive,
+}: AuditStructureViewProps) {
+  const matchingJob = (
+    job?.chain_id === analysis.chain_id
+    && job.snapshot_id === snapshotId
+    && job.snapshot_version === snapshotVersion
+  ) ? job : null
   const result = matchingJob?.status === 'SUCCEEDED' ? matchingJob.result : null
 
   return (
