@@ -432,6 +432,20 @@ def test_postgres_concurrent_succeeded_review_bundle_replay_is_idempotent(
             competing_review_id = f"review-{uuid4().hex}"
             competing_job_ids = (f"job-{uuid4().hex}", f"job-{uuid4().hex}")
             competing_exposures = [replace(exposures[0], review_id=competing_review_id)]
+            competing_exposures[0] = replace(
+                competing_exposures[0],
+                original_rank=4,
+                displayed_rank=2,
+                deterministic_eligibility="ELIGIBLE_WITH_REVIEW",
+                hard_gate_status="PASSED_WITH_WARNINGS",
+                pareto_state="FRONTIER_ALTERNATIVE",
+                feature_fingerprint="d" * 64,
+                deterministic_context={"score": 0.875, "signals": ["stable", "verified"]},
+                case_context={"case_id": "case-race-winner", "labels": ["critical", "reviewed"]},
+                temporal_context={"observed_at": "2026-09-24T10:11:12Z", "age_hours": 3},
+                feature_schema_version="cf-features-v7",
+                feature_payload={"features": {"impact": 0.625, "confidence": 0.9375}},
+            )
 
             async def competing_writer(competing_job_id: str) -> None:
                 await repository.persist_succeeded_job_and_review_bundle(
@@ -468,11 +482,26 @@ def test_postgres_concurrent_succeeded_review_bundle_replay_is_idempotent(
             assert winning_session is not None and winning_session.job_id == winning_job_id
             winning_exposures = await repository.get_candidate_exposures(competing_review_id)
             assert len(winning_exposures) == 1
-            assert (
-                winning_exposures[0].candidate_fingerprint
-                == competing_exposures[0].candidate_fingerprint
-            )
-            assert winning_exposures[0].candidate_id == competing_exposures[0].candidate_id
+            winning_exposure = winning_exposures[0]
+            expected_exposure = competing_exposures[0]
+            for field in (
+                "review_id",
+                "candidate_id",
+                "candidate_fingerprint",
+                "operation",
+                "original_rank",
+                "displayed_rank",
+                "deterministic_eligibility",
+                "hard_gate_status",
+                "pareto_state",
+                "deterministic_context",
+                "case_context",
+                "temporal_context",
+                "feature_fingerprint",
+                "feature_schema_version",
+                "feature_payload",
+            ):
+                assert getattr(winning_exposure, field) == getattr(expected_exposure, field)
         finally:
             await _drop_test_schema(engine, schema)
 
