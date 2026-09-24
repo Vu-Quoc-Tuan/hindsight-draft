@@ -1,5 +1,22 @@
 export type WhyScope = 'Chain' | 'Member' | 'Pair' | 'Group'
 
+export type AnalysisIdentity = {
+  identity_version: 'analysis-identity-v1'
+  snapshot_id: string
+  snapshot_version: string
+  chain_id: string
+  topology_version: string | null
+  analysis_config_version: string
+  review_config_version: string | null
+  pipeline_version: string
+  input_fingerprint: string
+}
+
+export type ArtifactRevision = {
+  resource_kind: string
+  fingerprint: string
+}
+
 export type ChainSummary = {
   chain_id: string
   member_count: number
@@ -42,6 +59,14 @@ export type ChainQualityAssessment = {
     stars: number | null
     label: string
     reason: string | null
+    readiness?: 'READY' | 'PARTIAL' | 'INSUFFICIENT' | 'NOT_APPLICABLE' | string | null
+    readiness_policy_version?: string | null
+    reason_codes?: string[]
+    evidence_coverage?: Record<string, unknown> | null
+    evidence_ids?: string[]
+    reason_evidence_ids?: Record<string, string[]>
+    analysis_identity?: AnalysisIdentity | null
+    artifact_revision?: ArtifactRevision | null
 }
 
 export type EvolutionNode = {
@@ -196,9 +221,44 @@ export type TopologyPath = {
   source_devices?: string[]
   target_devices?: string[]
   hop_count: number
+  max_hops?: number
   relation_type: string
   path: string[]
+  mapping_statuses?: string[]
   traversal_semantic: string
+}
+
+export type EvidencePath = {
+  resource_ids: string[]
+  relation_types: string[]
+  hop_count: number
+  traversal_semantic: string
+  max_hops: number
+  topology_version: string
+  mapping_statuses: string[]
+  analysis_truncated: boolean
+  direction_policy?: string | null
+}
+
+export type EvidenceRecord = {
+  evidence_id: string
+  analysis_identity: AnalysisIdentity
+  kind: 'MAPPING' | 'TOPOLOGY_PATH' | 'AUDIT' | 'MEMBERSHIP' | 'REVIEW'
+  status: 'AVAILABLE' | 'UNAVAILABLE' | 'NOT_EVALUATED'
+  statement_kind: 'OBSERVED' | 'DERIVED'
+  source_artifact_id: string | null
+  source_fingerprint: string | null
+  summary: string
+  reason_codes: string[]
+  limitations: string[]
+  path: EvidencePath | null
+}
+
+export type EvidenceBundle = {
+  analysis_identity: AnalysisIdentity
+  records: EvidenceRecord[]
+  truncated: boolean
+  next_cursor: string | null
 }
 
 export type PairWhy = {
@@ -206,6 +266,7 @@ export type PairWhy = {
   alarm_id_a: string
   alarm_id_b: string
   evidence: PairEvidence[]
+  evidence_records?: EvidenceRecord[]
   system_fact: {
     status: string
     attribute_ref: string | null
@@ -528,7 +589,7 @@ export type CounterfactualResult = {
   identity: {
     snapshot_id: string
     snapshot_version: string
-    topology_version?: string | null
+    topology_version: string | null
     chain_id: string
     alarm_universe_fingerprint: string
     analysis_version: string
@@ -541,6 +602,7 @@ export type CounterfactualResult = {
   status: 'AVAILABLE' | 'UNAVAILABLE' | 'NOT_APPLICABLE'
   reason: string | null
   recommendation_status: 'AVAILABLE' | 'UNAVAILABLE' | 'NO_CLEAR_ALTERNATIVE'
+  evaluation_completed?: boolean
   remove: CounterfactualOperation
   split: CounterfactualOperation
   move: CounterfactualOperation
@@ -569,6 +631,8 @@ export type CounterfactualJob = {
   cache_hit: boolean
   cache_fingerprint: string
   identity: CounterfactualResult['identity']
+  analysis_identity?: AnalysisIdentity | null
+  artifact_revision?: ArtifactRevision | null
   result: CounterfactualResult | null
   error: string | null
 }
@@ -813,6 +877,7 @@ export type AnalyticalFinding = {
   title: string
   claim: string
   evidence: string[]
+  evidence_ids?: string[]
   limitations: string[]
   confidence_basis: string
   confidence?: 'HIGH' | 'MEDIUM' | 'LOW'
@@ -824,6 +889,7 @@ export type CohesionNarrativeView = {
   model: string
   provider_status?: string | null
   context: {
+    evidence_analysis_identity?: AnalysisIdentity
     chain: {
       chain_id: string
       alarm_count: number
@@ -875,7 +941,9 @@ export type CohesionNarrativeView = {
       top_descriptors: string[]
     }
     topology: {
+      status?: 'AVAILABLE' | 'PARTIAL' | 'UNAVAILABLE' | string
       mapped: number
+      mapped_alarm_count?: number
       total: number
       mapped_device_count?: number
       total_device_count?: number
@@ -887,6 +955,8 @@ export type CohesionNarrativeView = {
       dependency_verified: boolean
       connected_pair_count?: number
       pair_total?: number
+      evaluated_pair_count?: number
+      eligible_pair_count?: number
       max_path_hops?: number | null
     }
     audit: {
@@ -956,6 +1026,13 @@ export type CohesionNarrativeView = {
     quality_assessment?: {
       method: 'HEURISTIC_V1' | string
       status: 'EVALUATED' | 'UNAVAILABLE' | 'NOT_APPLICABLE' | string
+      readiness?: 'READY' | 'PARTIAL' | 'INSUFFICIENT' | 'NOT_APPLICABLE' | string
+      reason_codes?: string[]
+      evidence_coverage?: Record<string, unknown>
+      evidence_ids?: string[]
+      reason_evidence_ids?: Record<string, string[]>
+      readiness_policy_version?: string
+      observed_evidence_families?: string[]
       stars: number | null
       label: string
       score?: number
@@ -1065,6 +1142,10 @@ export type ChainOverviewCards = {
   topology: ChainOverviewCardContext['topology'] | null
   quality_assessment: ChainOverviewCardContext['quality_assessment'] | null
   recommendations: ChainOverviewCardContext['recommendations'] | null
+  analysis_identity?: AnalysisIdentity | null
+  artifact_revision?: ArtifactRevision | null
+  review_analysis_identity?: AnalysisIdentity | null
+  review_artifact_revision?: ArtifactRevision | null
 }
 
 export type AssistantAction = {

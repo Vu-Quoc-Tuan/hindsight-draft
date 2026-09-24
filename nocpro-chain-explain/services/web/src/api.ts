@@ -11,7 +11,10 @@ import type {
   ChainOverviewCards,
   ChainList,
   ChainQualitySummary,
+  AnalysisIdentity,
+  ArtifactRevision,
   CounterfactualJob,
+  EvidenceBundle,
   Evolution,
   Job,
   OperatorFeedback,
@@ -26,6 +29,16 @@ import type {
   ThresholdExplainOptimization,
 } from './types'
 import type { TopologyTreePayload } from './TopologyTree'
+import { clearReviewJobCache } from './reviewJobCache'
+import { clearChainReadCache, getOrLoadChainRead } from './chainReadCache'
+import {
+  analysisIdentityMatches,
+  artifactRevisionMatches,
+  isAnalysisIdentity,
+  isArtifactRevision,
+} from './analysisIdentity'
+
+export { clearChainReadCache } from './chainReadCache'
 
 
 export class ApiError extends Error {
@@ -44,6 +57,12 @@ type ActiveSnapshotContext = {
   topologyVersion?: string | null
 } | null
 
+export type ChainOverviewSnapshotContext = {
+  snapshot_id: string
+  snapshot_version: string
+  topology_version?: string | null
+}
+
 let activeSnapshotContext: ActiveSnapshotContext = null
 
 export function setActiveSnapshotContext(
@@ -51,18 +70,29 @@ export function setActiveSnapshotContext(
   snapshotVersion: string | null = null,
   topologyVersion?: string | null,
 ) {
-  activeSnapshotContext = snapshotId && snapshotVersion
+  const nextContext = snapshotId && snapshotVersion
     ? { snapshotId, snapshotVersion, topologyVersion }
     : null
+  if (JSON.stringify(activeSnapshotContext) !== JSON.stringify(nextContext)) {
+    clearChainReadCache()
+    clearReviewJobCache()
+    clearCohesionCache()
+    clearTopologySubgraphCache()
+  }
+  activeSnapshotContext = nextContext
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  requestContext: ActiveSnapshotContext = activeSnapshotContext,
+): Promise<T> {
   const headers = new Headers(init?.headers)
-  if (activeSnapshotContext) {
-    headers.set('X-NocPro-Snapshot-Id', activeSnapshotContext.snapshotId)
-    headers.set('X-NocPro-Snapshot-Version', activeSnapshotContext.snapshotVersion)
-    if (activeSnapshotContext.topologyVersion !== undefined) {
-      headers.set('X-NocPro-Topology-Version', activeSnapshotContext.topologyVersion ?? '')
+  if (requestContext) {
+    headers.set('X-NocPro-Snapshot-Id', requestContext.snapshotId)
+    headers.set('X-NocPro-Snapshot-Version', requestContext.snapshotVersion)
+    if (requestContext.topologyVersion !== undefined) {
+      headers.set('X-NocPro-Topology-Version', requestContext.topologyVersion ?? '')
     }
   }
   const response = await fetch(path, { ...init, headers })
@@ -77,6 +107,52 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(response.status, message)
   }
   return (await response.json()) as T
+}
+
+function cacheableChainOverview(
+  payload: ChainOverviewCards,
+  chainId: string,
+  context: NonNullable<ActiveSnapshotContext>,
+): boolean {
+  if (
+    payload.chain_id !== chainId
+    || payload.snapshot_id !== context.snapshotId
+    || payload.snapshot_version !== context.snapshotVersion
+  ) return false
+
+  if (payload.status === 'NOT_APPLICABLE') {
+    return payload.reason === 'SINGLETON_CHAIN'
+  }
+  if (payload.status !== 'READY') return false
+
+  const identity = payload.analysis_identity
+  const revision = payload.artifact_revision
+  return typeof payload.projection_version === 'string'
+    && payload.projection_version.length > 0
+    && isAnalysisIdentity(identity)
+    && isArtifactRevision(revision)
+    && identity.snapshot_id === context.snapshotId
+    && identity.snapshot_version === context.snapshotVersion
+    && identity.chain_id === chainId
+    && identity.topology_version === context.topologyVersion
+    && payload.topology_version === context.topologyVersion
+    && revision.resource_kind === 'chain_overview'
+    && revision.fingerprint === identity.input_fingerprint
+}
+
+function cachedChainOverviewMatchesExpected(
+  payload: ChainOverviewCards,
+  chainId: string,
+  context: NonNullable<ActiveSnapshotContext>,
+  expectedIdentity?: AnalysisIdentity | null,
+  expectedRevision?: ArtifactRevision | null,
+): boolean {
+  if (!cacheableChainOverview(payload, chainId, context)) return false
+  if (payload.status === 'NOT_APPLICABLE') return true
+  return isAnalysisIdentity(expectedIdentity)
+    && isArtifactRevision(expectedRevision)
+    && analysisIdentityMatches(payload.analysis_identity, expectedIdentity)
+    && artifactRevisionMatches(payload.artifact_revision, expectedRevision)
 }
 
 export type TopologySearchResult = {
@@ -355,11 +431,62 @@ export const api = {
     request<ChainAnalysis>(`/api/v1/chains/${encodeURIComponent(chainId)}`, {
       signal,
     }),
-  chainOverviewCards: (chainId: string, signal?: AbortSignal) =>
-    request<ChainOverviewCards>(
-      `/api/v1/chains/${encodeURIComponent(chainId)}/overview-cards`,
+  chainOverviewCards: (
+    chainId: string,
+    signal?: AbortSignal,
+    expectedIdentity?: AnalysisIdentity | null,
+    expectedRevision?: ArtifactRevision | null,
+    snapshotContext?: ChainOverviewSnapshotContext,
+  ) => {
+    const path = `/api/v1/chains/${encodeURIComponent(chainId)}/overview-cards`
+    const context: ActiveSnapshotContext = snapshotContext
+      ? {
+          snapshotId: snapshotContext.snapshot_id,
+          snapshotVersion: snapshotContext.snapshot_version,
+          topologyVersion: snapshotContext.topology_version,
+        }
+      : activeSnapshotContext
+    // Without an explicit topology version, an unpinned snapshot can resolve
+    // against different active Kafka states between reads. Keep it uncached.
+    if (!context || context.topologyVersion === undefined) {
+      return request<ChainOverviewCards>(path, { signal }, context)
+    }
+
+    const key = JSON.stringify([
+      'chain-overview-v1',
+      context.snapshotId,
+      context.snapshotVersion,
+      context.topologyVersion === null
+        ? { topology: 'NONE' }
+        : { topology: 'VERSION', version: context.topologyVersion },
+      chainId,
+    ])
+    return getOrLoadChainRead(
+      key,
+      signal,
+      sharedSignal => request<ChainOverviewCards>(path, { signal: sharedSignal }, context),
+      payload => cacheableChainOverview(payload, chainId, context),
+      payload => cachedChainOverviewMatchesExpected(
+        payload,
+        chainId,
+        context,
+        expectedIdentity,
+        expectedRevision,
+      ),
+    )
+  },
+  chainEvidence: (
+    chainId: string,
+    options: { limit?: number; cursor?: string } = {},
+    signal?: AbortSignal,
+  ) => {
+    const query = new URLSearchParams({ limit: String(options.limit ?? 100) })
+    if (options.cursor) query.set('cursor', options.cursor)
+    return request<EvidenceBundle>(
+      `/api/v1/chains/${encodeURIComponent(chainId)}/evidence?${query.toString()}`,
       { signal },
-    ),
+    )
+  },
   evolution: (chainId: string, signal?: AbortSignal) =>
     request<Evolution>(`/api/v1/chains/${encodeURIComponent(chainId)}/evolution`, {
       signal,
