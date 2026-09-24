@@ -119,6 +119,7 @@ services:
       AI_BASE_URL: "${AI_BASE_URL:-}"
       AI_API_KEY: "${AI_API_KEY:-}"
       AI_MODEL: "${AI_MODEL:-}"
+      AI_COHESION_TIMEOUT_SECONDS: "${AI_COHESION_TIMEOUT_SECONDS:-60}"
     depends_on:
       migrate:
         condition: service_completed_successfully
