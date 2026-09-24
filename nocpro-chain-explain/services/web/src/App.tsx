@@ -546,6 +546,11 @@ export default function App() {
       || matchingDetailNotices.some(notice => (
         notice.kind === 'invalidate' && notice.invalidates.includes('evolution')
       ))
+      || notices.some(notice => (
+        notice.kind === 'invalidate'
+        && notice.event_type === 'snapshot.changed'
+        && notice.invalidates.includes('evolution')
+      ))
     )
     if (evolutionInvalidated) setEvolutionRefreshEpoch(epoch => epoch + 1)
   }, [

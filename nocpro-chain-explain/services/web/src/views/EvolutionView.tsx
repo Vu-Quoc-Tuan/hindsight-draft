@@ -27,7 +27,7 @@ export function EvolutionView({
   cancelRefresh,
   onLoadError,
 }: EvolutionViewProps) {
-  const [activeTab] = useState<'timeline' | 'cross_snapshot'>(initialTab)
+  const [activeTab, setActiveTab] = useState<'timeline' | 'cross_snapshot'>(initialTab)
   const [selectedAlarmId, setSelectedAlarmId] = useState<string | null>(null)
   const [hoveredAlarmId, setHoveredAlarmId] = useState<string | null>(null)
 
@@ -154,6 +154,14 @@ export function EvolutionView({
               <InfoTip text="Trình tự xuất hiện cảnh báo theo mốc thời gian ghi nhận trong cửa sổ quan sát. Theo dõi thời điểm quan sát đầu T₀ và phân bố thời gian đến của các cảnh báo." />
             </h1>
           </div>
+          <nav aria-label="Evolution views" className="flex flex-wrap gap-space-xs">
+            <button type="button" aria-pressed={activeTab === 'timeline'} onClick={() => setActiveTab('timeline')}
+              className="rounded-lg border border-[#1b273e] px-space-sm py-space-xs text-xs text-on-surface hover:border-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-secondary"
+            >Intra-chain Timeline</button>
+            <button type="button" aria-pressed={activeTab === 'cross_snapshot'} onClick={() => setActiveTab('cross_snapshot')}
+              className="rounded-lg border border-[#1b273e] px-space-sm py-space-xs text-xs text-on-surface hover:border-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-secondary"
+            >Persisted Evolution</button>
+          </nav>
         </div>
 
         {/* Operational Metrics Bar matching ui/15 */}
@@ -187,7 +195,7 @@ export function EvolutionView({
               View Focus
             </small>
             <strong className="font-code-sm text-xs text-sky-400 font-bold">
-              Intra-Chain Sequence
+              {activeTab === 'timeline' ? 'Intra-Chain Sequence' : 'Cross-Snapshot Evolution'}
             </strong>
           </div>
         </div>

@@ -26,6 +26,7 @@ test('synthetic verified sequence renders persisted Evolution without production
   await page.getByRole('button', { name: 'All Chains', exact: true }).click()
   await page.getByText(chainId, { exact: true }).click()
   await page.getByRole('button', { name: 'Timeline & Evolution' }).click()
+  await page.getByRole('button', { name: 'Persisted Evolution' }).click()
 
   const panel = page.getByLabel('Persisted chain evolution')
   await expect(panel).toBeVisible()
