@@ -24,7 +24,7 @@ def test_active_alarm_registry_matches_approved_contract():
         "logical_row", "alarm_id", "chaining_id", "chaining_name",
         "raw_start_time", "canonical_start_time", "raw_end_time",
         "canonical_end_time", "create_time", "alarm_status", "alarm_name",
-        "content", "severity_name", "fault_id", "alarm_type_name", "group_name",
+        "severity_name", "fault_id", "alarm_type_name", "group_name",
         "network_class_name", "monitor_type_name", "device_code", "device_name",
         "node_reference", "component", "location_code", "remote_node",
         "device_type_name", "mapping_status", "resource_id", "quality_flags",
@@ -46,6 +46,7 @@ def test_active_projection_uses_component_precedence_and_unknown_status():
     )
     assert row["component"] == "card-1"
     assert row["alarm_status"] == "UNKNOWN"
+    assert "content" not in row
 
 
 @pytest.fixture
@@ -268,8 +269,9 @@ def test_active_fields_and_legacy_filters(temp_indexer: DatasetIndexer):
     first = page["items"][0]
 
     # Verify active fields exist while raw-only fields stay out of the list response.
-    for key in ("device_type_name", "location_code", "alarm_status", "quality_flags", "content"):
+    for key in ("device_type_name", "location_code", "alarm_status", "quality_flags"):
         assert key in first
+    assert "content" not in first
     for key in ("location_name", "trouble_code", "kedb_code", "parent_id"):
         assert key not in first
 

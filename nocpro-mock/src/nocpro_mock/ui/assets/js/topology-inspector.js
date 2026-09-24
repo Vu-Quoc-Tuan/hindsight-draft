@@ -590,7 +590,7 @@ export class TopologyInspectorScreen {
               dropdown.innerHTML = results.map(r => {
                 const cfg = getNodeConfig(r.resource_type, r.resource_id);
                 return `
-                  <div class="topo-search-item" data-search-id="${r.resource_id}">
+                  <div class="topo-search-item" data-search-id="${this._escapeHtml(r.resource_id)}">
                     <div class="topo-search-item-left">
                       <span>${cfg.icon}</span>
                       <span class="topo-search-item-name">${this._escapeHtml(r.display_name || r.resource_id)}</span>
@@ -982,7 +982,7 @@ export class TopologyInspectorScreen {
         const d = `M ${x1.toFixed(1)} ${y1.toFixed(1)} C ${(x1 - offset).toFixed(1)} ${(y1 - 30).toFixed(1)}, ${(x2 + offset).toFixed(1)} ${(y2 + 30).toFixed(1)}, ${x2.toFixed(1)} ${y2.toFixed(1)}`;
 
         edgesHtml += `
-          <g class="topo-edge-group" title="Ring Cycle: ${link.source} ⟷ ${link.target}">
+          <g class="topo-edge-group" title="${this._escapeHtml(`Ring Cycle: ${link.source} ⟷ ${link.target}`)}">
             <path class="topo-svg-edge cycle" d="${d}" />
             <path class="topo-svg-edge-hitbox" d="${d}" />
           </g>
@@ -997,7 +997,7 @@ export class TopologyInspectorScreen {
         const d = `M ${x1.toFixed(1)} ${y1.toFixed(1)} C ${(x1 + dx * 0.5).toFixed(1)} ${y1.toFixed(1)}, ${(x2 - dx * 0.5).toFixed(1)} ${y2.toFixed(1)}, ${x2.toFixed(1)} ${y2.toFixed(1)}`;
 
         edgesHtml += `
-          <g class="topo-edge-group" title="${this._escapeHtml(link.relation)}: ${link.source} ⟷ ${link.target} ${portInfo ? `(${portInfo})` : ''}">
+          <g class="topo-edge-group" title="${this._escapeHtml(`${link.relation}: ${link.source} ⟷ ${link.target} ${portInfo ? `(${portInfo})` : ''}`)}">
             <path class="topo-svg-edge" d="${d}" stroke="rgba(56, 189, 248, 0.45)" stroke-width="2" />
             <path class="topo-svg-edge-hitbox" d="${d}" />
           </g>
@@ -1039,7 +1039,7 @@ export class TopologyInspectorScreen {
       }
 
       nodesHtml += `
-        <g class="topo-svg-node ${isFocal ? 'is-focal' : ''} ${isSelected ? 'selected' : ''}" data-node-id="${node.resource_id}">
+        <g class="topo-svg-node ${isFocal ? 'is-focal' : ''} ${isSelected ? 'selected' : ''}" data-node-id="${this._escapeHtml(node.resource_id)}">
           <!-- Card Base Box -->
           <rect class="node-box" x="${node.x.toFixed(1)}" y="${node.y.toFixed(1)}" width="${cardWidth}" height="${cardHeight}" rx="10"
                 fill="#131a29" stroke="${strokeColor}" stroke-width="${isFocal || isSelected ? 2.5 : 1.5}" ${filterAttr} />
