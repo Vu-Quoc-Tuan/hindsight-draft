@@ -45,6 +45,41 @@ def _operation_status(operation):
     }
 
 
+_REVIEW_OPERATION_NAMES = (
+    Operation.REMOVE_MEMBER.value,
+    Operation.SPLIT_CHAIN.value,
+    Operation.MOVE_MEMBER.value,
+    Operation.MERGE_CHAINS.value,
+)
+
+
+def review_evaluation_completed(operation_status: object) -> bool:
+    """Return true only when every applicable bounded operation completed.
+
+    Candidate count is deliberately irrelevant: a completed bounded search
+    with no eligible candidates is still a completed evaluation. Legacy
+    persisted results can use this only when they contain all four explicit
+    operation states; aggregate status and candidate arrays are not evidence
+    that a search completed.
+    """
+    if not isinstance(operation_status, dict):
+        return False
+    for name in _REVIEW_OPERATION_NAMES:
+        operation = operation_status.get(name)
+        if not isinstance(operation, dict):
+            return False
+        status = str(operation.get("status") or "").upper()
+        mode = str(operation.get("search_mode") or "").upper()
+        if status == "NOT_APPLICABLE":
+            continue
+        if status != "AVAILABLE" or mode not in {
+            "BOUNDED",
+            "BOUNDED_LOCAL_CANDIDATES",
+        }:
+            return False
+    return True
+
+
 def _pareto_state(evaluation, result: CounterfactualResult, selected: set[str]) -> str:
     if evaluation.status in {
         CandidateStatus.HARD_GATE_REJECTED,
@@ -131,6 +166,17 @@ def public_review_result(
     selected_ids = {item.candidate.candidate_id for item in result.recommendations}
     operations = (result.remove, result.split, result.move, result.merge)
     evaluations = tuple(item for operation in operations for item in operation.candidates)
+    operation_status = {
+        **{operation.operation.value: _operation_status(operation) for operation in operations},
+        "ADD_MEMBER": {
+            "status": "BLOCKED",
+            "reason": "UNKNOWN_UPSTREAM_SEMANTICS",
+            "search_mode": "NOT_RUN",
+            "candidate_count": 0,
+            "evaluated_count": 0,
+            "ceiling": None,
+        },
+    }
     return {
         "contract_version": CONTRACT_VERSION,
         "identity": asdict(result.identity),
@@ -138,17 +184,8 @@ def public_review_result(
         "status": result.status.value,
         "reason": result.reason,
         "recommendation_status": result.recommendation_status.value,
-        "operation_status": {
-            **{operation.operation.value: _operation_status(operation) for operation in operations},
-            "ADD_MEMBER": {
-                "status": "BLOCKED",
-                "reason": "UNKNOWN_UPSTREAM_SEMANTICS",
-                "search_mode": "NOT_RUN",
-                "candidate_count": 0,
-                "evaluated_count": 0,
-                "ceiling": None,
-            },
-        },
+        "operation_status": operation_status,
+        "evaluation_completed": review_evaluation_completed(operation_status),
         "evaluated_candidates": [
             _candidate(item, result, selected_ids, package=package, language=language) for item in evaluations
         ],

@@ -6,6 +6,7 @@ import json
 from dataclasses import replace
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import time
 from typing import Any, Mapping, Sequence
 import uuid
 
@@ -38,12 +39,15 @@ from history import (
     taxonomy_from_dict as historical_taxonomy_from_dict,
     taxonomy_to_dict as historical_taxonomy_to_dict,
 )
+from ..observability import active_observability
 from temporal_delay import (
     CURRENT_DELAY_MODEL_IMPLEMENTATION_VERSION,
     FrozenDelayModel,
     model_from_dict as delay_model_from_dict,
     model_to_dict as delay_model_to_dict,
 )
+
+
 from tier2.audit_artifact import (
     ReviewAuditArtifact,
     audit_artifact_from_dict,
@@ -92,6 +96,16 @@ from review_learning.contracts import (
     ReviewSession,
     TruthTier,
 )
+
+
+def _record_db_read(stage: str, started: float) -> None:
+    observability = active_observability()
+    if observability is not None:
+        observability.record_duration(
+            "db.read.duration",
+            max(0.0, time.perf_counter() - started),
+            {"stage": stage},
+        )
 
 
 @dataclass(frozen=True)
@@ -789,9 +803,13 @@ class SnapshotRepository:
     async def counterfactual_job(
         self, job_id: str
     ) -> StoredCounterfactualJob | None:
-        async with self.sessions() as session:
-            row = await session.get(CounterfactualJobRecord, job_id)
-            return self._stored_counterfactual(row) if row is not None else None
+        started = time.perf_counter()
+        try:
+            async with self.sessions() as session:
+                row = await session.get(CounterfactualJobRecord, job_id)
+                return self._stored_counterfactual(row) if row is not None else None
+        finally:
+            _record_db_read("review-by-id", started)
 
     async def latest_compatible_counterfactual_job(
         self,
@@ -801,20 +819,56 @@ class SnapshotRepository:
         chain_id: str,
         cache_fingerprint: str,
     ) -> StoredCounterfactualJob | None:
-        async with self.sessions() as session:
-            row = await session.scalar(
-                select(CounterfactualJobRecord)
-                .where(
-                    CounterfactualJobRecord.snapshot_id == snapshot_id,
-                    CounterfactualJobRecord.snapshot_version == snapshot_version,
-                    CounterfactualJobRecord.chain_id == chain_id,
-                    CounterfactualJobRecord.cache_fingerprint == cache_fingerprint,
-                    CounterfactualJobRecord.status == "SUCCEEDED",
+        started = time.perf_counter()
+        try:
+            async with self.sessions() as session:
+                row = await session.scalar(
+                    select(CounterfactualJobRecord)
+                    .where(
+                        CounterfactualJobRecord.snapshot_id == snapshot_id,
+                        CounterfactualJobRecord.snapshot_version == snapshot_version,
+                        CounterfactualJobRecord.chain_id == chain_id,
+                        CounterfactualJobRecord.cache_fingerprint == cache_fingerprint,
+                        CounterfactualJobRecord.status == "SUCCEEDED",
+                    )
+                    .order_by(CounterfactualJobRecord.updated_at.desc())
+                    .limit(1)
                 )
-                .order_by(CounterfactualJobRecord.updated_at.desc())
-                .limit(1)
-            )
-            return self._stored_counterfactual(row) if row is not None else None
+                return self._stored_counterfactual(row) if row is not None else None
+        finally:
+            _record_db_read("review-compatible-latest", started)
+
+    async def latest_counterfactual_job_for_identity(
+        self,
+        *,
+        snapshot_id: str,
+        snapshot_version: str,
+        chain_id: str,
+        cache_fingerprint: str,
+    ) -> StoredCounterfactualJob | None:
+        """Return any lifecycle state for one exact Review identity.
+
+        Unlike ``latest_compatible_counterfactual_job``, this includes queued
+        and running rows so a process restart cannot submit duplicate current
+        work while an older-config job is also present for the same chain.
+        """
+        started = time.perf_counter()
+        try:
+            async with self.sessions() as session:
+                row = await session.scalar(
+                    select(CounterfactualJobRecord)
+                    .where(
+                        CounterfactualJobRecord.snapshot_id == snapshot_id,
+                        CounterfactualJobRecord.snapshot_version == snapshot_version,
+                        CounterfactualJobRecord.chain_id == chain_id,
+                        CounterfactualJobRecord.cache_fingerprint == cache_fingerprint,
+                    )
+                    .order_by(CounterfactualJobRecord.updated_at.desc())
+                    .limit(1)
+                )
+                return self._stored_counterfactual(row) if row is not None else None
+        finally:
+            _record_db_read("review-identity-latest", started)
 
     async def latest_counterfactual_job(
         self,
@@ -823,19 +877,23 @@ class SnapshotRepository:
         snapshot_version: str,
         chain_id: str,
     ) -> StoredCounterfactualJob | None:
-        async with self.sessions() as session:
-            row = await session.scalar(
-                select(CounterfactualJobRecord)
-                .where(
-                    CounterfactualJobRecord.snapshot_id == snapshot_id,
-                    CounterfactualJobRecord.snapshot_version == snapshot_version,
-                    CounterfactualJobRecord.chain_id == chain_id,
-                    CounterfactualJobRecord.status == "SUCCEEDED",
+        started = time.perf_counter()
+        try:
+            async with self.sessions() as session:
+                row = await session.scalar(
+                    select(CounterfactualJobRecord)
+                    .where(
+                        CounterfactualJobRecord.snapshot_id == snapshot_id,
+                        CounterfactualJobRecord.snapshot_version == snapshot_version,
+                        CounterfactualJobRecord.chain_id == chain_id,
+                        CounterfactualJobRecord.status == "SUCCEEDED",
+                    )
+                    .order_by(CounterfactualJobRecord.updated_at.desc())
+                    .limit(1)
                 )
-                .order_by(CounterfactualJobRecord.updated_at.desc())
-                .limit(1)
-            )
-            return self._stored_counterfactual(row) if row is not None else None
+                return self._stored_counterfactual(row) if row is not None else None
+        finally:
+            _record_db_read("review-latest", started)
 
     async def persist_chain_quality_assessment(
         self, payload: dict[str, Any]
@@ -902,12 +960,16 @@ class SnapshotRepository:
     async def chain_quality_assessment(
         self, *, snapshot_id: str, snapshot_version: str, chain_id: str
     ) -> StoredChainQualityAssessment | None:
-        async with self.sessions() as session:
-            row = await session.get(
-                ChainQualityAssessmentRecord,
-                (snapshot_id, snapshot_version, chain_id),
-            )
-            return self._stored_chain_quality(row) if row is not None else None
+        started = time.perf_counter()
+        try:
+            async with self.sessions() as session:
+                row = await session.get(
+                    ChainQualityAssessmentRecord,
+                    (snapshot_id, snapshot_version, chain_id),
+                )
+                return self._stored_chain_quality(row) if row is not None else None
+        finally:
+            _record_db_read("quality-assessment", started)
 
     async def list_chain_quality_assessments(
         self, *, snapshot_id: str | None = None, snapshot_version: str | None = None

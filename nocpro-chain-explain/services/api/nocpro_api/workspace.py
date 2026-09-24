@@ -7,7 +7,7 @@ import json
 import hashlib
 import asyncio
 import logging
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future
 from dataclasses import asdict, dataclass, replace
 from types import SimpleNamespace
 
@@ -39,7 +39,11 @@ from configuration import (
     load_analysis_config,
 )
 from libs.contracts import IngestedPackage, load_validated_package
+from libs.contracts.analysis_identity import (
+    analysis_identity_from_review,
+)
 from libs.contracts.topology_identity import effective_topology_version, snapshot_topology_profile
+from .observability import active_observability
 from tier1a import CacheTier, SnapshotPrecompute, Tier1Cache, precompute_snapshot
 from tier1b import analyze_chain_configured
 from tier2 import (
@@ -59,6 +63,27 @@ from tier2.counterfactual import (
     ReviewIdentity,
 )
 from tier2.counterfactual.public_contract import public_review_result
+
+
+def _record_quality_submission(stage: str, submission: Any) -> None:
+    observability = active_observability()
+    if observability is None or submission is None:
+        return
+    cache_hit = bool(getattr(submission, "cache_hit", False))
+    deduplicated = bool(getattr(submission, "deduplicated", False))
+    observability.record_counter(
+        "cache.hit" if cache_hit else "cache.miss",
+        attributes={
+            "stage": stage,
+            "cache.state": (
+                "hit" if cache_hit else "deduplicated" if deduplicated else "miss"
+            ),
+        },
+    )
+    if not cache_hit and not deduplicated and getattr(submission, "job_id", None):
+        observability.record_counter(
+            "quality.job.submitted", attributes={"stage": stage}
+        )
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -237,6 +262,7 @@ class Workspace:
         ).lower() in {"1", "true", "yes"}
         self._lock = RLock()
         self._activation_generation = 0
+        self._analysis_generation = 0
         self.repository = None
         self.coordinator = None
         self.similarity_index = None
@@ -448,6 +474,7 @@ class Workspace:
             self.config = self._config_with_overrides(
                 normalized_overrides, config_version=new_version
             )
+            self._analysis_generation += 1
             self.cache.entries.clear()
             self.jobs.cache.entries.clear()
             self._prepared_snapshot_cache.clear()
@@ -459,6 +486,7 @@ class Workspace:
         with self._lock:
             # Reset strictly to the initial startup base configuration (e.g. v1.yaml)
             self.config = load_analysis_config(self._base_config_path)
+            self._analysis_generation += 1
             self.cache.entries.clear()
             self.jobs.cache.entries.clear()
             self._prepared_snapshot_cache.clear()
@@ -482,6 +510,7 @@ class Workspace:
         )
         with self._lock:
             self.config = load_analysis_config(calibrated_output)
+            self._analysis_generation += 1
             self.cache.entries.clear()
             self.jobs.cache.entries.clear()
             self._prepared_snapshot_cache.clear()
@@ -754,6 +783,7 @@ class Workspace:
                 if config.counterfactual is not None
                 else "UNAVAILABLE"
             )
+            analysis_generation = self._analysis_generation
         if package is None:
             return
         identity = getattr(review_view, "identity", None)
@@ -763,6 +793,7 @@ class Workspace:
             getattr(identity, "analysis_version", None) != expected_config_version
             or getattr(identity, "config_version", None)
             != expected_review_config_version
+            or getattr(identity, "chain_id", None) != str(review_view.chain_id)
         ):
             return
         if (
@@ -785,24 +816,15 @@ class Workspace:
         deep_dive_analysis = (
             deep_dive_view.result if deep_dive_view is not None else None
         )
-        audit_artifact = (
-            deep_dive_view.audit_artifact if deep_dive_view is not None else None
-        )
+        audit_artifact = getattr(deep_dive_view, "audit_artifact", None)
         # The in-memory Tier-2 view carries the Audit artifact directly, but a
         # restart restores Deep Dive from its JSON row and therefore has no
         # object-level artifact attached.  Read the separately persisted,
         # exact-compatible artifact before materializing deterministic quality;
         # otherwise every restart is incorrectly labelled "P2 chưa chạy".
         if audit_artifact is None and self.repository is not None:
-            try:
-                audit_lookup = await self.latest_audit_visualization(chain_id)
-                audit_artifact = audit_lookup.audit_artifact
-            except Exception:
-                logger.debug(
-                    "Persisted Audit artifact unavailable while materializing chain %s",
-                    chain_id,
-                    exc_info=True,
-                )
+            audit_lookup = await self.latest_audit_visualization(chain_id)
+            audit_artifact = audit_lookup.audit_artifact
         # Repository-backed review jobs already contain the public JSON
         # projection.  In-memory jobs still expose the immutable domain
         # result, so project only that shape instead of attempting to treat a
@@ -853,6 +875,7 @@ class Workspace:
         fingerprint_payload = {
             "pipeline_version": CHAIN_QUALITY_PIPELINE_VERSION,
             "config_version": expected_config_version,
+            "review_config_version": expected_review_config_version,
             "snapshot_id": snapshot_id,
             "snapshot_version": snapshot_version,
             "topology_version": _topology_version(package),
@@ -871,7 +894,111 @@ class Workspace:
                 separators=(",", ":"),
                 default=str,
             ).encode("utf-8")
-        ).hexdigest()
+            ).hexdigest()
+        analysis_identity_result = analysis_identity_from_review(
+            identity,
+            pipeline_version=CHAIN_QUALITY_PIPELINE_VERSION,
+            input_fingerprint=input_fingerprint,
+        )
+        if not analysis_identity_result.available or analysis_identity_result.identity is None:
+            return
+        identity_payload = analysis_identity_result.identity.to_payload()
+        review_analysis_identity_result = analysis_identity_from_review(
+            identity,
+            pipeline_version=str(getattr(identity, "engine_version", "") or ""),
+            input_fingerprint=str(
+                getattr(identity, "tier1b_artifact_fingerprint", "") or ""
+            ),
+        )
+        review_artifact_fingerprint = artifact_fingerprint(identity.cache_tuple())
+        projection_payload = {
+            **overview_projection,
+            "analysis_identity": identity_payload,
+            "review_analysis_identity": (
+                review_analysis_identity_result.identity.to_payload()
+                if review_analysis_identity_result.available
+                and review_analysis_identity_result.identity is not None
+                else None
+            ),
+            "review_artifact_revision": {
+                "resource_kind": "counterfactual_review",
+                "fingerprint": review_artifact_fingerprint,
+            },
+            "chain_id": chain_id,
+            "review_config_version": expected_review_config_version,
+            "input_fingerprint": input_fingerprint,
+            "snapshot_id": snapshot_id,
+            "snapshot_version": snapshot_version,
+            "config_version": expected_config_version,
+            "topology_version": _topology_version(package),
+            "pipeline_version": CHAIN_QUALITY_PIPELINE_VERSION,
+        }
+
+        # Evidence links are a projection of the exact artifacts used above.
+        # They are additive metadata and deliberately do not feed the quality
+        # fingerprint or alter readiness/scoring.
+        from .evidence_projection import (
+            attach_evidence_references,
+            build_evidence_records,
+        )
+
+        review_evidence = {
+            "job_id": review_view.job_id,
+            "status": "SUCCEEDED",
+            "analysis_identity": (
+                review_analysis_identity_result.identity.to_payload()
+                if review_analysis_identity_result.available
+                and review_analysis_identity_result.identity is not None
+                else None
+            ),
+            "result": review_result,
+        }
+        evidence_records = build_evidence_records(
+            identity=identity_payload,
+            overview_projection=projection_payload,
+            pair_evidence=None,
+            audit_artifact=audit_artifact,
+            review_result=review_evidence,
+        )
+        attach_evidence_references(
+            identity=identity_payload,
+            quality_assessment=assessment,
+            analytical_findings=context.get("analytical_findings"),
+            records=evidence_records,
+        )
+
+        # Rebuild the canonical Review context immediately before publication.
+        # A config/topology/Audit change while the projection was being built
+        # must not let this older generation overwrite the current chain row.
+        _, _, _, current_identity = await self._review_context(chain_id)
+        if current_identity.cache_tuple() != identity.cache_tuple():
+            return
+        with self._lock:
+            if (
+                self._analysis_generation != analysis_generation
+                or self.package is not package
+                or self.config.config_version != expected_config_version
+                or (
+                    self.config.counterfactual.config_version
+                    if self.config.counterfactual is not None
+                    else "UNAVAILABLE"
+                )
+                != expected_review_config_version
+            ):
+                return
+
+        latest_review_for_identity = getattr(
+            self.repository, "latest_counterfactual_job_for_identity", None
+        )
+        if callable(latest_review_for_identity):
+            persisted_review = await latest_review_for_identity(
+                snapshot_id=snapshot_id,
+                snapshot_version=snapshot_version,
+                chain_id=chain_id,
+                cache_fingerprint=artifact_fingerprint(identity.cache_tuple()),
+            )
+            if persisted_review is None or persisted_review.job_id != review_view.job_id:
+                return
         await self.repository.persist_chain_quality_assessment(
             {
                 "snapshot_id": snapshot_id,
@@ -888,15 +1015,7 @@ class Workspace:
                     recommendations.get("status") or "NOT_EVALUATED"
                 ),
                 "assessment": assessment,
-                "overview_projection": {
-                    **overview_projection,
-                    "input_fingerprint": input_fingerprint,
-                    "snapshot_id": snapshot_id,
-                    "snapshot_version": snapshot_version,
-                    "config_version": expected_config_version,
-                    "topology_version": _topology_version(package),
-                    "pipeline_version": CHAIN_QUALITY_PIPELINE_VERSION,
-                },
+                "overview_projection": projection_payload,
             }
         )
 
@@ -916,11 +1035,28 @@ class Workspace:
             )
             if stored is None or stored.status != "SUCCEEDED" or stored.result is None:
                 return False
+            if not isinstance(stored.identity, dict):
+                return False
+            stored_identity_adapter = analysis_identity_from_review(
+                stored.identity,
+                pipeline_version=str(stored.identity.get("engine_version") or ""),
+                input_fingerprint=str(
+                    stored.identity.get("tier1b_artifact_fingerprint") or ""
+                ),
+            )
+            if not stored_identity_adapter.available:
+                return False
+            if (
+                stored.identity.get("snapshot_id") != stored.snapshot_id
+                or stored.identity.get("snapshot_version") != stored.snapshot_version
+                or stored.identity.get("chain_id") != stored.chain_id
+            ):
+                return False
             stored_identity = (
                 ReviewIdentity(**stored.identity)
-                if isinstance(stored.identity, dict)
-                else identity
             )
+            if stored_identity.cache_tuple() != identity.cache_tuple():
+                return False
             await self._materialize_chain_quality(
                 SimpleNamespace(
                     job_id=stored.job_id,
@@ -1089,11 +1225,14 @@ class Workspace:
         self, payload: dict[str, Any]
     ) -> tuple[IngestedPackage, SnapshotPrecompute]:
         """Prepare a reactivated snapshot without retaining the loop default pool."""
-        loop = asyncio.get_running_loop()
-        with ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix="nocpro-snapshot-prepare"
-        ) as executor:
-            return await loop.run_in_executor(executor, self.compute_snapshot, payload)
+        from .blocking_work import run_blocking
+
+        return await run_blocking(
+            self.compute_snapshot,
+            payload,
+            workload="api-read",
+            pool=getattr(self, "_blocking_work_pool", None),
+        )
 
     def replace_snapshot(self, payload: dict[str, Any]) -> SnapshotPrecompute:
         package, result = self.compute_snapshot(payload)
@@ -1137,6 +1276,7 @@ class Workspace:
             self.package = package
             self.precompute = result
             self._activation_generation += 1
+            self._analysis_generation += 1
             identity = (package.snapshot.snapshot_id, package.snapshot.snapshot_version)
             self._prepared_snapshot_cache.pop(identity, None)
             self._prepared_snapshot_cache[identity] = (package, result)
@@ -1338,12 +1478,14 @@ class Workspace:
 
     def submit_deep_dive(self, chain_id: str):
         package, similarity_context, _ = self._deep_dive_context(chain_id)
-        return self.jobs.submit(
+        submission = self.jobs.submit(
             package,
             chain_id,
             analysis_config=self.config,
             similarity_context=similarity_context,
         )
+        _record_quality_submission("deep-dive", submission)
+        return submission
 
     def precompute_snapshot_deep_dive(self) -> dict[str, Any]:
         """Precompute Tier-2 Deep Dive in parallel for all multi-member chains in background."""
@@ -1446,6 +1588,11 @@ class Workspace:
         snapshot_id = package.snapshot.snapshot_id
         snapshot_version = package.snapshot.snapshot_version
         expected_config_version = self.config.config_version
+        expected_review_config_version = (
+            self.config.counterfactual.config_version
+            if self.config.counterfactual is not None
+            else "UNAVAILABLE"
+        )
         expected_topology_version = _topology_version(package)
         topology_known = snapshot_topology_profile(
             snapshot_id,
@@ -1467,6 +1614,7 @@ class Workspace:
                 snapshot_id=snapshot_id,
                 snapshot_version=snapshot_version,
                 config_version=expected_config_version,
+                review_config_version=expected_review_config_version,
                 topology_version=expected_topology_version,
                 topology_version_known=topology_known,
             ):
@@ -1517,15 +1665,82 @@ class Workspace:
                 if deep_status != "SUCCEEDED":
                     continue
 
-                review = self.review_jobs.latest_for_chain(
-                    snapshot_id, snapshot_version, chain_id
+                # _review_context is the canonical source of the current
+                # Review identity (including its Tier-1B and compatible Audit
+                # fingerprints). Do not infer currentness from only the
+                # snapshot/chain tuple or topology field.
+                expected_generation = self._analysis_generation
+                expected_package = self.package
+                expected_analysis_config = self.config.config_version
+                expected_review_config = (
+                    self.config.counterfactual.config_version
+                    if self.config.counterfactual is not None
+                    else "UNAVAILABLE"
                 )
+                _, _, _, expected_review_identity = await self._review_context(chain_id)
                 if (
-                    review is not None
-                    and getattr(review.identity, "topology_version", None)
-                    != expected_topology_version
+                    self._analysis_generation != expected_generation
+                    or self.package is not expected_package
+                    or expected_review_identity.snapshot_id != snapshot_id
+                    or expected_review_identity.snapshot_version != snapshot_version
+                    or expected_review_identity.chain_id != chain_id
+                    or expected_review_identity.analysis_version != expected_analysis_config
+                    or expected_review_identity.config_version != expected_review_config
+                    or expected_review_identity.topology_version != expected_topology_version
                 ):
-                    review = None
+                    # Snapshot/config/topology changed while canonical Audit
+                    # context was loading. The next reconciliation pass will
+                    # compute against the new generation.
+                    continue
+
+                review = self.review_jobs.latest_for_identity(expected_review_identity)
+                if review is None and self.repository is not None:
+                    repository_lookup = getattr(
+                        self.repository,
+                        "latest_counterfactual_job_for_identity",
+                        None,
+                    )
+                    if callable(repository_lookup):
+                        review = await repository_lookup(
+                            snapshot_id=snapshot_id,
+                            snapshot_version=snapshot_version,
+                            chain_id=chain_id,
+                            cache_fingerprint=artifact_fingerprint(
+                                expected_review_identity.cache_tuple()
+                            ),
+                        )
+                        if review is not None:
+                            stored_identity = getattr(review, "identity", None)
+                            adapted_identity = analysis_identity_from_review(
+                                stored_identity,
+                                pipeline_version=str(
+                                    stored_identity.get("engine_version") or ""
+                                ) if isinstance(stored_identity, dict) else "",
+                                input_fingerprint=str(
+                                    stored_identity.get("tier1b_artifact_fingerprint") or ""
+                                ) if isinstance(stored_identity, dict) else "",
+                            )
+                            if (
+                                not adapted_identity.available
+                                or not isinstance(stored_identity, dict)
+                                or stored_identity.get("snapshot_id") != review.snapshot_id
+                                or stored_identity.get("snapshot_version") != review.snapshot_version
+                                or stored_identity.get("chain_id") != review.chain_id
+                            ):
+                                review = None
+                            else:
+                                try:
+                                    stored_review_identity = ReviewIdentity(**stored_identity)
+                                except (TypeError, ValueError):
+                                    review = None
+                                else:
+                                    if stored_review_identity.cache_tuple() != expected_review_identity.cache_tuple():
+                                        review = None
+                        if (
+                            self._analysis_generation != expected_generation
+                            or self.package is not expected_package
+                        ):
+                            continue
                 review_status = (
                     getattr(review.status, "value", str(review.status))
                     if review is not None
@@ -1533,8 +1748,9 @@ class Workspace:
                 )
                 if review_status in {"QUEUED", "RUNNING", "SUCCEEDED"}:
                     continue
-                await self.submit_review(chain_id)
-                review_submitted += 1
+                submitted_review = await self.submit_review(chain_id)
+                if submitted_review is not None:
+                    review_submitted += 1
             except Exception as exc:
                 failure = {
                     "chain_id": str(chain_id),
@@ -1722,9 +1938,30 @@ class Workspace:
     async def submit_review(self, chain_id: str):
         if self._closing:
             return None
-        package, tier1b_artifact, audit_artifact, _ = await self._review_context(
-            chain_id
-        )
+        with self._lock:
+            expected_package = self.package
+            expected_config = self.config
+            expected_generation = self._analysis_generation
+        package, tier1b_artifact, audit_artifact, identity = await self._review_context(chain_id)
+        with self._lock:
+            if (
+                self._closing
+                or self.package is not expected_package
+                or package is not expected_package
+                or self.config is not expected_config
+                or self._analysis_generation != expected_generation
+                or identity.snapshot_id != package.snapshot.snapshot_id
+                or identity.snapshot_version != package.snapshot.snapshot_version
+                or identity.chain_id != chain_id
+                or identity.analysis_version != expected_config.config_version
+                or identity.config_version != (
+                    expected_config.counterfactual.config_version
+                    if expected_config.counterfactual is not None
+                    else "UNAVAILABLE"
+                )
+                or identity.topology_version != _topology_version(package)
+            ):
+                return None
         lineage_id = getattr(self, "lineage_by_chain", {}).get(chain_id)
         if lineage_id is None and self.package is not None:
             dag = self._get_or_build_local_evolution_dag()
@@ -1742,14 +1979,24 @@ class Workspace:
             self.lineage_by_chain[chain_id] = lineage_id
         if self._closing:
             return None
-        return self.review_jobs.submit(
+        with self._lock:
+            if (
+                self._closing
+                or self.package is not expected_package
+                or self.config is not expected_config
+                or self._analysis_generation != expected_generation
+            ):
+                return None
+        submission = self.review_jobs.submit(
             package,
             chain_id,
             tier1b_artifact=tier1b_artifact,
             audit_artifact=audit_artifact,
-            analysis_config=self.config,
+            analysis_config=expected_config,
             lineage_component_id=lineage_id,
         )
+        _record_quality_submission("review", submission)
+        return submission
 
     async def latest_review(self, chain_id: str):
         _, _, _, identity = await self._review_context(chain_id)
@@ -1765,6 +2012,29 @@ class Workspace:
             cache_fingerprint=artifact_fingerprint(identity.cache_tuple()),
         )
         if compatible is not None:
+            if not isinstance(compatible.identity, dict):
+                return None
+            adapted = analysis_identity_from_review(
+                compatible.identity,
+                pipeline_version=str(compatible.identity.get("engine_version") or ""),
+                input_fingerprint=str(
+                    compatible.identity.get("tier1b_artifact_fingerprint") or ""
+                ),
+            )
+            if not adapted.available:
+                return None
+            if (
+                compatible.identity.get("snapshot_id") != compatible.snapshot_id
+                or compatible.identity.get("snapshot_version") != compatible.snapshot_version
+                or compatible.identity.get("chain_id") != compatible.chain_id
+            ):
+                return None
+            try:
+                stored_identity = ReviewIdentity(**compatible.identity)
+            except (TypeError, ValueError):
+                return None
+            if stored_identity.cache_tuple() != identity.cache_tuple():
+                return None
             return compatible
         return None
 

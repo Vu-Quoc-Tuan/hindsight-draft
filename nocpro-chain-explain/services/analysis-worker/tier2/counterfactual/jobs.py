@@ -390,6 +390,23 @@ class CounterfactualJobManager:
             ]
         return matches[-1] if matches else None
 
+    def latest_for_identity(
+        self, identity: ReviewIdentity
+    ) -> CounterfactualJobView | None:
+        """Return the newest lifecycle state for one exact immutable identity."""
+        with self._lock:
+            matches = [
+                job.view()
+                for job in self._jobs.values()
+                if job.identity.cache_tuple() == identity.cache_tuple()
+            ]
+        if not matches:
+            return None
+        return max(
+            matches,
+            key=lambda job: job.submitted_at or datetime.min.replace(tzinfo=timezone.utc),
+        )
+
     def latest_for_chain(
         self, snapshot_id: str, snapshot_version: str, chain_id: str
     ) -> CounterfactualJobView | None:

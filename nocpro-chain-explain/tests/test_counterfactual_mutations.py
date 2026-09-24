@@ -164,6 +164,7 @@ def test_public_contract_v1_is_persistence_stable_for_each_operation(
 
     assert public == persisted
     assert public["contract_version"] == "counterfactual-review-v1"
+    assert public["evaluation_completed"] is True
     assert public["calibration_status"] == "SYNTHETIC_ONLY"
     assert public["operation_status"]["ADD_MEMBER"]["status"] == "BLOCKED"
     assert public["operation_status"]["ADD_MEMBER"]["reason"] == "UNKNOWN_UPSTREAM_SEMANTICS"
@@ -200,6 +201,7 @@ def test_clean_truth_partition_abstains() -> None:
     result = _run(payload, "SYN-CHAIN-REMOVE-TRUTH")
     assert result.recommendations == ()
     assert result.recommendation_status.value == "NO_CLEAR_ALTERNATIVE"
+    assert public_review_result(result)["evaluation_completed"] is True
 
 
 def test_partition_benchmark_metrics_are_label_invariant() -> None:

@@ -44,6 +44,7 @@ def test_review_submit_poll_and_compatible_lookup() -> None:
                 assert completed["identity"]["snapshot_version"] == "1"
                 assert completed["result"]["status"] == "UNAVAILABLE"
                 assert completed["result"]["contract_version"] == "counterfactual-review-v1"
+                assert completed["result"]["evaluation_completed"] is False
                 assert completed["result"]["calibration_status"] is None
                 assert (
                     completed["result"]["reason"]

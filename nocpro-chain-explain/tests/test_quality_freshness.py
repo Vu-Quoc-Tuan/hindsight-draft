@@ -20,19 +20,38 @@ from nocpro_api.routes import (
 
 
 def _projection(version: str) -> dict:
-    return {
-        "projection_version": "CHAIN_OVERVIEW_V3",
-        "pipeline_version": "DETERMINISTIC_QUALITY_V3",
+    identity = {
+        "identity_version": "analysis-identity-v1",
         "snapshot_id": "S1",
         "snapshot_version": "v1",
-        "config_version": "config-1",
+        "chain_id": "C1",
         "topology_version": version,
+        "analysis_config_version": "config-1",
+        "review_config_version": "review-config-1",
+        "pipeline_version": "DETERMINISTIC_QUALITY_V6",
+        "input_fingerprint": "quality-fingerprint-1",
+    }
+    return {
+        "projection_version": "CHAIN_OVERVIEW_V6",
+        "pipeline_version": "DETERMINISTIC_QUALITY_V6",
+        "snapshot_id": "S1",
+        "snapshot_version": "v1",
+        "chain_id": "C1",
+        "config_version": "config-1",
+        "review_config_version": "review-config-1",
+        "topology_version": version,
+        "input_fingerprint": "quality-fingerprint-1",
+        "analysis_identity": identity,
     }
 
 
 def test_one_quality_freshness_contract_rejects_old_topology():
     old = _projection("topology-1")
     assert projection_staleness_reason(old, topology_version="topology-2") == "TOPOLOGY_MISMATCH"
+    old_quality_pipeline = _projection("topology-2")
+    old_quality_pipeline["pipeline_version"] = "DETERMINISTIC_QUALITY_V3"
+    old_quality_pipeline["analysis_identity"]["pipeline_version"] = "DETERMINISTIC_QUALITY_V3"
+    assert projection_staleness_reason(old_quality_pipeline) == "PIPELINE_STALE"
     legacy_projection = _projection("topology-2")
     legacy_projection["projection_version"] = "CHAIN_OVERVIEW_V2"
     assert projection_staleness_reason(
@@ -40,8 +59,17 @@ def test_one_quality_freshness_contract_rejects_old_topology():
     ) == "PROJECTION_STALE"
     row = SimpleNamespace(
         snapshot_id="S1", snapshot_version="v1", chain_id="C1",
+        input_fingerprint="quality-fingerprint-1",
         status="EVALUATED", stars=4,
-        payload={"status": "EVALUATED", "stars": 4, "overview_projection": old},
+        payload={
+            "status": "EVALUATED",
+            "readiness": "READY",
+            "readiness_policy_version": "quality-readiness-v1",
+            "reason_codes": [],
+            "evidence_coverage": {},
+            "stars": 4,
+            "overview_projection": old,
+        },
     )
     assert not terminal_quality_row_is_current(
         row, snapshot_id="S1", snapshot_version="v1",
@@ -58,6 +86,43 @@ def test_one_quality_freshness_contract_rejects_old_topology():
     assert summary.sturdy_count == 0
     assert summary.unevaluated_count == 1
     assert summary.chain_assessments[0].stars is None
+
+
+def test_terminal_quality_requires_canonical_row_and_payload_stars_to_match():
+    payload = {
+        "status": "EVALUATED",
+        "readiness": "READY",
+        "readiness_policy_version": "quality-readiness-v1",
+        "reason_codes": [],
+        "evidence_coverage": {},
+        "stars": 4,
+        "overview_projection": _projection("topology-2"),
+    }
+    row = SimpleNamespace(
+        snapshot_id="S1",
+        snapshot_version="v1",
+        chain_id="C1",
+        input_fingerprint="quality-fingerprint-1",
+        status="EVALUATED",
+        stars=4,
+        payload=payload,
+    )
+
+    assert terminal_quality_row_is_current(
+        row,
+        snapshot_id="S1",
+        snapshot_version="v1",
+        config_version="config-1",
+        topology_version="topology-2",
+    )
+    row.stars = 3
+    assert not terminal_quality_row_is_current(
+        row,
+        snapshot_id="S1",
+        snapshot_version="v1",
+        config_version="config-1",
+        topology_version="topology-2",
+    )
 
 
 def test_cohesion_cache_fingerprint_tracks_topology_version():

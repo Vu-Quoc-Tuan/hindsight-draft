@@ -45,6 +45,7 @@ def _is_terminal_quality_row(
     row: Any,
     *,
     expected_config_version: str | None = None,
+    expected_review_config_version: str | None = None,
     expected_topology_version: str | None = None,
     topology_version_known: bool = False,
 ) -> bool:
@@ -53,6 +54,7 @@ def _is_terminal_quality_row(
         snapshot_id=getattr(row, "snapshot_id", None),
         snapshot_version=getattr(row, "snapshot_version", None),
         config_version=expected_config_version,
+        review_config_version=expected_review_config_version,
         topology_version=expected_topology_version,
         topology_version_known=topology_version_known,
     )
@@ -159,7 +161,13 @@ class SnapshotQualityRunner:
                 config_snapshot = deepcopy(active_config) if active_config is not None else None
                 config_version = getattr(config_snapshot, "config_version", None)
                 active_topologies: dict[str, str | None] = {}
+                active_source_count = sum(
+                    not task.done() for task in self._source_tasks.values()
+                )
+                available_slots = max(0, self.max_workers - active_source_count)
                 for source in await self._sources():
+                    if available_slots == 0:
+                        break
                     raw_snapshot = source.payload.get("snapshot") or {}
                     topo_ref = raw_snapshot.get("topology_ref") or {}
                     source_topology_version = await effective_topology_version(
@@ -182,6 +190,7 @@ class SnapshotQualityRunner:
                         self._run_source(source, config_snapshot=config_snapshot),
                         name=f"snapshot-quality:{source.snapshot_id}:{source.snapshot_version}",
                     )
+                    available_slots -= 1
                     self._source_tasks[source.identity] = task
                     task.add_done_callback(
                         lambda done, identity=source.identity, version=version_key: self._source_done(
@@ -311,15 +320,16 @@ class SnapshotQualityRunner:
             ),
         )
 
-    async def _ensure_durable(self, source: _SnapshotSource) -> None:
+    async def _ensure_durable(self, source: _SnapshotSource) -> bool:
         if source.identity in self._ingested:
-            return
+            return True
         try:
             await self.repository.ingest_direct(deepcopy(source.payload))
         except Exception as exc:
-            # A live snapshot may already be present with the same identity;
-            # that is harmless.  A conflicting identity is logged and the
-            # quality runner still analyzes the immutable source payload.
+            # Do not analyze or permanently suppress this source after a
+            # transient persistence failure. The scheduler retries it on its
+            # next pass; an exact duplicate is returned as success by the
+            # repository's idempotent ingest path.
             LOGGER.warning(
                 "Background quality could not register snapshot %s/%s (%s): %s",
                 source.snapshot_id,
@@ -327,8 +337,9 @@ class SnapshotQualityRunner:
                 source.origin,
                 exc,
             )
-        finally:
-            self._ingested.add(source.identity)
+            return False
+        self._ingested.add(source.identity)
+        return True
 
     async def _run_source(
         self,
@@ -337,7 +348,8 @@ class SnapshotQualityRunner:
         config_snapshot: Any | None = None,
     ) -> str:
         async with self._semaphore:
-            await self._ensure_durable(source)
+            if not await self._ensure_durable(source):
+                return "RETRY"
             worker = Workspace(config_path=self.config_path)
             active_workspace = getattr(self.coordinator, "workspace", None)
             current_config = (
@@ -483,6 +495,14 @@ class SnapshotQualityRunner:
                 "config_version",
                 None,
             )
+        config = self.config_template or getattr(
+            getattr(self.coordinator, "workspace", None), "config", None
+        )
+        expected_review_config_version = (
+            config.counterfactual.config_version
+            if config is not None and config.counterfactual is not None
+            else "UNAVAILABLE"
+        )
         try:
             assessments = await self.repository.list_chain_quality_assessments(
                 snapshot_id=source.snapshot_id,
@@ -503,6 +523,7 @@ class SnapshotQualityRunner:
             if _is_terminal_quality_row(
                 row,
                 expected_config_version=expected_config_version,
+                expected_review_config_version=expected_review_config_version,
                 expected_topology_version=topology_version,
                 topology_version_known=topology_known,
             )
@@ -528,6 +549,11 @@ class SnapshotQualityRunner:
         except Exception:
             return False
         expected_config_version = worker.config.config_version
+        expected_review_config_version = (
+            worker.config.counterfactual.config_version
+            if worker.config.counterfactual is not None
+            else "UNAVAILABLE"
+        )
         topology_version = _topology_version(package)
         topology_known = snapshot_topology_profile(
             package.snapshot.snapshot_id,
@@ -539,6 +565,7 @@ class SnapshotQualityRunner:
             if _is_terminal_quality_row(
                 row,
                 expected_config_version=expected_config_version,
+                expected_review_config_version=expected_review_config_version,
                 expected_topology_version=topology_version,
                 topology_version_known=topology_known,
             )
