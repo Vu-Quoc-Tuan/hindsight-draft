@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+from dataclasses import replace
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -17,8 +19,11 @@ from nocpro_api.persistence.change_journal import (
 )
 from nocpro_api.persistence.models import (
     Base,
+    CandidateExposureModel,
     ChainQualityAssessmentRecord,
+    CounterfactualJobRecord,
     QualityEvaluationReceiptRecord,
+    ReviewSessionModel,
     ChangeEventClockModel,
     ChangeEventModel,
 )
@@ -46,7 +51,9 @@ def _safe_test_database_url() -> str:
     return parsed.render_as_string(hide_password=False)
 
 
-async def _create_test_schema(database_url: str, *, include_quality: bool = False):
+async def _create_test_schema(
+    database_url: str, *, include_quality: bool = False, include_review_bundle: bool = False
+):
     engine = create_async_engine(database_url, pool_pre_ping=True)
     schema = f"test_change_journal_{uuid4().hex}"
     created = False
@@ -64,6 +71,12 @@ async def _create_test_schema(database_url: str, *, include_quality: bool = Fals
         if include_quality:
             tables.append(ChainQualityAssessmentRecord.__table__)
             tables.append(QualityEvaluationReceiptRecord.__table__)
+        if include_review_bundle:
+            tables.extend([
+                CounterfactualJobRecord.__table__,
+                ReviewSessionModel.__table__,
+                CandidateExposureModel.__table__,
+            ])
         async with scoped_engine.begin() as connection:
             await connection.run_sync(
                 lambda sync_connection: Base.metadata.create_all(
@@ -264,6 +277,102 @@ def test_postgres_quality_replay_does_not_publish_duplicate_terminal_events(
             ]
             assert [event.revision for event in events] == [1, 2]
             assert all(event.identity_digest == events[0].identity_digest for event in events)
+        finally:
+            await _drop_test_schema(engine, schema)
+
+    asyncio.run(exercise())
+
+
+def test_postgres_concurrent_succeeded_review_bundle_replay_is_idempotent() -> None:
+    """Concurrent first writers must serialize on persisted identities, not process locks."""
+    database_url = _safe_test_database_url()
+
+    async def exercise() -> None:
+        from review_learning.contracts import (
+            CandidateExposure,
+            ImmutableReviewConflict,
+            ReviewSession,
+        )
+
+        engine, _, sessions, schema = await _create_test_schema(
+            database_url, include_review_bundle=True
+        )
+        repository = SnapshotRepository(sessions)
+        try:
+            token = uuid4().hex
+            job_id = f"job-{token}"
+            review_id = f"review-{token}"
+            now = datetime.now(timezone.utc)
+            payload = {
+                "job_id": job_id,
+                "snapshot_id": "snapshot-concurrent",
+                "snapshot_version": "v1",
+                "chain_id": "chain-concurrent",
+                "cache_fingerprint": "a" * 64,
+                "status": "SUCCEEDED",
+                "progress_percent": 100,
+                "cache_hit": False,
+                "identity": {"snapshot_id": "snapshot-concurrent", "snapshot_version": "v1"},
+                "result": {"recommendations": [{"candidate_id": "candidate-1"}]},
+                "error": None,
+            }
+            review_session = ReviewSession(
+                review_id=review_id,
+                job_id=job_id,
+                snapshot_id=payload["snapshot_id"],
+                snapshot_version=payload["snapshot_version"],
+                chain_id=payload["chain_id"],
+                review_time=now,
+                source_kind="OPERATOR_REVIEW",
+                candidate_set_fingerprint="b" * 64,
+                generator_version="test-generator-v1",
+                config_version="test-config-v1",
+            )
+            exposures = [CandidateExposure(
+                review_id=review_id,
+                candidate_id="candidate-1",
+                candidate_fingerprint="c" * 64,
+                operation="REMOVE",
+                original_rank=1,
+                displayed_rank=1,
+                deterministic_eligibility="ELIGIBLE",
+                hard_gate_status="PASSED",
+                pareto_state="FRONTIER_SELECTED",
+            )]
+            start = asyncio.Event()
+
+            async def writer() -> None:
+                await start.wait()
+                await repository.persist_succeeded_job_and_review_bundle(
+                    payload, review_session, exposures
+                )
+
+            first = asyncio.create_task(writer())
+            second = asyncio.create_task(writer())
+            start.set()
+            await asyncio.wait_for(asyncio.gather(first, second), timeout=10)
+
+            stored_job = await repository.counterfactual_job(job_id)
+            stored_session = await repository.get_review_session(review_id)
+            stored_exposures = await repository.get_candidate_exposures(review_id)
+            assert stored_job is not None and stored_job.result == payload["result"]
+            assert stored_session is not None and stored_session.job_id == job_id
+            assert len(stored_exposures) == 1
+
+            with pytest.raises(ValueError, match="result integrity conflict"):
+                await repository.persist_succeeded_job_and_review_bundle(
+                    {**payload, "result": {"recommendations": []}},
+                    review_session,
+                    exposures,
+                )
+            other_job_id = f"job-{uuid4().hex}"
+            with pytest.raises(ImmutableReviewConflict, match="persisted review session"):
+                await repository.persist_succeeded_job_and_review_bundle(
+                    {**payload, "job_id": other_job_id},
+                    replace(review_session, job_id=other_job_id),
+                    exposures,
+                )
+            assert await repository.counterfactual_job(other_job_id) is None
         finally:
             await _drop_test_schema(engine, schema)
 

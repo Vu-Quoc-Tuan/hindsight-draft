@@ -347,16 +347,16 @@ def test_succeeded_job_result_replay_is_immutable_on_both_review_write_paths():
             await repository.persist_counterfactual_job({**review_payload, "result": {"facts": {"a": 9}}})
         with pytest.raises(ValueError, match="result integrity conflict"):
             await repository.persist_deep_dive_job({**deep_payload, "result": {"analysis": 9}})
-        with pytest.raises(ValueError, match="result integrity conflict"):
-            await repository.persist_succeeded_job_and_review_bundle(
-                {**review_payload, "result": {"facts": {"a": 9}}}, None, ()
-            )
-        from nocpro_api.persistence.models import ReviewSessionModel
         bundle = SimpleNamespace(
-            review_id="bundle-1", candidate_set_fingerprint="c" * 64,
+            review_id="bundle-1", job_id="review-1", candidate_set_fingerprint="c" * 64,
             snapshot_id="s1", snapshot_version="v1", chain_id="c1",
             lineage_component_id=None,
         )
+        with pytest.raises(ValueError, match="result integrity conflict"):
+            await repository.persist_succeeded_job_and_review_bundle(
+                {**review_payload, "result": {"facts": {"a": 9}}}, bundle, ()
+            )
+        from nocpro_api.persistence.models import ReviewSessionModel
         async def bundle_row(model, key, **kwargs):
             if model is CounterfactualJobRecord:
                 return review
@@ -368,6 +368,98 @@ def test_succeeded_job_result_replay_is_immutable_on_both_review_write_paths():
         await repository.persist_succeeded_job_and_review_bundle(review_payload, bundle, ())
         assert review.result_payload == {"facts": {"b": 2, "a": 1}}
         session.execute.assert_not_awaited()
+
+    asyncio.run(exercise())
+
+
+def test_concurrent_bundle_conflict_reloads_and_verifies_job_and_review_rows():
+    from review_learning.contracts import ImmutableReviewConflict
+    from nocpro_api.persistence.models import CounterfactualJobRecord, ReviewSessionModel
+    from sqlalchemy.dialects import postgresql
+
+    async def exercise():
+        sessions = MagicMock()
+        db_session = sessions.begin.return_value.__aenter__.return_value
+        repository = SnapshotRepository(sessions)
+        job_payload = {
+            "job_id": "job-race", "snapshot_id": "s1", "snapshot_version": "v1",
+            "chain_id": "c1", "cache_fingerprint": "a" * 64,
+            "status": "SUCCEEDED", "progress_percent": 100, "cache_hit": False,
+            "identity": {"snapshot_id": "s1", "snapshot_version": "v1"},
+            "result": {"facts": {"a": 1}}, "error": None,
+        }
+        review_session = SimpleNamespace(
+            review_id="review-race", job_id="job-race", snapshot_id="s1",
+            snapshot_version="v1", chain_id="c1", review_time="2026-09-25T00:00:00Z",
+            source_kind="OPERATOR_REVIEW", lineage_component_id=None,
+            candidate_set_fingerprint="b" * 64, generator_version="gen-1",
+            config_version="cfg-1", delay_model_version=None, retrieval_version=None,
+            exposure_policy="ALL_EVALUATED", status="COMPLETED", review_domain="TEST",
+            snapshot_observed_at=None, job_completed_at=None,
+            source_alarm_universe_fingerprint=None, created_at="2026-09-25T00:00:00Z",
+        )
+        exposures = [SimpleNamespace(
+            review_id="review-race", candidate_id="candidate-1",
+            candidate_fingerprint="c" * 64, operation="REMOVE", original_rank=1,
+            displayed_rank=1, deterministic_eligibility="ELIGIBLE",
+            hard_gate_status="PASSED", pareto_state="FRONTIER_SELECTED",
+            deterministic_context={}, case_context={}, temporal_context={},
+            feature_fingerprint="d" * 64, feature_schema_version="cf-features-v1",
+            feature_payload={}, created_at="2026-09-25T00:00:00Z",
+        )]
+        existing_job = SimpleNamespace(
+            snapshot_id="s1", snapshot_version="v1", chain_id="c1",
+            cache_fingerprint="a" * 64, identity_payload=job_payload["identity"],
+            status="SUCCEEDED", result_payload=job_payload["result"],
+        )
+        existing_session = SimpleNamespace(
+            job_id="job-race", candidate_set_fingerprint="b" * 64,
+            snapshot_id="s1", snapshot_version="v1", chain_id="c1",
+            lineage_component_id=None,
+        )
+        get_calls = 0
+
+        async def get(model, key, **kwargs):
+            nonlocal get_calls
+            get_calls += 1
+            if get_calls == 1 or get_calls == 3:
+                return None
+            if model is CounterfactualJobRecord:
+                return existing_job
+            if model is ReviewSessionModel:
+                return existing_session
+            return None
+
+        db_session.get = AsyncMock(side_effect=get)
+        conflict_result = MagicMock()
+        conflict_result.scalar_one_or_none.return_value = None
+        db_session.execute = AsyncMock(side_effect=[conflict_result, conflict_result])
+        db_session.scalars = AsyncMock(return_value=SimpleNamespace(
+            all=lambda: [SimpleNamespace(candidate_id="candidate-1", candidate_fingerprint="c" * 64)]
+        ))
+
+        await repository.persist_succeeded_job_and_review_bundle(
+            job_payload, review_session, exposures
+        )
+
+        assert db_session.get.await_count == 4
+        assert db_session.execute.await_count == 2
+        statements = [call.args[0] for call in db_session.execute.await_args_list]
+        compiled = [str(statement.compile(dialect=postgresql.dialect())) for statement in statements]
+        assert "ON CONFLICT (job_id) DO NOTHING" in compiled[0]
+        assert "ON CONFLICT (review_id) DO NOTHING" in compiled[1]
+        db_session.add.assert_not_called()
+
+        successful_insert = MagicMock()
+        successful_insert.scalar_one_or_none.return_value = "different-job"
+        db_session.get = AsyncMock(side_effect=[None, existing_session])
+        db_session.execute = AsyncMock(return_value=successful_insert)
+        with pytest.raises(ImmutableReviewConflict):
+            await repository.persist_succeeded_job_and_review_bundle(
+                {**job_payload, "job_id": "different-job"},
+                SimpleNamespace(**{**vars(review_session), "job_id": "different-job"}),
+                exposures,
+            )
 
     asyncio.run(exercise())
 

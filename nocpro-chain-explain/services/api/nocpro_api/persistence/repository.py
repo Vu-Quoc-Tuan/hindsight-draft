@@ -1588,6 +1588,18 @@ class SnapshotRepository:
         status_rank = {"QUEUED": 0, "RUNNING": 1, "SUCCEEDED": 2, "FAILED": 2}
         if job_payload["status"] not in status_rank:
             raise ValueError("unknown counterfactual job status")
+        if (
+            session.job_id,
+            session.snapshot_id,
+            session.snapshot_version,
+            session.chain_id,
+        ) != (
+            job_payload["job_id"],
+            job_payload["snapshot_id"],
+            job_payload["snapshot_version"],
+            job_payload["chain_id"],
+        ):
+            raise ValueError("review session identity does not match counterfactual job")
 
         job_values = {
             "job_id": job_payload["job_id"],
@@ -1608,6 +1620,27 @@ class SnapshotRepository:
             existing_job = await db_session.get(
                 CounterfactualJobRecord, job_payload["job_id"], with_for_update=True
             )
+            if existing_job is None:
+                inserted_job_id = (await db_session.execute(
+                    pg_insert(CounterfactualJobRecord)
+                    .values(**job_values)
+                    .on_conflict_do_nothing(
+                        index_elements=[CounterfactualJobRecord.job_id]
+                    )
+                    .returning(CounterfactualJobRecord.job_id)
+                )).scalar_one_or_none()
+                if inserted_job_id is None:
+                    # A row inserted after the initial SELECT is serialized by
+                    # the unique key; read and verify its committed contents.
+                    existing_job = await db_session.get(
+                        CounterfactualJobRecord,
+                        job_payload["job_id"],
+                        with_for_update=True,
+                    )
+                    if existing_job is None:
+                        raise RuntimeError(
+                            "counterfactual job conflict without persisted row"
+                        )
             if existing_job is not None:
                 immutable = (
                     existing_job.snapshot_id,
@@ -1631,14 +1664,53 @@ class SnapshotRepository:
                 if existing_job.status != "SUCCEEDED":
                     for key, val in job_values.items():
                         setattr(existing_job, key, val)
-            else:
-                db_session.add(CounterfactualJobRecord(**job_values))
 
             # 2. Persist ReviewSession and CandidateExposureModel rows
             existing_session = await db_session.get(ReviewSessionModel, session.review_id, with_for_update=True)
+            if existing_session is None:
+                review_values = {
+                    "review_id": session.review_id,
+                    "job_id": session.job_id,
+                    "snapshot_id": session.snapshot_id,
+                    "snapshot_version": session.snapshot_version,
+                    "chain_id": session.chain_id,
+                    "review_time": self._as_datetime(session.review_time),
+                    "source_kind": session.source_kind,
+                    "lineage_component_id": session.lineage_component_id,
+                    "candidate_set_fingerprint": session.candidate_set_fingerprint,
+                    "generator_version": session.generator_version,
+                    "config_version": session.config_version,
+                    "delay_model_version": session.delay_model_version,
+                    "retrieval_version": session.retrieval_version,
+                    "exposure_policy": session.exposure_policy,
+                    "status": session.status,
+                    "review_domain": getattr(session, "review_domain", "UNKNOWN_DOMAIN"),
+                    "snapshot_observed_at": self._as_datetime(session.snapshot_observed_at) if getattr(session, "snapshot_observed_at", None) else None,
+                    "job_completed_at": self._as_datetime(session.job_completed_at) if getattr(session, "job_completed_at", None) else None,
+                    "source_alarm_universe_fingerprint": getattr(session, "source_alarm_universe_fingerprint", None),
+                    "created_at": self._as_datetime(session.created_at),
+                }
+                inserted_session_id = (await db_session.execute(
+                    pg_insert(ReviewSessionModel)
+                    .values(**review_values)
+                    .on_conflict_do_nothing(
+                        index_elements=[ReviewSessionModel.review_id]
+                    )
+                    .returning(ReviewSessionModel.review_id)
+                )).scalar_one_or_none()
+                if inserted_session_id is None:
+                    existing_session = await db_session.get(
+                        ReviewSessionModel, session.review_id, with_for_update=True
+                    )
+                    if existing_session is None:
+                        raise RuntimeError(
+                            "review session conflict without persisted row"
+                        )
+
             if existing_session is not None:
                 if (
-                    existing_session.candidate_set_fingerprint != session.candidate_set_fingerprint
+                    existing_session.job_id != session.job_id
+                    or existing_session.candidate_set_fingerprint != session.candidate_set_fingerprint
                     or existing_session.snapshot_id != session.snapshot_id
                     or existing_session.snapshot_version != session.snapshot_version
                     or existing_session.chain_id != session.chain_id
@@ -1657,30 +1729,6 @@ class SnapshotRepository:
                         f"Conflict: persisted review exposures for session {session.review_id} differ from submitted bundle"
                     )
             else:
-                review_row = ReviewSessionModel(
-                    review_id=session.review_id,
-                    job_id=session.job_id,
-                    snapshot_id=session.snapshot_id,
-                    snapshot_version=session.snapshot_version,
-                    chain_id=session.chain_id,
-                    review_time=self._as_datetime(session.review_time),
-                    source_kind=session.source_kind,
-                    lineage_component_id=session.lineage_component_id,
-                    candidate_set_fingerprint=session.candidate_set_fingerprint,
-                    generator_version=session.generator_version,
-                    config_version=session.config_version,
-                    delay_model_version=session.delay_model_version,
-                    retrieval_version=session.retrieval_version,
-                    exposure_policy=session.exposure_policy,
-                    status=session.status,
-                    review_domain=getattr(session, "review_domain", "UNKNOWN_DOMAIN"),
-                    snapshot_observed_at=self._as_datetime(session.snapshot_observed_at) if getattr(session, "snapshot_observed_at", None) else None,
-                    job_completed_at=self._as_datetime(session.job_completed_at) if getattr(session, "job_completed_at", None) else None,
-                    source_alarm_universe_fingerprint=getattr(session, "source_alarm_universe_fingerprint", None),
-                    created_at=self._as_datetime(session.created_at),
-                )
-                db_session.add(review_row)
-                await db_session.flush()
                 for exp in exposures:
                     exposure_row = CandidateExposureModel(
                         exposure_id=self._make_exposure_id(exp.review_id, exp.candidate_id),
