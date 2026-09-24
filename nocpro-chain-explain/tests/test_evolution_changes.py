@@ -190,6 +190,26 @@ def test_receipt_must_match_selected_version_and_chain():
     result = compare(child_receipt=receipt("unrelated", "c2", "r2"))
     assert "RECEIPT_IDENTITY_MISMATCH" in result["quality"]["reason_codes"]
     assert result["quality"]["delta"] is None
+    assert result["quality"]["after_score"] is None
+    assert result["quality"]["after_stars"] is None
+    assert result["quality"]["after_receipt_id"] is None
+    assert result["context_changes"] == []
+
+
+def test_mismatched_receipt_does_not_hide_verified_other_endpoint():
+    result = compare(
+        child_receipt=receipt(
+            "unrelated", "c2", "r2", score=0.712345, stars=4,
+            analysis_config_version="cfg-other",
+        )
+    )
+    assert result["quality"]["before_score"] == 0.612345
+    assert result["quality"]["before_stars"] == 3
+    assert result["quality"]["before_receipt_id"] == "r1"
+    assert result["quality"]["after_score"] is None
+    assert result["quality"]["after_stars"] is None
+    assert result["quality"]["after_receipt_id"] is None
+    assert result["context_changes"] == []
 
 
 def test_bounded_sorted_ids_keep_exact_counts():

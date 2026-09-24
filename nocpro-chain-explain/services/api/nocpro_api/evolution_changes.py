@@ -98,6 +98,13 @@ def compare_evolution_facts(
                 "truncated": len(added) > 100 or len(removed) > 100,
             }
 
+    parent_receipt_matches = bool(edge_valid and parent_receipt is not None and _receipt_matches(parent_receipt, parent))
+    child_receipt_matches = bool(edge_valid and child_receipt is not None and _receipt_matches(child_receipt, child))
+    verified_parent_receipt = parent_receipt if parent_receipt_matches else None
+    verified_child_receipt = child_receipt if child_receipt_matches else None
+
+    # A receipt with a different endpoint identity is not evidence about the
+    # selected edge. Do not use its config values to manufacture context deltas.
     context_changes = []
     for field, parent_field, child_field in (
         ("topology_version", "topology_version", "topology_version"),
@@ -105,8 +112,8 @@ def compare_evolution_facts(
         ("review_config_version", "review_config_version", "review_config_version"),
         ("pipeline_version", "pipeline_version", "pipeline_version"),
     ):
-        left = _text(_get(_identity(parent_receipt), parent_field))
-        right = _text(_get(_identity(child_receipt), child_field))
+        left = _text(_get(_identity(verified_parent_receipt), parent_field))
+        right = _text(_get(_identity(verified_child_receipt), child_field))
         if left is not None and right is not None and left != right:
             context_changes.append({"field": field, "before": left, "after": right})
     left_kind = _text(_get(lineage_edge, "parent_source_kind"))
@@ -114,13 +121,13 @@ def compare_evolution_facts(
     if left_kind is not None and right_kind is not None and left_kind != right_kind:
         context_changes.append({"field": "source_kind", "before": left_kind, "after": right_kind})
 
-    before_assessment = _get(parent_receipt, "assessment")
-    after_assessment = _get(child_receipt, "assessment")
+    before_assessment = _get(verified_parent_receipt, "assessment")
+    after_assessment = _get(verified_child_receipt, "assessment")
     before_score, after_score = _score(before_assessment), _score(after_assessment)
     quality_reasons: list[str] = []
-    if parent_receipt is None or child_receipt is None:
+    if verified_parent_receipt is None or verified_child_receipt is None:
         quality_reasons.append("QUALITY_RECEIPT_UNAVAILABLE")
-    if not edge_valid or (parent_receipt is not None and not _receipt_matches(parent_receipt, parent)) or (child_receipt is not None and not _receipt_matches(child_receipt, child)):
+    if not edge_valid or (parent_receipt is not None and not parent_receipt_matches) or (child_receipt is not None and not child_receipt_matches):
         quality_reasons.append("RECEIPT_IDENTITY_MISMATCH")
     for assessment in (before_assessment, after_assessment):
         if _get(assessment, "status") != "EVALUATED" or _get(assessment, "readiness") != "READY":
@@ -142,8 +149,8 @@ def compare_evolution_facts(
         ("pipeline_version", "PIPELINE_MISMATCH"),
         ("topology_version", "TOPOLOGY_VERSION_MISMATCH"),
     ):
-        left = _text(_get(_identity(parent_receipt), field))
-        right = _text(_get(_identity(child_receipt), field))
+        left = _text(_get(_identity(verified_parent_receipt), field))
+        right = _text(_get(_identity(verified_child_receipt), field))
         if left is None or right is None or left != right:
             quality_reasons.append(reason)
     comparable = not quality_reasons
@@ -153,8 +160,8 @@ def compare_evolution_facts(
         "before_stars": _get(before_assessment, "stars"),
         "after_stars": _get(after_assessment, "stars"),
         "delta": after_score - before_score if comparable else None,
-        "before_receipt_id": _text(_get(parent_receipt, "receipt_id")),
-        "after_receipt_id": _text(_get(child_receipt, "receipt_id")),
+        "before_receipt_id": _text(_get(verified_parent_receipt, "receipt_id")),
+        "after_receipt_id": _text(_get(verified_child_receipt, "receipt_id")),
     }
 
     explanations = []
