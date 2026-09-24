@@ -1,4 +1,4 @@
-"""Version 1 REST routes; Tier-2 uses polling as the approved MVP transport."""
+"""Version 1 REST routes; live clients use SSE only for resource invalidation."""
 
 from __future__ import annotations
 

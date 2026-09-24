@@ -28,6 +28,8 @@ INVALIDATION_SCOPES = frozenset(
 MAX_REPLAY_BATCH = 100
 MAX_CLEANUP_BATCH = 1000
 DEFAULT_RETENTION = timedelta(hours=24)
+MAX_RESOURCE_ID_LENGTH = 255
+MAX_JOURNAL_REVISION = 9_223_372_036_854_775_807
 _SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
 
 
@@ -90,7 +92,11 @@ def _validate_event(
         ("chain_id", chain_id),
         ("topology_version", topology_version),
     ):
-        if value is not None and (not isinstance(value, str) or not value.strip()):
+        if value is not None and (
+            not isinstance(value, str)
+            or not value.strip()
+            or len(value) > MAX_RESOURCE_ID_LENGTH
+        ):
             raise ValueError(f"invalid {name}")
     if identity_digest is not None and (
         not isinstance(identity_digest, str) or _SHA256_RE.fullmatch(identity_digest) is None
@@ -236,19 +242,36 @@ async def read_changes_after(
     revision: int,
     *,
     limit: int = MAX_REPLAY_BATCH,
+    through_revision: int | None = None,
 ) -> list[ChangeEvent]:
-    if not isinstance(epoch, UUID) or revision < 0:
+    if (
+        not isinstance(epoch, UUID)
+        or not isinstance(revision, int)
+        or isinstance(revision, bool)
+        or revision < 0
+        or revision > MAX_JOURNAL_REVISION
+    ):
         raise ValueError("invalid change journal cursor")
     if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= MAX_REPLAY_BATCH:
         raise ValueError(f"limit must be between 1 and {MAX_REPLAY_BATCH}")
+    if through_revision is not None and (
+        not isinstance(through_revision, int)
+        or isinstance(through_revision, bool)
+        or through_revision < revision
+        or through_revision > MAX_JOURNAL_REVISION
+    ):
+        raise ValueError("through_revision must be an integer at or after revision")
+    predicates = [
+        ChangeEventModel.epoch == epoch,
+        ChangeEventModel.revision > revision,
+    ]
+    if through_revision is not None:
+        predicates.append(ChangeEventModel.revision <= through_revision)
     async with sessions() as session:
         rows = (
             await session.scalars(
                 select(ChangeEventModel)
-                .where(
-                    ChangeEventModel.epoch == epoch,
-                    ChangeEventModel.revision > revision,
-                )
+                .where(*predicates)
                 .order_by(ChangeEventModel.revision.asc())
                 .limit(limit)
             )

@@ -67,13 +67,13 @@ data: {"reason":"CURSOR_EXPIRED","epoch":"...","revision":123}
 
 reset reasons `INITIAL_SYNC`, `CURSOR_EXPIRED`, `EPOCH_CHANGED`, `CURSOR_AHEAD`, `BUFFER_OVERFLOW`. Reset event carries current `id` as baseline; client first invalidates full REST resources. Races are safe because subsequent invalidations revalidate again, events aren't state deltas. Malformed Last-Event-ID →400 before streaming, feature off/no persistence →503 (frontend fallback). Valid cursor retained → replay after cursor, ordered max100/batch. Max serialized event 16KiB, named heartbeat15s, bounded queue256/connection. Heartbeat không có `id`, không advance Last-Event-ID và không invalidate data; timestamp chỉ để chẩn đoán, không tính latency giữa hai clock không đồng bộ.
 
-- [ ] Unit tests parse cursor, correct content-type/cache-control, replay order, id field, initial reset, expired/ahead/epoch cursors, unknown schema, cancellation closes generator and DB sessions.
-- [ ] Implement one journal tailer per app worker, DB polling <=1Hz when clients connected; fan-out bounded queues. Reconnect replay reader and live subscription must not lose events at handoff: register buffer first, snapshot high-water, replay up to high-water, then drain buffer >high-water with dedup. All DB cursors bounded; never keep a transaction open for stream duration.
-- [ ] Slow client overflow → reset/disconnect, not unbounded RAM and not blocking other clients. Do not put event-loop sleep under DB transaction. Disconnect cancels connection task but not shared tailer used by other clients; lifespan closes all.
-- [ ] Nginx SSE location: `proxy_buffering off`, read timeout >2 heartbeats, gzip off for stream, forwarding Last-Event-ID; preserve existing CORS/proxy path. Test actual deployment path, not only ASGI.
-- [ ] Transport test using actual local socket against dedicated test app (httpx in-memory may buffer never-ending streaming responses); assert first event arrives before request completes, heartbeat visible, reconnect resumes. Release resources in finally.
-- [ ] Run `pytest -q tests/test_live_updates.py`; D1 actual Postgres + proxy reconnect/slow consumer tests.
-- [ ] Commit: SSE server and lifecycle; reverse-proxy support. Keep feature disabled until D1.
+- [x] Unit tests parse cursor, content/cache headers, replay order over >100 rows, named heartbeat, reset cases, event-size bounds, and generator/subscriber cleanup with a fake journal. Unknown-schema handling is a C3 client contract; real DB-session closure remains part of D1 acceptance.
+- [x] One journal tailer per app worker, DB polling <=1Hz while clients are connected; fan-out queues bounded to 256 entries and total connections capped at 64 per worker. Handoff registers the subscriber before reading high-water, replays only through that mark, then deduplicates queued events. Each DB read uses a short-lived session; no transaction spans the stream.
+- [x] Slow-client overflow produces a reset and disconnect without blocking other subscribers. Disconnect removes that subscriber; the shared tailer remains for other clients; app lifespan closes the hub.
+- [x] Nginx SSE exact location has `proxy_buffering off`, 45s read timeout (>2 heartbeats), gzip off, Last-Event-ID forwarding, and leaves generic API proxy settings unchanged. Static contract test added; Nginx syntax/runtime validation pending.
+- [ ] Transport test against an actual local socket; sandbox denied `socket()` with `PermissionError`, so first-frame-before-completion and network-level disconnect behavior remain unverified here.
+- [x] `pytest -q tests/test_live_updates.py`: 15 passed. D1 PostgreSQL ordering/migration and deployed-proxy reconnect/slow-consumer tests remain pending.
+- [x] Commit: SSE server/lifecycle and route-scoped reverse-proxy support. Feature remains disabled until D1 acceptance.
 
 ## Task 11: C3 — Một client refresh coordinator, bỏ polling trùng
 

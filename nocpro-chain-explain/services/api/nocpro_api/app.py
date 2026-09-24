@@ -14,10 +14,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .routes import router
+from .live_updates import ChangeEventHub, events_router
 from .workspace import Workspace
 from .kafka_consumer import KafkaConsumerConfig, KafkaSnapshotConsumer
 from .kafka_topology_consumer import KafkaTopologyConsumer, KafkaTopologyConsumerConfig
 from .persistence import Database, SnapshotRepository, TopologyRepository
+from .persistence.change_journal import live_updates_enabled
 from .runtime_env import load_project_environment
 from .tier1a_coordinator import Tier1ACoordinator
 from .quality_background import SnapshotQualityRunner
@@ -93,9 +95,14 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
         provider_work_pool = None
         observability_runtime = None
         event_loop_lag_task = None
+        live_updates_hub = None
+        app_instance.state.live_updates_hub = None
         database_url = os.environ.get("DATABASE_URL")
         if database_url:
             database = Database(database_url)
+            if live_updates_enabled():
+                live_updates_hub = ChangeEventHub(database.sessions)
+                app_instance.state.live_updates_hub = live_updates_hub
             repository = SnapshotRepository(
                 database.sessions,
                 max_compressed_snapshot_bytes=int(
@@ -274,6 +281,9 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
         try:
             yield
         finally:
+            if live_updates_hub is not None:
+                await live_updates_hub.close()
+                app_instance.state.live_updates_hub = None
             try:
                 if quality_runner is not None:
                     await quality_runner.stop()
@@ -326,6 +336,7 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
     app.state.snapshot_context_lock = asyncio.Lock()
     app.state.read_work_pool = None
     app.state.provider_work_pool = None
+    app.state.live_updates_hub = None
     app.state.observability = RuntimeObservability.disabled_from_environment()
     service._snapshot_context_lock = app.state.snapshot_context_lock
 
@@ -493,6 +504,7 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(router)
+    app.include_router(events_router)
     return app
 
 
