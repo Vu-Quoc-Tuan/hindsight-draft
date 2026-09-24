@@ -92,6 +92,28 @@ def test_overview_path_tie_is_independent_of_edge_order():
         assert result["display_paths_truncated"] is False
 
 
+def test_overview_witness_declares_hop_bound_and_verified_endpoint_mappings():
+    result = _build_topology_connectivity(
+        raw_mappings=[
+            _mapping("a1", "A", "EXACT"),
+            _mapping("a2", "D", "VERIFIED_ALIAS"),
+        ],
+        raw_edges=[
+            {"source_resource_id": "A", "target_resource_id": "B", "relation_type": "IP_ADJACENCY"},
+            {"source_resource_id": "B", "target_resource_id": "C", "relation_type": "IP_ADJACENCY"},
+            {"source_resource_id": "C", "target_resource_id": "D", "relation_type": "IP_ADJACENCY"},
+        ],
+        member_ids={"a1", "a2"},
+        alarm_devices={},
+    )
+
+    witness = result["display_paths"][0]
+    assert witness["path"] == ["A", "B", "C", "D"]
+    assert witness["hop_count"] == 3
+    assert witness["max_hops"] == 4
+    assert witness["mapping_statuses"] == ["EXACT", "VERIFIED_ALIAS"]
+
+
 def test_overview_display_path_cap_does_not_change_connectivity_counts(monkeypatch):
     monkeypatch.setattr(cohesion_advisor, "MAX_OVERVIEW_DISPLAY_PATHS", 2)
     resources = ["A", "B", "C", "D"]
@@ -118,3 +140,4 @@ def test_overview_display_path_cap_does_not_change_connectivity_counts(monkeypat
     assert result["pair_total"] == 6
     assert len(result["display_paths"]) == 2
     assert result["display_paths_truncated"] is True
+    assert result["analysis_truncated"] is False

@@ -19,7 +19,7 @@ from collections import deque
 from dataclasses import dataclass, field
 
 from libs.contracts import IngestedAlarm, IngestedPackage
-from libs.contracts.topology_mapping import resolve_resource_ids
+from libs.contracts.topology_mapping import resolve_topology_mappings
 from libs.contracts.topology_paths import shortest_path as find_shortest_path
 from libs.provenance import ProvenanceClass, ProvenanceSubtype
 from topology_source import (
@@ -190,10 +190,20 @@ class ResourceResolver:
     """
 
     resolved: dict[str, str] = field(default_factory=dict)
+    mapping_statuses: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_package(cls, package: IngestedPackage) -> ResourceResolver:
-        return cls(resolved=resolve_resource_ids(package.topology.get("mappings") or ()) or {})
+        resolved_rows = resolve_topology_mappings(
+            package.topology.get("mappings") or ()
+        ) or {}
+        return cls(
+            resolved={alarm_id: row["resource_id"] for alarm_id, row in resolved_rows.items()},
+            mapping_statuses={
+                alarm_id: str(getattr(row.get("mapping_status"), "value", row.get("mapping_status")))
+                for alarm_id, row in resolved_rows.items()
+            },
+        )
 
     def resource_of(self, alarm_id: str) -> str | None:
         return self.resolved.get(alarm_id)
@@ -255,6 +265,15 @@ def evaluate_dep_hop_channel(
     if not path_relation_types:
         # Compatibility for small in-memory graphs created without edge metadata.
         path_relation_types = set(graph.relation_types)
+    edge_relation_types: list[str] = []
+    for source, target in zip(path, path[1:]):
+        edge_relations = graph.edge_relation_types.get((source, target), set())
+        if not edge_relations:
+            edge_relations = set(graph.relation_types)
+        if len(edge_relations) != 1:
+            edge_relation_types = []
+            break
+        edge_relation_types.append(next(iter(edge_relations)))
     path_uses_directed_edge = any(
         (source, target) in graph.directed_edges
         for source, target in zip(path, path[1:])
@@ -278,7 +297,14 @@ def evaluate_dep_hop_channel(
             "topology_path": {
                 "nodes": path,
                 "hop_count": distance,
+                "max_hops": d_max,
                 "relation_types": sorted(path_relation_types),
+                "edge_relation_types": edge_relation_types,
+                "mapping_statuses": sorted({
+                    status
+                    for alarm_id in (alarm_a.alarm_id, alarm_b.alarm_id)
+                    if (status := resolver.mapping_statuses.get(alarm_id))
+                }),
                 "traversal_semantic": "STRUCTURAL_TOPOLOGY_PATH_NOT_CAUSAL",
                 "direction_policy": (
                     "SOURCE_EDGE_DIRECTION_PRESERVED"

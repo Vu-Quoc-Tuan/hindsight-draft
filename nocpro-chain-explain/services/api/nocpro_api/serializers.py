@@ -7,12 +7,20 @@ from datetime import datetime
 from typing import Any
 
 from libs.contracts import IngestedPackage
+from libs.contracts.analysis_identity import analysis_identity_from_review
 from channels import ChannelValue
 from tier1b import ChainAnalysis
 from tier2 import Tier2JobView
 from tier2 import AuditVisualization
-from tier2.counterfactual import CounterfactualJobView as DomainCounterfactualJobView
-from tier2.counterfactual.public_contract import public_review_result
+from tier2.counterfactual import (
+    CounterfactualJobView as DomainCounterfactualJobView,
+    ReviewIdentity,
+    artifact_fingerprint,
+)
+from tier2.counterfactual.public_contract import (
+    public_review_result,
+    review_evaluation_completed,
+)
 from tier2.topology_hypotheses import (
     DependencyScopeResult,
     DominatorResult,
@@ -307,6 +315,24 @@ def counterfactual_job_view(
         return val.isoformat() if hasattr(val, "isoformat") else str(val)
 
     if isinstance(job, DomainCounterfactualJobView):
+        identity_payload = asdict(job.identity)
+        analysis_identity_result = analysis_identity_from_review(
+            identity_payload,
+            pipeline_version=str(identity_payload.get("engine_version") or ""),
+            input_fingerprint=str(
+                identity_payload.get("tier1b_artifact_fingerprint") or ""
+            ),
+        )
+        artifact_revision = None
+        if (
+            analysis_identity_result.available
+            and job.cache_fingerprint
+            == artifact_fingerprint(job.identity.cache_tuple())
+        ):
+            artifact_revision = {
+                "resource_kind": "counterfactual_review",
+                "fingerprint": job.cache_fingerprint,
+            }
         payload = {
             "job_id": job.job_id,
             "chain_id": job.chain_id,
@@ -318,7 +344,14 @@ def counterfactual_job_view(
             "submitted_at": _iso(job.submitted_at),
             "started_at": _iso(job.started_at),
             "completed_at": _iso(job.completed_at),
-            "identity": asdict(job.identity),
+            "identity": identity_payload,
+            "analysis_identity": (
+                analysis_identity_result.identity.to_payload()
+                if analysis_identity_result.available
+                and artifact_revision is not None
+                else None
+            ),
+            "artifact_revision": artifact_revision,
             "result": (
                 public_review_result(job.result, package=package, language=language)
                 if job.result is not None
@@ -332,6 +365,41 @@ def counterfactual_job_view(
                 return job.get(key, default)
             val = getattr(job, key, default)
             return default if val is None else val
+
+        raw_identity = _get("identity")
+        identity_values = (
+            asdict(raw_identity)
+            if is_dataclass(raw_identity) and not isinstance(raw_identity, type)
+            else raw_identity
+        )
+        analysis_identity_result = analysis_identity_from_review(
+            identity_values,
+            pipeline_version=(
+                str(identity_values.get("engine_version") or "")
+                if isinstance(identity_values, dict)
+                else ""
+            ),
+            input_fingerprint=(
+                str(identity_values.get("tier1b_artifact_fingerprint") or "")
+                if isinstance(identity_values, dict)
+                else ""
+            ),
+        )
+        raw_cache_fingerprint = _get("cache_fingerprint")
+        artifact_revision = None
+        if isinstance(identity_values, dict) and analysis_identity_result.available:
+            try:
+                if set(ReviewIdentity.__dataclass_fields__).issubset(identity_values):
+                    domain_identity = ReviewIdentity(**identity_values)
+                    if raw_cache_fingerprint == artifact_fingerprint(
+                        domain_identity.cache_tuple()
+                    ):
+                        artifact_revision = {
+                            "resource_kind": "counterfactual_review",
+                            "fingerprint": raw_cache_fingerprint,
+                        }
+            except (TypeError, ValueError):
+                artifact_revision = None
 
         res = _get("result")
         if res is not None:
@@ -360,7 +428,7 @@ def counterfactual_job_view(
                                     if diff:
                                         cand_m_ids = list(sorted(diff))
                         cand["member_ids"] = cand_m_ids or []
-                        cand["comparative_explanation"] = build_deterministic_comparative_explanation(
+                cand["comparative_explanation"] = build_deterministic_comparative_explanation(
                             operation=cand.get("operation", "UNKNOWN"),
                             candidate_id=cand.get("candidate_id", ""),
                             partition_delta=cand.get("partition_delta"),
@@ -378,6 +446,14 @@ def counterfactual_job_view(
                             language=language,
                         ).as_dict()
 
+        if isinstance(res, dict) and not isinstance(res.get("evaluation_completed"), bool):
+            res = {
+                **res,
+                "evaluation_completed": review_evaluation_completed(
+                    res.get("operation_status")
+                ),
+            }
+
         payload = {
             "job_id": _get("job_id"),
             "chain_id": _get("chain_id"),
@@ -389,7 +465,13 @@ def counterfactual_job_view(
             "submitted_at": _iso(_get("submitted_at")),
             "started_at": _iso(_get("started_at")),
             "completed_at": _iso(_get("completed_at")),
-            "identity": _get("identity"),
+            "identity": identity_values,
+            "analysis_identity": (
+                analysis_identity_result.identity.to_payload()
+                if analysis_identity_result.available and artifact_revision is not None
+                else None
+            ),
+            "artifact_revision": artifact_revision,
             "result": res,
             "error": _get("error"),
         }

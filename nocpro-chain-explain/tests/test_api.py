@@ -9,10 +9,11 @@ from hashlib import sha256
 import importlib
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from typing import TypeVar
 
 import httpx2
+from libs.contracts.analysis_identity import AnalysisIdentity
 from contracts.v1.enums import MappingMethod, MappingStatus
 from contracts.v1.models import AlarmEntityResolution
 
@@ -290,28 +291,79 @@ def test_chain_analysis_loads_topology_map_only_for_unpersisted_alarms(monkeypat
     assert {resolution.alarm_id for resolution in saved} == {"a2", "a3"}
 
 
-def test_chain_overview_cards_reads_persisted_projection_without_provider():
+def test_chain_overview_cards_reads_persisted_projection_without_new_work(monkeypatch):
     workspace = Workspace()
     workspace.replace_snapshot(_payload())
+    submit_deep_dive = Mock(side_effect=AssertionError("warm Overview must not submit Deep Dive"))
+    submit_review = AsyncMock(side_effect=AssertionError("warm Overview must not submit Review"))
+    analyze_chain = Mock(side_effect=AssertionError("warm Overview must not analyze the chain"))
+    grounded_provider = AsyncMock(side_effect=AssertionError("warm Overview must not call a provider"))
+    workspace.submit_deep_dive = submit_deep_dive
+    workspace.submit_review = submit_review
+    workspace.analyze = analyze_chain
+    monkeypatch.setattr(api_routes, "_run_grounded_provider", grounded_provider)
+    review_config_version = (
+        workspace.config.counterfactual.config_version
+        if workspace.config.counterfactual is not None
+        else "UNAVAILABLE"
+    )
+    workspace._review_context = AsyncMock(
+        side_effect=AssertionError("warm Overview read must not rebuild Review context")
+    )
     repository = SimpleNamespace(
         chain_quality_assessment=AsyncMock(
             return_value=SimpleNamespace(
+                snapshot_id="s1",
+                snapshot_version="1",
+                chain_id="C1",
                 status="EVALUATED",
                 stars=4,
                 input_fingerprint="fp-1",
                 payload={
                     "method": "HEURISTIC_V1",
                     "status": "EVALUATED",
+                    "readiness": "READY",
+                    "readiness_policy_version": "quality-readiness-v1",
+                    "reason_codes": [],
+                    "evidence_coverage": {},
                     "stars": 4,
                     "label": "Khá vững",
                     "overview_projection": {
-                            "projection_version": "CHAIN_OVERVIEW_V3",
-                            "pipeline_version": "DETERMINISTIC_QUALITY_V3",
+                        "projection_version": "CHAIN_OVERVIEW_V6",
+                        "pipeline_version": "DETERMINISTIC_QUALITY_V6",
+                        "snapshot_id": "s1",
+                        "snapshot_version": "1",
+                        "chain_id": "C1",
+                        "topology_version": None,
+                        "config_version": workspace.config.config_version,
+                        "review_config_version": review_config_version,
+                        "input_fingerprint": "fp-1",
+                        "analysis_identity": {
+                            "identity_version": "analysis-identity-v1",
                             "snapshot_id": "s1",
                             "snapshot_version": "1",
-                            "topology_version": "topology-1",
-                            "config_version": workspace.config.config_version,
+                            "chain_id": "C1",
+                            "topology_version": None,
+                            "analysis_config_version": workspace.config.config_version,
+                            "review_config_version": review_config_version,
+                            "pipeline_version": "DETERMINISTIC_QUALITY_V6",
                             "input_fingerprint": "fp-1",
+                        },
+                        "review_analysis_identity": {
+                            "identity_version": "analysis-identity-v1",
+                            "snapshot_id": "s1",
+                            "snapshot_version": "1",
+                            "chain_id": "C1",
+                            "topology_version": None,
+                            "analysis_config_version": workspace.config.config_version,
+                            "review_config_version": review_config_version,
+                            "pipeline_version": "counterfactual-p1-v1",
+                            "input_fingerprint": "tier1b-fp-1",
+                        },
+                        "review_artifact_revision": {
+                            "resource_kind": "counterfactual_review",
+                            "fingerprint": "review-fp-1",
+                        },
                         "representative_member": {
                             "status": "AVAILABLE",
                             "alarm_id": "a1",
@@ -341,6 +393,10 @@ def test_chain_overview_cards_reads_persisted_projection_without_provider():
                         "quality_assessment": {
                             "method": "HEURISTIC_V1",
                             "status": "EVALUATED",
+                            "readiness": "READY",
+                            "readiness_policy_version": "quality-readiness-v1",
+                            "reason_codes": [],
+                            "evidence_coverage": {},
                             "stars": 4,
                             "label": "Khá vững",
                             "reasons": [],
@@ -368,10 +424,17 @@ def test_chain_overview_cards_reads_persisted_projection_without_provider():
     assert body["status"] == "READY"
     assert body["representative_member"]["alarm_id"] == "a1"
     assert body["topology"]["mapped_device_count"] == 1
-    assert body["topology_version"] == "topology-1"
+    assert body["topology_version"] is None
     assert body["topology"]["display_paths"][0]["path"] == ["R1", "R2"]
     assert body["topology"]["display_paths_truncated"] is False
+    assert body["review_analysis_identity"]["input_fingerprint"] == "tier1b-fp-1"
+    assert body["review_artifact_revision"]["fingerprint"] == "review-fp-1"
     repository.chain_quality_assessment.assert_awaited_once()
+    workspace._review_context.assert_not_awaited()
+    submit_deep_dive.assert_not_called()
+    submit_review.assert_not_awaited()
+    analyze_chain.assert_not_called()
+    grounded_provider.assert_not_awaited()
 
 
 def test_chain_overview_cards_reports_pending_without_projection():
@@ -390,6 +453,247 @@ def test_chain_overview_cards_reports_pending_without_projection():
     assert response.status_code == 200
     assert response.json()["status"] == "PENDING"
     assert response.json()["reason"] == "DETERMINISTIC_OVERVIEW_PROJECTION_PENDING"
+
+
+def _evidence_test_identity(workspace: Workspace, *, fingerprint: str = "evidence-fp-1"):
+    return AnalysisIdentity(
+        snapshot_id="s1",
+        snapshot_version="1",
+        chain_id="C1",
+        topology_version=None,
+        analysis_config_version=workspace.config.config_version,
+        review_config_version=(
+            workspace.config.counterfactual.config_version
+            if workspace.config.counterfactual is not None
+            else "UNAVAILABLE"
+        ),
+        pipeline_version="DETERMINISTIC_QUALITY_V6",
+        input_fingerprint=fingerprint,
+    )
+
+
+def _evidence_snapshot_headers():
+    return {
+        "X-NocPro-Snapshot-Id": "s1",
+        "X-NocPro-Snapshot-Version": "1",
+        "X-NocPro-Topology-Version": "",
+    }
+
+
+def test_chain_evidence_requires_exact_snapshot_context():
+    workspace = Workspace()
+    workspace.replace_snapshot(_payload())
+
+    async def exercise(client: httpx2.AsyncClient):
+        return await client.get("/api/v1/chains/C1/evidence")
+
+    response = run_api_test(exercise, workspace=workspace)
+    assert response.status_code == 409
+    assert response.json()["detail"] == "EVIDENCE_SNAPSHOT_CONTEXT_REQUIRED"
+
+
+def test_chain_evidence_paginates_and_detail_requires_current_context(monkeypatch):
+    from nocpro_api.evidence_projection import build_evidence_records
+    from nocpro_api.schemas import ChainOverviewCardsView
+
+    workspace = Workspace()
+    workspace.replace_snapshot(_payload())
+    identity = _evidence_test_identity(workspace)
+    records = build_evidence_records(
+        identity=identity,
+        overview_projection=None,
+        pair_evidence=None,
+        audit_artifact=None,
+        review_result=None,
+    )
+    monkeypatch.setattr(
+        api_routes,
+        "get_chain_overview_cards",
+        AsyncMock(return_value=ChainOverviewCardsView(
+            snapshot_id="s1",
+            snapshot_version="1",
+            chain_id="C1",
+            status="READY",
+            topology_version=None,
+        )),
+    )
+    monkeypatch.setattr(
+        api_routes,
+        "_current_evidence_records",
+        AsyncMock(return_value=(identity, records)),
+    )
+
+    async def exercise(client: httpx2.AsyncClient):
+        first = await client.get(
+            "/api/v1/chains/C1/evidence?limit=2",
+            headers=_evidence_snapshot_headers(),
+        )
+        assert first.status_code == 200
+        first_body = first.json()
+        assert len(first_body["records"]) == 2
+        assert first_body["truncated"] is True
+        assert first_body["next_cursor"]
+
+        second = await client.get(
+            "/api/v1/chains/C1/evidence?limit=2",
+            params={"cursor": first_body["next_cursor"], "limit": 2},
+            headers=_evidence_snapshot_headers(),
+        )
+        assert second.status_code == 200
+        second_ids = {item["evidence_id"] for item in second.json()["records"]}
+        assert second_ids.isdisjoint({item["evidence_id"] for item in first_body["records"]})
+
+        evidence_id = first_body["records"][0]["evidence_id"]
+        detail = await client.get(
+            f"/api/v1/chains/C1/evidence/{evidence_id}",
+            headers=_evidence_snapshot_headers(),
+        )
+        assert detail.status_code == 200
+        assert detail.json()["evidence_id"] == evidence_id
+
+        missing = await client.get(
+            f"/api/v1/chains/C1/evidence/{'ev1_' + '0' * 64}",
+            headers=_evidence_snapshot_headers(),
+        )
+        assert missing.status_code == 404
+
+        stale = await client.get(
+            "/api/v1/chains/C1/evidence?limit=2",
+            params={"cursor": first_body["next_cursor"], "limit": 2},
+            headers={
+                **_evidence_snapshot_headers(),
+                "X-NocPro-Topology-Version": "topology-older",
+            },
+        )
+        assert stale.status_code == 409
+        assert "snapshot" in stale.json()["detail"].lower()
+
+    response = run_api_test(exercise, workspace=workspace)
+    assert response is None
+
+
+def test_chain_evidence_cursor_rejects_replaced_analysis_identity(monkeypatch):
+    from nocpro_api.evidence_projection import build_evidence_records
+    from nocpro_api.schemas import ChainOverviewCardsView
+
+    workspace = Workspace()
+    workspace.replace_snapshot(_payload())
+    state = {"identity": _evidence_test_identity(workspace)}
+    state["records"] = build_evidence_records(
+        identity=state["identity"],
+        overview_projection=None,
+        pair_evidence=None,
+        audit_artifact=None,
+        review_result=None,
+    )
+    monkeypatch.setattr(
+        api_routes,
+        "get_chain_overview_cards",
+        AsyncMock(return_value=ChainOverviewCardsView(
+            snapshot_id="s1",
+            snapshot_version="1",
+            chain_id="C1",
+            status="READY",
+        )),
+    )
+
+    async def current_records(**_kwargs):
+        return state["identity"], state["records"]
+
+    monkeypatch.setattr(api_routes, "_current_evidence_records", current_records)
+
+    async def exercise(client: httpx2.AsyncClient):
+        first = await client.get(
+            "/api/v1/chains/C1/evidence?limit=1",
+            headers=_evidence_snapshot_headers(),
+        )
+        assert first.status_code == 200
+        cursor = first.json()["next_cursor"]
+        assert cursor
+
+        state["identity"] = _evidence_test_identity(workspace, fingerprint="evidence-fp-2")
+        state["records"] = build_evidence_records(
+            identity=state["identity"],
+            overview_projection=None,
+            pair_evidence=None,
+            audit_artifact=None,
+            review_result=None,
+        )
+        stale = await client.get(
+            "/api/v1/chains/C1/evidence?limit=1",
+            params={"cursor": cursor, "limit": 1},
+            headers=_evidence_snapshot_headers(),
+        )
+        assert stale.status_code == 409
+        assert stale.json()["detail"] == "STALE_EVIDENCE_CURSOR"
+
+    response = run_api_test(exercise, workspace=workspace)
+    assert response is None
+
+
+def test_pair_why_attaches_identity_bound_dep_hop_record_without_recomputing(monkeypatch):
+    from channels.base import ChannelValue
+    from libs.provenance import ProvenanceClass
+    from nocpro_api.schemas import ChainOverviewCardsView
+
+    workspace = Workspace()
+    workspace.replace_snapshot(_payload())
+    identity = _evidence_test_identity(workspace)
+    witness = ChannelValue(
+        channel_id="Dep_hop",
+        derivation_tag="dependency_hop",
+        provenance_class=ProvenanceClass.EXTERNAL_OPERATIONAL,
+        availability=True,
+        positive_score=0.5,
+        threshold=0.25,
+        source_ref="nms-export-v14",
+        source_id="nms-export",
+        source_version="v14",
+        evidence_metadata={
+            "topology_path": {
+                "nodes": ["R-A", "X", "R-B"],
+                "hop_count": 2,
+                "max_hops": 3,
+                "relation_types": ["IP_ADJACENCY"],
+                "edge_relation_types": ["IP_ADJACENCY", "IP_ADJACENCY"],
+                "mapping_statuses": ["EXACT", "VERIFIED_ALIAS"],
+                "traversal_semantic": "STRUCTURAL_TOPOLOGY_PATH_NOT_CAUSAL",
+                "direction_policy": "SOURCE_EDGE_DIRECTION_PRESERVED",
+            },
+        },
+    )
+    monkeypatch.setattr(api_routes, "_run_blocking", AsyncMock(return_value=[witness]))
+    monkeypatch.setattr(
+        api_routes,
+        "get_chain_overview_cards",
+        AsyncMock(return_value=ChainOverviewCardsView(
+            snapshot_id="s1",
+            snapshot_version="1",
+            chain_id="C1",
+            status="READY",
+            analysis_identity=identity.to_payload(),
+        )),
+    )
+
+    async def exercise(client: httpx2.AsyncClient):
+        response = await client.get(
+            "/api/v1/chains/C1/pairs/a1/a2",
+            headers=_evidence_snapshot_headers(),
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body["evidence_records"]) == 1
+        record = body["evidence_records"][0]
+        assert record["analysis_identity"] == identity.to_payload()
+        assert record["path"]["resource_ids"] == ["R-A", "X", "R-B"]
+        assert record["path"]["max_hops"] == 3
+        assert record["path"]["relation_types"] == ["IP_ADJACENCY"] * 2
+        assert record["path"]["direction_policy"] == "SOURCE_EDGE_DIRECTION_PRESERVED"
+
+    response = run_api_test(exercise, workspace=workspace)
+    assert response is None
+    api_routes._run_blocking.assert_awaited_once()
+    api_routes.get_chain_overview_cards.assert_awaited_once()
 
 
 def test_selecting_the_active_snapshot_is_a_noop():
@@ -657,8 +961,36 @@ def test_configured_initial_snapshot_is_activated_before_recovery_worker(
 
     async def exercise():
         app = create_app(workspace=FakeWorkspace())
+        from nocpro_api.blocking_work import active_pool
+
+        async def inspect_pool_context():
+            return {
+                "read": active_pool("api-read") is app.state.read_work_pool,
+                "provider": active_pool("provider") is app.state.provider_work_pool,
+            }
+
+        app.add_api_route("/__test/blocking-pools", inspect_pool_context, methods=["GET"])
         async with app.router.lifespan_context(app):
+            read_pool = app.state.read_work_pool
+            provider_pool = app.state.provider_work_pool
+            assert read_pool is not None
+            assert provider_pool is not None
+            assert app.state.workspace._blocking_work_pool is read_pool
+
+            transport = httpx2.ASGITransport(app=app)
+            async with httpx2.AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as client:
+                response = await client.get("/__test/blocking-pools")
+            assert response.status_code == 200
+            assert response.json() == {"read": True, "provider": True}
+            assert active_pool("api-read") is None
             await asyncio.sleep(0)
+        assert read_pool._closed is True
+        assert provider_pool._closed is True
+        assert app.state.read_work_pool is None
+        assert app.state.provider_work_pool is None
+        assert not hasattr(app.state.workspace, "_blocking_work_pool")
 
     asyncio.run(exercise())
 
@@ -1115,6 +1447,7 @@ def test_legacy_audit_artifact_returns_explicit_visualization_unavailability():
         payload = audit_artifact_to_dict(job.audit_artifact)
         payload["artifact_version"] = "review-audit-v1"
         payload.pop("visualization")
+        payload.pop("topology_version")
         payload.pop("artifact_fingerprint")
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         payload["artifact_fingerprint"] = sha256(encoded.encode()).hexdigest()

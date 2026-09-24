@@ -69,6 +69,23 @@ class ChainListView(ApiModel):
     topology_version: str | None = None
 
 
+class AnalysisIdentityView(ApiModel):
+    identity_version: Literal["analysis-identity-v1"]
+    snapshot_id: str
+    snapshot_version: str
+    chain_id: str
+    topology_version: str | None
+    analysis_config_version: str
+    review_config_version: str | None
+    pipeline_version: str
+    input_fingerprint: str
+
+
+class ArtifactRevisionView(ApiModel):
+    resource_kind: str
+    fingerprint: str
+
+
 class ChainQualityAssessmentView(ApiModel):
     chain_id: str
     member_count: int
@@ -78,6 +95,14 @@ class ChainQualityAssessmentView(ApiModel):
     stars: int | None
     label: str
     reason: str | None
+    readiness: str | None = None
+    readiness_policy_version: str | None = None
+    reason_codes: list[str] = Field(default_factory=list)
+    evidence_coverage: dict[str, Any] | None = None
+    evidence_ids: list[str] = Field(default_factory=list)
+    reason_evidence_ids: dict[str, list[str]] = Field(default_factory=dict)
+    analysis_identity: AnalysisIdentityView | None = None
+    artifact_revision: ArtifactRevisionView | None = None
 
 
 class ChainQualitySummaryView(ApiModel):
@@ -112,6 +137,43 @@ class ChainOverviewCardsView(ApiModel):
     topology: dict[str, Any] | None = None
     quality_assessment: dict[str, Any] | None = None
     recommendations: dict[str, Any] | None = None
+    analysis_identity: AnalysisIdentityView | None = None
+    artifact_revision: ArtifactRevisionView | None = None
+    review_analysis_identity: AnalysisIdentityView | None = None
+    review_artifact_revision: ArtifactRevisionView | None = None
+
+
+class EvidencePathView(ApiModel):
+    resource_ids: list[str]
+    relation_types: list[str]
+    hop_count: int
+    traversal_semantic: str
+    max_hops: int
+    topology_version: str
+    mapping_statuses: list[str]
+    analysis_truncated: bool
+    direction_policy: str | None = None
+
+
+class EvidenceRecordView(ApiModel):
+    evidence_id: str
+    analysis_identity: AnalysisIdentityView
+    kind: Literal["MAPPING", "TOPOLOGY_PATH", "AUDIT", "MEMBERSHIP", "REVIEW"]
+    status: Literal["AVAILABLE", "UNAVAILABLE", "NOT_EVALUATED"]
+    statement_kind: Literal["OBSERVED", "DERIVED"]
+    source_artifact_id: str | None = None
+    source_fingerprint: str | None = None
+    summary: str
+    reason_codes: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+    path: EvidencePathView | None = None
+
+
+class EvidenceBundleView(ApiModel):
+    analysis_identity: AnalysisIdentityView
+    records: list[EvidenceRecordView]
+    truncated: bool
+    next_cursor: str | None = None
 
 
 class DescriptorView(ApiModel):
@@ -237,6 +299,7 @@ class PairWhyView(ApiModel):
     alarm_id_a: str
     alarm_id_b: str
     evidence: list[PairEvidenceView]
+    evidence_records: list[EvidenceRecordView] = Field(default_factory=list)
     system_fact: SystemPairFactView
 
 
@@ -642,6 +705,8 @@ class CounterfactualJobView(ApiModel):
     cache_hit: bool
     cache_fingerprint: str
     identity: ReviewIdentityView
+    analysis_identity: AnalysisIdentityView | None = None
+    artifact_revision: ArtifactRevisionView | None = None
     # The Counterfactual artifact owns its explicitly versioned nested schema.
     result: dict[str, object] | None
     error: str | None
@@ -749,6 +814,7 @@ class AnalyticalFindingView(ApiModel):
     title: str
     claim: str
     evidence: list[str]
+    evidence_ids: list[str] = Field(default_factory=list)
     limitations: list[str]
     confidence_basis: str
 

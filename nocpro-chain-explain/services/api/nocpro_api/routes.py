@@ -11,10 +11,14 @@ import re
 from dataclasses import asdict
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 
 from graybox import adapt_graybox_metadata
 from libs.contracts import ContractIngestError
+from libs.contracts.analysis_identity import (
+    analysis_identity_from_review,
+    analysis_identity_from_projection,
+)
 from libs.contracts.topology_identity import effective_topology_version, snapshot_topology_profile
 
 from .schemas import (
@@ -39,6 +43,8 @@ from .schemas import (
     ConfigUpdateInput,
     ConfigView,
     EvolutionView,
+    EvidenceBundleView,
+    EvidenceRecordView,
     JobSubmissionView,
     JobView,
     PairWhyView,
@@ -64,6 +70,7 @@ from .threshold_explain_optimizer import (
 from tier2.counterfactual.explain_clarity_comparator import (
     compare_proposal_explanations,
 )
+from tier2.counterfactual.jobs import ReviewIdentity, artifact_fingerprint
 from .serializers import (
     chain_analysis_view,
     counterfactual_job_view,
@@ -78,7 +85,17 @@ from .workspace import SnapshotNotLoaded, Workspace, _topology_version
 from .cohesion_advisor import (
     CHAIN_OVERVIEW_PROJECTION_VERSION,
 )
-from .quality_freshness import projection_staleness_reason
+from .quality_freshness import (
+    projection_staleness_reason,
+    record_quality_freshness_lag,
+)
+from .quality_readiness import quality_assessment_contract_is_valid
+from .evidence_projection import (
+    InvalidEvidenceCursor,
+    StaleEvidenceCursor,
+    build_evidence_records,
+    paginate_evidence_records,
+)
 from .entity_resolver import AlarmEntityResolver
 from .review_principal import (
     ReviewReasonPolicyUnavailable,
@@ -103,7 +120,7 @@ router = APIRouter(prefix="/api/v1")
 logger = logging.getLogger(__name__)
 MAX_REVIEW_AI_ENRICHMENTS = 3
 MAX_REVIEW_AI_CONCURRENCY = 2
-COHESION_NARRATIVE_VERSION = "grounded-investigation-v5"
+COHESION_NARRATIVE_VERSION = "grounded-investigation-v6"
 
 
 
@@ -149,10 +166,34 @@ def _cohesion_input_fingerprint(
     review_job: Any | None,
 ) -> str:
     """Identify every mutable input represented by a cached cohesion narrative."""
+    review_identity = getattr(review_job, "identity", None)
+    if isinstance(review_identity, dict):
+        pipeline_version = str(review_identity.get("engine_version") or "")
+        source_fingerprint = str(
+            review_identity.get("tier1b_artifact_fingerprint") or ""
+        )
+    else:
+        pipeline_version = str(getattr(review_identity, "engine_version", "") or "")
+        source_fingerprint = str(
+            getattr(review_identity, "tier1b_artifact_fingerprint", "") or ""
+        )
+    shared_identity = analysis_identity_from_review(
+        review_identity,
+        pipeline_version=pipeline_version,
+        input_fingerprint=source_fingerprint,
+    )
     payload = {
         "narrative_version": COHESION_NARRATIVE_VERSION,
         "config_version": getattr(getattr(service, "config", None), "config_version", None),
+        "review_config_version": (
+            getattr(getattr(getattr(service, "config", None), "counterfactual", None), "config_version", None)
+        ),
         "topology_version": _topology_version(getattr(service, "package", None)),
+        "analysis_identity": (
+            shared_identity.identity.to_payload()
+            if shared_identity.available and shared_identity.identity is not None
+            else {"status": shared_identity.reason or "IDENTITY_INCOMPLETE"}
+        ),
         "audit": getattr(audit_artifact, "artifact_fingerprint", None)
         or getattr(audit_artifact, "artifact_id", None),
         "deep_dive": getattr(deep_dive_job, "job_id", None)
@@ -426,6 +467,11 @@ async def _persisted_quality_summaries(service: Workspace) -> list[ChainQualityS
         quality_rows,
         [*active_deep_dive_jobs, *active_review_jobs],
         expected_config_version=getattr(service.config, "config_version", None),
+        expected_review_config_version=(
+            service.config.counterfactual.config_version
+            if service.config.counterfactual is not None
+            else "UNAVAILABLE"
+        ),
         expected_topology_versions=expected_topology_versions,
     )
 
@@ -436,6 +482,7 @@ def _build_persisted_quality_summaries(
     active_jobs: list[Any],
     *,
     expected_config_version: str | None = None,
+    expected_review_config_version: str | None = None,
     expected_topology_versions: dict[tuple[str, str], str | None] | None = None,
 ) -> list[ChainQualitySummaryView]:
     chains_by_snapshot: dict[tuple[str, str], dict[str, Any]] = {}
@@ -444,18 +491,19 @@ def _build_persisted_quality_summaries(
             (row.snapshot_id, row.snapshot_version), {}
         )[row.chain_id] = row
 
-    latest_assessment: dict[tuple[str, str, str], dict[str, Any]] = {}
+    latest_assessment: dict[tuple[str, str, str], tuple[dict[str, Any], Any]] = {}
     for row in quality_rows:
         key = (row.snapshot_id, row.snapshot_version, row.chain_id)
         assessment = row.payload if isinstance(row.payload, dict) else None
         if isinstance(assessment, dict):
-            latest_assessment[key] = assessment
+            latest_assessment[key] = (assessment, row)
 
     evaluating: set[tuple[str, str, str]] = set()
     for row in active_jobs:
         if _active_quality_job_is_current(
             row,
             expected_config_version=expected_config_version,
+            expected_review_config_version=expected_review_config_version,
             expected_topology_version=expected_topology_versions.get(
                 (row.snapshot_id, row.snapshot_version)
             ) if expected_topology_versions is not None else None,
@@ -477,24 +525,35 @@ def _build_persisted_quality_summaries(
         unavailable_ids: set[str] = set()
         star_counts = {str(star): 0 for star in range(1, 6)}
         for chain_id in eligible_ids:
-            assessment = latest_assessment.get((snapshot_id, snapshot_version, chain_id))
-            if not assessment:
+            record = latest_assessment.get((snapshot_id, snapshot_version, chain_id))
+            if not record:
                 continue
+            assessment, quality_row = record
             status = str(assessment.get("status", "")).upper()
             if status not in {"EVALUATED", "UNAVAILABLE"}:
                 continue
+            if not quality_assessment_contract_is_valid(assessment):
+                continue
             if not _quality_assessment_is_current(
                 assessment,
+                canonical_row=quality_row,
                 expected_config_version=expected_config_version,
+                expected_review_config_version=expected_review_config_version,
                 expected_topology_version=(expected_topology_versions or {}).get((snapshot_id, snapshot_version)),
                 topology_version_known=expected_topology_versions is not None and (snapshot_id, snapshot_version) in expected_topology_versions,
                 snapshot_id=snapshot_id,
                 snapshot_version=snapshot_version,
             ):
+                record_quality_freshness_lag(
+                    quality_row, stage="portfolio", state="stale"
+                )
                 # A quality row is immutable evidence for the config that
                 # produced it.  Do not present an older projection as a
                 # current portfolio result after calibration/restart.
                 continue
+            record_quality_freshness_lag(
+                quality_row, stage="portfolio", state="current"
+            )
             if status == "UNAVAILABLE":
                 unavailable_ids.add(chain_id)
                 continue
@@ -521,14 +580,20 @@ def _build_persisted_quality_summaries(
         chain_assessments: list[ChainQualityAssessmentView] = []
         for chain_id in eligible_ids:
             row = rows_by_chain[chain_id]
-            assessment = latest_assessment.get((snapshot_id, snapshot_version, chain_id))
+            record = latest_assessment.get((snapshot_id, snapshot_version, chain_id))
+            assessment = record[0] if record else None
+            quality_row = record[1] if record else None
+            analysis_identity_payload = None
+            artifact_revision_payload = None
             if assessment and str(assessment.get("status", "")).upper() in {
                 "EVALUATED",
                 "UNAVAILABLE",
             }:
-                if not _quality_assessment_is_current(
+                if not quality_assessment_contract_is_valid(assessment) or not _quality_assessment_is_current(
                     assessment,
+                    canonical_row=quality_row,
                     expected_config_version=expected_config_version,
+                    expected_review_config_version=expected_review_config_version,
                     expected_topology_version=(expected_topology_versions or {}).get((snapshot_id, snapshot_version)),
                     topology_version_known=expected_topology_versions is not None and (snapshot_id, snapshot_version) in expected_topology_versions,
                     snapshot_id=snapshot_id,
@@ -537,8 +602,26 @@ def _build_persisted_quality_summaries(
                     # Do not leak stale stars or reasons into the all-chains
                     # list while the current config is awaiting evaluation.
                     assessment = None
-            stars = assessment.get("stars") if assessment else None
+                else:
+                    projection = assessment.get("overview_projection")
+                    adapted_identity = analysis_identity_from_projection(projection)
+                    if adapted_identity.available and adapted_identity.identity is not None:
+                        analysis_identity_payload = adapted_identity.identity.to_payload()
+                        artifact_revision_payload = {
+                            "resource_kind": "chain_overview",
+                            "fingerprint": adapted_identity.identity.input_fingerprint,
+                        }
+            stars = (
+                assessment.get("stars")
+                if assessment and assessment.get("readiness") == "READY"
+                else None
+            )
             reasons = assessment.get("reasons") if assessment else None
+            reason_codes = assessment.get("reason_codes") if assessment else None
+            evidence_coverage = assessment.get("evidence_coverage") if assessment else None
+            evidence_ids = assessment.get("evidence_ids") if assessment else None
+            reason_evidence_ids = assessment.get("reason_evidence_ids") if assessment else None
+            readiness = assessment.get("readiness") if assessment else None
             if chain_id in review_ids:
                 status = "REVIEW"
                 label = str(assessment.get("label") or "Cần xem")
@@ -572,6 +655,36 @@ def _build_persisted_quality_summaries(
                 stars=int(stars) if isinstance(stars, (int, float)) else None,
                 label=label,
                 reason=reason,
+                readiness=str(readiness) if readiness is not None else None,
+                readiness_policy_version=(
+                    str(assessment.get("readiness_policy_version"))
+                    if assessment and assessment.get("readiness_policy_version") is not None
+                    else None
+                ),
+                reason_codes=(
+                    [str(code) for code in reason_codes]
+                    if isinstance(reason_codes, list)
+                    else []
+                ),
+                evidence_coverage=(
+                    evidence_coverage if isinstance(evidence_coverage, dict) else None
+                ),
+                evidence_ids=(
+                    [str(value) for value in evidence_ids]
+                    if isinstance(evidence_ids, list)
+                    else []
+                ),
+                reason_evidence_ids=(
+                    {
+                        str(code): [str(value) for value in values]
+                        for code, values in reason_evidence_ids.items()
+                        if isinstance(values, list)
+                    }
+                    if isinstance(reason_evidence_ids, dict)
+                    else {}
+                ),
+                analysis_identity=analysis_identity_payload,
+                artifact_revision=artifact_revision_payload,
             ))
         for chain_id in sorted(set(rows_by_chain) - eligible_ids):
             row = rows_by_chain[chain_id]
@@ -588,6 +701,8 @@ def _build_persisted_quality_summaries(
                 stars=None,
                 label="Singleton không chấm",
                 reason="Singleton không áp dụng chấm độ vững.",
+                analysis_identity=None,
+                artifact_revision=None,
             ))
         chain_assessments.sort(key=lambda item: item.chain_id)
         attention = [item for item in chain_assessments if item.status not in {"EVALUATED", "NOT_APPLICABLE"}]
@@ -616,20 +731,28 @@ def _build_persisted_quality_summaries(
 
 
 def _quality_assessment_is_current(
-    assessment: dict[str, Any], *, expected_config_version: str | None,
+    assessment: dict[str, Any], *, canonical_row: Any | None = None,
+    expected_config_version: str | None,
+    expected_review_config_version: str | None = None,
     expected_topology_version: str | None = None,
     topology_version_known: bool = False,
     snapshot_id: str | None = None,
     snapshot_version: str | None = None,
 ) -> bool:
-    """Only expose stars for the same config, topology, and snapshot identity."""
+    """Only expose quality backed by a complete envelope and canonical row."""
+    if canonical_row is None or not quality_assessment_contract_is_valid(assessment):
+        return False
     return projection_staleness_reason(
         assessment.get("overview_projection"),
         snapshot_id=snapshot_id,
         snapshot_version=snapshot_version,
+        chain_id=getattr(canonical_row, "chain_id", None),
         config_version=expected_config_version,
+        review_config_version=expected_review_config_version,
         topology_version=expected_topology_version,
         topology_version_known=topology_version_known,
+        input_fingerprint=getattr(canonical_row, "input_fingerprint", None),
+        canonical_row=canonical_row,
     ) is None
 
 
@@ -637,16 +760,47 @@ def _active_quality_job_is_current(
     job: Any,
     *,
     expected_config_version: str | None,
+    expected_review_config_version: str | None = None,
     expected_topology_version: str | None = None,
     topology_version_known: bool = False,
 ) -> bool:
     """Only count active work for the current config and topology identity."""
     identity = getattr(job, "identity_payload", None)
     if isinstance(identity, dict):
-        job_config_version = identity.get("config_version")
+        adapted = analysis_identity_from_review(
+            identity,
+            pipeline_version=str(identity.get("engine_version") or ""),
+            input_fingerprint=str(identity.get("tier1b_artifact_fingerprint") or ""),
+        )
+        if not adapted.available or adapted.identity is None:
+            return False
+        try:
+            if not set(ReviewIdentity.__dataclass_fields__).issubset(identity):
+                return False
+            review_identity = ReviewIdentity(**identity)
+        except (TypeError, ValueError):
+            return False
+        if getattr(job, "cache_fingerprint", None) != artifact_fingerprint(
+            review_identity.cache_tuple()
+        ):
+            return False
+        job_config_version = adapted.identity.analysis_config_version
+        job_review_config_version = adapted.identity.review_config_version
         job_topology_version = identity.get("topology_version")
+        if (
+            adapted.identity.snapshot_id != getattr(job, "snapshot_id", None)
+            or adapted.identity.snapshot_version != getattr(job, "snapshot_version", None)
+            or adapted.identity.chain_id != getattr(job, "chain_id", None)
+        ):
+            return False
+        if (
+            expected_review_config_version is not None
+            and job_review_config_version != expected_review_config_version
+        ):
+            return False
     else:
         job_config_version = getattr(job, "analysis_config_version", None)
+        job_review_config_version = None
         job_topology_version = getattr(job, "topology_version", None)
 
     if expected_config_version is not None:
@@ -712,6 +866,46 @@ def _active_topology_version(service: Workspace) -> str | None:
         topology_ref = getattr(package.snapshot, "topology_ref", None)
         version = getattr(topology_ref, "topology_version", None)
     return str(version) if version is not None else None
+
+
+def _persisted_review_cache_context(
+    projection: dict[str, Any],
+    *,
+    snapshot_id: str,
+    snapshot_version: str,
+    chain_id: str,
+    analysis_config_version: str | None,
+    review_config_version: str,
+    topology_version: str | None,
+) -> tuple[dict[str, Any] | None, dict[str, str] | None]:
+    """Expose only the Review identity captured with this current projection.
+
+    This deliberately does not rebuild Review context on the warm Overview
+    read path; doing so would rerun Tier-1B and flush/read Audit persistence.
+    """
+    adapted = analysis_identity_from_projection(
+        {"analysis_identity": projection.get("review_analysis_identity")}
+    )
+    identity = adapted.identity if adapted.available else None
+    revision = projection.get("review_artifact_revision")
+    if identity is None or not isinstance(revision, dict):
+        return None, None
+    if (
+        identity.snapshot_id != snapshot_id
+        or identity.snapshot_version != snapshot_version
+        or identity.chain_id != chain_id
+        or identity.analysis_config_version != analysis_config_version
+        or identity.review_config_version != review_config_version
+        or identity.topology_version != topology_version
+        or revision.get("resource_kind") != "counterfactual_review"
+        or not isinstance(revision.get("fingerprint"), str)
+        or not revision["fingerprint"].strip()
+    ):
+        return None, None
+    return identity.to_payload(), {
+        "resource_kind": "counterfactual_review",
+        "fingerprint": revision["fingerprint"],
+    }
 
 
 async def _ingest_selected_snapshot(service: Workspace, payload: dict[str, Any]):
@@ -931,13 +1125,25 @@ async def get_chain_overview_cards(
         projection,
         snapshot_id=snapshot_id,
         snapshot_version=snapshot_version,
+        chain_id=chain_id,
         config_version=getattr(service.config, "config_version", None),
+        review_config_version=(
+            service.config.counterfactual.config_version
+            if service.config.counterfactual is not None
+            else "UNAVAILABLE"
+        ),
         topology_version=_topology_version(package),
         topology_version_known=snapshot_topology_profile(
             snapshot_id,
             getattr(getattr(package.snapshot, "topology_ref", None), "profile_id", None),
         ) is not None,
         input_fingerprint=getattr(quality_record, "input_fingerprint", None),
+        canonical_row=quality_record,
+    )
+    record_quality_freshness_lag(
+        quality_record,
+        stage="overview",
+        state="current" if stale_reason is None else "stale",
     )
     if stale_reason is not None:
         return ChainOverviewCardsView(
@@ -952,6 +1158,30 @@ async def get_chain_overview_cards(
             ),
         )
 
+    adapted_identity = analysis_identity_from_projection(projection)
+    projection_identity = adapted_identity.identity if adapted_identity.available else None
+    artifact_revision = (
+        {
+            "resource_kind": "chain_overview",
+            "fingerprint": projection_identity.input_fingerprint,
+        }
+        if projection_identity is not None
+        else None
+    )
+    review_identity_payload, review_artifact_revision = _persisted_review_cache_context(
+        projection,
+        snapshot_id=snapshot_id,
+        snapshot_version=snapshot_version,
+        chain_id=chain_id,
+        analysis_config_version=getattr(service.config, "config_version", None),
+        review_config_version=(
+            service.config.counterfactual.config_version
+            if service.config.counterfactual is not None
+            else "UNAVAILABLE"
+        ),
+        topology_version=_topology_version(package),
+    )
+
     return ChainOverviewCardsView(
         snapshot_id=snapshot_id,
         snapshot_version=snapshot_version,
@@ -963,7 +1193,265 @@ async def get_chain_overview_cards(
         topology=projection.get("topology"),
         quality_assessment=projection.get("quality_assessment"),
         recommendations=projection.get("recommendations"),
+        analysis_identity=(
+            projection_identity.to_payload() if projection_identity is not None else None
+        ),
+        artifact_revision=artifact_revision,
+        review_analysis_identity=review_identity_payload,
+        review_artifact_revision=review_artifact_revision,
     )
+
+
+def _require_evidence_snapshot_context(
+    service: Workspace,
+    *,
+    chain_id: str,
+    snapshot_id: str | None,
+    snapshot_version: str | None,
+) -> Any:
+    package = service.require_package()
+    if not snapshot_id or not snapshot_version:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="EVIDENCE_SNAPSHOT_CONTEXT_REQUIRED",
+        )
+    if (
+        snapshot_id != package.snapshot.snapshot_id
+        or snapshot_version != package.snapshot.snapshot_version
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="STALE_ANALYSIS_CONTEXT",
+        )
+    if chain_id not in package.chains:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"unknown chain_id {chain_id!r}",
+        )
+    return package
+
+
+async def _current_evidence_records(
+    *,
+    service: Workspace,
+    package: Any,
+    chain_id: str,
+    overview: ChainOverviewCardsView,
+) -> tuple[Any, list[dict[str, Any]]]:
+    adapted_identity = analysis_identity_from_projection(
+        {"analysis_identity": overview.analysis_identity.model_dump(mode="json")}
+        if overview.analysis_identity is not None
+        else None
+    )
+    identity = adapted_identity.identity if adapted_identity.available else None
+    if identity is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="EVIDENCE_ANALYSIS_IDENTITY_UNAVAILABLE",
+        )
+
+    projection = {
+        "analysis_identity": identity.to_payload(),
+        "review_analysis_identity": (
+            overview.review_analysis_identity.model_dump(mode="json")
+            if overview.review_analysis_identity is not None
+            else None
+        ),
+        "review_artifact_revision": (
+            overview.review_artifact_revision.model_dump(mode="json")
+            if overview.review_artifact_revision is not None
+            else None
+        ),
+        "topology": overview.topology,
+        "quality_assessment": overview.quality_assessment,
+        "recommendations": overview.recommendations,
+    }
+
+    audit_artifact = None
+    if service.repository is not None:
+        lookup = await service.latest_audit_visualization(chain_id)
+        audit_artifact = lookup.audit_artifact
+
+    review_result = None
+    repository = service.repository
+    if repository is not None and callable(getattr(repository, "chain_quality_assessment", None)):
+        quality_row = await repository.chain_quality_assessment(
+            snapshot_id=identity.snapshot_id,
+            snapshot_version=identity.snapshot_version,
+            chain_id=chain_id,
+        )
+        review_job_id = getattr(quality_row, "counterfactual_job_id", None)
+        if review_job_id and callable(getattr(repository, "counterfactual_job", None)):
+            stored_review = await repository.counterfactual_job(review_job_id)
+            review_identity_payload = getattr(stored_review, "identity", None)
+            if isinstance(review_identity_payload, dict):
+                adapted_review = analysis_identity_from_review(
+                    review_identity_payload,
+                    pipeline_version=str(review_identity_payload.get("engine_version") or ""),
+                    input_fingerprint=str(
+                        review_identity_payload.get("tier1b_artifact_fingerprint") or ""
+                    ),
+                )
+                expected_review = (
+                    overview.review_analysis_identity.model_dump(mode="json")
+                    if overview.review_analysis_identity is not None
+                    else None
+                )
+                expected_revision = (
+                    overview.review_artifact_revision.fingerprint
+                    if overview.review_artifact_revision is not None
+                    else None
+                )
+                if (
+                    adapted_review.available
+                    and adapted_review.identity is not None
+                    and adapted_review.identity.to_payload() == expected_review
+                    and getattr(stored_review, "snapshot_id", None) == identity.snapshot_id
+                    and getattr(stored_review, "snapshot_version", None) == identity.snapshot_version
+                    and getattr(stored_review, "chain_id", None) == chain_id
+                    and getattr(stored_review, "cache_fingerprint", None) == expected_revision
+                    and getattr(stored_review, "status", None) == "SUCCEEDED"
+                    and isinstance(getattr(stored_review, "result", None), dict)
+                ):
+                    review_result = {
+                        "job_id": stored_review.job_id,
+                        "status": stored_review.status,
+                        "analysis_identity": adapted_review.identity.to_payload(),
+                        "result": stored_review.result,
+                    }
+                    expected_audit_fingerprint = review_identity_payload.get(
+                        "structural_audit_artifact_fingerprint"
+                    )
+                    if (
+                        audit_artifact is not None
+                        and expected_audit_fingerprint
+                        != getattr(audit_artifact, "artifact_fingerprint", None)
+                    ):
+                        audit_artifact = None
+
+    if service.require_package() is not package:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="STALE_ANALYSIS_CONTEXT",
+        )
+    records = build_evidence_records(
+        identity=identity,
+        overview_projection=projection,
+        pair_evidence=None,
+        audit_artifact=audit_artifact,
+        review_result=review_result,
+    )
+    return identity, records
+
+
+@router.get(
+    "/chains/{chain_id}/evidence",
+    response_model=EvidenceBundleView,
+)
+async def get_chain_evidence(
+    chain_id: str,
+    request: Request,
+    limit: int = Query(50, ge=1, le=100),
+    cursor: str | None = Query(None, max_length=4096),
+    snapshot_id: str | None = Header(None, alias="X-NocPro-Snapshot-Id"),
+    snapshot_version: str | None = Header(None, alias="X-NocPro-Snapshot-Version"),
+    topology_version: str | None = Header(None, alias="X-NocPro-Topology-Version"),
+) -> EvidenceBundleView:
+    service = workspace(request)
+    package = _require_evidence_snapshot_context(
+        service,
+        chain_id=chain_id,
+        snapshot_id=snapshot_id,
+        snapshot_version=snapshot_version,
+    )
+    overview = await get_chain_overview_cards(chain_id, request)
+    if overview.status != "READY":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=overview.reason or "EVIDENCE_PROJECTION_NOT_READY",
+        )
+    if topology_version is not None and (topology_version or None) != overview.topology_version:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="STALE_TOPOLOGY_CONTEXT",
+        )
+    identity, records = await _current_evidence_records(
+        service=service,
+        package=package,
+        chain_id=chain_id,
+        overview=overview,
+    )
+    try:
+        page = paginate_evidence_records(
+            identity=identity,
+            records=records,
+            limit=limit,
+            cursor=cursor,
+        )
+    except InvalidEvidenceCursor as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except StaleEvidenceCursor as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    return EvidenceBundleView(**page)
+
+
+@router.get(
+    "/chains/{chain_id}/evidence/{evidence_id}",
+    response_model=EvidenceRecordView,
+)
+async def get_chain_evidence_record(
+    chain_id: str,
+    evidence_id: str,
+    request: Request,
+    snapshot_id: str | None = Header(None, alias="X-NocPro-Snapshot-Id"),
+    snapshot_version: str | None = Header(None, alias="X-NocPro-Snapshot-Version"),
+    topology_version: str | None = Header(None, alias="X-NocPro-Topology-Version"),
+) -> EvidenceRecordView:
+    service = workspace(request)
+    package = _require_evidence_snapshot_context(
+        service,
+        chain_id=chain_id,
+        snapshot_id=snapshot_id,
+        snapshot_version=snapshot_version,
+    )
+    overview = await get_chain_overview_cards(chain_id, request)
+    if overview.status != "READY":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=overview.reason or "EVIDENCE_PROJECTION_NOT_READY",
+        )
+    if topology_version is not None and (topology_version or None) != overview.topology_version:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="STALE_TOPOLOGY_CONTEXT",
+        )
+    identity, records = await _current_evidence_records(
+        service=service,
+        package=package,
+        chain_id=chain_id,
+        overview=overview,
+    )
+    if not evidence_id.startswith("ev1_") or len(evidence_id) != 68:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="evidence record not found",
+        )
+    record = next(
+        (item for item in records if item.get("evidence_id") == evidence_id),
+        None,
+    )
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="evidence record not found",
+    )
+    return EvidenceRecordView(**record)
 
 
 @router.get("/chains/{chain_id}")
@@ -1082,16 +1570,66 @@ async def explain_pair(
 ) -> PairWhyView:
     service = workspace(request)
     try:
+        package = service.require_package()
+        requested_snapshot_id = request.headers.get("x-nocpro-snapshot-id")
+        requested_snapshot_version = request.headers.get("x-nocpro-snapshot-version")
+        if requested_snapshot_id or requested_snapshot_version:
+            _require_evidence_snapshot_context(
+                service,
+                chain_id=chain_id,
+                snapshot_id=requested_snapshot_id,
+                snapshot_version=requested_snapshot_version,
+            )
         values = await _run_blocking(service.pair_why, chain_id, alarm_a, alarm_b)
-        graybox = adapt_graybox_metadata(service.require_package(), chain_id)
+        if service.require_package() is not package:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="STALE_ANALYSIS_CONTEXT",
+            )
+        graybox = adapt_graybox_metadata(package, chain_id)
     except Exception as exc:
         raise translate_error(exc) from exc
     fact = graybox.pair_fact(alarm_a, alarm_b)
+    evidence_views = [pair_evidence_view(value) for value in values]
+    evidence_records: list[EvidenceRecordView] = []
+    if requested_snapshot_id and requested_snapshot_version:
+        try:
+            overview = await get_chain_overview_cards(chain_id, request)
+            if overview.status == "READY" and overview.analysis_identity is not None:
+                adapted = analysis_identity_from_projection({
+                    "analysis_identity": overview.analysis_identity.model_dump(mode="json")
+                })
+                if adapted.available and adapted.identity is not None:
+                    pair_records = build_evidence_records(
+                        identity=adapted.identity,
+                        overview_projection=None,
+                        pair_evidence=[{
+                            "alarm_id_a": alarm_a,
+                            "alarm_id_b": alarm_b,
+                            "evidence": [value.model_dump(mode="json") for value in evidence_views],
+                        }],
+                        audit_artifact=None,
+                        review_result=None,
+                    )
+                    evidence_records = [
+                        EvidenceRecordView(**record)
+                        for record in pair_records
+                        if record.get("kind") == "TOPOLOGY_PATH"
+                        and str(record.get("summary") or "").startswith("Pair WHY ")
+                    ]
+            if service.require_package() is not package:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="STALE_ANALYSIS_CONTEXT",
+                )
+        except Exception as exc:
+            raise translate_error(exc) from exc
     return PairWhyView(
         chain_id=chain_id,
         alarm_id_a=alarm_a,
         alarm_id_b=alarm_b,
-        evidence=[pair_evidence_view(value) for value in values],
+        evidence=evidence_views,
+        evidence_records=evidence_records,
         system_fact=SystemPairFactView(
             status=graybox.pair_status(alarm_a, alarm_b),
             attribute_ref=fact.attribute_ref if fact else None,
@@ -1601,7 +2139,10 @@ async def get_chain_ai_suggestion(
         try:
             latest_review = await service.latest_review(chain_id)
             if latest_review and latest_review.result:
-                from tier2.counterfactual.public_contract import public_review_result
+                from tier2.counterfactual.public_contract import (
+                    public_review_result,
+                    review_evaluation_completed,
+                )
                 if hasattr(latest_review.result, "recommendations"):
                     review_result = public_review_result(latest_review.result, package=package, language=lang)
                 elif isinstance(latest_review.result, dict):
@@ -1651,6 +2192,10 @@ async def get_chain_ai_suggestion(
                             else:
                                 cands.append(cand)
                         review_result["evaluated_candidates"] = cands
+                    if not isinstance(review_result.get("evaluation_completed"), bool):
+                        review_result["evaluation_completed"] = review_evaluation_completed(
+                            review_result.get("operation_status")
+                        )
                 else:
                     review_result = latest_review.result
                 review_status = "AVAILABLE"
@@ -1766,7 +2311,13 @@ async def get_chain_cohesion_narrative(
                 current_package = service.require_package()
                 if quality_record is not None and isinstance(quality_record.payload, dict) and _quality_assessment_is_current(
                     quality_record.payload,
+                    canonical_row=quality_record,
                     expected_config_version=getattr(service.config, "config_version", None),
+                    expected_review_config_version=(
+                        service.config.counterfactual.config_version
+                        if service.config.counterfactual is not None
+                        else "UNAVAILABLE"
+                    ),
                     expected_topology_version=_topology_version(current_package),
                     topology_version_known=snapshot_topology_profile(
                         snapshot_id,
@@ -1782,6 +2333,68 @@ async def get_chain_cohesion_narrative(
                     chain_id,
                     exc_info=True,
                 )
+
+        evidence_review_result = None
+        if persisted_quality_assessment is not None and latest_rev is not None:
+            overview_projection = persisted_quality_assessment.get("overview_projection")
+            expected_review_identity = (
+                overview_projection.get("review_analysis_identity")
+                if isinstance(overview_projection, dict)
+                else None
+            )
+            expected_review_revision = (
+                overview_projection.get("review_artifact_revision")
+                if isinstance(overview_projection, dict)
+                else None
+            )
+            raw_review_identity = getattr(latest_rev, "identity", None)
+            raw_review_identity = (
+                asdict(raw_review_identity)
+                if raw_review_identity is not None and hasattr(raw_review_identity, "__dataclass_fields__")
+                else raw_review_identity
+            )
+            if isinstance(raw_review_identity, dict):
+                adapted_review = analysis_identity_from_review(
+                    raw_review_identity,
+                    pipeline_version=str(raw_review_identity.get("engine_version") or ""),
+                    input_fingerprint=str(
+                        raw_review_identity.get("tier1b_artifact_fingerprint") or ""
+                    ),
+                )
+                review_status = str(
+                    getattr(getattr(latest_rev, "status", None), "value", getattr(latest_rev, "status", ""))
+                    or ""
+                ).upper()
+                expected_job_id = persisted_quality_assessment.get("counterfactual_job_id")
+                expected_review_fingerprint = (
+                    expected_review_revision.get("fingerprint")
+                    if isinstance(expected_review_revision, dict)
+                    else None
+                )
+                if (
+                    adapted_review.available
+                    and adapted_review.identity is not None
+                    and adapted_review.identity.to_payload() == expected_review_identity
+                    and getattr(latest_rev, "job_id", None) == expected_job_id
+                    and getattr(latest_rev, "cache_fingerprint", None) == expected_review_fingerprint
+                    and review_status == "SUCCEEDED"
+                    and isinstance(review_result, dict)
+                ):
+                    evidence_review_result = {
+                        "job_id": latest_rev.job_id,
+                        "status": review_status,
+                        "analysis_identity": adapted_review.identity.to_payload(),
+                        "result": review_result,
+                    }
+                    expected_audit_fingerprint = raw_review_identity.get(
+                        "structural_audit_artifact_fingerprint"
+                    )
+                    if (
+                        audit_artifact is not None
+                        and expected_audit_fingerprint
+                        != getattr(audit_artifact, "artifact_fingerprint", None)
+                    ):
+                        audit_artifact = None
 
         input_fingerprint = _cohesion_input_fingerprint(
             service,
@@ -1845,6 +2458,7 @@ async def get_chain_cohesion_narrative(
             audit_error_reason=audit_error_reason,
             deep_dive_analysis=deep_dive_analysis,
             persisted_quality_assessment=persisted_quality_assessment,
+            evidence_review_result=evidence_review_result,
             language=lang,
         )
 

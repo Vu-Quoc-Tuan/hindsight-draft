@@ -273,7 +273,10 @@ def test_dep_hop_score_decays_with_distance():
     assert one_hop.evidence_metadata["topology_path"] == {
         "nodes": ["R1", "R2"],
         "hop_count": 1,
+        "max_hops": 3,
         "relation_types": ["IP_ADJACENCY"],
+        "edge_relation_types": ["IP_ADJACENCY"],
+        "mapping_statuses": [],
         "traversal_semantic": "STRUCTURAL_TOPOLOGY_PATH_NOT_CAUSAL",
         "direction_policy": "UNDIRECTED",
     }
@@ -338,6 +341,7 @@ def test_resolver_ignores_unmapped_and_ambiguous_status():
     )
     resolver = ResourceResolver.from_package(package)
     assert resolver.resource_of("a1") == "R1"
+    assert resolver.mapping_statuses == {"a1": "EXACT"}
     assert resolver.resource_of("a2") is None
     assert resolver.resource_of("a3") is None
 
