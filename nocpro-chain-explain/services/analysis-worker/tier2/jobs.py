@@ -200,7 +200,7 @@ class Tier2JobManager:
         self._lock = RLock()
         self._jobs: dict[str, _MutableJob] = {}
         self._futures: dict[str, Future[Any]] = {}
-        self._inflight_by_key: dict[tuple[str, str, str, str, str], str] = {}
+        self._inflight_by_key: dict[tuple[str, str, str, str, str, str], str] = {}
         self._artifact_listener = artifact_listener
         self._state_listener = state_listener
 
@@ -252,6 +252,16 @@ class Tier2JobManager:
             visualization=getattr(result, "audit_visualization", None),
             analysis_version=AUDIT_ANALYSIS_VERSION,
             analysis_config_version=analysis_config.config_version,
+            topology_version=(
+                str(package.topology.get("topology_version"))
+                if isinstance(package.topology, dict)
+                and package.topology.get("topology_version") is not None
+                else getattr(
+                    getattr(package.snapshot, "topology_ref", None),
+                    "topology_version",
+                    None,
+                )
+            ),
         )
 
     def submit(
@@ -361,6 +371,16 @@ class Tier2JobManager:
             snapshot_id=package.snapshot.snapshot_id,
             snapshot_version=package.snapshot.snapshot_version,
             config_version=run_config_version,
+            topology_version=(
+                str(package.topology.get("topology_version"))
+                if isinstance(package.topology, dict)
+                and package.topology.get("topology_version") is not None
+                else getattr(
+                    getattr(package.snapshot, "topology_ref", None),
+                    "topology_version",
+                    None,
+                )
+            ),
         )
 
     def _run(
@@ -500,8 +520,10 @@ class Tier2JobManager:
             future.result(timeout=timeout)
         return self.get(job_id)
 
-    def shutdown(self, *, wait: bool = True) -> None:
-        self._executor.shutdown(wait=wait, cancel_futures=False)
+    def shutdown(
+        self, *, wait: bool = True, cancel_futures: bool = False
+    ) -> None:
+        self._executor.shutdown(wait=wait, cancel_futures=cancel_futures)
 
     def __enter__(self) -> "Tier2JobManager":
         return self

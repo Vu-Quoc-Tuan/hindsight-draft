@@ -97,6 +97,16 @@ def review_identity(
         external_validation_artifact_fingerprint=(
             external_artifact.fingerprint if external_artifact is not None else None
         ),
+        topology_version=(
+            str(package.topology.get("topology_version"))
+            if isinstance(package.topology, dict)
+            and package.topology.get("topology_version") is not None
+            else getattr(
+                getattr(package.snapshot, "topology_ref", None),
+                "topology_version",
+                None,
+            )
+        ),
     )
 
 
@@ -380,6 +390,31 @@ class CounterfactualJobManager:
             ]
         return matches[-1] if matches else None
 
+    def latest_for_chain(
+        self, snapshot_id: str, snapshot_version: str, chain_id: str
+    ) -> CounterfactualJobView | None:
+        """Return the newest in-process Review lifecycle state for one chain.
+
+        The background quality reconciler uses this to distinguish a Review
+        that is still queued/running from one that failed and should be
+        retried.  It deliberately does not treat persisted rows as in-memory
+        work; those are checked by the Workspace before a retry is submitted.
+        """
+        with self._lock:
+            matches = [
+                job.view()
+                for job in self._jobs.values()
+                if job.chain_id == chain_id
+                and job.identity.snapshot_id == snapshot_id
+                and job.identity.snapshot_version == snapshot_version
+            ]
+        if not matches:
+            return None
+        return max(
+            matches,
+            key=lambda job: job.submitted_at or datetime.min.replace(tzinfo=timezone.utc),
+        )
+
     def wait(self, job_id: str, *, timeout: float | None = None) -> CounterfactualJobView:
         with self._lock:
             if job_id not in self._jobs:
@@ -389,5 +424,7 @@ class CounterfactualJobManager:
             future.result(timeout=timeout)
         return self.get(job_id)
 
-    def shutdown(self, *, wait: bool = True) -> None:
-        self._executor.shutdown(wait=wait, cancel_futures=False)
+    def shutdown(
+        self, *, wait: bool = True, cancel_futures: bool = False
+    ) -> None:
+        self._executor.shutdown(wait=wait, cancel_futures=cancel_futures)

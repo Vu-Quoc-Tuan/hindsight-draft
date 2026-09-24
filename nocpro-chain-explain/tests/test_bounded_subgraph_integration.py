@@ -92,6 +92,9 @@ def test_chain_6913556_structural_audit_no_split():
         assert ctx["recommendations"]["split_recommended"] is False
 
         narrative = build_deterministic_cohesion_narrative(ctx, language="vi")
-        assert "không có vết cắt độ dẫn thấp trên đồ thị" in narrative
+        assert "21/26 cảnh báo thuộc nhóm" in narrative
+        assert "trong giới hạn 2 hop" in narrative
+        assert "Audit chưa tìm thấy ranh giới đủ yếu" in narrative
+        assert "/5 sao" not in narrative
     finally:
         ws.close()

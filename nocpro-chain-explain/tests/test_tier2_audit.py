@@ -74,6 +74,7 @@ def test_small_chain_runs_exact_audit_in_tier2():
     assert len(result.structural_roles) == 6
     assert result.structural_audit is not None
     assert result.over_merge is not None
+    assert result.over_merge.strength.value == "UNAVAILABLE"
     assert result.reason is None
 
 

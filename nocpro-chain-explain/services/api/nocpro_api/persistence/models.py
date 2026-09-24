@@ -377,6 +377,8 @@ class DeepDiveJobRecord(Base):
     snapshot_version: Mapped[str] = mapped_column(String(255), nullable=False)
     chain_id: Mapped[str] = mapped_column(String(255), nullable=False)
     cache_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    analysis_config_version: Mapped[str | None] = mapped_column(String(255))
+    topology_version: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     progress_percent: Mapped[int] = mapped_column(nullable=False)
     cache_hit: Mapped[bool] = mapped_column(nullable=False, default=False)
@@ -409,6 +411,43 @@ class CounterfactualJobRecord(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class ChainQualityAssessmentRecord(Base):
+    """Provider-independent quality result for one exact snapshot chain."""
+
+    __tablename__ = "chain_quality_assessment"
+
+    snapshot_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    snapshot_version: Mapped[str] = mapped_column(String(255), primary_key=True)
+    chain_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    assessment_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    input_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    stars: Mapped[int | None] = mapped_column(Integer)
+    label: Mapped[str] = mapped_column(String(128), nullable=False)
+    available_dimension_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    stage: Mapped[str] = mapped_column(String(32), nullable=False)
+    deep_dive_job_id: Mapped[str | None] = mapped_column(String(64))
+    counterfactual_job_id: Mapped[str | None] = mapped_column(String(64))
+    recommendation_status: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_chain_quality_assessment_snapshot",
+            "snapshot_id",
+            "snapshot_version",
+            "status",
+        ),
+        Index("ix_chain_quality_assessment_input", "input_fingerprint"),
     )
 
 
@@ -859,6 +898,7 @@ class CohesionNarrativeCache(Base):
     snapshot_version: Mapped[str] = mapped_column(String(255), primary_key=True)
     chain_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     language: Mapped[str] = mapped_column(String(16), primary_key=True, default="en")
+    input_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     has_p2: Mapped[bool] = mapped_column(nullable=False, default=False)
     narrative: Mapped[str] = mapped_column(Text, nullable=False)
     analytical_findings: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
@@ -874,6 +914,7 @@ class CohesionNarrativeCache(Base):
 
     __table_args__ = (
         Index("ix_cohesion_narrative_cache_chain", "snapshot_id", "chain_id"),
+        Index("ix_cohesion_narrative_cache_input", "input_fingerprint"),
     )
 
 
@@ -891,4 +932,3 @@ class TopologySubgraphCache(Base):
     __table_args__ = (
         Index("ix_topology_subgraph_cache_profile", "profile_id", "topology_version"),
     )
-

@@ -271,6 +271,12 @@ def test_balance_constraint_rejects_lopsided_candidates():
     )
     scored = score_candidates(graph, [tiny_candidate], chain_size=20)
     assert scored[0].conductance.feasible is False
+    result = run_structural_audit("C1", graph, [tiny_candidate], epsilon=0.3)
+    assert result.verdict is AuditVerdict.UNAVAILABLE
+    assert result.best_cut is None
+    empty_result = run_structural_audit("C1", graph, [], epsilon=0.3)
+    assert empty_result.verdict is AuditVerdict.UNAVAILABLE
+    assert empty_result.best_cut is None
 
 
 # --------------------------------------------------------------------------

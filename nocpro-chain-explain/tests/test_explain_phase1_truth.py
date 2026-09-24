@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import httpx2
+from pathlib import Path
 
 from configuration import load_analysis_config
 from libs.contracts import load_validated_package
@@ -25,7 +27,15 @@ def test_calibrated_thresholds_applied_to_tier1b_analysis():
     cfg = load_analysis_config("config/thresholds/calibrated.yaml")
     assert cfg.value("role.s_min") == 0.60
     assert cfg.value("role.s_weak") == 0.30
-    assert cfg.value("temporal.burst.gap_seconds") in (481, 483, 488)
+    calibration_report = json.loads(
+        Path("benchmarks/results/calibration_report.json").read_text(encoding="utf-8")
+    )
+    calibrated_gap = next(
+        item["calibrated_value"]
+        for item in calibration_report["calibrated_parameters"]
+        if item["path"] == "temporal.burst.gap_seconds"
+    )
+    assert cfg.value("temporal.burst.gap_seconds") == calibrated_gap
 
     payload = _payload()
     pkg = load_validated_package(payload)
@@ -110,17 +120,34 @@ def test_cohesion_narrative_vietnamese_deterministic():
             "insufficient_count": 0,
             "insufficient_members": [],
         },
-        "topology": {"mapped": 26, "total": 26, "resource_types": ["ROUTER"]},
+        "topology": {
+            "mapped": 26,
+            "total": 26,
+            "mapped_device_count": 3,
+            "total_device_count": 3,
+            "resource_types": ["ROUTER"],
+        },
         "audit": {"status": "EVALUATED", "verdict": "CANDIDATE_SPLIT", "candidate_cut": True, "conductance": 0.15},
-        "recommendations": {"split_recommended": True},
+        "recommendations": {"count": 1, "split_recommended": True},
+        "quality_assessment": {
+            "method": "HEURISTIC_V1",
+            "status": "EVALUATED",
+            "stars": 2,
+            "label": "Có dấu hiệu nên tách",
+            "reasons": [
+                "3/3 thiết bị đã nằm trong topology.",
+                "Audit phát hiện một ranh giới có thể tách chuỗi.",
+            ],
+        },
     }
 
     vi_narrative = build_deterministic_cohesion_narrative(context, language="vi")
-    assert "Chuỗi 6913556" in vi_narrative
-    assert "21 sự kiện 'DOWN BGP_changed from ESTABLISHED to IDLE - Protocol'" in vi_narrative
-    assert "3 thiết bị" in vi_narrative
-    assert "WEAK" in vi_narrative
-    assert "tách chuỗi (SPLIT)" in vi_narrative
+    assert "mẫu đồng diễn" in vi_narrative
+    assert "21/26 cảnh báo thuộc nhóm" in vi_narrative
+    assert "Audit phát hiện ranh giới" in vi_narrative
+    assert "2/5 sao" not in vi_narrative
+    assert "3/3 thiết bị" not in vi_narrative
+    assert len(vi_narrative) < 700
     assert "DWDM" not in vi_narrative
 
 
@@ -145,8 +172,8 @@ def test_ai_advisor_vietnamese_deterministic():
     assert "ADR-0024" not in vi_narrative
 
 
-def test_api_endpoints_support_vietnamese_query(monkeypatch):
-    """Verify REST API /cohesion-narrative and /ai-suggestion return Vietnamese when ?lang=vi is queried."""
+def test_grounded_ai_endpoints_stay_empty_without_a_provider(monkeypatch):
+    """Grounded AI routes must not present deterministic text as provider output."""
     monkeypatch.delenv("AI_BASE_URL", raising=False)
     monkeypatch.delenv("AI_API_KEY", raising=False)
     monkeypatch.setenv("AI_PROVIDER_PROTOCOL", "OPENAI_COMPATIBLE")
@@ -164,19 +191,22 @@ def test_api_endpoints_support_vietnamese_query(monkeypatch):
                 assert resp_vi.status_code == 200
                 data_vi = resp_vi.json()
                 assert data_vi["chain_id"] == "C1"
-                assert "Chuỗi C1" in data_vi["narrative"] or "chuỗi C1" in data_vi["narrative"] or "Chưa thực hiện" in data_vi["narrative"]
+                assert data_vi["narrative"] == ""
+                assert data_vi["provider_status"] == "NOT_CONFIGURED"
 
-                # 2. Cohesion narrative default English (backward compatibility)
+                # 2. Cohesion narrative with its default language
                 resp_en = await client.get("/api/v1/chains/C1/cohesion-narrative")
                 assert resp_en.status_code == 200
                 data_en = resp_en.json()
-                assert "Chain C1" in data_en["narrative"]
+                assert data_en["narrative"] == ""
+                assert data_en["provider_status"] == "NOT_CONFIGURED"
 
-                # 3. AI Suggestion in Vietnamese
+                # 3. AI Suggestion also remains empty without a provider
                 sug_vi = await client.get("/api/v1/chains/C1/ai-suggestion?lang=vi")
                 assert sug_vi.status_code == 200
                 sug_data = sug_vi.json()
-                assert "Tóm tắt bằng chứng cho chuỗi C1" in sug_data["narrative"]
+                assert sug_data["narrative"] == ""
+                assert sug_data["provider_status"] == "NOT_CONFIGURED"
         finally:
             app.state.workspace.close()
 

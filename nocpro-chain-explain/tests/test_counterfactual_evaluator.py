@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from types import SimpleNamespace
 import tier2.counterfactual.evaluator as evaluator_module
-from audit import StructuralRole, StructuralRoleResult
+from audit import AuditGraph, AuditVerdict, StructuralRole, StructuralRoleResult
 from configuration import CalibrationStatus, CounterfactualConfig
+from graybox.singleton import MembershipVerdict
 from libs.contracts import load_package
 from tier2.counterfactual import (
     CandidateStatus,
@@ -139,6 +141,66 @@ def test_missing_metric_is_not_zero() -> None:
 
     assert result.status is CandidateStatus.HARD_GATE_REJECTED
     assert result.reason == "REQUIRED_METRIC_UNAVAILABLE"
+
+
+def test_skipped_small_chain_does_not_fabricate_audit_metrics(monkeypatch) -> None:
+    package = _package()
+    analysis_members = {
+        alarm_id: SimpleNamespace(
+            role=SimpleNamespace(verdict=MembershipVerdict.WEAK),
+            support=SimpleNamespace(support=0.8),
+        )
+        for alarm_id in package.members_of("C")
+    }
+    graph = AuditGraph(
+        members=tuple(analysis_members),
+        edges=(),
+        adjacency={alarm_id: {} for alarm_id in analysis_members},
+    )
+    monkeypatch.setattr(
+        evaluator_module,
+        "analyze_chain_configured",
+        lambda *_args, **_kwargs: SimpleNamespace(members=analysis_members),
+    )
+    monkeypatch.setattr(
+        evaluator_module,
+        "analyze_structural_audit",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            graph=graph,
+            structural_roles={},
+            structural_audit=SimpleNamespace(verdict=AuditVerdict.SKIPPED_SMALL_CHAIN),
+            evidence_attribution=SimpleNamespace(
+                total_pair_count=6,
+                covered_pair_count=3,
+            ),
+        ),
+    )
+
+    config_values = {
+        "audit.global_weak_baseline": 0.3,
+        "audit.rho": 0.5,
+        "audit.min_side_size": 2,
+        "audit.small_chain_threshold": 10,
+        "temporal.delay.support_threshold": 0.5,
+        "dependency.max_hop": 2,
+        "dependency.lambda_dep": 0.5,
+        "dependency.common_support_threshold": 0.5,
+        "temporal.burst.gap_seconds": 60,
+    }
+    analysis_config = SimpleNamespace(
+        mining_config=lambda: object(),
+        value=lambda key: config_values[key],
+    )
+    metrics = evaluator_module.compute_exact_partition_metrics(
+        package,
+        ("C",),
+        analysis_config=analysis_config,
+        counterfactual_config=CONFIG,
+    )
+
+    assert metrics.audit_conductance.availability.value == "UNAVAILABLE"
+    assert metrics.audit_verdict_severity.availability.value == "UNAVAILABLE"
+    assert metrics.weak_member_count.availability.value == "AVAILABLE"
 
 
 def test_external_contradiction_hard_rejects() -> None:

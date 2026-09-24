@@ -1,8 +1,8 @@
 """Tier-1 cache (§3 principle 3, ADR-0014).
 
-Cache key is ``(chain fingerprint, snapshot version, config version)``, so
-clicking the same chain again does not recompute, while any change in membership
-or configuration invalidates the entry.
+Cache key includes the chain fingerprint, exact snapshot identity, configuration,
+and topology version, so a Kafka topology advance cannot reuse analysis built
+against an older graph.
 
 The fingerprint is derived from **membership**, not the raw chain ID: a chain
 whose snapshot-local ID changed while its members stayed identical is the same
@@ -46,14 +46,16 @@ class CacheKey:
     snapshot_id: str
     snapshot_version: str
     config_version: str
+    topology_version: str | None = None
 
-    def as_tuple(self) -> tuple[str, str, str, str, str]:
+    def as_tuple(self) -> tuple[str, str, str, str, str, str]:
         return (
             self.tier.value,
             self.fingerprint,
             self.snapshot_id,
             self.snapshot_version,
             self.config_version,
+            self.topology_version or "UNPINNED_TOPOLOGY",
         )
 
 
@@ -79,7 +81,7 @@ class Tier1Cache:
     composition and the tier separation.
     """
 
-    entries: dict[tuple[str, str, str, str, str], CacheEntry[Any]] = field(
+    entries: dict[tuple[str, str, str, str, str, str], CacheEntry[Any]] = field(
         default_factory=dict
     )
     hits: int = 0
@@ -94,6 +96,7 @@ class Tier1Cache:
         snapshot_id: str,
         snapshot_version: str,
         config_version: str,
+        topology_version: str | None = None,
     ) -> CacheKey:
         return CacheKey(
             tier=tier,
@@ -101,6 +104,7 @@ class Tier1Cache:
             snapshot_id=snapshot_id,
             snapshot_version=snapshot_version,
             config_version=config_version,
+            topology_version=topology_version,
         )
 
     def get(self, key: CacheKey) -> Any | None:

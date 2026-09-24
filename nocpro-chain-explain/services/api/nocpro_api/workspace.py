@@ -7,8 +7,9 @@ import json
 import hashlib
 import asyncio
 import logging
-from concurrent.futures import Future
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict, dataclass, replace
+from types import SimpleNamespace
 
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,6 +39,7 @@ from configuration import (
     load_analysis_config,
 )
 from libs.contracts import IngestedPackage, load_validated_package
+from libs.contracts.topology_identity import effective_topology_version, snapshot_topology_profile
 from tier1a import CacheTier, SnapshotPrecompute, Tier1Cache, precompute_snapshot
 from tier1b import analyze_chain_configured
 from tier2 import (
@@ -54,6 +56,7 @@ from tier2.counterfactual import (
     CounterfactualJobView as DomainCounterfactualJobView,
     artifact_fingerprint,
     review_identity,
+    ReviewIdentity,
 )
 from tier2.counterfactual.public_contract import public_review_result
 
@@ -72,6 +75,41 @@ def _parse_iso_time(value: str) -> datetime:
 def _cache_key_fingerprint(cache_key) -> str:
     encoded = json.dumps(cache_key.as_tuple(), separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _payload_fingerprint(payload: dict[str, Any]) -> str:
+    """Fingerprint the exact immutable activation input without serializing objects."""
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _topology_version(value: Any) -> str | None:
+    raw_snapshot = value.get("snapshot") if isinstance(value, dict) else getattr(value, "snapshot", None)
+    topo_ref = raw_snapshot.get("topology_ref") if isinstance(raw_snapshot, dict) else getattr(raw_snapshot, "topology_ref", None)
+    if isinstance(topo_ref, dict):
+        version = topo_ref.get("topology_version")
+        if version is not None:
+            return str(version)
+    version = getattr(topo_ref, "topology_version", None)
+    if version is None:
+        topology = value.get("topology") if isinstance(value, dict) else getattr(value, "topology", None)
+        version = topology.get("topology_version") if isinstance(topology, dict) else None
+    return str(version) if version is not None else None
+
+
+@dataclass(frozen=True)
+class _PreparedActivation:
+    package: IngestedPackage
+    precompute: SnapshotPrecompute
+    payload_fingerprint: str
+    config_version: str
+    topology_version: str | None
 
 
 @dataclass(frozen=True)
@@ -166,13 +204,39 @@ class Workspace:
         self._custom_config_counter = 0
         self.config: AnalysisConfig = load_analysis_config(selected_config)
         self.cache = Tier1Cache()
-        tier2_workers = int(os.environ.get("TIER2_MAX_WORKERS", "3"))
+        tier2_workers = int(os.environ.get("TIER2_MAX_WORKERS", "1"))
         self.jobs = Tier2JobManager(cache=self.cache, max_workers=tier2_workers)
-        self.review_jobs = CounterfactualJobManager()
+        review_workers = int(
+            os.environ.get("NOCPRO_COUNTERFACTUAL_MAX_WORKERS", "1")
+        )
+        self.review_jobs = CounterfactualJobManager(max_workers=review_workers)
         self.package: IngestedPackage | None = None
         self.precompute: SnapshotPrecompute | None = None
-        self._precomputed_snapshots: set[tuple[str, str]] = set()
+        # Keep a tiny activation cache for recently selected immutable
+        # snapshots.  Re-selecting a READY catalog item should promote the
+        # prepared Tier-1A objects instead of reparsing the full payload.
+        self._prepared_snapshot_cache: dict[
+            tuple[str, str], tuple[IngestedPackage, SnapshotPrecompute]
+        ] = {}
+        # Snapshot-wide quality workers prepare immutable packages in an
+        # isolated Workspace.  Keep a small exact-identity handoff so a later
+        # UI selection can promote that work without reparsing the full JSON.
+        # This is an in-memory object registry (not pickle/serialized state),
+        # bounded to avoid turning the portfolio into an unbounded cache.
+        self._prepared_activation_cache: dict[tuple[str, str], _PreparedActivation] = {}
+        # Portfolio deployments commonly expose more than four immutable
+        # snapshots.  Keep enough warm activations for a normal local catalog
+        # while retaining an explicit bound; operators with larger payloads
+        # can lower this through NOCPRO_PREPARED_ACTIVATION_CACHE_SIZE.
+        self._prepared_activation_cache_limit = max(
+            1, int(os.environ.get("NOCPRO_PREPARED_ACTIVATION_CACHE_SIZE", "16"))
+        )
+        self._precomputed_snapshots: set[tuple[str, str, str | None]] = set()
+        self.auto_chain_quality = os.environ.get(
+            "NOCPRO_AUTO_CHAIN_QUALITY", "true"
+        ).lower() in {"1", "true", "yes"}
         self._lock = RLock()
+        self._activation_generation = 0
         self.repository = None
         self.coordinator = None
         self.similarity_index = None
@@ -191,6 +255,14 @@ class Workspace:
         self._review_persistence_futures: list[Future] = []
         self._audit_persistence_futures: list[Future] = []
         self._deep_dive_persistence_futures: list[Future] = []
+        self._quality_resume_task: asyncio.Task[Any] | None = None
+        # When PostgreSQL is available, app.py assigns all automatic quality
+        # work to the snapshot-wide runner.  The active UI workspace remains
+        # available for explicit/on-demand inspection but must not enqueue a
+        # second copy of the same chain jobs when /chains is opened.
+        self._quality_background_owner = False
+        self._analysis_persistence_semaphore: asyncio.Semaphore | None = None
+        self._closing = False
         self.operator_feedbacks: list[dict[str, Any]] = []
         self._job_persistence_locks: dict[str, asyncio.Lock] = {}
         ranker_art_dir = os.environ.get("NOCPRO_REVIEW_RANKER_ARTIFACT_DIR")
@@ -378,6 +450,8 @@ class Workspace:
             )
             self.cache.entries.clear()
             self.jobs.cache.entries.clear()
+            self._prepared_snapshot_cache.clear()
+            self._prepared_activation_cache.clear()
 
         return self.get_active_parameters()
 
@@ -387,6 +461,8 @@ class Workspace:
             self.config = load_analysis_config(self._base_config_path)
             self.cache.entries.clear()
             self.jobs.cache.entries.clear()
+            self._prepared_snapshot_cache.clear()
+            self._prepared_activation_cache.clear()
         return self.get_active_parameters()
 
     async def calibrate_from_database(
@@ -408,16 +484,32 @@ class Workspace:
             self.config = load_analysis_config(calibrated_output)
             self.cache.entries.clear()
             self.jobs.cache.entries.clear()
+            self._prepared_snapshot_cache.clear()
+            self._prepared_activation_cache.clear()
 
         return asdict(report)
 
 
     def close(self) -> None:
-        self.review_jobs.shutdown()
+        self._closing = True
+        if self._quality_resume_task is not None and not self._quality_resume_task.done():
+            self._quality_resume_task.cancel()
         self.review_jobs.set_state_listener(None)
-        self.jobs.shutdown()
         self.jobs.set_state_listener(None)
         self.jobs.set_artifact_listener(None)
+        # Terminal artifacts are persisted as jobs finish. During reload or
+        # shutdown, queued deterministic work can be recreated idempotently;
+        # draining the entire snapshot queue would make API shutdown take
+        # minutes and keep the development server unavailable.
+        self.review_jobs.shutdown(wait=False, cancel_futures=True)
+        self.jobs.shutdown(wait=False, cancel_futures=True)
+        with self._lock:
+            self._prepared_snapshot_cache.clear()
+            self._prepared_activation_cache.clear()
+
+    def set_quality_background_owner(self, enabled: bool = True) -> None:
+        """Delegate automatic snapshot quality scheduling to a background runner."""
+        self._quality_background_owner = bool(enabled)
 
     async def flush_audit_persistence(self) -> None:
         with self._lock:
@@ -452,6 +544,9 @@ class Workspace:
         self.coordinator = coordinator
         self.review_learning.repository = repository
         self._persistence_loop = asyncio.get_running_loop()
+        self._analysis_persistence_semaphore = asyncio.Semaphore(
+            int(os.environ.get("NOCPRO_ANALYSIS_PERSISTENCE_CONCURRENCY", "4"))
+        )
 
         def persist_review_state(view) -> None:
             status_val = view.status.value if hasattr(view.status, "value") else str(view.status)
@@ -525,11 +620,22 @@ class Workspace:
 
                 async def _persist_atomic() -> None:
                     try:
-                        async with self._get_job_persistence_lock(view.job_id):
-                            await repository.persist_succeeded_job_and_review_bundle(
-                                view.persistence_payload(), session, exposures
+                        semaphore = self._analysis_persistence_semaphore
+                        if semaphore is None:
+                            raise RuntimeError("Analysis persistence semaphore is unavailable")
+                        async with semaphore:
+                            async with self._get_job_persistence_lock(view.job_id):
+                                await repository.persist_succeeded_job_and_review_bundle(
+                                    view.persistence_payload(), session, exposures
+                                )
+                                self.review_learning.register_persisted_bundle(session, exposures)
+                        try:
+                            await self._materialize_chain_quality(view)
+                        except Exception:
+                            logger.exception(
+                                "Failed to materialize deterministic quality for chain %s",
+                                view.chain_id,
                             )
-                            self.review_learning.register_persisted_bundle(session, exposures)
                     finally:
                         self._release_job_persistence_lock(view.job_id)
 
@@ -550,8 +656,12 @@ class Workspace:
 
                 async def _persist_non_terminal() -> None:
                     try:
-                        async with self._get_job_persistence_lock(view.job_id):
-                            await repository.persist_counterfactual_job(view.persistence_payload())
+                        semaphore = self._analysis_persistence_semaphore
+                        if semaphore is None:
+                            raise RuntimeError("Analysis persistence semaphore is unavailable")
+                        async with semaphore:
+                            async with self._get_job_persistence_lock(view.job_id):
+                                await repository.persist_counterfactual_job(view.persistence_payload())
                     finally:
                         if status_val in {"FAILED", "INTERRUPTED"}:
                             self._release_job_persistence_lock(view.job_id)
@@ -569,15 +679,51 @@ class Workspace:
             from .serializers import job_view
 
             public = job_view(view).model_dump(mode="json")
+
+            async def _persist_and_continue() -> None:
+                semaphore = self._analysis_persistence_semaphore
+                if semaphore is None:
+                    raise RuntimeError("Analysis persistence semaphore is unavailable")
+                async with semaphore:
+                    await repository.persist_deep_dive_job(
+                        {
+                            **public,
+                            "snapshot_id": view.cache_key.snapshot_id,
+                            "snapshot_version": view.cache_key.snapshot_version,
+                            "cache_fingerprint": _cache_key_fingerprint(view.cache_key),
+                            "analysis_config_version": view.cache_key.config_version,
+                        }
+                    )
+                status_value = (
+                    view.status.value
+                    if hasattr(view.status, "value")
+                    else str(view.status)
+                )
+                if status_value != "SUCCEEDED":
+                    return
+                if self._closing:
+                    return
+                if not self.auto_chain_quality:
+                    return
+                package = self.package
+                if package is None or (
+                    package.snapshot.snapshot_id,
+                    package.snapshot.snapshot_version,
+                ) != (
+                    view.cache_key.snapshot_id,
+                    view.cache_key.snapshot_version,
+                ):
+                    return
+                try:
+                    await self.submit_review(view.chain_id)
+                except Exception:
+                    logger.exception(
+                        "Failed to continue deterministic review for chain %s",
+                        view.chain_id,
+                    )
+
             future = asyncio.run_coroutine_threadsafe(
-                repository.persist_deep_dive_job(
-                    {
-                        **public,
-                        "snapshot_id": view.cache_key.snapshot_id,
-                        "snapshot_version": view.cache_key.snapshot_version,
-                        "cache_fingerprint": _cache_key_fingerprint(view.cache_key),
-                    }
-                ),
+                _persist_and_continue(),
                 self._persistence_loop,
             )
             with self._lock:
@@ -595,6 +741,203 @@ class Workspace:
 
         self.jobs.set_artifact_listener(persist_audit_artifact)
 
+    async def _materialize_chain_quality(self, review_view) -> None:
+        """Persist quality from deterministic artifacts without invoking a provider."""
+        if self.repository is None:
+            return
+        with self._lock:
+            package = self.package
+            config = self.config
+            expected_config_version = config.config_version
+            expected_review_config_version = (
+                config.counterfactual.config_version
+                if config.counterfactual is not None
+                else "UNAVAILABLE"
+            )
+        if package is None:
+            return
+        identity = getattr(review_view, "identity", None)
+        snapshot_id = str(getattr(identity, "snapshot_id", ""))
+        snapshot_version = str(getattr(identity, "snapshot_version", ""))
+        if (
+            getattr(identity, "analysis_version", None) != expected_config_version
+            or getattr(identity, "config_version", None)
+            != expected_review_config_version
+        ):
+            return
+        if (
+            package.snapshot.snapshot_id,
+            package.snapshot.snapshot_version,
+        ) != (snapshot_id, snapshot_version):
+            return
+        if getattr(identity, "topology_version", None) != _topology_version(package):
+            return
+        chain_id = str(review_view.chain_id)
+        if len(package.members_of(chain_id)) <= 1:
+            return
+
+        _, _, current_deep_dive_key = self._deep_dive_context(chain_id)
+        deep_dive_view = self.jobs.latest_compatible(current_deep_dive_key)
+        if deep_dive_view is not None and getattr(deep_dive_view.status, "value", deep_dive_view.status) != "SUCCEEDED":
+            deep_dive_view = None
+        if deep_dive_view is None and self.repository is not None:
+            deep_dive_view = await self.latest_deep_dive(chain_id)
+        deep_dive_analysis = (
+            deep_dive_view.result if deep_dive_view is not None else None
+        )
+        audit_artifact = (
+            deep_dive_view.audit_artifact if deep_dive_view is not None else None
+        )
+        # The in-memory Tier-2 view carries the Audit artifact directly, but a
+        # restart restores Deep Dive from its JSON row and therefore has no
+        # object-level artifact attached.  Read the separately persisted,
+        # exact-compatible artifact before materializing deterministic quality;
+        # otherwise every restart is incorrectly labelled "P2 chưa chạy".
+        if audit_artifact is None and self.repository is not None:
+            try:
+                audit_lookup = await self.latest_audit_visualization(chain_id)
+                audit_artifact = audit_lookup.audit_artifact
+            except Exception:
+                logger.debug(
+                    "Persisted Audit artifact unavailable while materializing chain %s",
+                    chain_id,
+                    exc_info=True,
+                )
+        # Repository-backed review jobs already contain the public JSON
+        # projection.  In-memory jobs still expose the immutable domain
+        # result, so project only that shape instead of attempting to treat a
+        # persisted dict as a domain object during startup reconciliation.
+        review_result = (
+            dict(review_view.result)
+            if isinstance(review_view.result, dict)
+            else public_review_result(
+                review_view.result,
+                package=package,
+                language="vi",
+            )
+        )
+        from .cohesion_advisor import (
+            CHAIN_QUALITY_PIPELINE_VERSION,
+            build_chain_overview_projection,
+            extract_cohesion_context,
+        )
+
+        context = extract_cohesion_context(
+            service=self,
+            chain_id=chain_id,
+            analysis=self.analyze(chain_id),
+            audit_artifact=audit_artifact,
+            review_result=review_result,
+            deep_dive_analysis=deep_dive_analysis,
+        )
+        assessment = context.get("quality_assessment") or {}
+        recommendations = context.get("recommendations") or {}
+        overview_projection = build_chain_overview_projection(context)
+        deep_dive_cache_fingerprint = getattr(deep_dive_view, "cache_fingerprint", None)
+        if deep_dive_cache_fingerprint is None and deep_dive_view is not None:
+            cache_key = getattr(deep_dive_view, "cache_key", None)
+            if cache_key is not None:
+                deep_dive_cache_fingerprint = _cache_key_fingerprint(cache_key)
+        with self._lock:
+            if (
+                self.package is not package
+                or self.config.config_version != expected_config_version
+                or (
+                    self.config.counterfactual.config_version
+                    if self.config.counterfactual is not None
+                    else "UNAVAILABLE"
+                )
+                != expected_review_config_version
+            ):
+                return
+        fingerprint_payload = {
+            "pipeline_version": CHAIN_QUALITY_PIPELINE_VERSION,
+            "config_version": expected_config_version,
+            "snapshot_id": snapshot_id,
+            "snapshot_version": snapshot_version,
+            "topology_version": _topology_version(package),
+            "chain_id": chain_id,
+            "deep_dive_job_id": getattr(deep_dive_view, "job_id", None),
+            "deep_dive_cache_fingerprint": deep_dive_cache_fingerprint,
+            "counterfactual_job_id": review_view.job_id,
+            "counterfactual_cache_fingerprint": artifact_fingerprint(
+                review_view.identity.cache_tuple()
+            ),
+        }
+        input_fingerprint = hashlib.sha256(
+            json.dumps(
+                fingerprint_payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest()
+        await self.repository.persist_chain_quality_assessment(
+            {
+                "snapshot_id": snapshot_id,
+                "snapshot_version": snapshot_version,
+                "chain_id": chain_id,
+                "assessment_version": str(
+                    assessment.get("method") or "HEURISTIC_V1"
+                ),
+                "input_fingerprint": input_fingerprint,
+                "stage": "DETERMINISTIC_COMPLETE",
+                "deep_dive_job_id": getattr(deep_dive_view, "job_id", None),
+                "counterfactual_job_id": review_view.job_id,
+                "recommendation_status": str(
+                    recommendations.get("status") or "NOT_EVALUATED"
+                ),
+                "assessment": assessment,
+                "overview_projection": {
+                    **overview_projection,
+                    "input_fingerprint": input_fingerprint,
+                    "snapshot_id": snapshot_id,
+                    "snapshot_version": snapshot_version,
+                    "config_version": expected_config_version,
+                    "topology_version": _topology_version(package),
+                    "pipeline_version": CHAIN_QUALITY_PIPELINE_VERSION,
+                },
+            }
+        )
+
+    async def _materialize_persisted_chain_quality_if_available(
+        self, chain_id: str
+    ) -> bool:
+        """Backfill the deterministic Overview projection from persisted P2 data."""
+        if self.repository is None or self.package is None:
+            return False
+        try:
+            _, _, _, identity = await self._review_context(chain_id)
+            stored = await self.repository.latest_compatible_counterfactual_job(
+                snapshot_id=identity.snapshot_id,
+                snapshot_version=identity.snapshot_version,
+                chain_id=chain_id,
+                cache_fingerprint=artifact_fingerprint(identity.cache_tuple()),
+            )
+            if stored is None or stored.status != "SUCCEEDED" or stored.result is None:
+                return False
+            stored_identity = (
+                ReviewIdentity(**stored.identity)
+                if isinstance(stored.identity, dict)
+                else identity
+            )
+            await self._materialize_chain_quality(
+                SimpleNamespace(
+                    job_id=stored.job_id,
+                    chain_id=stored.chain_id,
+                    identity=stored_identity,
+                    result=stored.result,
+                )
+            )
+            return True
+        except Exception:
+            logger.debug(
+                "Persisted deterministic quality backfill unavailable for chain %s",
+                chain_id,
+                exc_info=True,
+            )
+            return False
+
     async def ingest_snapshot(self, payload: dict[str, Any]) -> SnapshotPrecompute:
         if self.repository is None or self.coordinator is None:
             return self.replace_snapshot(payload)
@@ -606,14 +949,40 @@ class Workspace:
             if precompute is None:
                 raise RuntimeError("Tier-1A snapshot claim was not acquired")
             return precompute
+        source_snapshot = payload.get("snapshot") or {}
+        source_topo_ref = source_snapshot.get("topology_ref") or {}
+        expected_topology_version = await effective_topology_version(
+            result.snapshot_id,
+            pinned_version=_topology_version(payload),
+            explicit_profile=source_topo_ref.get("profile_id") if isinstance(source_topo_ref, dict) else None,
+            repository=getattr(self.coordinator, "topology_repository", None),
+        )
         if (
             self.precompute is not None
             and self.package is not None
             and self.package.snapshot.snapshot_id == result.snapshot_id
             and self.package.snapshot.snapshot_version == result.snapshot_version
             and bool(self.package.topology.get("edges"))
+            and _topology_version(self.package) == expected_topology_version
         ):
             return self.precompute
+        prepared = self._take_prepared_activation(
+            payload, expected_topology_version=expected_topology_version
+        )
+        if prepared is not None:
+            package, precompute = prepared
+            self.activate_snapshot(package, precompute)
+            return precompute
+        identity = (result.snapshot_id, result.snapshot_version)
+        cached = self._prepared_snapshot_cache.get(identity)
+        if (
+            cached is not None
+            and cached[1].config_version == self.config.config_version
+            and _topology_version(cached[0]) == expected_topology_version
+        ):
+            package, precompute = cached
+            self.activate_snapshot(package, precompute)
+            return precompute
         # An explicit catalog selection is allowed to reactivate an identical
         # durable snapshot.  ``ingest_direct`` has already checked that the
         # identity and canonical payload are an exact match, so recomputing
@@ -621,8 +990,14 @@ class Workspace:
         if self.coordinator is not None and hasattr(
             self.coordinator, "_hydrate_payload_topology_if_needed"
         ):
-            await self.coordinator._hydrate_payload_topology_if_needed(payload)
-        package, precompute = self.compute_snapshot(payload)
+            hydrated_package = await self.coordinator._hydrate_payload_topology_if_needed(
+                payload
+            )
+        else:
+            hydrated_package = None
+        package, precompute = await self._compute_snapshot_offloaded(
+            hydrated_package or payload
+        )
         self.activate_snapshot(package, precompute)
         return precompute
 
@@ -642,6 +1017,83 @@ class Workspace:
                 self.package.snapshot.snapshot_id,
                 self.package.snapshot.snapshot_version,
             )
+
+    def active_generation(self) -> int:
+        with self._lock:
+            return self._activation_generation
+
+    def store_prepared_activation(
+        self,
+        payload: dict[str, Any],
+        package: IngestedPackage,
+        precompute: SnapshotPrecompute,
+        *,
+        config_version: str,
+    ) -> None:
+        """Publish a validated background preparation for exact later reuse."""
+        identity = (package.snapshot.snapshot_id, package.snapshot.snapshot_version)
+        source_snapshot = payload.get("snapshot") if isinstance(payload, dict) else None
+        source_identity = (
+            str(source_snapshot.get("snapshot_id")) if isinstance(source_snapshot, dict) else identity[0],
+            str(source_snapshot.get("snapshot_version")) if isinstance(source_snapshot, dict) else identity[1],
+        )
+        if source_identity != identity:
+            logger.warning(
+                "Rejected prepared activation with mismatched snapshot identity: %s != %s",
+                source_identity,
+                identity,
+            )
+            return
+        entry = _PreparedActivation(
+            package=package,
+            precompute=precompute,
+            payload_fingerprint=_payload_fingerprint(payload),
+            config_version=str(config_version),
+            topology_version=_topology_version(package),
+        )
+        with self._lock:
+            self._prepared_activation_cache.pop(identity, None)
+            self._prepared_activation_cache[identity] = entry
+            while len(self._prepared_activation_cache) > self._prepared_activation_cache_limit:
+                oldest = next(iter(self._prepared_activation_cache))
+                self._prepared_activation_cache.pop(oldest, None)
+
+    def _take_prepared_activation(
+        self, payload: dict[str, Any], *, expected_topology_version: str | None
+    ) -> tuple[IngestedPackage, SnapshotPrecompute] | None:
+        raw_snapshot = payload.get("snapshot") if isinstance(payload, dict) else None
+        if not isinstance(raw_snapshot, dict):
+            return None
+        identity = (
+            str(raw_snapshot.get("snapshot_id")),
+            str(raw_snapshot.get("snapshot_version")),
+        )
+        payload_fingerprint = _payload_fingerprint(payload)
+        with self._lock:
+            entry = self._prepared_activation_cache.get(identity)
+            if entry is None:
+                return None
+            if entry.config_version != self.config.config_version:
+                self._prepared_activation_cache.pop(identity, None)
+                return None
+            if entry.payload_fingerprint != payload_fingerprint:
+                return None
+            if entry.topology_version != expected_topology_version:
+                return None
+            # LRU touch while retaining the immutable prepared object.
+            self._prepared_activation_cache.pop(identity, None)
+            self._prepared_activation_cache[identity] = entry
+            return entry.package, entry.precompute
+
+    async def _compute_snapshot_offloaded(
+        self, payload: dict[str, Any]
+    ) -> tuple[IngestedPackage, SnapshotPrecompute]:
+        """Prepare a reactivated snapshot without retaining the loop default pool."""
+        loop = asyncio.get_running_loop()
+        with ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="nocpro-snapshot-prepare"
+        ) as executor:
+            return await loop.run_in_executor(executor, self.compute_snapshot, payload)
 
     def replace_snapshot(self, payload: dict[str, Any]) -> SnapshotPrecompute:
         package, result = self.compute_snapshot(payload)
@@ -676,10 +1128,21 @@ class Workspace:
         """Promote a fully computed READY snapshot for API reads."""
         with self._lock:
             old_package = self.package
-            if old_package is not None and old_package.snapshot.snapshot_id != package.snapshot.snapshot_id:
+            if old_package is not None and (
+                old_package.snapshot.snapshot_id != package.snapshot.snapshot_id
+                or old_package.snapshot.snapshot_version != package.snapshot.snapshot_version
+                or _topology_version(old_package) != _topology_version(package)
+            ):
                 self.cache.invalidate_snapshot(old_package.snapshot.snapshot_id)
             self.package = package
             self.precompute = result
+            self._activation_generation += 1
+            identity = (package.snapshot.snapshot_id, package.snapshot.snapshot_version)
+            self._prepared_snapshot_cache.pop(identity, None)
+            self._prepared_snapshot_cache[identity] = (package, result)
+            while len(self._prepared_snapshot_cache) > 2:
+                oldest = next(iter(self._prepared_snapshot_cache))
+                self._prepared_snapshot_cache.pop(oldest, None)
             self.similarity_index = None
             self.lineage_by_chain = {}
             if self.repository is None:
@@ -750,6 +1213,7 @@ class Workspace:
             snapshot_id=package.snapshot.snapshot_id,
             snapshot_version=package.snapshot.snapshot_version,
             config_version=self.config.config_version,
+            topology_version=_topology_version(package),
         )
         cached = self.cache.get(key)
         if cached is not None:
@@ -883,13 +1347,33 @@ class Workspace:
 
     def precompute_snapshot_deep_dive(self) -> dict[str, Any]:
         """Precompute Tier-2 Deep Dive in parallel for all multi-member chains in background."""
+        if self._quality_background_owner:
+            package = self.package
+            return {
+                "status": "BACKGROUND_WORKER",
+                "snapshot": (
+                    (package.snapshot.snapshot_id, package.snapshot.snapshot_version)
+                    if package is not None
+                    else None
+                ),
+                "submitted": 0,
+                "total": 0,
+            }
         with self._lock:
             package = self.package
             if package is None:
                 return {"status": "NO_SNAPSHOT", "submitted": 0, "total": 0}
-            snap_key = (package.snapshot.snapshot_id, package.snapshot.snapshot_version)
+            snap_key = (
+                package.snapshot.snapshot_id,
+                package.snapshot.snapshot_version,
+                _topology_version(package),
+            )
             if snap_key in self._precomputed_snapshots:
-                return {"status": "ALREADY_PRECOMPUTED", "snapshot": snap_key}
+                return {
+                    "status": "ALREADY_PRECOMPUTED",
+                    "snapshot": snap_key[:2],
+                    "topology_version": snap_key[2],
+                }
             self._precomputed_snapshots.add(snap_key)
 
         multi_member_chains = [
@@ -902,6 +1386,7 @@ class Workspace:
 
         submitted = 0
         cache_hits = 0
+        failures: list[dict[str, str]] = []
         for cid in multi_member_chains:
             try:
                 sub = self.submit_deep_dive(cid)
@@ -909,15 +1394,196 @@ class Workspace:
                     cache_hits += 1
                 else:
                     submitted += 1
-            except Exception:
-                logger.debug("Failed to submit background deep dive for chain %s", cid, exc_info=True)
+            except Exception as exc:
+                failure = {
+                    "chain_id": str(cid),
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+                failures.append(failure)
+                # This used to be debug-only, which made the UI show a
+                # permanent WAITING chain with no explanation.  Keep the
+                # submission non-fatal, but make the exact reason observable
+                # so the reconciler can retry it and operators can diagnose it.
+                logger.warning(
+                    "Failed to submit background deep dive for snapshot %s/%s chain %s: %s",
+                    package.snapshot.snapshot_id,
+                    package.snapshot.snapshot_version,
+                    cid,
+                    failure["error"],
+                )
 
         return {
             "status": "QUEUED",
             "total_multi_member": len(multi_member_chains),
             "submitted": submitted,
             "cache_hits": cache_hits,
+            "failed": len(failures),
+            "failures": failures,
         }
+
+    async def resume_snapshot_quality(self) -> dict[str, Any]:
+        """Reconcile deterministic quality work that stopped mid-snapshot.
+
+        ``precompute_snapshot_deep_dive`` is intentionally fire-and-forget,
+        but a failed executor task must not leave a chain permanently in the
+        UI's ``WAITING`` bucket.  This lightweight reconciliation runs from
+        the summary poll: it retries only failed/missing in-process Deep Dive
+        jobs and continues a completed Deep Dive into Counterfactual.  A
+        persisted quality row wins, so completed chains are never resubmitted.
+        """
+        if self._quality_background_owner:
+            return {
+                "status": "BACKGROUND_WORKER",
+                "deep_dive_submitted": 0,
+                "review_submitted": 0,
+            }
+        if not self.auto_chain_quality or self.repository is None:
+            return {"status": "DISABLED", "deep_dive_submitted": 0, "review_submitted": 0}
+        package = self.package
+        if package is None:
+            return {"status": "NO_SNAPSHOT", "deep_dive_submitted": 0, "review_submitted": 0}
+
+        snapshot_id = package.snapshot.snapshot_id
+        snapshot_version = package.snapshot.snapshot_version
+        expected_config_version = self.config.config_version
+        expected_topology_version = _topology_version(package)
+        topology_known = snapshot_topology_profile(
+            snapshot_id,
+            getattr(getattr(package.snapshot, "topology_ref", None), "profile_id", None),
+        ) is not None
+        from .quality_freshness import terminal_quality_row_is_current
+        try:
+            assessments = await self.repository.list_chain_quality_assessments(
+                snapshot_id=snapshot_id,
+                snapshot_version=snapshot_version,
+            )
+        except Exception:
+            logger.debug("Quality reconciliation could not read persisted assessments", exc_info=True)
+            assessments = []
+        completed = set()
+        for row in assessments:
+            if terminal_quality_row_is_current(
+                row,
+                snapshot_id=snapshot_id,
+                snapshot_version=snapshot_version,
+                config_version=expected_config_version,
+                topology_version=expected_topology_version,
+                topology_version_known=topology_known,
+            ):
+                completed.add(str(row.chain_id))
+
+        try:
+            persisted_active = await self.repository.active_quality_chain_ids(
+                snapshot_id=snapshot_id,
+                snapshot_version=snapshot_version,
+            )
+        except Exception:
+            logger.debug(
+                "Quality reconciliation could not read active persisted jobs",
+                exc_info=True,
+            )
+            persisted_active = set()
+
+        deep_dive_submitted = 0
+        review_submitted = 0
+        failures: list[dict[str, str]] = []
+        for chain_id in package.chains:
+            if len(package.members_of(chain_id)) <= 1 or chain_id in completed:
+                continue
+            try:
+                if await self._materialize_persisted_chain_quality_if_available(chain_id):
+                    completed.add(str(chain_id))
+                    continue
+                _, _, cache_key = self._deep_dive_context(chain_id)
+                deep_dive = self.jobs.latest_compatible(cache_key)
+                if deep_dive is None and self.repository is not None:
+                    # A restart may have persisted a completed Deep Dive while
+                    # the in-memory Tier-2 manager is empty.  Hydrate that
+                    # terminal artifact before deciding to submit duplicate
+                    # work; otherwise the portfolio can remain WAITING or
+                    # repeatedly recompute the same chain.
+                    deep_dive = await self.latest_deep_dive(chain_id)
+                deep_status = (
+                    getattr(deep_dive.status, "value", str(deep_dive.status))
+                    if deep_dive is not None
+                    else None
+                )
+                if deep_status in {None, "FAILED", "INTERRUPTED"}:
+                    if chain_id in persisted_active:
+                        continue
+                    self.submit_deep_dive(chain_id)
+                    deep_dive_submitted += 1
+                    continue
+                if deep_status != "SUCCEEDED":
+                    continue
+
+                review = self.review_jobs.latest_for_chain(
+                    snapshot_id, snapshot_version, chain_id
+                )
+                if (
+                    review is not None
+                    and getattr(review.identity, "topology_version", None)
+                    != expected_topology_version
+                ):
+                    review = None
+                review_status = (
+                    getattr(review.status, "value", str(review.status))
+                    if review is not None
+                    else None
+                )
+                if review_status in {"QUEUED", "RUNNING", "SUCCEEDED"}:
+                    continue
+                await self.submit_review(chain_id)
+                review_submitted += 1
+            except Exception as exc:
+                failure = {
+                    "chain_id": str(chain_id),
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+                failures.append(failure)
+                logger.warning(
+                    "Quality reconciliation could not resume snapshot %s/%s chain %s: %s",
+                    snapshot_id,
+                    snapshot_version,
+                    chain_id,
+                    failure["error"],
+                )
+        return {
+            "status": "RECONCILED",
+            "deep_dive_submitted": deep_dive_submitted,
+            "review_submitted": review_submitted,
+            "failed": len(failures),
+            "failures": failures,
+        }
+
+    def schedule_snapshot_quality_resume(self) -> None:
+        """Start at most one non-blocking quality reconciliation task."""
+        if (
+            self._closing
+            or self._quality_background_owner
+            or not self.auto_chain_quality
+            or self.repository is None
+        ):
+            return
+        current = self._quality_resume_task
+        if current is not None and not current.done():
+            return
+        try:
+            loop = self._persistence_loop or asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        task = loop.create_task(self.resume_snapshot_quality())
+        self._quality_resume_task = task
+
+        def _report_failure(done: asyncio.Task[Any]) -> None:
+            if done.cancelled():
+                return
+            try:
+                done.result()
+            except Exception:
+                logger.exception("Background deterministic quality reconciliation failed")
+
+        task.add_done_callback(_report_failure)
 
     async def deep_dive_job(self, job_id: str):
         try:
@@ -955,11 +1621,8 @@ class Workspace:
         if chain_id not in package.chains:
             raise KeyError(f"unknown chain_id {chain_id!r}")
         members = package.members_of(chain_id)
-        job = self.jobs.latest_succeeded(
-            package.snapshot.snapshot_id,
-            package.snapshot.snapshot_version,
-            chain_id,
-        )
+        _, _, cache_key = self._deep_dive_context(chain_id)
+        job = self.jobs.latest_compatible(cache_key)
         artifact = job.audit_artifact if job is not None else None
         if artifact is not None and not artifact.is_compatible(
             snapshot_id=package.snapshot.snapshot_id,
@@ -968,6 +1631,7 @@ class Workspace:
             members=members,
             analysis_version=AUDIT_ANALYSIS_VERSION,
             analysis_config_version=self.config.config_version,
+            topology_version=_topology_version(package),
         ):
             artifact = None
         if artifact is None and self.repository is not None:
@@ -979,6 +1643,7 @@ class Workspace:
                 chain_fingerprint=chain_membership_fingerprint(members),
                 analysis_version=AUDIT_ANALYSIS_VERSION,
                 analysis_config_version=self.config.config_version,
+                topology_version=_topology_version(package),
             )
         if artifact is None:
             visualization = unavailable_audit_visualization(
@@ -1003,11 +1668,8 @@ class Workspace:
     async def _review_context(self, chain_id: str):
         package = self.require_package()
         tier1b_artifact = self.analyze(chain_id)
-        audit_view = self.jobs.latest_succeeded(
-            package.snapshot.snapshot_id,
-            package.snapshot.snapshot_version,
-            chain_id,
-        )
+        _, _, cache_key = self._deep_dive_context(chain_id)
+        audit_view = self.jobs.latest_compatible(cache_key)
         audit_artifact = (
             audit_view.audit_artifact if audit_view is not None else None
         )
@@ -1019,6 +1681,7 @@ class Workspace:
             members=members,
             analysis_version=AUDIT_ANALYSIS_VERSION,
             analysis_config_version=self.config.config_version,
+            topology_version=_topology_version(package),
         ):
             audit_artifact = None
         if audit_artifact is None and self.repository is not None:
@@ -1030,6 +1693,7 @@ class Workspace:
                 chain_fingerprint=chain_membership_fingerprint(members),
                 analysis_version=AUDIT_ANALYSIS_VERSION,
                 analysis_config_version=self.config.config_version,
+                topology_version=_topology_version(package),
             )
         if audit_artifact is not None and not audit_artifact.is_compatible(
             snapshot_id=package.snapshot.snapshot_id,
@@ -1038,6 +1702,7 @@ class Workspace:
             members=members,
             analysis_version=AUDIT_ANALYSIS_VERSION,
             analysis_config_version=self.config.config_version,
+            topology_version=_topology_version(package),
         ):
             audit_artifact = None
         config = self.config.counterfactual
@@ -1055,6 +1720,8 @@ class Workspace:
         return package, tier1b_artifact, audit_artifact, identity
 
     async def submit_review(self, chain_id: str):
+        if self._closing:
+            return None
         package, tier1b_artifact, audit_artifact, _ = await self._review_context(
             chain_id
         )
@@ -1073,6 +1740,8 @@ class Workspace:
         if lineage_id is None or lineage_id.startswith("fallback_lineage:"):
             lineage_id = "LINEAGE_UNAVAILABLE"
             self.lineage_by_chain[chain_id] = lineage_id
+        if self._closing:
+            return None
         return self.review_jobs.submit(
             package,
             chain_id,
@@ -1087,11 +1756,6 @@ class Workspace:
         in_memory = self.review_jobs.latest_compatible(identity)
         if in_memory is not None:
             return in_memory
-        in_memory_latest = self.review_jobs.latest(
-            identity.snapshot_id, identity.snapshot_version, chain_id
-        )
-        if in_memory_latest is not None:
-            return in_memory_latest
         if self.repository is None:
             return None
         compatible = await self.repository.latest_compatible_counterfactual_job(
@@ -1102,11 +1766,7 @@ class Workspace:
         )
         if compatible is not None:
             return compatible
-        return await self.repository.latest_counterfactual_job(
-            snapshot_id=identity.snapshot_id,
-            snapshot_version=identity.snapshot_version,
-            chain_id=chain_id,
-        )
+        return None
 
     async def evolution(self, chain_id: str):
         package = self.require_package()
@@ -1570,7 +2230,9 @@ class Workspace:
         )
         record = {
             "feedback_id": fb.feedback_id,
+            "review_id": fb.review_id,
             "job_id": job_id,
+            "chain_id": session.chain_id if session is not None else "",
             "candidate_id": fb.candidate_id or "",
             "decision": fb.decision.value,
             "operator_id": fb.reviewer_subject,
@@ -1583,6 +2245,11 @@ class Workspace:
             "reason": fb.reason_text,
             "reason_policy_version": fb.reason_policy_version,
             "reason_codes": list(fb.reason_codes),
+            "partition_delta": (
+                fb.manual_correction.partition_delta
+                if fb.manual_correction is not None
+                else ((payload.get("manual_correction") or {}).get("partition_delta", {}))
+            ),
             "created_at": fb.created_at,
         }
         self.operator_feedbacks.append(record)

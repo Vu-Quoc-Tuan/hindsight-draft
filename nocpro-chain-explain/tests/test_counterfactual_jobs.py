@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 from threading import Event
 from dataclasses import dataclass, replace
 from types import MappingProxyType
+from types import SimpleNamespace
 
 from configuration import load_analysis_config
 from tier2 import JobStatus
 from tier2.counterfactual import CounterfactualJobManager, DomainStatus, review_identity
 from tier2.counterfactual import artifact_fingerprint
+from nocpro_api.workspace import Workspace
 from tier2.audit_artifact import build_review_audit_artifact
 from tests.test_audit_artifact import _audit
 from tests.test_counterfactual_analysis import _metric_computer, _tier1b
@@ -147,6 +150,40 @@ def test_latest_is_snapshot_version_bound() -> None:
         assert manager.latest("s1", "2", "C") is None
     finally:
         manager.shutdown()
+
+
+def test_workspace_latest_review_never_falls_back_to_an_incompatible_job() -> None:
+    identity = SimpleNamespace(
+        snapshot_id="s1",
+        snapshot_version="1",
+        cache_tuple=lambda: ("new-config",),
+    )
+
+    class ReviewJobs:
+        def latest_compatible(self, received_identity):
+            assert received_identity is identity
+            return None
+
+        def latest(self, *_args):
+            raise AssertionError("incompatible in-memory review must not be returned")
+
+    class Repository:
+        async def latest_compatible_counterfactual_job(self, **kwargs):
+            assert kwargs["snapshot_id"] == "s1"
+            return None
+
+        async def latest_counterfactual_job(self, **_kwargs):
+            raise AssertionError("incompatible persisted review must not be returned")
+
+    workspace = Workspace.__new__(Workspace)
+    workspace.review_jobs = ReviewJobs()
+    workspace.repository = Repository()
+
+    async def review_context(_chain_id: str):
+        return None, None, None, identity
+
+    workspace._review_context = review_context
+    assert asyncio.run(Workspace.latest_review(workspace, "C")) is None
 
 
 def test_unexpected_exception_is_failed_job() -> None:

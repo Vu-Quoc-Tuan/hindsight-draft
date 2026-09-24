@@ -54,7 +54,6 @@ _METRIC_NAMES = tuple(sorted(_LOWER_IS_BETTER | _HIGHER_IS_BETTER))
 _AUDIT_SEVERITY = {
     AuditVerdict.NO_LOW_CONDUCTANCE_CUT: 0,
     AuditVerdict.CANDIDATE_SPLIT: 1,
-    AuditVerdict.SKIPPED_SMALL_CHAIN: 0,
 }
 
 
@@ -140,6 +139,7 @@ def compute_exact_partition_metrics(
     component_counts: list[int] = []
     conductances: list[float] = []
     severities: list[int] = []
+    audit_unavailable = False
 
     for chain_id in non_singletons:
         chain_analysis = analyze_chain_configured(
@@ -203,9 +203,13 @@ def compute_exact_partition_metrics(
             structural_roles_by_chain[chain_id] = dict(tier2.structural_roles)
         component_counts.append(len(connected_components(tier2.graph)))
         audit = tier2.structural_audit
-        if audit.verdict is AuditVerdict.SKIPPED_SMALL_CHAIN:
-            severities.append(0)
-            conductances.append(1.0)
+        if audit.verdict in {
+            AuditVerdict.SKIPPED_SMALL_CHAIN,
+            AuditVerdict.UNAVAILABLE,
+        }:
+            # A skipped audit is not evidence of either a clean cut or high
+            # conductance. Preserve the other independently computed metrics.
+            audit_unavailable = True
         else:
             severity = _AUDIT_SEVERITY.get(audit.verdict)
             if severity is None or audit.best_cut is None:
@@ -226,8 +230,16 @@ def compute_exact_partition_metrics(
         minimum_membership_support=MetricValue.available(min(supports)),
         evidence_union_coverage=MetricValue.available(coverage),
         component_count=MetricValue.available(max(component_counts)),
-        audit_conductance=MetricValue.available(min(conductances)),
-        audit_verdict_severity=MetricValue.available(max(severities)),
+        audit_conductance=(
+            MetricValue.unavailable("STRUCTURAL_AUDIT_UNAVAILABLE")
+            if audit_unavailable
+            else MetricValue.available(min(conductances))
+        ),
+        audit_verdict_severity=(
+            MetricValue.unavailable("STRUCTURAL_AUDIT_UNAVAILABLE")
+            if audit_unavailable
+            else MetricValue.available(max(severities))
+        ),
         eligible_external_contradiction_count=MetricValue.available(
             eligible_external_contradiction_count
         ),

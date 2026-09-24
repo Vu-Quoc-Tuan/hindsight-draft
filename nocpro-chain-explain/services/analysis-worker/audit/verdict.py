@@ -125,11 +125,11 @@ def run_structural_audit(
     if not feasible:
         return StructuralAuditResult(
             chain_id=chain_id,
-            verdict=AuditVerdict.NO_LOW_CONDUCTANCE_CUT,
+            verdict=AuditVerdict.UNAVAILABLE,
             best_cut=None,
             scored_candidates=tuple(scored),
             epsilon=epsilon,
-            reason="no candidate satisfied the balance constraint or had scorable volume",
+            reason="no candidate produced a feasible cut with a defined conductance",
         )
 
     best = min(feasible, key=lambda s: s.conductance.phi)
@@ -250,13 +250,21 @@ def assess_over_merge(
     never asserts that NocPro is wrong (ADR-0018).
     """
     if audit.best_cut is None or audit.verdict is not AuditVerdict.CANDIDATE_SPLIT:
+        strength = (
+            OverMergeStrength.UNAVAILABLE
+            if audit.verdict in {
+                AuditVerdict.SKIPPED_SMALL_CHAIN,
+                AuditVerdict.UNAVAILABLE,
+            }
+            else OverMergeStrength.NONE
+        )
         return OverMergeVerdict(
             chain_id=audit.chain_id,
             structural_separation=False,
             cross_evidence_agreement=False,
             descriptor_separation=False,
             sensitivity_stability=False,
-            strength=OverMergeStrength.NONE,
+            strength=strength,
             driving_evidence=(),
             narrative=f"Chain {audit.chain_id}: {audit.reason}",
         )

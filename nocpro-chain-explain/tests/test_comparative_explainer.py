@@ -178,7 +178,8 @@ def test_merge_chains_comparative_explanation():
 
 
 @pytest.mark.anyio
-async def test_enrich_with_ai_fallback():
+async def test_enrich_with_ai_fallback(monkeypatch):
+    monkeypatch.setattr("nocpro_api.grounded_llm.is_provider_configured", lambda: False)
     explanation = ComparativeExplanation(
         operation="REMOVE_MEMBER",
         summary_action="Loại bỏ X",
@@ -387,7 +388,10 @@ async def test_comparative_explanation_temporal_spatial_context_and_ai_payload(m
     # Now test enrich_comparative_explanation_with_ai with mocked render_grounded
     captured_call = {}
 
-    def fake_render_grounded(*, draft, facts, fact_refs, purpose):
+    def fake_render_grounded(
+        *, draft, facts, fact_refs, purpose,
+        requested_language=None, preserve_provider_output=False,
+    ):
         captured_call["draft"] = draft
         captured_call["facts"] = facts
         captured_call["fact_refs"] = fact_refs
@@ -401,6 +405,15 @@ async def test_comparative_explanation_temporal_spatial_context_and_ai_payload(m
         )
 
     monkeypatch.setattr("nocpro_api.grounded_llm.render_grounded", fake_render_grounded)
+    monkeypatch.setattr("nocpro_api.grounded_llm.is_provider_configured", lambda: True)
+
+    async def inline_to_thread(function, /, *args, **kwargs):
+        return function(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "tier2.counterfactual.comparative_explainer.asyncio.to_thread",
+        inline_to_thread,
+    )
 
     enriched = await enrich_comparative_explanation_with_ai(
         explanation,
@@ -421,4 +434,3 @@ async def test_comparative_explanation_temporal_spatial_context_and_ai_payload(m
     assert "device:RTR_AGG_01" in captured_call["fact_refs"]
     assert "time_delta:15s" in captured_call["fact_refs"]
     assert captured_call["purpose"] == "ADVISOR"
-

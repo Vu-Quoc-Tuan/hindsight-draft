@@ -173,6 +173,7 @@ class ReviewIdentity:
     tier1b_artifact_fingerprint: str
     structural_audit_artifact_fingerprint: str | None = None
     external_validation_artifact_fingerprint: str | None = None
+    topology_version: str | None = None
 
     def cache_tuple(self) -> tuple[str, ...]:
         return (
@@ -186,6 +187,7 @@ class ReviewIdentity:
             self.tier1b_artifact_fingerprint,
             self.structural_audit_artifact_fingerprint or "UNAVAILABLE",
             self.external_validation_artifact_fingerprint or "UNAVAILABLE",
+            self.topology_version or "UNPINNED_TOPOLOGY",
         )
 
 

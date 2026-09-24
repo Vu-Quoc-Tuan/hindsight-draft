@@ -3,6 +3,9 @@ from __future__ import annotations
 import logging
 import os
 import hashlib
+import asyncio
+from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -11,6 +14,7 @@ LOGGER = logging.getLogger(__name__)
 
 from evolution import LineageConfig, LineageNodeKey, OutOfOrderLineageError
 from libs.contracts import ContractIngestError, load_validated_package
+from libs.contracts.topology_identity import snapshot_topology_profile
 from similar_chains import (
     CorpusPolicy,
     ModelUpdatePolicy,
@@ -54,7 +58,24 @@ class Tier1ACoordinator:
         self.chunk_retention_mode = chunk_retention_mode
         self.topology_repository = topology_repository
 
-    async def _hydrate_payload_topology_if_needed(self, payload: dict[str, Any]) -> None:
+    async def _compute_snapshot_offloaded(self, payload):
+        """Run CPU-heavy Tier-1A preparation without retaining asyncio's default worker.
+
+        A short-lived executor is intentional here: API tests and lightweight
+        demo processes frequently create/destroy coordinators without an app
+        lifespan shutdown hook.  Using ``asyncio.to_thread`` would leave its
+        implicit executor alive until loop teardown, while this scope joins
+        exactly the worker used for this claim.
+        """
+        loop = asyncio.get_running_loop()
+        with ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="nocpro-tier1a"
+        ) as executor:
+            return await loop.run_in_executor(
+                executor, self.workspace.compute_snapshot, payload
+            )
+
+    async def _hydrate_payload_topology_if_needed(self, payload: dict[str, Any]):
         if not self.topology_repository or not isinstance(payload, dict):
             return
         raw_snapshot = payload.get("snapshot")
@@ -64,13 +85,7 @@ class Tier1ACoordinator:
         profile_id = topo_ref.get("profile_id") if isinstance(topo_ref, dict) else getattr(topo_ref, "profile_id", None)
         version = topo_ref.get("topology_version") if isinstance(topo_ref, dict) else getattr(topo_ref, "topology_version", None)
         
-        # If topology_ref missing, auto-detect profile from snapshot_id
-        if not profile_id:
-            snap_id = raw_snapshot.get("snapshot_id", "")
-            if "_it_" in snap_id:
-                profile_id = "IT_SERVICES"
-            elif "_ip_" in snap_id:
-                profile_id = "IP_NETWORK"
+        profile_id = snapshot_topology_profile(str(raw_snapshot.get("snapshot_id", "")), profile_id)
 
         if profile_id and not version:
             active_rec = await self.topology_repository.get_active_version(profile_id)
@@ -109,7 +124,11 @@ class Tier1ACoordinator:
                 continue
             
             if alarm_id not in mapped_alarm_ids:
-                res = await self.topology_repository.resolve_identifier(profile_id, str(dev).strip())
+                res = await self.topology_repository.resolve_identifier(
+                    profile_id,
+                    str(dev).strip(),
+                    topology_version=version,
+                )
                 if res and res.get("resource_id"):
                     rid = res["resource_id"]
                     seed_resources.add(rid)
@@ -141,7 +160,45 @@ class Tier1ACoordinator:
                 topology["edges"] = hydrated.get("edges", [])
                 if not topology.get("nodes"):
                     topology["nodes"] = hydrated.get("nodes", [])
+                for key in (
+                    "profile_id",
+                    "topology_version",
+                    "relation_model",
+                    "direction_kind",
+                    "dependency_semantics",
+                    "p2_eligible",
+                ):
+                    if key in hydrated:
+                        topology[key] = hydrated[key]
                 topology.pop("alias_resolution", None)
+
+        # Capability metadata in this hydrated projection comes from the
+        # persisted topology contract, not from the public snapshot-v1 schema.
+        # Validate the canonical payload first, then attach the trusted runtime
+        # projection to the analysis package without widening public ingestion.
+        if "schema_version" not in payload:
+            return None
+        canonical_payload = deepcopy(payload)
+        runtime_topology = deepcopy(topology)
+        canonical_topology = canonical_payload.get("topology")
+        if isinstance(canonical_topology, dict):
+            for key in (
+                "profile_id",
+                "topology_version",
+                "relation_model",
+                "direction_kind",
+                "dependency_semantics",
+                "p2_eligible",
+                "alias_resolution",
+            ):
+                canonical_topology.pop(key, None)
+            for edge in canonical_topology.get("edges") or ():
+                if isinstance(edge, dict):
+                    edge.pop("dependency_semantics", None)
+                    edge.pop("p2_eligible", None)
+        package = load_validated_package(canonical_payload)
+        package.topology = runtime_topology
+        return package
 
     async def run(self, snapshot_id: str, snapshot_version: str):
         """Process logical-oldest jobs until the requested snapshot is READY."""
@@ -163,9 +220,14 @@ class Tier1ACoordinator:
         if claim is None:
             return None
         try:
+            hydrated_package = None
             if isinstance(claim.payload, dict):
-                await self._hydrate_payload_topology_if_needed(claim.payload)
-            package, precompute = self.workspace.compute_snapshot(claim.payload)
+                hydrated_package = await self._hydrate_payload_topology_if_needed(
+                    claim.payload
+                )
+            package, precompute = await self._compute_snapshot_offloaded(
+                hydrated_package or claim.payload
+            )
             renewed = await self.repository.heartbeat_tier1a(
                 claim.snapshot_id,
                 claim.snapshot_version,
@@ -201,7 +263,7 @@ class Tier1ACoordinator:
                 if active_id == (claim.snapshot_id, claim.snapshot_version):
                     self.workspace.activate_snapshot(package, precompute)
                 else:
-                    active_package, active_precompute = self.workspace.compute_snapshot(
+                    active_package, active_precompute = await self._compute_snapshot_offloaded(
                         active_payload
                     )
                     self.workspace.activate_snapshot(active_package, active_precompute)
@@ -236,8 +298,12 @@ class Tier1ACoordinator:
                 payload["snapshot"]["snapshot_version"],
             )
             if isinstance(payload, dict):
-                await self._hydrate_payload_topology_if_needed(payload)
-            package, precompute = self.workspace.compute_snapshot(payload)
+                hydrated_package = await self._hydrate_payload_topology_if_needed(payload)
+            else:
+                hydrated_package = None
+            package, precompute = self.workspace.compute_snapshot(
+                hydrated_package or payload
+            )
             self.workspace.activate_snapshot(package, precompute)
         if self.workspace.similarity_index is None:
             index = await self.repository.load_similarity_index(*identity)
@@ -503,13 +569,82 @@ class Tier1ACoordinator:
             self.workspace.attach_temporal_delay_model(model, taxonomy)
         return True
 
+    async def _refresh_active_unpinned_topology(
+        self,
+        profile_id: str,
+        topology_version: str,
+    ) -> bool:
+        """Rebuild the active package when its unpinned topology advances."""
+        identity = self.workspace.active_identity()
+        if identity is None or self.topology_repository is None:
+            return False
+
+        payload = await self.repository.get_ready_snapshot_payload(*identity)
+        raw_snapshot = payload.get("snapshot") if isinstance(payload, dict) else None
+        if not isinstance(raw_snapshot, dict):
+            return False
+
+        topology_ref = raw_snapshot.get("topology_ref")
+        explicit_profile = (
+            topology_ref.get("profile_id")
+            if isinstance(topology_ref, dict)
+            else None
+        )
+        pinned_version = (
+            topology_ref.get("topology_version")
+            if isinstance(topology_ref, dict)
+            else None
+        )
+        snapshot_id = str(raw_snapshot.get("snapshot_id", ""))
+        snapshot_profile = snapshot_topology_profile(snapshot_id, explicit_profile)
+        if snapshot_profile != profile_id or pinned_version:
+            return False
+
+        active = await self.topology_repository.get_active_version(profile_id)
+        if active is None or active.topology_version != topology_version:
+            return False
+
+        package = await self._hydrate_payload_topology_if_needed(payload)
+        if package is None:
+            return False
+        refreshed_package, precompute = await self._compute_snapshot_offloaded(package)
+
+        async def activate_if_current() -> bool:
+            # A user may select a different snapshot while topology hydration
+            # and Tier-1A recomputation are in flight. Never replace that
+            # newer choice, and serialize activation with UI snapshot changes.
+            if self.workspace.active_identity() != identity:
+                return False
+            latest_active = await self.topology_repository.get_active_version(profile_id)
+            if latest_active is None or latest_active.topology_version != topology_version:
+                return False
+            self.workspace.activate_snapshot(refreshed_package, precompute)
+            return True
+
+        selection_lock = getattr(self.workspace, "_snapshot_context_lock", None)
+        if selection_lock is None:
+            activated = await activate_if_current()
+        else:
+            async with selection_lock:
+                activated = await activate_if_current()
+        if not activated:
+            return False
+        LOGGER.info(
+            "Refreshed active unpinned snapshot %s@%s against topology %s:%s",
+            identity[0],
+            identity[1],
+            profile_id,
+            topology_version,
+        )
+        return True
+
     async def wake_pending_topology(self, profile_id: str, topology_version: str) -> None:
         """Wake any stalled snapshots waiting for this topology version and process them."""
         LOGGER.info("Waking stalled snapshots waiting for topology %s:%s", profile_id, topology_version)
         try:
             while await self.run_pending_once() is not None:
                 pass
+            await self._refresh_active_unpinned_topology(profile_id, topology_version)
             await self.hydrate_active()
         except Exception:
             LOGGER.exception("Error processing snapshots woken by topology %s:%s", profile_id, topology_version)
-

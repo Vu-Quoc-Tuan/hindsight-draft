@@ -168,3 +168,34 @@ def test_hydrate_active_preserves_an_explicit_in_process_selection():
     result = asyncio.run(Tier1ACoordinator(HydrationRepository(), workspace).hydrate_active())
 
     assert result is workspace.precompute
+
+
+def test_payload_hydration_resolves_aliases_at_the_snapshot_topology_version():
+    class TopologyRepository:
+        def __init__(self) -> None:
+            self.resolved_versions: list[str | None] = []
+
+        async def resolve_identifier(self, _profile_id, _identifier, *, topology_version=None):
+            self.resolved_versions.append(topology_version)
+            return {"resource_id": "resource-v1"}
+
+        async def hydrate_graph_for_analysis(self, *_args, **_kwargs):
+            return {"edges": [], "nodes": []}
+
+    topology_repository = TopologyRepository()
+    coordinator = Tier1ACoordinator(
+        Repository(),
+        SuccessfulRepository(),
+        topology_repository=topology_repository,
+    )
+    payload = {
+        "snapshot": {
+            "snapshot_id": "replay",
+            "topology_ref": {"profile_id": "IT_SERVICES", "topology_version": "v1"},
+        },
+        "alarms": [{"alarm_id": "A1", "device_code": "legacy-alias"}],
+    }
+
+    asyncio.run(coordinator._hydrate_payload_topology_if_needed(payload))
+    assert topology_repository.resolved_versions == ["v1"]
+    assert payload["topology"]["mappings"][0]["resource_id"] == "resource-v1"

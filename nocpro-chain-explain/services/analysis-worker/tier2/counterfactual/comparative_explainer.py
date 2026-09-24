@@ -7,6 +7,7 @@ with optional ADR-0024 grounded LLM narrative polish.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 import logging
 from dataclasses import asdict, dataclass
@@ -673,13 +674,24 @@ async def enrich_comparative_explanation_with_ai(
             fact_refs.append(f"role:{s_facts['after_structural_role']}")
 
     try:
-        from nocpro_api.grounded_llm import render_grounded
+        from nocpro_api.grounded_llm import is_provider_configured, render_grounded
 
-        result = render_grounded(
+        # Keep the deterministic no-provider path synchronous and avoid
+        # needless executor work when no provider can be contacted.
+        if not is_provider_configured():
+            return explanation
+
+        # render_grounded uses urllib synchronously.  This async wrapper is
+        # invoked from API routes, so provider I/O must not occupy their event
+        # loop thread.
+        result = await asyncio.to_thread(
+            render_grounded,
             draft=draft,
             facts=facts,
             fact_refs=fact_refs,
             purpose="ADVISOR",
+            requested_language=language,
+            preserve_provider_output=True,
         )
         if result and result.used_provider and result.message:
             return ComparativeExplanation(

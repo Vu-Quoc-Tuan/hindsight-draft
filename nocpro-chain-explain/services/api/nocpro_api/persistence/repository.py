@@ -55,6 +55,7 @@ from .models import (
     Alarm,
     AuditArtifactRecord,
     Chain,
+    ChainQualityAssessmentRecord,
     CounterfactualJobRecord,
     DeepDiveJobRecord,
     KafkaInbox,
@@ -155,11 +156,33 @@ class StoredDeepDiveJob:
     snapshot_version: str
     chain_id: str
     cache_fingerprint: str
+    analysis_config_version: str | None
+    topology_version: str | None
     status: str
     progress_percent: int
     cache_hit: bool
     result: dict[str, Any] | None
     error: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
+class StoredChainQualityAssessment:
+    snapshot_id: str
+    snapshot_version: str
+    chain_id: str
+    assessment_version: str
+    input_fingerprint: str
+    status: str
+    stars: int | None
+    label: str
+    available_dimension_count: int
+    stage: str
+    deep_dive_job_id: str | None
+    counterfactual_job_id: str | None
+    recommendation_status: str
+    payload: dict[str, Any]
     created_at: datetime
     updated_at: datetime
 
@@ -492,6 +515,7 @@ class SnapshotRepository:
         chain_fingerprint: str,
         analysis_version: str,
         analysis_config_version: str,
+        topology_version: str | None = None,
     ) -> ReviewAuditArtifact | None:
         async with self.sessions() as session:
             row = await session.scalar(
@@ -518,6 +542,8 @@ class SnapshotRepository:
             or artifact.artifact_fingerprint != row.artifact_fingerprint
         ):
             raise ValueError("persisted Audit artifact columns do not match payload")
+        if artifact.topology_version != topology_version:
+            return None
         return artifact
 
     async def persist_counterfactual_job(
@@ -629,6 +655,8 @@ class SnapshotRepository:
             "snapshot_version": payload["snapshot_version"],
             "chain_id": payload["chain_id"],
             "cache_fingerprint": payload["cache_fingerprint"],
+            "analysis_config_version": payload.get("analysis_config_version"),
+            "topology_version": payload.get("topology_version"),
             "status": payload["status"],
             "progress_percent": progress,
             "cache_hit": payload["cache_hit"],
@@ -645,12 +673,16 @@ class SnapshotRepository:
                     existing.snapshot_version,
                     existing.chain_id,
                     existing.cache_fingerprint,
+                    existing.analysis_config_version,
+                    existing.topology_version,
                 )
                 proposed = (
                     values["snapshot_id"],
                     values["snapshot_version"],
                     values["chain_id"],
                     values["cache_fingerprint"],
+                    values["analysis_config_version"],
+                    values["topology_version"],
                 )
                 if immutable != proposed:
                     raise ValueError("Deep Dive job identity is immutable")
@@ -804,6 +836,130 @@ class SnapshotRepository:
                 .limit(1)
             )
             return self._stored_counterfactual(row) if row is not None else None
+
+    async def persist_chain_quality_assessment(
+        self, payload: dict[str, Any]
+    ) -> StoredChainQualityAssessment:
+        """Upsert the deterministic assessment for one exact snapshot chain."""
+        assessment = payload["assessment"]
+        persisted_payload = dict(assessment)
+        overview_projection = payload.get("overview_projection")
+        if isinstance(overview_projection, dict):
+            persisted_payload["overview_projection"] = overview_projection
+        values = {
+            "snapshot_id": payload["snapshot_id"],
+            "snapshot_version": payload["snapshot_version"],
+            "chain_id": payload["chain_id"],
+            "assessment_version": payload.get("assessment_version", "HEURISTIC_V1"),
+            "input_fingerprint": payload["input_fingerprint"],
+            "status": str(assessment.get("status", "UNAVAILABLE")),
+            "stars": assessment.get("stars"),
+            "label": str(assessment.get("label") or "Chưa thể chấm"),
+            "available_dimension_count": int(
+                assessment.get("available_dimension_count") or 0
+            ),
+            "stage": payload.get("stage", "DETERMINISTIC_COMPLETE"),
+            "deep_dive_job_id": payload.get("deep_dive_job_id"),
+            "counterfactual_job_id": payload.get("counterfactual_job_id"),
+            "recommendation_status": payload.get(
+                "recommendation_status", "NOT_EVALUATED"
+            ),
+            "payload": persisted_payload,
+        }
+        statement = pg_insert(ChainQualityAssessmentRecord).values(**values)
+        statement = statement.on_conflict_do_update(
+            index_elements=[
+                ChainQualityAssessmentRecord.snapshot_id,
+                ChainQualityAssessmentRecord.snapshot_version,
+                ChainQualityAssessmentRecord.chain_id,
+            ],
+            set_={
+                "assessment_version": statement.excluded.assessment_version,
+                "input_fingerprint": statement.excluded.input_fingerprint,
+                "status": statement.excluded.status,
+                "stars": statement.excluded.stars,
+                "label": statement.excluded.label,
+                "available_dimension_count": statement.excluded.available_dimension_count,
+                "stage": statement.excluded.stage,
+                "deep_dive_job_id": statement.excluded.deep_dive_job_id,
+                "counterfactual_job_id": statement.excluded.counterfactual_job_id,
+                "recommendation_status": statement.excluded.recommendation_status,
+                "payload": statement.excluded.payload,
+                "updated_at": func.now(),
+            },
+        )
+        async with self.sessions.begin() as session:
+            await session.execute(statement)
+        stored = await self.chain_quality_assessment(
+            snapshot_id=values["snapshot_id"],
+            snapshot_version=values["snapshot_version"],
+            chain_id=values["chain_id"],
+        )
+        if stored is None:
+            raise RuntimeError("persisted chain quality assessment is unavailable")
+        return stored
+
+    async def chain_quality_assessment(
+        self, *, snapshot_id: str, snapshot_version: str, chain_id: str
+    ) -> StoredChainQualityAssessment | None:
+        async with self.sessions() as session:
+            row = await session.get(
+                ChainQualityAssessmentRecord,
+                (snapshot_id, snapshot_version, chain_id),
+            )
+            return self._stored_chain_quality(row) if row is not None else None
+
+    async def list_chain_quality_assessments(
+        self, *, snapshot_id: str | None = None, snapshot_version: str | None = None
+    ) -> list[StoredChainQualityAssessment]:
+        statement = select(ChainQualityAssessmentRecord)
+        if snapshot_id is not None:
+            statement = statement.where(
+                ChainQualityAssessmentRecord.snapshot_id == snapshot_id
+            )
+        if snapshot_version is not None:
+            statement = statement.where(
+                ChainQualityAssessmentRecord.snapshot_version == snapshot_version
+            )
+        async with self.sessions() as session:
+            rows = list((await session.scalars(statement)).all())
+        return [self._stored_chain_quality(row) for row in rows]
+
+    async def active_quality_chain_ids(
+        self, *, snapshot_id: str, snapshot_version: str
+    ) -> set[str]:
+        """Return chains with a durable Tier-2 job still in flight.
+
+        A process restart loses the in-memory job managers, but the database
+        still contains QUEUED/RUNNING lifecycle rows.  Background quality
+        reconciliation uses this set to avoid submitting a duplicate job
+        while the original worker still owns it.
+        """
+        active_statuses = ("QUEUED", "RUNNING")
+        async with self.sessions() as session:
+            deep_ids = set(
+                (
+                    await session.scalars(
+                        select(DeepDiveJobRecord.chain_id).where(
+                            DeepDiveJobRecord.snapshot_id == snapshot_id,
+                            DeepDiveJobRecord.snapshot_version == snapshot_version,
+                            DeepDiveJobRecord.status.in_(active_statuses),
+                        )
+                    )
+                ).all()
+            )
+            review_ids = set(
+                (
+                    await session.scalars(
+                        select(CounterfactualJobRecord.chain_id).where(
+                            CounterfactualJobRecord.snapshot_id == snapshot_id,
+                            CounterfactualJobRecord.snapshot_version == snapshot_version,
+                            CounterfactualJobRecord.status.in_(active_statuses),
+                        )
+                    )
+                ).all()
+            )
+        return {str(chain_id) for chain_id in deep_ids | review_ids}
 
     async def persist_operator_feedback(
         self, payload: dict[str, Any]
@@ -1740,11 +1896,36 @@ class SnapshotRepository:
             snapshot_version=row.snapshot_version,
             chain_id=row.chain_id,
             cache_fingerprint=row.cache_fingerprint,
+            analysis_config_version=row.analysis_config_version,
+            topology_version=row.topology_version,
             status=row.status,
             progress_percent=row.progress_percent,
             cache_hit=row.cache_hit,
             result=row.result_payload,
             error=row.error,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
+
+    @staticmethod
+    def _stored_chain_quality(
+        row: ChainQualityAssessmentRecord,
+    ) -> StoredChainQualityAssessment:
+        return StoredChainQualityAssessment(
+            snapshot_id=row.snapshot_id,
+            snapshot_version=row.snapshot_version,
+            chain_id=row.chain_id,
+            assessment_version=row.assessment_version,
+            input_fingerprint=row.input_fingerprint,
+            status=row.status,
+            stars=row.stars,
+            label=row.label,
+            available_dimension_count=row.available_dimension_count,
+            stage=row.stage,
+            deep_dive_job_id=row.deep_dive_job_id,
+            counterfactual_job_id=row.counterfactual_job_id,
+            recommendation_status=row.recommendation_status,
+            payload=row.payload,
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
@@ -2258,16 +2439,21 @@ class SnapshotRepository:
             )
 
     async def get_ready_snapshot_payload(
-        self, snapshot_id: str
+        self, snapshot_id: str, snapshot_version: str | None = None
     ) -> dict[str, Any] | None:
         async with self.sessions() as session:
-            return await session.scalar(
-                select(SnapshotIngest.canonical_payload)
-                .where(
-                    SnapshotIngest.snapshot_id == snapshot_id,
-                    SnapshotIngest.tier1a_status == "READY",
+            statement = select(SnapshotIngest.canonical_payload).where(
+                SnapshotIngest.snapshot_id == snapshot_id,
+                SnapshotIngest.tier1a_status == "READY",
+            )
+            if snapshot_version is not None:
+                statement = statement.where(
+                    SnapshotIngest.snapshot_version == snapshot_version
                 )
-                .order_by(SnapshotIngest.snapshot_version.desc())
+            else:
+                statement = statement.order_by(SnapshotIngest.snapshot_version.desc())
+            return await session.scalar(
+                statement
                 .limit(1)
             )
 
@@ -2995,7 +3181,9 @@ class SnapshotRepository:
             canonical_payload=canonical_payload,
         )
 
-    async def list_live_snapshots(self, limit: int = 200) -> list[dict[str, Any]]:
+    async def list_live_snapshots(
+        self, limit: int = 200, offset: int = 0
+    ) -> list[dict[str, Any]]:
         """Return metadata for all tier1a-READY snapshots ingested via Kafka or direct ingest.
 
         Used by the catalog API to surface live snapshots alongside hardcoded presets.
@@ -3006,8 +3194,13 @@ class SnapshotRepository:
             stmt = (
                 select(SnapshotIngest)
                 .where(SnapshotIngest.tier1a_status == "READY")
-                .order_by(SnapshotIngest.completed_at.desc().nullslast())
+                .order_by(
+                    SnapshotIngest.completed_at.desc().nullslast(),
+                    SnapshotIngest.snapshot_id,
+                    SnapshotIngest.snapshot_version,
+                )
                 .limit(limit)
+                .offset(offset)
             )
             rows = (await session.scalars(stmt)).all()
 
@@ -3028,3 +3221,27 @@ class SnapshotRepository:
             })
         return results
 
+    async def interrupt_orphaned_analysis_jobs(self) -> tuple[int, int]:
+        """Close lifecycle rows whose in-process executors vanished on restart."""
+        async with self.sessions.begin() as session:
+            deep_result = await session.execute(
+                update(DeepDiveJobRecord)
+                .where(DeepDiveJobRecord.status.in_(("QUEUED", "RUNNING")))
+                .values(
+                    status="INTERRUPTED",
+                    progress_percent=100,
+                    error="API_RESTART_INTERRUPTED",
+                    updated_at=func.now(),
+                )
+            )
+            review_result = await session.execute(
+                update(CounterfactualJobRecord)
+                .where(CounterfactualJobRecord.status.in_(("QUEUED", "RUNNING")))
+                .values(
+                    status="INTERRUPTED",
+                    progress_percent=100,
+                    error="API_RESTART_INTERRUPTED",
+                    updated_at=func.now(),
+                )
+            )
+        return int(deep_result.rowcount or 0), int(review_result.rowcount or 0)

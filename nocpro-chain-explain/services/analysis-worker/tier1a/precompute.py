@@ -178,6 +178,16 @@ def precompute_snapshot(
                 snapshot_id=package.snapshot.snapshot_id,
                 snapshot_version=package.snapshot.snapshot_version,
                 config_version=mining_config.config_version,
+                topology_version=(
+                    str(package.topology.get("topology_version"))
+                    if isinstance(package.topology, dict)
+                    and package.topology.get("topology_version") is not None
+                    else getattr(
+                        getattr(package.snapshot, "topology_ref", None),
+                        "topology_version",
+                        None,
+                    )
+                ),
             )
             cache.put(key, summary, snapshot_chain_id=chain_id)
 

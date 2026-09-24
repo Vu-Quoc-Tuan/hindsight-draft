@@ -24,7 +24,8 @@ from .audit_visualization import (
 
 
 LEGACY_AUDIT_ARTIFACT_VERSION = "review-audit-v1"
-AUDIT_ARTIFACT_VERSION = "review-audit-v2"
+PREVIOUS_AUDIT_ARTIFACT_VERSION = "review-audit-v2"
+AUDIT_ARTIFACT_VERSION = "review-audit-v3"
 AUDIT_ANALYSIS_VERSION = "tier2-audit-v1"
 
 
@@ -84,6 +85,7 @@ class ReviewAuditArtifact:
     scored_cuts: tuple[ReviewAuditCut, ...]
     visualization: AuditVisualization | None
     created_at: str
+    topology_version: str | None = None
 
     @property
     def structural_audit(self) -> StructuralAuditResult:
@@ -107,6 +109,7 @@ class ReviewAuditArtifact:
         members: tuple[str, ...] | list[str],
         analysis_version: str,
         analysis_config_version: str,
+        topology_version: str | None = None,
     ) -> bool:
         return (
             self.status == "AVAILABLE"
@@ -117,6 +120,7 @@ class ReviewAuditArtifact:
             and self.chain_fingerprint == chain_membership_fingerprint(members)
             and self.analysis_version == analysis_version
             and self.analysis_config_version == analysis_config_version
+            and self.topology_version == topology_version
             and self.artifact_fingerprint == _fingerprint(_payload_without_fingerprint(self))
         )
 
@@ -170,12 +174,14 @@ def _payload_without_fingerprint(value: ReviewAuditArtifact) -> dict:
         "scored_cuts": [_cut_to_dict(cut) for cut in value.scored_cuts],
         "created_at": value.created_at,
     }
-    if value.artifact_version == AUDIT_ARTIFACT_VERSION:
+    if value.artifact_version in {PREVIOUS_AUDIT_ARTIFACT_VERSION, AUDIT_ARTIFACT_VERSION}:
         payload["visualization"] = (
             audit_visualization_to_dict(value.visualization)
             if value.visualization is not None
             else None
         )
+    if value.artifact_version == AUDIT_ARTIFACT_VERSION:
+        payload["topology_version"] = value.topology_version
     return payload
 
 
@@ -194,6 +200,7 @@ def build_review_audit_artifact(
     visualization: AuditVisualization | None = None,
     analysis_version: str,
     analysis_config_version: str,
+    topology_version: str | None = None,
     artifact_id: str | None = None,
     created_at: str | None = None,
 ) -> ReviewAuditArtifact:
@@ -228,6 +235,7 @@ def build_review_audit_artifact(
         scored_cuts=cuts,
         visualization=visualization,
         created_at=created_at or datetime.now(timezone.utc).isoformat(),
+        topology_version=topology_version,
     )
     return ReviewAuditArtifact(
         **{
@@ -252,6 +260,7 @@ def audit_artifact_from_dict(
     artifact_version = payload.get("artifact_version")
     if artifact_version not in {
         LEGACY_AUDIT_ARTIFACT_VERSION,
+        PREVIOUS_AUDIT_ARTIFACT_VERSION,
         AUDIT_ARTIFACT_VERSION,
     }:
         raise ValueError("unsupported Audit artifact version")
@@ -279,7 +288,7 @@ def audit_artifact_from_dict(
     visualization_payload = payload.get("visualization")
     visualization = (
         audit_visualization_from_dict(visualization_payload)
-        if artifact_version == AUDIT_ARTIFACT_VERSION
+        if artifact_version in {PREVIOUS_AUDIT_ARTIFACT_VERSION, AUDIT_ARTIFACT_VERSION}
         and visualization_payload is not None
         else None
     )
@@ -303,6 +312,7 @@ def audit_artifact_from_dict(
         scored_cuts=tuple(cuts),
         visualization=visualization,
         created_at=payload["created_at"],
+        topology_version=payload.get("topology_version"),
     )
     if artifact.best_cut_index is not None and not (
         0 <= artifact.best_cut_index < len(artifact.scored_cuts)
