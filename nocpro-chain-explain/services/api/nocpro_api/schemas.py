@@ -347,6 +347,78 @@ class EvolutionView(ApiModel):
     edges: list[EvolutionEdgeView]
 
 
+class EvolutionEndpointView(ApiModel):
+    snapshot_id: str
+    snapshot_version: str
+    chain_id: str
+
+
+class EvolutionPredecessorChoiceView(ApiModel):
+    parent: EvolutionEndpointView
+    event_type: str
+    parent_source_kind: str | None = None
+    child_source_kind: str | None = None
+
+
+class EvolutionReceiptChoiceView(ApiModel):
+    receipt_id: str
+    artifact_revision: str
+    created_at: str
+
+
+class EvolutionMembershipView(ApiModel):
+    added_count: int = Field(ge=0)
+    removed_count: int = Field(ge=0)
+    retained_count: int = Field(ge=0)
+    added_alarm_ids: list[str] = Field(max_length=100)
+    removed_alarm_ids: list[str] = Field(max_length=100)
+    truncated: bool
+
+
+class EvolutionContextChangeView(ApiModel):
+    field: str
+    before: str | None
+    after: str | None
+
+
+class EvolutionQualityView(ApiModel):
+    comparable: bool
+    reason_codes: list[str]
+    before_score: float | None
+    after_score: float | None
+    before_stars: int | None
+    after_stars: int | None
+    delta: float | None
+    before_receipt_id: str | None
+    after_receipt_id: str | None
+
+
+class EvolutionExplanationView(ApiModel):
+    code: str
+    text: str
+    evidence_ids: list[str]
+
+
+class EvolutionChangesView(ApiModel):
+    status: Literal["AVAILABLE", "PARTIAL", "UNAVAILABLE"]
+    reason_codes: list[str]
+    parent: EvolutionEndpointView | None
+    child: EvolutionEndpointView
+    event_type: str | None
+    parent_source_kind: str | None = None
+    child_source_kind: str | None = None
+    predecessor_choices: list[EvolutionPredecessorChoiceView] = Field(default_factory=list)
+    predecessor_choices_truncated: bool = False
+    parent_receipt_choices: list[EvolutionReceiptChoiceView] = Field(default_factory=list)
+    child_receipt_choices: list[EvolutionReceiptChoiceView] = Field(default_factory=list)
+    parent_receipt_choices_truncated: bool = False
+    child_receipt_choices_truncated: bool = False
+    membership: EvolutionMembershipView | None
+    context_changes: list[EvolutionContextChangeView]
+    quality: EvolutionQualityView
+    explanations: list[EvolutionExplanationView]
+
+
 class StructuralAuditView(ApiModel):
     verdict: str
     reason: str

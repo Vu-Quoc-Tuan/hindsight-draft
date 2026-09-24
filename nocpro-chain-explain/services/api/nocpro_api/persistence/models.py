@@ -248,6 +248,7 @@ class LineageNode(Base):
 class LineageEdge(Base):
     __tablename__ = "lineage_edge"
     __table_args__ = (
+        Index("ix_lineage_edge_child_key", "child_snapshot_id", "child_snapshot_version", "child_chain_id"),
         ForeignKeyConstraint(
             ["parent_snapshot_id", "parent_snapshot_version", "parent_chain_id"],
             [
@@ -511,6 +512,12 @@ class QualityEvaluationReceiptRecord(Base):
     __table_args__ = (
         UniqueConstraint("identity_digest", "artifact_revision", name="uq_quality_receipt_identity_revision"),
         Index("ix_quality_receipts_identity_created", "identity_digest", "created_at"),
+        Index(
+            "ix_quality_receipts_analysis_identity_gin",
+            "analysis_identity",
+            postgresql_using="gin",
+            postgresql_ops={"analysis_identity": "jsonb_path_ops"},
+        ),
     )
 
 

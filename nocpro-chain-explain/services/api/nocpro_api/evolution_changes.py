@@ -44,6 +44,32 @@ def _members(value: Any) -> set[str] | None:
     return members
 
 
+def _validated_membership_summary(value: Any) -> dict | None:
+    if not isinstance(value, dict) or set(value) != {
+        "added_count", "removed_count", "retained_count",
+        "added_alarm_ids", "removed_alarm_ids", "truncated",
+    }:
+        return None
+    counts = (value["added_count"], value["removed_count"], value["retained_count"])
+    if any(type(count) is not int or count < 0 for count in counts):
+        return None
+    added, removed = value["added_alarm_ids"], value["removed_alarm_ids"]
+    if any(
+        not isinstance(ids, list) or len(ids) > 100
+        or any(_text(item) is None for item in ids)
+        or ids != sorted(set(ids))
+        for ids in (added, removed)
+    ):
+        return None
+    if len(added) != min(counts[0], 100) or len(removed) != min(counts[1], 100):
+        return None
+    if set(added) & set(removed) or type(value["truncated"]) is not bool:
+        return None
+    if value["truncated"] != (counts[0] > 100 or counts[1] > 100):
+        return None
+    return value
+
+
 def _identity(receipt: Any) -> Any:
     return _get(receipt, "analysis_identity")
 
@@ -61,7 +87,8 @@ def _score(assessment: Any) -> float | None:
 
 
 def compare_evolution_facts(
-    *, parent_members, child_members, parent_receipt, child_receipt, lineage_edge
+    *, parent_members, child_members, parent_receipt, child_receipt, lineage_edge,
+    membership_summary=None,
 ) -> dict:
     """Compare one supplied edge; unavailable inputs never become empty evidence."""
     reasons: list[str] = []
@@ -79,24 +106,33 @@ def compare_evolution_facts(
     elif child_time < parent_time:
         reasons.append("SNAPSHOT_TIME_OUT_OF_ORDER")
 
-    before = _members(parent_members)
-    after = _members(child_members)
     membership = None
-    if not edge_valid or before is None or after is None:
-        reasons.append("CANONICAL_MEMBERSHIP_UNAVAILABLE")
-    else:
-        retained = before & after
-        overlap = _get(lineage_edge, "overlap_count")
-        if overlap is not None and (type(overlap) is not int or overlap != len(retained)):
+    if membership_summary is not None:
+        summary = _validated_membership_summary(membership_summary)
+        if not edge_valid or summary is None:
+            reasons.append("CANONICAL_MEMBERSHIP_UNAVAILABLE")
+        elif type(_get(lineage_edge, "overlap_count")) is not int or summary["retained_count"] != _get(lineage_edge, "overlap_count"):
             reasons.append("LINEAGE_OVERLAP_MISMATCH")
         else:
-            added, removed = sorted(after - before), sorted(before - after)
-            membership = {
-                "added_count": len(added), "removed_count": len(removed),
-                "retained_count": len(retained), "added_alarm_ids": added[:100],
-                "removed_alarm_ids": removed[:100],
-                "truncated": len(added) > 100 or len(removed) > 100,
-            }
+            membership = summary.copy()
+    else:
+        before = _members(parent_members)
+        after = _members(child_members)
+        if not edge_valid or before is None or after is None:
+            reasons.append("CANONICAL_MEMBERSHIP_UNAVAILABLE")
+        else:
+            retained = before & after
+            overlap = _get(lineage_edge, "overlap_count")
+            if overlap is not None and (type(overlap) is not int or overlap != len(retained)):
+                reasons.append("LINEAGE_OVERLAP_MISMATCH")
+            else:
+                added, removed = sorted(after - before), sorted(before - after)
+                membership = {
+                    "added_count": len(added), "removed_count": len(removed),
+                    "retained_count": len(retained), "added_alarm_ids": added[:100],
+                    "removed_alarm_ids": removed[:100],
+                    "truncated": len(added) > 100 or len(removed) > 100,
+                }
 
     parent_receipt_matches = bool(edge_valid and parent_receipt is not None and _receipt_matches(parent_receipt, parent))
     child_receipt_matches = bool(edge_valid and child_receipt is not None and _receipt_matches(child_receipt, child))

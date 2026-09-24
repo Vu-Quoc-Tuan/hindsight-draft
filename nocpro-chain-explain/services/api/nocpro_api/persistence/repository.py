@@ -15,6 +15,7 @@ import zstandard
 from sqlalchemy import and_, case, delete, func, or_, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.orm import aliased
 
 from libs.contracts import IngestedPackage, load_validated_package
 from libs.contracts.analysis_identity import analysis_identity_from_projection
@@ -355,6 +356,151 @@ class SnapshotRepository:
     ) -> None:
         self.sessions = sessions
         self.max_compressed_snapshot_bytes = max_compressed_snapshot_bytes
+
+    @staticmethod
+    def _evolution_edge_statement(*, child: tuple[str, str, str]):
+        """Only direct edges whose persisted endpoints and lineage are READY."""
+        parent_node, child_node = aliased(LineageNode), aliased(LineageNode)
+        parent_ingest, child_ingest = aliased(SnapshotIngest), aliased(SnapshotIngest)
+        edge = LineageEdge
+        return (
+            select(edge, parent_node.snapshot_time, child_node.snapshot_time,
+                   parent_ingest.source_kind, child_ingest.source_kind)
+            .join(parent_node, and_(
+                parent_node.snapshot_id == edge.parent_snapshot_id,
+                parent_node.snapshot_version == edge.parent_snapshot_version,
+                parent_node.snapshot_chain_id == edge.parent_chain_id,
+            ))
+            .join(child_node, and_(
+                child_node.snapshot_id == edge.child_snapshot_id,
+                child_node.snapshot_version == edge.child_snapshot_version,
+                child_node.snapshot_chain_id == edge.child_chain_id,
+            ))
+            .join(parent_ingest, and_(
+                parent_ingest.snapshot_id == edge.parent_snapshot_id,
+                parent_ingest.snapshot_version == edge.parent_snapshot_version,
+                parent_ingest.lineage_status == "READY",
+            ))
+            .join(child_ingest, and_(
+                child_ingest.snapshot_id == edge.child_snapshot_id,
+                child_ingest.snapshot_version == edge.child_snapshot_version,
+                child_ingest.lineage_status == "READY",
+            ))
+            .where(
+                edge.child_snapshot_id == child[0],
+                edge.child_snapshot_version == child[1],
+                edge.child_chain_id == child[2],
+            )
+        )
+
+    @staticmethod
+    def _evolution_edge_payload(row) -> dict[str, Any]:
+        edge, parent_time, child_time, parent_kind, child_kind = row
+        return {
+            "parent_snapshot_id": edge.parent_snapshot_id,
+            "parent_snapshot_version": edge.parent_snapshot_version,
+            "parent_chain_id": edge.parent_chain_id,
+            "child_snapshot_id": edge.child_snapshot_id,
+            "child_snapshot_version": edge.child_snapshot_version,
+            "child_chain_id": edge.child_chain_id,
+            "event_type": edge.edge_type,
+            "overlap_count": edge.overlap_count,
+            "parent_snapshot_time": parent_time,
+            "child_snapshot_time": child_time,
+            "parent_source_kind": parent_kind,
+            "child_source_kind": child_kind,
+        }
+
+    async def list_evolution_predecessors(
+        self, *, child: tuple[str, str, str]
+    ) -> tuple[list[dict[str, Any]], bool]:
+        statement = self._evolution_edge_statement(child=child).order_by(
+            LineageEdge.parent_snapshot_id,
+            LineageEdge.parent_snapshot_version,
+            LineageEdge.parent_chain_id,
+        ).limit(101)
+        async with self.sessions() as session:
+            rows = (await session.execute(statement)).all()
+        return [self._evolution_edge_payload(row) for row in rows[:100]], len(rows) > 100
+
+    async def get_evolution_edge(
+        self, *, child: tuple[str, str, str], parent: tuple[str, str, str]
+    ) -> dict[str, Any] | None:
+        statement = self._evolution_edge_statement(child=child).where(
+            LineageEdge.parent_snapshot_id == parent[0],
+            LineageEdge.parent_snapshot_version == parent[1],
+            LineageEdge.parent_chain_id == parent[2],
+        ).limit(1)
+        async with self.sessions() as session:
+            row = (await session.execute(statement)).first()
+        return self._evolution_edge_payload(row) if row is not None else None
+
+    async def evolution_membership_summary(
+        self, *, parent: tuple[str, str, str], child: tuple[str, str, str]
+    ) -> dict[str, Any]:
+        """SQL set operations over composite membership keys; only 101 IDs per side."""
+        parent_member, child_member = aliased(Membership), aliased(Membership)
+        parent_match = select(1).where(
+            parent_member.snapshot_id == parent[0],
+            parent_member.snapshot_version == parent[1],
+            parent_member.chain_id == parent[2],
+            parent_member.alarm_id == child_member.alarm_id,
+        ).exists()
+        child_match = select(1).where(
+            child_member.snapshot_id == child[0],
+            child_member.snapshot_version == child[1],
+            child_member.chain_id == child[2],
+            child_member.alarm_id == parent_member.alarm_id,
+        ).exists()
+        child_scope = (
+            child_member.snapshot_id == child[0],
+            child_member.snapshot_version == child[1],
+            child_member.chain_id == child[2],
+        )
+        parent_scope = (
+            parent_member.snapshot_id == parent[0],
+            parent_member.snapshot_version == parent[1],
+            parent_member.chain_id == parent[2],
+        )
+        added_where = (*child_scope, ~parent_match)
+        removed_where = (*parent_scope, ~child_match)
+        async with self.sessions() as session:
+            added_count = await session.scalar(select(func.count()).select_from(child_member).where(*added_where))
+            removed_count = await session.scalar(select(func.count()).select_from(parent_member).where(*removed_where))
+            retained_count = await session.scalar(select(func.count()).select_from(parent_member).where(*parent_scope, child_match))
+            added_ids = (await session.scalars(
+                select(child_member.alarm_id).where(*added_where)
+                .order_by(child_member.alarm_id).limit(101)
+            )).all()
+            removed_ids = (await session.scalars(
+                select(parent_member.alarm_id).where(*removed_where)
+                .order_by(parent_member.alarm_id).limit(101)
+            )).all()
+        return {
+            "added_count": added_count, "removed_count": removed_count,
+            "retained_count": retained_count,
+            "added_alarm_ids": list(added_ids[:100]),
+            "removed_alarm_ids": list(removed_ids[:100]),
+            "truncated": added_count > 100 or removed_count > 100,
+        }
+
+    async def list_evolution_endpoint_receipts(
+        self, *, endpoint: tuple[str, str, str]
+    ) -> tuple[list[StoredQualityEvaluationReceipt], bool]:
+        statement = (
+            select(QualityEvaluationReceiptRecord)
+            .where(QualityEvaluationReceiptRecord.analysis_identity.contains({
+                "snapshot_id": endpoint[0],
+                "snapshot_version": endpoint[1],
+                "chain_id": endpoint[2],
+            }))
+            .order_by(QualityEvaluationReceiptRecord.created_at.desc(),
+                      QualityEvaluationReceiptRecord.receipt_id.desc())
+            .limit(101)
+        )
+        async with self.sessions() as session:
+            rows = (await session.scalars(statement)).all()
+        return [self._stored_quality_receipt(row) for row in rows[:100]], len(rows) > 100
 
     async def load_evolution(
         self,

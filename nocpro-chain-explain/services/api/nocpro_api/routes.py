@@ -12,6 +12,7 @@ from dataclasses import asdict
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from sqlalchemy.exc import SQLAlchemyError
 
 from graybox import adapt_graybox_metadata
 from libs.contracts import ContractIngestError
@@ -43,6 +44,7 @@ from .schemas import (
     ConfigUpdateInput,
     ConfigView,
     EvolutionView,
+    EvolutionChangesView,
     EvidenceBundleView,
     EvidenceRecordView,
     JobSubmissionView,
@@ -82,6 +84,7 @@ from .serializers import (
     pair_evidence_view,
 )
 from .workspace import SnapshotNotLoaded, Workspace, _topology_version
+from .evolution_changes import compare_evolution_facts
 from .cohesion_advisor import (
     CHAIN_OVERVIEW_PROJECTION_VERSION,
 )
@@ -1562,6 +1565,146 @@ async def explain_evolution(chain_id: str, request: Request) -> EvolutionView:
         return evolution_view(await workspace(request).evolution(chain_id))
     except Exception as exc:
         raise translate_error(exc) from exc
+
+
+def _evolution_empty_quality() -> dict[str, Any]:
+    return {
+        "comparable": False, "reason_codes": ["QUALITY_RECEIPT_UNAVAILABLE"],
+        "before_score": None, "after_score": None, "before_stars": None,
+        "after_stars": None, "delta": None, "before_receipt_id": None,
+        "after_receipt_id": None,
+    }
+
+
+def _evolution_receipt_choices(receipts: list[Any]) -> list[dict[str, str]]:
+    return [
+        {
+            "receipt_id": item.receipt_id,
+            "artifact_revision": item.artifact_revision,
+            "created_at": item.created_at.isoformat(),
+        }
+        for item in receipts
+    ]
+
+
+@router.get("/chains/{chain_id}/evolution/changes", response_model=EvolutionChangesView)
+async def explain_evolution_changes(
+    chain_id: str,
+    request: Request,
+    parent_snapshot_id: str | None = None,
+    parent_snapshot_version: str | None = None,
+    parent_chain_id: str | None = None,
+    parent_receipt_id: str | None = None,
+    child_receipt_id: str | None = None,
+) -> EvolutionChangesView:
+    service = workspace(request)
+    try:
+        package = _require_evidence_snapshot_context(
+            service,
+            chain_id=chain_id,
+            snapshot_id=request.headers.get("x-nocpro-snapshot-id"),
+            snapshot_version=request.headers.get("x-nocpro-snapshot-version"),
+        )
+    except SnapshotNotLoaded as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    if os.getenv("NOCPRO_EVOLUTION_CHANGES_ENABLED", "false").lower() not in {"1", "true", "yes", "on"}:
+        raise HTTPException(status_code=503, detail="EVOLUTION_CHANGES_DISABLED")
+    repo = service.repository
+    if repo is None:
+        raise HTTPException(status_code=503, detail="EVOLUTION_REPOSITORY_UNAVAILABLE")
+
+    parent_values = (parent_snapshot_id, parent_snapshot_version, parent_chain_id)
+    if any(value is not None for value in parent_values) and not all(
+        isinstance(value, str) and value.strip() for value in parent_values
+    ):
+        raise HTTPException(status_code=422, detail="PARENT_SELECTION_INCOMPLETE")
+    if not any(parent_values) and (parent_receipt_id is not None or child_receipt_id is not None):
+        raise HTTPException(status_code=422, detail="PARENT_EDGE_REQUIRED_FOR_RECEIPT")
+    if parent_receipt_id == "" or child_receipt_id == "":
+        raise HTTPException(status_code=422, detail="RECEIPT_SELECTION_INCOMPLETE")
+
+    child = (package.snapshot.snapshot_id, package.snapshot.snapshot_version, chain_id)
+    child_view = dict(zip(("snapshot_id", "snapshot_version", "chain_id"), child))
+
+    def ensure_current_package() -> None:
+        try:
+            current = service.require_package()
+        except SnapshotNotLoaded as exc:
+            raise HTTPException(status_code=409, detail="STALE_ANALYSIS_CONTEXT") from exc
+        if current is not package:
+            raise HTTPException(status_code=409, detail="STALE_ANALYSIS_CONTEXT")
+
+    try:
+        if not any(parent_values):
+            edges, truncated = await repo.list_evolution_predecessors(child=child)
+            ensure_current_package()
+            choices = [
+                {
+                    "parent": {
+                        "snapshot_id": edge["parent_snapshot_id"],
+                        "snapshot_version": edge["parent_snapshot_version"],
+                        "chain_id": edge["parent_chain_id"],
+                    },
+                    "event_type": edge["event_type"],
+                    "parent_source_kind": edge["parent_source_kind"],
+                    "child_source_kind": edge["child_source_kind"],
+                }
+                for edge in edges
+            ]
+            return EvolutionChangesView.model_validate({
+                "status": "PARTIAL" if choices else "UNAVAILABLE",
+                "reason_codes": ["PARENT_SELECTION_REQUIRED"] if choices else ["SEQUENTIAL_SNAPSHOTS_NOT_AVAILABLE"],
+                "parent": None, "child": child_view, "event_type": None,
+                "predecessor_choices": choices, "predecessor_choices_truncated": truncated,
+                "membership": None, "context_changes": [],
+                "quality": _evolution_empty_quality(), "explanations": [],
+            })
+
+        parent = (parent_snapshot_id, parent_snapshot_version, parent_chain_id)
+        edge = await repo.get_evolution_edge(child=child, parent=parent)
+        if edge is None:
+            raise HTTPException(status_code=404, detail="LINEAGE_EDGE_NOT_FOUND")
+
+        async def select_receipt(endpoint: tuple[str, str, str], receipt_id: str | None):
+            if receipt_id is not None:
+                receipt = await repo.quality_evaluation_receipt(receipt_id)
+                if receipt is None or not isinstance(receipt.analysis_identity, dict) or any(
+                    receipt.analysis_identity.get(name) != value
+                    for name, value in zip(("snapshot_id", "snapshot_version", "chain_id"), endpoint)
+                ):
+                    raise HTTPException(status_code=422, detail="RECEIPT_ENDPOINT_MISMATCH")
+                return receipt, [], False, False
+            candidates, candidate_truncated = await repo.list_evolution_endpoint_receipts(endpoint=endpoint)
+            if len(candidates) == 1 and not candidate_truncated:
+                return candidates[0], [], False, False
+            ambiguous = len(candidates) > 1 or candidate_truncated
+            return None, _evolution_receipt_choices(candidates) if ambiguous else [], candidate_truncated, ambiguous
+
+        parent_receipt, parent_choices, parent_truncated, parent_ambiguous = await select_receipt(parent, parent_receipt_id)
+        child_receipt, child_choices, child_truncated, child_ambiguous = await select_receipt(child, child_receipt_id)
+        summary = await repo.evolution_membership_summary(parent=parent, child=child)
+        ensure_current_package()
+        facts = compare_evolution_facts(
+            parent_members=None, child_members=None,
+            parent_receipt=parent_receipt, child_receipt=child_receipt,
+            lineage_edge=edge, membership_summary=summary,
+        )
+        if parent_ambiguous or child_ambiguous:
+            facts["reason_codes"].append("RECEIPT_SELECTION_REQUIRED")
+            facts["status"] = "PARTIAL"
+        facts.update({
+            "parent_source_kind": edge["parent_source_kind"],
+            "child_source_kind": edge["child_source_kind"],
+            "parent_receipt_choices": parent_choices,
+            "child_receipt_choices": child_choices,
+            "parent_receipt_choices_truncated": parent_truncated,
+            "child_receipt_choices_truncated": child_truncated,
+        })
+        return EvolutionChangesView.model_validate(facts)
+    except SQLAlchemyError as exc:
+        logger.exception("Evolution changes database read failed")
+        raise HTTPException(status_code=503, detail="EVOLUTION_DATABASE_UNAVAILABLE") from exc
 
 
 @router.get("/chains/{chain_id}/pairs/{alarm_a}/{alarm_b}", response_model=PairWhyView)

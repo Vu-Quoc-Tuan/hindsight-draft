@@ -73,6 +73,34 @@ def test_exact_membership_and_precise_delta():
     assert all("clear" not in item["text"].lower() for item in result["explanations"])
 
 
+def test_db_summary_preserves_exact_counts_and_caps_ids():
+    summary = {
+        "added_count": 102, "removed_count": 1, "retained_count": 2,
+        "added_alarm_ids": [f"a{i:03}" for i in range(100)],
+        "removed_alarm_ids": ["z1"], "truncated": True,
+    }
+    result = compare(parent_members=None, child_members=None, membership_summary=summary)
+    assert result["membership"] == summary
+    assert result["status"] == "AVAILABLE"
+
+
+@pytest.mark.parametrize("change", [
+    {"retained_count": 3}, {"added_count": True},
+    {"added_alarm_ids": ["b", "a"]}, {"truncated": False},
+    {"removed_alarm_ids": ["a000"]},
+])
+def test_malformed_db_summary_fails_closed(change):
+    summary = {
+        "added_count": 101, "removed_count": 1, "retained_count": 2,
+        "added_alarm_ids": [f"a{i:03}" for i in range(100)],
+        "removed_alarm_ids": ["z1"], "truncated": True,
+    }
+    summary.update(change)
+    result = compare(parent_members=None, child_members=None, membership_summary=summary)
+    assert result["membership"] is None
+    assert result["status"] == "PARTIAL"
+
+
 @pytest.mark.parametrize("event_type", ["SPLIT", "MERGE", "RECOMBINATION"])
 def test_existing_split_merge_shape_is_preserved(event_type):
     result = compare(lineage_edge=edge(event_type=event_type))
