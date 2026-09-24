@@ -29,6 +29,57 @@ export type FullResyncNotice = {
 export type LiveNotice = ChangeInvalidation | FullResyncNotice
 export type RefreshTask = (signal: AbortSignal) => Promise<void>
 
+export function invalidationMatchesSnapshot(
+  invalidation: ChangeInvalidation,
+  snapshotId: string | null,
+  snapshotVersion: string | null,
+): boolean {
+  if (invalidation.snapshot_id === null) return true
+  return snapshotId !== null
+    && invalidation.snapshot_id === snapshotId
+    && (invalidation.snapshot_version === null || invalidation.snapshot_version === snapshotVersion)
+}
+
+export function invalidationMatchesChain(
+  invalidation: ChangeInvalidation,
+  identity: {
+    snapshotId: string | null
+    snapshotVersion: string | null
+    topologyVersion: string | null | undefined
+    chainId: string | null
+  },
+): boolean {
+  if (!identity.chainId || !invalidationMatchesSnapshot(invalidation, identity.snapshotId, identity.snapshotVersion)) {
+    return false
+  }
+  if (
+    invalidation.topology_version !== null
+    && identity.topologyVersion !== undefined
+    && invalidation.topology_version !== identity.topologyVersion
+  ) return false
+  return invalidation.chain_id === null || invalidation.chain_id === identity.chainId
+}
+
+export function chainListResponseMatchesRefresh(
+  response: {
+    snapshot_id: string
+    snapshot_version: string
+    topology_version?: string | null
+  },
+  expected: {
+    snapshotId: string
+    snapshotVersion: string
+    topologyVersion?: string | null
+  },
+): boolean {
+  if (
+    response.snapshot_id !== expected.snapshotId
+    || response.snapshot_version !== expected.snapshotVersion
+  ) return false
+  return expected.topologyVersion === undefined
+    || response.topology_version === expected.topologyVersion
+}
+
 const UUID_PATTERN = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
 const EVENT_CURSOR_PATTERN = new RegExp(`^(${UUID_PATTERN}):(0|[1-9][0-9]{0,18})$`)
 const IDENTITY_DIGEST_PATTERN = /^[0-9a-f]{64}$/

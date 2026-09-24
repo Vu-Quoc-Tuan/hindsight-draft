@@ -1,14 +1,32 @@
 import { useState, useMemo } from 'react'
 import type { ChainAnalysis, Member } from '../types'
 import { EvolutionPanel } from '../EvolutionPanel'
+import type { RefreshTask } from '../liveUpdates'
 import { InfoTip } from '../components/InfoTip'
 
 interface EvolutionViewProps {
   analysis: ChainAnalysis
   initialTab?: 'timeline' | 'cross_snapshot'
+  resourceKey?: string
+  refreshEpoch?: number
+  expectedSnapshotId?: string | null
+  expectedSnapshotVersion?: string | null
+  scheduleRefresh?: (key: string, task: RefreshTask) => boolean
+  cancelRefresh?: (key: string) => void
+  onLoadError?: (message: string | null) => void
 }
 
-export function EvolutionView({ analysis, initialTab = 'timeline' }: EvolutionViewProps) {
+export function EvolutionView({
+  analysis,
+  initialTab = 'timeline',
+  resourceKey,
+  refreshEpoch,
+  expectedSnapshotId,
+  expectedSnapshotVersion,
+  scheduleRefresh,
+  cancelRefresh,
+  onLoadError,
+}: EvolutionViewProps) {
   const [activeTab] = useState<'timeline' | 'cross_snapshot'>(initialTab)
   const [selectedAlarmId, setSelectedAlarmId] = useState<string | null>(null)
   const [hoveredAlarmId, setHoveredAlarmId] = useState<string | null>(null)
@@ -178,7 +196,16 @@ export function EvolutionView({ analysis, initialTab = 'timeline' }: EvolutionVi
       {/* 2. Content */}
       {activeTab === 'cross_snapshot' ? (
         <div className="overflow-hidden rounded-xl border border-[#1b273e] bg-[#0c1424] p-space-md shadow-md animate-fadeIn">
-          <EvolutionPanel key={analysis.chain_id} chainId={analysis.chain_id} />
+          <EvolutionPanel
+            chainId={analysis.chain_id}
+            resourceKey={resourceKey}
+            refreshEpoch={refreshEpoch}
+            expectedSnapshotId={expectedSnapshotId}
+            expectedSnapshotVersion={expectedSnapshotVersion}
+            scheduleRefresh={scheduleRefresh}
+            cancelRefresh={cancelRefresh}
+            onLoadError={onLoadError}
+          />
         </div>
       ) : (
         <div className="flex flex-col gap-space-md animate-fadeIn">

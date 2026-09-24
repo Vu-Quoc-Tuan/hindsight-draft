@@ -14,6 +14,13 @@ import type { TopologyTreePayload } from './TopologyTree'
 import { NocHeader, type HeaderSnapshotItem } from './components/NocHeader'
 import { SubNavBar, type SubNavTab } from './components/SubNavBar'
 import { ChainOverviewPreview } from './components/ChainOverviewPreview'
+import { useLiveUpdates } from './useLiveUpdates'
+import {
+  chainListResponseMatchesRefresh,
+  invalidationMatchesChain,
+  invalidationMatchesSnapshot,
+} from './liveUpdates'
+import type { LiveNotice, LiveRefreshScheduler, RefreshTask } from './liveUpdates'
 
 const SnapshotOverviewView = lazy(() => import('./views/SnapshotOverviewView').then(m => ({ default: m.SnapshotOverviewView })))
 const SnapshotsPortfolioView = lazy(() => import('./views/SnapshotsPortfolioView').then(m => ({ default: m.SnapshotsPortfolioView })))
@@ -58,7 +65,7 @@ export default function App() {
   } | null>(null)
   const [topologyProfile, setTopologyProfile] = useState<'ALARM_ONLY' | 'IP_NETWORK' | 'IT_SERVICES'>('ALARM_ONLY')
   const [topologyRootId, setTopologyRootId] = useState<string | undefined>(undefined)
-  const topologyRequestKey = `${topologyProfile}\u0000${topologyRootId ?? ''}`
+  const topologyRequestKey = `${chainList?.snapshot_id ?? 'NO_SNAPSHOT'}:${chainList?.snapshot_version ?? 'NO_VERSION'}:${chainList?.topology_version === undefined ? 'UNKNOWN_TOPOLOGY' : chainList.topology_version ?? 'NO_TOPOLOGY'}\u0000${topologyProfile}\u0000${topologyRootId ?? ''}`
   const [loadedTopology, setLoadedTopology] = useState<{
     requestKey: string
     payload: TopologyTreePayload
@@ -74,6 +81,9 @@ export default function App() {
   const [configEpoch, setConfigEpoch] = useState(0)
   const previousConfigEpoch = useRef(configEpoch)
   const [reviewEpoch, setReviewEpoch] = useState(0)
+  const [chainDataRefreshEpoch, setChainDataRefreshEpoch] = useState(0)
+  const [topologyRefreshEpoch, setTopologyRefreshEpoch] = useState(0)
+  const [evolutionRefreshEpoch, setEvolutionRefreshEpoch] = useState(0)
   const refreshedCohesionReviewId = useRef<string | null>(null)
   const [snapshotsCatalog, setSnapshotsCatalog] = useState<HeaderSnapshotItem[]>([])
   const [qualitySummaries, setQualitySummaries] = useState<ChainQualitySummary[]>([])
@@ -81,13 +91,17 @@ export default function App() {
   const [qualitySummarySnapshotKey, setQualitySummarySnapshotKey] = useState<string | null>(null)
   const [qualitySummaryError, setQualitySummaryError] = useState<string | null>(null)
   const [catalogError, setCatalogError] = useState<string | null>(null)
+  const [liveRefreshErrors, setLiveRefreshErrors] = useState<Record<string, string>>({})
   const [selectingSnapshotId, setSelectingSnapshotId] = useState<string | null>(null)
   const snapshotSelectionGeneration = useRef(0)
   const snapshotSelectionAbort = useRef<AbortController | null>(null)
+  const chainListRefreshGeneration = useRef(0)
   const [overviewPreview, setOverviewPreview] = useState<{
     requestKey: string
     payload: ChainOverviewCards
   } | null>(null)
+  const [overviewPollEpoch, setOverviewPollEpoch] = useState(0)
+  const overviewRetryTimer = useRef<number | null>(null)
 
   // Navigation & Drawer UI states
   const [currentTab, setCurrentTab] = useState<SubNavTab>('snapshot-overview')
@@ -134,12 +148,21 @@ export default function App() {
   const currentAnalysisKey = snapshotKey && chainId
     ? analysisContextKey(snapshotKey, chainId, configEpoch)
     : null
+  const analysisRefreshKey = currentAnalysisKey
+    ? JSON.stringify(['chain-analysis', currentAnalysisKey])
+    : null
   const analysis = analysisMatchesContext(analysisState, currentAnalysisKey, chainId)
     ? analysisState!.payload
     : null
   const selectedChainSummary = chainList?.chains.find(chain => chain.chain_id === chainId) ?? null
   const overviewPreviewRequestKey = snapshotKey && chainId
     ? `${snapshotKey}\u0000${chainId}\u0000${configEpoch}`
+    : null
+  const overviewRefreshKey = overviewPreviewRequestKey
+    ? JSON.stringify(['chain-overview', overviewPreviewRequestKey, reviewEpoch])
+    : null
+  const evolutionRefreshKey = chainId && chainListSnapshotId && chainListSnapshotVersion
+    ? JSON.stringify(['evolution', snapshotKey, chainId])
     : null
   const currentOverviewPreview = overviewPreview?.requestKey === overviewPreviewRequestKey
     ? overviewPreview.payload
@@ -162,6 +185,407 @@ export default function App() {
       : null,
     [expectedOverviewResourceKind, expectedOverviewFingerprint],
   )
+
+  const liveSyncMarker = useRef<() => void>(() => {})
+  const setLiveRefreshIssue = useCallback((resource: string, message: string | null) => {
+    setLiveRefreshErrors(current => {
+      if (message === null) {
+        if (!(resource in current)) return current
+        const next = { ...current }
+        delete next[resource]
+        return next
+      }
+      return current[resource] === message ? current : { ...current, [resource]: message }
+    })
+  }, [])
+  const reportEvolutionIssue = useCallback((message: string | null) => {
+    setLiveRefreshIssue('evolution', message)
+    if (message === null) liveSyncMarker.current()
+  }, [setLiveRefreshIssue])
+
+  const refreshCatalogTask = useCallback<RefreshTask>(async signal => {
+    try {
+      const catalog = await api.listSnapshots(signal)
+      if (signal.aborted) return
+      setSnapshotsCatalog(catalog.snapshots as HeaderSnapshotItem[])
+      setCatalogError(null)
+      setLiveRefreshIssue('catalog', null)
+      setApiStatus('online')
+      liveSyncMarker.current()
+    } catch (cause) {
+      if (signal.aborted || (cause instanceof DOMException && cause.name === 'AbortError')) return
+      const message = cause instanceof Error ? cause.message : 'Không làm mới được catalog snapshot'
+      setCatalogError(message)
+      setLiveRefreshIssue('catalog', message)
+    }
+  }, [setLiveRefreshIssue])
+
+  const refreshQualitySummaryTask = useCallback<RefreshTask>(async signal => {
+    try {
+      const payload = await api.snapshotQualitySummaries(signal)
+      if (signal.aborted) return
+      setQualitySummaries(payload.summaries)
+      setQualitySummarySnapshotKey(snapshotKey)
+      setQualitySummaryError(null)
+      setLiveRefreshIssue('quality-summary', null)
+      setQualitySummariesLoaded(true)
+      setApiStatus('online')
+      liveSyncMarker.current()
+    } catch (cause) {
+      if (signal.aborted || (cause instanceof DOMException && cause.name === 'AbortError')) return
+      const message = cause instanceof Error ? cause.message : 'Không đọc được trạng thái đánh giá snapshot'
+      setQualitySummaryError(message)
+      setLiveRefreshIssue('quality-summary', message)
+      setQualitySummariesLoaded(true)
+    }
+  }, [setLiveRefreshIssue, snapshotKey])
+
+  const createChainListRefreshTask = useCallback((
+    requestedSnapshotId: string,
+    requestedSnapshotVersion: string,
+    generation: number,
+    expectedTopologyVersion: string | null | undefined,
+  ): RefreshTask => async signal => {
+    try {
+      const updated = await api.chains(signal)
+      if (signal.aborted || generation !== chainListRefreshGeneration.current) return
+      if (updated.snapshot_id !== requestedSnapshotId || updated.snapshot_version !== requestedSnapshotVersion) {
+        setLiveRefreshIssue('chain-list', 'API đang ở snapshot khác; giữ nguyên dữ liệu snapshot hiện tại.')
+        return
+      }
+      if (!chainListResponseMatchesRefresh(updated, {
+        snapshotId: requestedSnapshotId,
+        snapshotVersion: requestedSnapshotVersion,
+        ...(expectedTopologyVersion === undefined ? {} : { topologyVersion: expectedTopologyVersion }),
+      })) {
+        setLiveRefreshIssue(
+          'chain-list',
+          'Topology vừa thay đổi nhưng API chưa trả đúng phiên bản; giữ nguyên dữ liệu hiện tại và chờ đồng bộ lại.',
+        )
+        return
+      }
+      setChainList(current => {
+        if (
+          generation !== chainListRefreshGeneration.current
+          || current?.snapshot_id !== requestedSnapshotId
+          || current.snapshot_version !== requestedSnapshotVersion
+        ) return current
+        return updated
+      })
+      setLiveRefreshIssue('chain-list', null)
+      setApiStatus('online')
+      liveSyncMarker.current()
+    } catch (cause) {
+      if (signal.aborted || (cause instanceof DOMException && cause.name === 'AbortError')) return
+      setLiveRefreshIssue(
+        'chain-list',
+        cause instanceof Error ? cause.message : 'Không làm mới được danh sách chain hiện tại',
+      )
+    }
+  }, [setLiveRefreshIssue])
+
+  const createAnalysisRefreshTask = useCallback((
+    requestKey: string,
+    requestedChainId: string,
+  ): RefreshTask => async signal => {
+    try {
+      const payload = await api.analysis(requestedChainId, signal)
+      if (signal.aborted) return
+      if (payload.chain_id !== requestedChainId) {
+        setAnalysisError({ requestKey, message: 'ANALYSIS_CONTEXT_MISMATCH' })
+        setLiveRefreshIssue('chain-detail', 'API trả về evidence không khớp chain đang mở; giữ nguyên dữ liệu hiện tại.')
+        return
+      }
+      setAnalysisState({ requestKey, payload })
+      setAnalysisError(null)
+      setLiveRefreshIssue('chain-detail', null)
+      setApiStatus('online')
+      liveSyncMarker.current()
+    } catch (cause) {
+      if (signal.aborted || (cause instanceof Error && cause.name === 'AbortError')) return
+      const message = cause instanceof Error ? cause.message : 'Analysis failed'
+      setAnalysisError({ requestKey, message })
+      setLiveRefreshIssue('chain-detail', message)
+    }
+  }, [setLiveRefreshIssue])
+
+  const clearOverviewRetryTimer = useCallback(() => {
+    if (overviewRetryTimer.current === null) return
+    window.clearTimeout(overviewRetryTimer.current)
+    overviewRetryTimer.current = null
+  }, [])
+
+  const createOverviewRefreshTask = useCallback((
+    requestKey: string,
+    requestedChainId: string,
+    expectedIdentity: ChainOverviewCards['analysis_identity'],
+    expectedRevision: ChainOverviewCards['artifact_revision'],
+    snapshotContext: typeof chainOverviewSnapshotContext,
+    expectedSnapshotId: string,
+    expectedSnapshotVersion: string,
+  ): RefreshTask => async signal => {
+    try {
+      const payload = await api.chainOverviewCards(
+        requestedChainId,
+        signal,
+        expectedIdentity,
+        expectedRevision,
+        snapshotContext,
+      )
+      if (signal.aborted) return
+      if (
+        payload.chain_id !== requestedChainId
+        || payload.snapshot_id !== expectedSnapshotId
+        || payload.snapshot_version !== expectedSnapshotVersion
+        || (
+          snapshotContext?.topology_version !== undefined
+          && payload.topology_version !== snapshotContext.topology_version
+        )
+      ) {
+        setLiveRefreshIssue('overview-cards', 'Overview trả về sai snapshot/topology; đang giữ dữ liệu đã hiển thị.')
+        return
+      }
+      setOverviewPreview({ requestKey, payload })
+      setLiveRefreshIssue('overview-cards', null)
+      setApiStatus('online')
+      liveSyncMarker.current()
+      if (payload.status === 'PENDING') {
+        clearOverviewRetryTimer()
+        overviewRetryTimer.current = window.setTimeout(() => {
+          overviewRetryTimer.current = null
+          setOverviewPollEpoch(epoch => epoch + 1)
+        }, 1200)
+      } else {
+        clearOverviewRetryTimer()
+      }
+    } catch (cause) {
+      if (signal.aborted || (cause instanceof Error && cause.name === 'AbortError')) return
+      const message = cause instanceof Error ? cause.message : 'OVERVIEW_CARDS_REQUEST_FAILED'
+      setLiveRefreshIssue('overview-cards', message)
+      setOverviewPreview(current => current?.requestKey === requestKey ? current : ({
+        requestKey,
+        payload: {
+          snapshot_id: expectedSnapshotId,
+          snapshot_version: expectedSnapshotVersion,
+          chain_id: requestedChainId,
+          status: 'UNAVAILABLE',
+          projection_version: null,
+          reason: message,
+          topology_version: snapshotContext?.topology_version ?? null,
+          representative_member: null,
+          topology: null,
+          quality_assessment: null,
+          recommendations: null,
+        },
+      }))
+    }
+  }, [clearOverviewRetryTimer, setLiveRefreshIssue])
+
+  const createTopologyRefreshTask = useCallback((
+    requestKey: string,
+    requestedProfile: typeof topologyProfile,
+    requestedRootId: string | undefined,
+  ): RefreshTask => async signal => {
+    try {
+      const payload = await api.topologyProjection(requestedProfile, signal, requestedRootId)
+      if (signal.aborted) return
+      if (payload.profile !== requestedProfile) {
+        const message = 'TOPOLOGY_PROFILE_MISMATCH'
+        setLiveRefreshIssue('topology', 'Topology trả về sai profile; đang giữ dữ liệu đã hiển thị.')
+        setLoadedTopology(current => current?.requestKey === requestKey ? current : ({
+          requestKey,
+          payload: {
+            status: 'UNAVAILABLE',
+            profile: requestedProfile,
+            topology_kind: 'UNAVAILABLE',
+            reason: message,
+          },
+        }))
+        return
+      }
+      setLoadedTopology({ requestKey, payload })
+      setLiveRefreshIssue('topology', null)
+      setApiStatus('online')
+      liveSyncMarker.current()
+    } catch (cause) {
+      if (signal.aborted || (cause instanceof Error && cause.name === 'AbortError')) return
+      const message = cause instanceof Error ? cause.message : 'TOPOLOGY_PROJECTION_UNAVAILABLE'
+      setLiveRefreshIssue('topology', message)
+      setLoadedTopology(current => current?.requestKey === requestKey ? current : ({
+        requestKey,
+        payload: {
+          status: 'UNAVAILABLE',
+          profile: requestedProfile,
+          topology_kind: 'UNAVAILABLE',
+          reason: message,
+        },
+      }))
+    }
+  }, [setLiveRefreshIssue])
+
+  const topologyRefreshKey = JSON.stringify(['topology-projection', topologyRequestKey])
+
+  const chainListRefreshKey = chainListSnapshotId && chainListSnapshotVersion
+    ? JSON.stringify(['chain-list', chainListSnapshotId, chainListSnapshotVersion])
+    : null
+
+  const handleLiveInvalidations = useCallback((
+    notices: readonly LiveNotice[],
+    scheduler: LiveRefreshScheduler,
+  ) => {
+    const fullResync = notices.some(notice => notice.kind === 'resync')
+    const scopes = new Set<string>()
+    for (const notice of notices) {
+      if (notice.kind === 'invalidate') {
+        for (const scope of notice.invalidates) scopes.add(scope)
+      }
+    }
+    if (fullResync) {
+      for (const scope of ['catalog', 'quality-summary', 'chain-list', 'chain-detail', 'topology', 'evolution']) {
+        scopes.add(scope)
+      }
+    }
+
+    // Portfolio/catalog responses are global and must include changes from
+    // snapshots other than the one currently selected in this tab.
+    if (scopes.has('catalog')) scheduler.schedule('catalog', refreshCatalogTask)
+    if (scopes.has('quality-summary')) scheduler.schedule('quality-summary', refreshQualitySummaryTask)
+
+    const matchingSnapshotNotices = notices.filter(notice => (
+      notice.kind === 'resync'
+      || invalidationMatchesSnapshot(notice, chainListSnapshotId, chainListSnapshotVersion)
+    ))
+    const chainListInvalidated = fullResync || matchingSnapshotNotices.some(notice => (
+      notice.kind === 'invalidate'
+      && (notice.invalidates.includes('chain-list') || notice.invalidates.includes('topology'))
+    ))
+    if (chainListInvalidated && chainListRefreshKey) {
+      const generation = ++chainListRefreshGeneration.current
+      const topologyEvent = [...matchingSnapshotNotices].reverse().find(notice => (
+        notice.kind === 'invalidate' && notice.event_type === 'topology.changed'
+      ))
+      scheduler.schedule(
+        chainListRefreshKey,
+        createChainListRefreshTask(
+          chainListSnapshotId!,
+          chainListSnapshotVersion!,
+          generation,
+          topologyEvent?.kind === 'invalidate' ? topologyEvent.topology_version : undefined,
+        ),
+      )
+    }
+
+    if (scopes.has('topology')) {
+      clearTopologySubgraphCache()
+      const topologyRelevant = currentTab === 'topology' && matchingSnapshotNotices.length > 0
+      const chainListWillMoveTopology = matchingSnapshotNotices.some(notice => (
+        notice.kind === 'invalidate'
+        && notice.event_type === 'topology.changed'
+        && notice.topology_version !== chainListTopologyVersion
+      ))
+      if (topologyRelevant && !chainListWillMoveTopology) {
+        setTopologyRefreshEpoch(epoch => epoch + 1)
+        scheduler.schedule(
+          topologyRefreshKey,
+          createTopologyRefreshTask(topologyRequestKey, topologyProfile, topologyRootId),
+        )
+      }
+    }
+
+    const matchingDetailNotices = matchingSnapshotNotices.filter(notice => (
+      notice.kind === 'resync'
+      || invalidationMatchesChain(notice, {
+        snapshotId: chainListSnapshotId,
+        snapshotVersion: chainListSnapshotVersion,
+        topologyVersion: chainListTopologyVersion,
+        chainId,
+      })
+    ))
+    const chainDetailInvalidated = Boolean(chainId) && (
+      (fullResync && !['snapshots-overview', 'snapshot-overview', 'all-chains'].includes(currentTab))
+      || matchingDetailNotices.some(notice => (
+        notice.kind === 'invalidate' && notice.invalidates.includes('chain-detail')
+      ))
+    )
+    if (chainDetailInvalidated) {
+      clearChainReadCache()
+      clearReviewJobCache()
+      clearCohesionCache(chainId)
+      clearOverviewRetryTimer()
+      if (analysisRefreshKey && currentAnalysisKey) {
+        scheduler.schedule(analysisRefreshKey, createAnalysisRefreshTask(currentAnalysisKey, chainId))
+      }
+      if (
+        overviewRefreshKey
+        && overviewPreviewRequestKey
+        && chainListSnapshotId
+        && chainListSnapshotVersion
+        && ['chain-overview', 'review', 'validation'].includes(currentTab)
+      ) {
+        scheduler.schedule(
+          overviewRefreshKey,
+          createOverviewRefreshTask(
+            overviewPreviewRequestKey,
+            chainId,
+            expectedOverviewIdentity,
+            expectedOverviewRevision,
+            chainOverviewSnapshotContext,
+            chainListSnapshotId,
+            chainListSnapshotVersion,
+          ),
+        )
+      }
+      setChainDataRefreshEpoch(epoch => epoch + 1)
+      if (currentTab === 'topology' && !scopes.has('topology')) {
+        setTopologyRefreshEpoch(epoch => epoch + 1)
+      }
+    }
+
+    const evolutionInvalidated = currentTab === 'evolution' && Boolean(chainId) && (
+      (fullResync && matchingDetailNotices.length > 0)
+      || matchingDetailNotices.some(notice => (
+        notice.kind === 'invalidate' && notice.invalidates.includes('evolution')
+      ))
+    )
+    if (evolutionInvalidated) setEvolutionRefreshEpoch(epoch => epoch + 1)
+  }, [
+    analysisRefreshKey,
+    chainId,
+    chainListSnapshotId,
+    chainListSnapshotVersion,
+    chainListRefreshKey,
+    chainListTopologyVersion,
+    chainOverviewSnapshotContext,
+    clearOverviewRetryTimer,
+    createChainListRefreshTask,
+    createAnalysisRefreshTask,
+    createOverviewRefreshTask,
+    createTopologyRefreshTask,
+    currentAnalysisKey,
+    currentTab,
+    expectedOverviewIdentity,
+    expectedOverviewRevision,
+    overviewPreviewRequestKey,
+    overviewRefreshKey,
+    refreshCatalogTask,
+    refreshQualitySummaryTask,
+    topologyProfile,
+    topologyRefreshKey,
+    topologyRequestKey,
+    topologyRootId,
+  ])
+
+  const {
+    connectionState: liveConnectionState,
+    lastSuccessfulSync,
+    scheduleRefresh,
+    cancelRefresh,
+    markSuccessfulSync,
+  } = useLiveUpdates(handleLiveInvalidations)
+
+  useEffect(() => {
+    liveSyncMarker.current = markSuccessfulSync
+  }, [markSuccessfulSync])
 
   useEffect(() => {
     if (previousConfigEpoch.current === configEpoch) return
@@ -221,12 +645,19 @@ export default function App() {
             // still being hydrated and /chains temporarily returns 409.
             setSnapshotsCatalog(catalogResult.value.snapshots as HeaderSnapshotItem[])
             setCatalogError(null)
+            setLiveRefreshIssue('catalog', null)
+            liveSyncMarker.current()
           } else if (!(catalogResult.reason instanceof DOMException && catalogResult.reason.name === 'AbortError')) {
-            setCatalogError(catalogResult.reason instanceof Error ? catalogResult.reason.message : 'Không đọc được catalog snapshot')
+            const message = catalogResult.reason instanceof Error ? catalogResult.reason.message : 'Không đọc được catalog snapshot'
+            setCatalogError(message)
+            setLiveRefreshIssue('catalog', message)
           }
           if (chainResult.status === 'fulfilled') {
             const existing = chainResult.value
+            chainListRefreshGeneration.current += 1
             setChainList(existing)
+            setLiveRefreshIssue('chain-list', null)
+            liveSyncMarker.current()
             setChainId('')
             const activeCatalogItem = catalogResult.status === 'fulfilled'
               ? catalogResult.value.snapshots.find(item => (
@@ -258,183 +689,77 @@ export default function App() {
     }
     void connect()
     return () => controller.abort()
-  }, [])
+  }, [setLiveRefreshIssue])
 
   useEffect(() => () => snapshotSelectionAbort.current?.abort(), [])
 
   useEffect(() => {
     if (currentTab !== 'snapshot-overview' && currentTab !== 'snapshots-overview' && currentTab !== 'all-chains') return
-    const controller = new AbortController()
-    let inFlight = false
-    const refresh = () => {
-      if (controller.signal.aborted || document.hidden || inFlight) return
-      inFlight = true
-      api.snapshotQualitySummaries(controller.signal)
-        .then(payload => {
-          if (controller.signal.aborted) return
-          setQualitySummaries(payload.summaries)
-          setQualitySummarySnapshotKey(snapshotKey)
-          setQualitySummaryError(null)
-        })
-        .catch(cause => {
-          if (controller.signal.aborted) return
-          setQualitySummaryError(cause instanceof Error ? cause.message : 'Không đọc được trạng thái đánh giá snapshot')
-        })
-        .finally(() => {
-          inFlight = false
-          if (!controller.signal.aborted) setQualitySummariesLoaded(true)
-        })
-    }
-    refresh()
-    const timer = window.setInterval(refresh, 4000)
-    return () => {
-      controller.abort()
-      window.clearInterval(timer)
-    }
-  }, [currentTab, snapshotKey])
+    scheduleRefresh('quality-summary', refreshQualitySummaryTask)
+  }, [currentTab, snapshotKey, scheduleRefresh, refreshQualitySummaryTask])
 
-  // Kafka can advance the topology attached to an unpinned snapshot without
-  // changing the snapshot ID/version. Refresh only the active chain catalog
-  // identity so views and client caches move to that topology generation.
-  useEffect(() => {
-    if (chainListSnapshotId === null || chainListSnapshotVersion === null) return
-    const requestedSnapshotId = chainListSnapshotId
-    const requestedSnapshotVersion = chainListSnapshotVersion
-    const controller = new AbortController()
-    let inFlight = false
-    const refresh = () => {
-      if (controller.signal.aborted || document.hidden || inFlight) return
-      inFlight = true
-      api.chains(controller.signal)
-        .then(updated => {
-          if (
-            controller.signal.aborted
-            || updated.snapshot_id !== requestedSnapshotId
-            || updated.snapshot_version !== requestedSnapshotVersion
-          ) return
-          setChainList(current => (
-            current?.snapshot_id === requestedSnapshotId
-            && current.snapshot_version === requestedSnapshotVersion
-              ? updated
-              : current
-          ))
-        })
-        .catch(() => {
-          // A 409 means another tab selected a different snapshot; keep this
-          // tab's state and never replace it with that other workspace.
-        })
-        .finally(() => { inFlight = false })
-    }
-    const timer = window.setInterval(refresh, 6000)
-    window.addEventListener('focus', refresh)
-    return () => {
-      controller.abort()
-      window.clearInterval(timer)
-      window.removeEventListener('focus', refresh)
-    }
-  }, [chainListSnapshotId, chainListSnapshotVersion])
-
-  // Auto-refresh snapshot catalog when tab is visible to detect newly pushed Kafka snapshots
-  useEffect(() => {
-    const refresh = () => {
-      if (document.hidden) return
-      api.listSnapshots().then(catalog => {
-        setSnapshotsCatalog(catalog.snapshots as HeaderSnapshotItem[])
-        setCatalogError(null)
-      }).catch(cause => {
-        if (!(cause instanceof DOMException && cause.name === 'AbortError')) {
-          setCatalogError(cause instanceof Error ? cause.message : 'Không làm mới được catalog snapshot')
-        }
-      })
-    }
-    const timer = window.setInterval(refresh, 6000)
-    window.addEventListener('focus', refresh)
-    return () => {
-      window.clearInterval(timer)
-      window.removeEventListener('focus', refresh)
-    }
-  }, [])
+  useEffect(() => () => {
+    if (chainListRefreshKey) cancelRefresh(chainListRefreshKey)
+  }, [chainListRefreshKey, cancelRefresh])
 
   // Load Analysis when chainId or snapshot changes
   useEffect(() => {
-    if (!chainId || !snapshotKey || !currentAnalysisKey) return
-    const controller = new AbortController()
-    const requestKey = currentAnalysisKey
-    api.analysis(chainId, controller.signal).then(payload => {
-      if (controller.signal.aborted) return
-      if (payload.chain_id !== chainId) {
-        setAnalysisError({ requestKey, message: 'ANALYSIS_CONTEXT_MISMATCH' })
-        return
-      }
-      setAnalysisState({ requestKey, payload })
-    }).catch((cause: unknown) => {
-      if (!controller.signal.aborted) {
-        const msg = cause instanceof Error ? cause.message : 'Analysis failed'
-        setAnalysisError({ requestKey, message: msg })
-      }
-    })
-    return () => controller.abort()
-  }, [chainId, snapshotKey, currentAnalysisKey])
+    if (!chainId || !snapshotKey || !currentAnalysisKey || !analysisRefreshKey) return
+    scheduleRefresh(analysisRefreshKey, createAnalysisRefreshTask(currentAnalysisKey, chainId))
+  }, [analysisRefreshKey, chainId, createAnalysisRefreshTask, currentAnalysisKey, scheduleRefresh, snapshotKey])
+
+  useEffect(() => () => {
+    if (analysisRefreshKey) cancelRefresh(analysisRefreshKey)
+  }, [analysisRefreshKey, cancelRefresh])
 
   // Load the persisted deterministic Overview projection as soon as a chain
   // is selected.  This intentionally does not wait for Tier-1B analysis or
   // the LLM narrative, so the first paint is useful even on a cold chain.
   useEffect(() => {
-    if (!['chain-overview', 'review', 'validation'].includes(currentTab) || !chainId || !overviewPreviewRequestKey) {
-      return
-    }
-    const controller = new AbortController()
-    const requestKey = overviewPreviewRequestKey
-    let timer: number | null = null
-    const load = () => {
-      api.chainOverviewCards(
+    if (
+      !['chain-overview', 'review', 'validation'].includes(currentTab)
+      || !chainId
+      || !overviewPreviewRequestKey
+      || !overviewRefreshKey
+      || !chainListSnapshotId
+      || !chainListSnapshotVersion
+    ) return
+    scheduleRefresh(
+      overviewRefreshKey,
+      createOverviewRefreshTask(
+        overviewPreviewRequestKey,
         chainId,
-        controller.signal,
         expectedOverviewIdentity,
         expectedOverviewRevision,
         chainOverviewSnapshotContext,
-      ).then(payload => {
-        if (controller.signal.aborted) return
-        setOverviewPreview({ requestKey, payload })
-        if (payload.status === 'PENDING') {
-          timer = window.setTimeout(load, 1200)
-        }
-      }).catch((cause: unknown) => {
-        if (!controller.signal.aborted) {
-          setOverviewPreview({
-            requestKey,
-            payload: {
-              snapshot_id: chainList?.snapshot_id ?? 'active',
-              snapshot_version: chainList?.snapshot_version ?? 'unknown',
-              chain_id: chainId,
-              status: 'UNAVAILABLE',
-              projection_version: null,
-              reason: cause instanceof Error ? cause.message : 'OVERVIEW_CARDS_REQUEST_FAILED',
-              topology_version: null,
-              representative_member: null,
-              topology: null,
-              quality_assessment: null,
-              recommendations: null,
-            },
-          })
-        }
-      })
-    }
-    load()
-    return () => {
-      controller.abort()
-      if (timer !== null) window.clearTimeout(timer)
-    }
+        chainListSnapshotId,
+        chainListSnapshotVersion,
+      ),
+    )
   }, [
     chainId,
-    chainList,
+    chainListSnapshotId,
+    chainListSnapshotVersion,
+    chainOverviewSnapshotContext,
+    createOverviewRefreshTask,
     currentTab,
-    overviewPreviewRequestKey,
-    configEpoch,
-    reviewEpoch,
     expectedOverviewIdentity,
     expectedOverviewRevision,
-    chainOverviewSnapshotContext,
+    overviewPollEpoch,
+    overviewPreviewRequestKey,
+    overviewRefreshKey,
+    scheduleRefresh,
+  ])
+
+  useEffect(() => () => {
+    if (!overviewRefreshKey) return
+    cancelRefresh(overviewRefreshKey)
+    clearOverviewRetryTimer()
+  }, [
+    cancelRefresh,
+    clearOverviewRetryTimer,
+    currentTab,
+    overviewRefreshKey,
   ])
 
   // Job Polling
@@ -535,24 +860,23 @@ export default function App() {
   // Load Topology when needed
   useEffect(() => {
     if (currentTab !== 'topology') return
-    const controller = new AbortController()
-    api.topologyProjection(topologyProfile, controller.signal, topologyRootId).then(payload => {
-      if (!controller.signal.aborted) setLoadedTopology({ requestKey: topologyRequestKey, payload })
-    }).catch((cause: unknown) => {
-      if (!controller.signal.aborted) {
-        setLoadedTopology({
-          requestKey: topologyRequestKey,
-          payload: {
-            status: 'UNAVAILABLE',
-            profile: topologyProfile,
-            topology_kind: 'UNAVAILABLE',
-            reason: cause instanceof Error ? cause.message : 'TOPOLOGY_PROJECTION_UNAVAILABLE',
-          },
-        })
-      }
-    })
-    return () => controller.abort()
-  }, [currentTab, topologyProfile, topologyRequestKey, topologyRootId])
+    scheduleRefresh(
+      topologyRefreshKey,
+      createTopologyRefreshTask(topologyRequestKey, topologyProfile, topologyRootId),
+    )
+  }, [
+    createTopologyRefreshTask,
+    currentTab,
+    scheduleRefresh,
+    topologyProfile,
+    topologyRefreshKey,
+    topologyRequestKey,
+    topologyRootId,
+  ])
+
+  useEffect(() => () => {
+    if (currentTab === 'topology') cancelRefresh(topologyRefreshKey)
+  }, [cancelRefresh, currentTab, topologyRefreshKey])
 
   const topologyPayload = loadedTopology?.requestKey === topologyRequestKey
     ? loadedTopology.payload
@@ -571,7 +895,10 @@ export default function App() {
       const loaded = await api.loadSnapshot(payload)
       setActiveSnapshotContext(loaded.snapshot_id, loaded.snapshot_version, loaded.topology_version)
       const chains = await api.chains()
+      chainListRefreshGeneration.current += 1
       setChainList(chains)
+      setLiveRefreshIssue('chain-list', null)
+      liveSyncMarker.current()
       setChainId('')
       setCurrentTab('snapshot-overview')
       setAnalysisState(null)
@@ -581,6 +908,7 @@ export default function App() {
       setAuditVisualizationState(null)
       clearCohesionCache()
       setApiStatus('online')
+      scheduleRefresh('catalog', refreshCatalogTask)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Snapshot load failed')
     }
@@ -615,7 +943,10 @@ export default function App() {
             chains: selected.chains,
           }
         : await api.chains(controller.signal)
+      chainListRefreshGeneration.current += 1
       setChainList(chains)
+      setLiveRefreshIssue('chain-list', null)
+      liveSyncMarker.current()
       setChainId('')
       setCurrentTab('snapshot-overview')
       setAnalysisState(null)
@@ -625,14 +956,8 @@ export default function App() {
       setAuditVisualizationState(null)
       clearCohesionCache()
       setApiStatus('online')
-      void api.listSnapshots().then(catalog => {
-        setSnapshotsCatalog(catalog.snapshots as HeaderSnapshotItem[])
-        setCatalogError(null)
-      }).catch(cause => {
-        if (!(cause instanceof DOMException && cause.name === 'AbortError')) {
-          setCatalogError(cause instanceof Error ? cause.message : 'Không làm mới được catalog snapshot')
-        }
-      })
+      liveSyncMarker.current()
+      scheduleRefresh('catalog', refreshCatalogTask)
     } catch (cause) {
       if (!controller.signal.aborted && generation === snapshotSelectionGeneration.current) {
         setError(cause instanceof Error ? cause.message : 'Snapshot selection failed')
@@ -762,6 +1087,24 @@ export default function App() {
     'topology',
     'validation',
   ].includes(currentTab)
+  const liveRefreshIssue = Object.values(liveRefreshErrors)[0] ?? qualitySummaryError ?? catalogError
+  const liveStatusText = liveConnectionState === 'LIVE'
+    ? 'Đang cập nhật trực tiếp'
+    : liveConnectionState === 'CONNECTING'
+      ? 'Đang kết nối cập nhật trực tiếp'
+      : liveConnectionState === 'DISABLED'
+        ? 'Cập nhật trực tiếp không khả dụng · đang đồng bộ định kỳ'
+        : 'Kết nối gián đoạn · đang đồng bộ định kỳ'
+  const liveStatusTone = liveConnectionState === 'LIVE'
+    ? 'bg-emerald-400'
+    : liveConnectionState === 'CONNECTING'
+      ? 'bg-amber-400 animate-pulse'
+      : 'bg-orange-400'
+  const lastSyncText = lastSuccessfulSync?.toLocaleTimeString('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
 
   return (
     <div className="min-h-screen w-full max-w-[100vw] min-w-0 overflow-x-hidden bg-background text-on-surface font-body-md antialiased select-none flex flex-col">
@@ -799,6 +1142,21 @@ export default function App() {
         }}
         onOpenLearning={handleOpenLearning}
       />
+
+      <div className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1 border-b border-[#1b273e] bg-[#0b1220] px-space-lg py-1 font-code-sm text-[11px] text-on-surface-variant">
+        <span className="inline-flex items-center gap-1.5" role="status" aria-live="polite">
+          <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${liveStatusTone}`} />
+          {liveStatusText}
+        </span>
+        <span className="text-[#64748b]" aria-live="off">
+          {lastSyncText ? `Đồng bộ gần nhất ${lastSyncText}` : 'Chưa có lần đồng bộ thành công'}
+        </span>
+        {liveRefreshIssue && (
+          <span className="text-amber-300" role="status" aria-live="polite">
+            Bản dữ liệu trước vẫn được giữ: {liveRefreshIssue}
+          </span>
+        )}
+      </div>
 
       {/* 2. Sub Navigation Bar (Chain-level IA: only when on a chain-level tab and a chain is selected) */}
       {!['snapshots-overview', 'snapshot-overview', 'all-chains'].includes(currentTab) && Boolean(chainId) && (
@@ -931,6 +1289,9 @@ export default function App() {
               onNavigateTab={setCurrentTab}
               onPairContextChange={setAssistantPair}
               reviewEpoch={reviewEpoch}
+              refreshEpoch={chainDataRefreshEpoch}
+              scheduleRefresh={scheduleRefresh}
+              cancelRefresh={cancelRefresh}
             />
           )}
 
@@ -963,7 +1324,16 @@ export default function App() {
 
 
           {analysis && currentTab === 'evolution' && (
-            <EvolutionView analysis={analysis} />
+            <EvolutionView
+              analysis={analysis}
+              resourceKey={evolutionRefreshKey ?? undefined}
+              refreshEpoch={evolutionRefreshEpoch}
+              expectedSnapshotId={chainList?.snapshot_id}
+              expectedSnapshotVersion={chainList?.snapshot_version}
+              scheduleRefresh={scheduleRefresh}
+              cancelRefresh={cancelRefresh}
+              onLoadError={reportEvolutionIssue}
+            />
           )}
 
           {analysis && currentTab === 'topology' && (
@@ -972,6 +1342,9 @@ export default function App() {
               snapshotKey={snapshotKey}
               snapshotContext={chainOverviewSnapshotContext}
               initialPathProjection={currentOverviewPreview}
+              refreshEpoch={topologyRefreshEpoch + chainDataRefreshEpoch}
+              scheduleRefresh={scheduleRefresh}
+              cancelRefresh={cancelRefresh}
               topologyPayload={topologyPayload}
               topologyHypotheses={activeJob?.status === 'SUCCEEDED' ? activeJob.result?.topology_hypotheses : null}
               onRootChange={setTopologyRootId}

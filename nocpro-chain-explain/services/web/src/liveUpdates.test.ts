@@ -3,12 +3,26 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   LiveRefreshScheduler,
   LiveUpdateClient,
+  chainListResponseMatchesRefresh,
+  invalidationMatchesChain,
+  invalidationMatchesSnapshot,
+  type ChangeInvalidation,
   type EventSourceLike,
   type LiveConnectionState,
   type LiveNotice,
 } from './liveUpdates'
 
 const EPOCH = 'ad2c5f7a-70aa-4ff6-91d8-8e5037247e76'
+const chainInvalidation: ChangeInvalidation = {
+  kind: 'invalidate',
+  event_type: 'quality.changed',
+  snapshot_id: 'snapshot-a',
+  snapshot_version: 'v1',
+  chain_id: 'chain-a',
+  topology_version: 'topology-1',
+  identity_digest: null,
+  invalidates: ['chain-detail'],
+}
 
 class FakeEventSource extends EventTarget implements EventSourceLike {
   onopen: ((event: Event) => void) | null = null
@@ -91,6 +105,43 @@ afterEach(() => {
 })
 
 describe('LiveUpdateClient', () => {
+  it('binds chain-list refresh responses to snapshot and requested topology generations', () => {
+    const expected = {
+      snapshotId: 'snapshot-a',
+      snapshotVersion: 'v1',
+      topologyVersion: 'topology-2',
+    }
+    expect(chainListResponseMatchesRefresh({
+      snapshot_id: 'snapshot-a', snapshot_version: 'v1', topology_version: 'topology-2',
+    }, expected)).toBe(true)
+    expect(chainListResponseMatchesRefresh({
+      snapshot_id: 'snapshot-a', snapshot_version: 'v1', topology_version: 'topology-1',
+    }, expected)).toBe(false)
+    expect(chainListResponseMatchesRefresh({
+      snapshot_id: 'snapshot-b', snapshot_version: 'v1', topology_version: 'topology-2',
+    }, expected)).toBe(false)
+    expect(chainListResponseMatchesRefresh({
+      snapshot_id: 'snapshot-a', snapshot_version: 'v1', topology_version: 'topology-1',
+    }, { snapshotId: 'snapshot-a', snapshotVersion: 'v1' })).toBe(true)
+  })
+
+  it('rejects stale snapshot, chain and topology identities for detail refreshes', () => {
+    expect(invalidationMatchesSnapshot(chainInvalidation, 'snapshot-b', 'v1')).toBe(false)
+    expect(invalidationMatchesSnapshot(chainInvalidation, 'snapshot-a', 'v2')).toBe(false)
+    expect(invalidationMatchesSnapshot(chainInvalidation, 'snapshot-a', 'v1')).toBe(true)
+    expect(invalidationMatchesSnapshot({ ...chainInvalidation, snapshot_id: null }, 'snapshot-b', 'v2')).toBe(true)
+
+    expect(invalidationMatchesChain(chainInvalidation, {
+      snapshotId: 'snapshot-a', snapshotVersion: 'v1', topologyVersion: 'topology-1', chainId: 'chain-a',
+    })).toBe(true)
+    expect(invalidationMatchesChain(chainInvalidation, {
+      snapshotId: 'snapshot-a', snapshotVersion: 'v1', topologyVersion: 'topology-2', chainId: 'chain-a',
+    })).toBe(false)
+    expect(invalidationMatchesChain(chainInvalidation, {
+      snapshotId: 'snapshot-a', snapshotVersion: 'v1', topologyVersion: undefined, chainId: 'chain-b',
+    })).toBe(false)
+  })
+
   it('cleans up its EventSource, listeners and timers across StrictMode-style remounts', () => {
     vi.useFakeTimers()
     const first = createClient()
@@ -186,6 +237,25 @@ describe('LiveUpdateClient', () => {
     vi.advanceTimersByTime(10_000)
     expect(states.at(-1)).toBe('DEGRADED')
     client.stop()
+  })
+
+  it('reconciles once after sixty seconds while named heartbeats keep the stream live', () => {
+    vi.useFakeTimers()
+    const { client, source, notices, states } = createClient()
+    client.start()
+    source.open()
+
+    vi.advanceTimersByTime(20_000)
+    source.heartbeat()
+    vi.advanceTimersByTime(20_000)
+    source.heartbeat()
+    vi.advanceTimersByTime(20_000)
+    vi.advanceTimersByTime(250)
+
+    expect(states.at(-1)).toBe('LIVE')
+    expect(notices).toEqual([[{ kind: 'resync', reason: 'PERIODIC_RECONCILIATION' }]])
+    client.stop()
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   it('performs one full REST revalidation when a hidden tab becomes visible', () => {

@@ -2,39 +2,91 @@ import { useEffect, useState } from 'react'
 
 import { api } from './api'
 import { compactTime, humanize, percent } from './format'
+import type { RefreshTask } from './liveUpdates'
 import type { Evolution } from './types'
 
 function productionLabel(value: Evolution['production_validation']) {
   return value === 'ELIGIBLE' ? 'Production sequence eligible' : 'Production validation not established'
 }
 
-export function EvolutionPanel({ chainId, initialResult = null }: { chainId: string; initialResult?: Evolution | null }) {
+export interface EvolutionPanelProps {
+  chainId: string
+  initialResult?: Evolution | null
+  resourceKey?: string
+  refreshEpoch?: number
+  expectedSnapshotId?: string | null
+  expectedSnapshotVersion?: string | null
+  scheduleRefresh?: (key: string, task: RefreshTask) => boolean
+  cancelRefresh?: (key: string) => void
+  onLoadError?: (message: string | null) => void
+}
+
+export function EvolutionPanel({
+  chainId,
+  initialResult = null,
+  resourceKey = `evolution:${chainId}`,
+  refreshEpoch = 0,
+  expectedSnapshotId,
+  expectedSnapshotVersion,
+  scheduleRefresh,
+  cancelRefresh,
+  onLoadError,
+}: EvolutionPanelProps) {
   const [loaded, setLoaded] = useState<{
-    chainId: string
+    resourceKey: string
     result: Evolution | null
     error: string | null
-  }>({ chainId: initialResult?.chain_id ?? '', result: initialResult, error: null })
+  }>({ resourceKey: initialResult?.chain_id === chainId ? resourceKey : '', result: initialResult, error: null })
 
   useEffect(() => {
     if (initialResult?.chain_id === chainId) return
-    const controller = new AbortController()
-    api.evolution(chainId, controller.signal).then((result) => {
-      if (!controller.signal.aborted) setLoaded({ chainId, result, error: null })
-    }).catch((cause: unknown) => {
-      if (!controller.signal.aborted) setLoaded({
-        chainId,
-        result: null,
-        error: cause instanceof Error ? cause.message : 'Evolution unavailable',
-      })
-    })
-    return () => controller.abort()
-  }, [chainId, initialResult])
+    const task: RefreshTask = async signal => {
+      try {
+        const result = await api.evolution(chainId, signal)
+        if (signal.aborted) return
+        if (
+          result.chain_id !== chainId
+          || (expectedSnapshotId != null && result.snapshot_id !== expectedSnapshotId)
+          || (expectedSnapshotVersion != null && result.snapshot_version !== expectedSnapshotVersion)
+        ) {
+          throw new Error('EVOLUTION_CONTEXT_MISMATCH')
+        }
+        setLoaded({ resourceKey, result, error: null })
+        onLoadError?.(null)
+      } catch (cause: unknown) {
+        if (signal.aborted || (cause instanceof Error && cause.name === 'AbortError')) return
+        const message = cause instanceof Error ? cause.message : 'Evolution unavailable'
+        setLoaded(current => current.resourceKey === resourceKey
+          ? { ...current, error: message }
+          : { resourceKey, result: null, error: message })
+        onLoadError?.(message)
+      }
+    }
+    if (scheduleRefresh) {
+      scheduleRefresh(resourceKey, task)
+    } else {
+      const controller = new AbortController()
+      void task(controller.signal)
+      return () => controller.abort()
+    }
+  }, [
+    chainId,
+    expectedSnapshotId,
+    expectedSnapshotVersion,
+    initialResult,
+    onLoadError,
+    refreshEpoch,
+    resourceKey,
+    scheduleRefresh,
+  ])
+
+  useEffect(() => () => cancelRefresh?.(resourceKey), [cancelRefresh, resourceKey])
 
   const initial = initialResult?.chain_id === chainId ? initialResult : null
-  const result = initial ?? (loaded.chainId === chainId ? loaded.result : null)
-  const error = initial ? null : (loaded.chainId === chainId ? loaded.error : null)
+  const result = initial ?? (loaded.resourceKey === resourceKey ? loaded.result : null)
+  const error = initial ? null : (loaded.resourceKey === resourceKey ? loaded.error : null)
 
-  if (error) return <section className="unavailable-card" role="alert"><span>UNAVAILABLE</span><h2>Evolution could not be loaded.</h2><p>{error}</p></section>
+  if (error && !result) return <section className="unavailable-card" role="alert"><span>UNAVAILABLE</span><h2>Evolution could not be loaded.</h2><p>{error}</p></section>
   if (!result) return <section className="evolution-panel evolution-loading"><p>Loading persisted lineage artifact…</p></section>
   if (result.status !== 'AVAILABLE') {
     return <section className="unavailable-card" aria-label="Evolution unavailable">
@@ -44,6 +96,7 @@ export function EvolutionPanel({ chainId, initialResult = null }: { chainId: str
   }
 
   return <section className="evolution-panel" aria-label="Persisted chain evolution">
+    {error ? <p className="unavailable-card" role="alert">Refresh failed; showing the previously loaded evolution. {error}</p> : null}
     <header className="evolution-heading">
       <div><p className="kicker">Persisted episode DAG</p><h2>Chain evolution</h2><p>Verified lineage artifact; this view does not recompute lifecycle at request time.</p></div>
       <div><span className="review-state review-state--available">{result.sequence_status}</span><small>{result.source_kind ?? 'UNKNOWN_SOURCE'}</small></div>

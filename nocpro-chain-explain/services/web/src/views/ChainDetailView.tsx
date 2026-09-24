@@ -8,11 +8,11 @@ import type {
   Member,
   PairWhy,
 } from '../types'
+import type { RefreshTask } from '../liveUpdates'
 import { InfoTip } from '../components/InfoTip'
 import { ChainQualityCard, RepresentativeMemberCard, TopologyCoverageCard } from '../components/ChainQualityCards'
 import { EvidenceDetails } from '../components/EvidenceDetails'
 import { compactTime } from '../format'
-import { serializeAnalysisIdentity } from '../analysisIdentity'
 
 const ChainScopeView = lazy(() => import('./why/ChainScopeView').then(m => ({ default: m.ChainScopeView })))
 const MemberScopeView = lazy(() => import('./why/MemberScopeView').then(m => ({ default: m.MemberScopeView })))
@@ -29,6 +29,9 @@ interface ChainDetailViewProps {
   onInspectMember?: (member: Member) => void
   onPairContextChange?: (pair: [string, string] | null) => void
   reviewEpoch?: number
+  refreshEpoch?: number
+  scheduleRefresh?: (key: string, task: RefreshTask) => boolean
+  cancelRefresh?: (key: string) => void
   snapshotKey?: string | null
   snapshotContext?: ChainOverviewSnapshotContext
   initialOverviewCards?: ChainOverviewCards | null
@@ -54,6 +57,9 @@ export function ChainDetailView({
   onInspectMember,
   onPairContextChange,
   reviewEpoch = 0,
+  refreshEpoch = 0,
+  scheduleRefresh,
+  cancelRefresh,
   snapshotKey = null,
   snapshotContext,
   initialOverviewCards = null,
@@ -69,10 +75,6 @@ export function ChainDetailView({
     payload: PairWhy | null
     reason: string | null
   } | null>(null)
-  const [overviewCards, setOverviewCards] = useState<{
-    requestKey: string
-    payload: ChainOverviewCards
-  } | null>(null)
   const [evidenceDetailsOpen, setEvidenceDetailsOpen] = useState(false)
   const [evidenceIds, setEvidenceIds] = useState<string[] | null>(null)
   const openEvidence = (ids?: string[]) => {
@@ -81,103 +83,11 @@ export function ChainDetailView({
   }
 
   const members = useMemo(() => analysis.members ?? [], [analysis.members])
-  const overviewCardsRequestKey = (snapshotKey ?? 'active') + '\u0000' + analysis.chain_id
-  const contextOverviewCards = overviewCards?.requestKey === overviewCardsRequestKey
-    ? overviewCards.payload
-    : null
-  const expectedOverviewCards = initialOverviewCards?.status === 'READY'
-      || initialOverviewCards?.status === 'NOT_APPLICABLE'
-    ? initialOverviewCards
-    : contextOverviewCards
-  const expectedOverviewIdentityKey = serializeAnalysisIdentity(expectedOverviewCards?.analysis_identity)
-  const expectedOverviewIdentity = useMemo(
-    () => expectedOverviewIdentityKey
-      ? JSON.parse(expectedOverviewIdentityKey) as NonNullable<ChainOverviewCards['analysis_identity']>
-      : null,
-    [expectedOverviewIdentityKey],
-  )
-  const expectedOverviewResourceKind = expectedOverviewCards?.artifact_revision?.resource_kind ?? null
-  const expectedOverviewFingerprint = expectedOverviewCards?.artifact_revision?.fingerprint ?? null
-  const expectedOverviewRevision = useMemo(
-    () => expectedOverviewResourceKind && expectedOverviewFingerprint
-      ? {
-          resource_kind: expectedOverviewResourceKind,
-          fingerprint: expectedOverviewFingerprint,
-        } as NonNullable<ChainOverviewCards['artifact_revision']>
-      : null,
-    [expectedOverviewResourceKind, expectedOverviewFingerprint],
-  )
-
-  useEffect(() => {
-    if (activeSubTab !== 'OVERVIEW') return
-    const controller = new AbortController()
-    let retryTimer: number | undefined
-    const requestKey = overviewCardsRequestKey
-
-    if (initialOverviewCards && initialOverviewCards.status !== 'PENDING') {
-      return () => controller.abort()
-    }
-
-    const load = async () => {
-      try {
-        const payload = await api.chainOverviewCards(
-          analysis.chain_id,
-          controller.signal,
-          expectedOverviewIdentity,
-          expectedOverviewRevision,
-          snapshotContext,
-        )
-        if (controller.signal.aborted) return
-        setOverviewCards({ requestKey, payload })
-        if (payload.status === 'PENDING') {
-          retryTimer = window.setTimeout(() => void load(), 4000)
-        }
-      } catch {
-        if (!controller.signal.aborted) {
-          setOverviewCards({
-            requestKey,
-            payload: {
-              snapshot_id: snapshotKey?.split(':')[0] ?? 'active',
-              snapshot_version: snapshotKey?.split(':')[1] ?? 'unknown',
-              chain_id: analysis.chain_id,
-              status: 'UNAVAILABLE',
-              projection_version: null,
-              reason: 'OVERVIEW_CARDS_REQUEST_FAILED',
-              topology_version: null,
-              representative_member: null,
-              topology: null,
-              quality_assessment: null,
-              recommendations: null,
-            },
-          })
-        }
-      }
-    }
-    void load()
-    return () => {
-      controller.abort()
-      if (retryTimer !== undefined) window.clearTimeout(retryTimer)
-    }
-  }, [
-    activeSubTab,
-    analysis.chain_id,
-    expectedOverviewIdentity,
-    expectedOverviewRevision,
-    initialOverviewCards,
-    overviewCardsRequestKey,
-    reviewEpoch,
-    snapshotContext,
-    snapshotKey,
-  ])
-
-  const initialCardsPayload = initialOverviewCards && initialOverviewCards.status !== 'PENDING'
+  // App owns the scheduled Overview-cards read and pending retry. Keeping a
+  // second request loop here could duplicate requests and race stale results.
+  const cardsPayload = initialOverviewCards && initialOverviewCards.status !== 'PENDING'
     ? initialOverviewCards
     : null
-  const cardsPayload = initialCardsPayload ?? (
-    overviewCards?.requestKey === overviewCardsRequestKey
-      ? overviewCards.payload
-      : null
-  )
   const cardsContext: ChainOverviewCardContext | null = cardsPayload?.status === 'READY'
     ? {
         representative_member: cardsPayload.representative_member,
@@ -188,9 +98,10 @@ export function ChainDetailView({
     : null
   const cardsStatus = cardsPayload?.status ?? 'PENDING'
 
-  const pairRequestKey = activeSubTab === 'WHY' && whyScope === 'Pair' && selectedMemberIds.length === 2
-    ? `${analysis.chain_id}\u0000${selectedMemberIds[0]}\u0000${selectedMemberIds[1]}`
+  const pairSchedulerKey = activeSubTab === 'WHY' && whyScope === 'Pair' && selectedMemberIds.length === 2
+    ? JSON.stringify(['pair-why', snapshotKey, analysis.chain_id, selectedMemberIds[0], selectedMemberIds[1]])
     : null
+  const pairRequestKey = pairSchedulerKey === null ? null : `${pairSchedulerKey}\u0000${refreshEpoch}`
   const pairWhy = pairWhyLoad?.requestKey === pairRequestKey ? pairWhyLoad.payload : null
   const pairWhyReason = pairWhyLoad?.requestKey === pairRequestKey ? pairWhyLoad.reason : null
   const pairWhyState = !pairRequestKey
@@ -214,28 +125,40 @@ export function ChainDetailView({
   }, [onPairContextChange])
 
   useEffect(() => {
-    if (!pairRequestKey) return
+    if (!pairSchedulerKey || !pairRequestKey) return
     const [alarmA, alarmB] = selectedMemberIds
     if (alarmA === alarmB) return
-    const controller = new AbortController()
-    api.pairWhy(analysis.chain_id, alarmA, alarmB, controller.signal).then(payload => {
-      if (controller.signal.aborted) return
-      if (payload.chain_id !== analysis.chain_id || payload.alarm_id_a !== alarmA || payload.alarm_id_b !== alarmB) {
-        setPairWhyLoad({ requestKey: pairRequestKey, payload: null, reason: 'PAIR_WHY_CONTEXT_MISMATCH' })
-        return
-      }
-      setPairWhyLoad({ requestKey: pairRequestKey, payload, reason: null })
-    }).catch((cause: unknown) => {
-      if (!controller.signal.aborted) {
+    const requestKey = pairRequestKey
+    const task: RefreshTask = async signal => {
+      try {
+        const payload = await api.pairWhy(analysis.chain_id, alarmA, alarmB, signal)
+        if (signal.aborted) return
+        if (payload.chain_id !== analysis.chain_id || payload.alarm_id_a !== alarmA || payload.alarm_id_b !== alarmB) {
+          setPairWhyLoad({ requestKey, payload: null, reason: 'PAIR_WHY_CONTEXT_MISMATCH' })
+          return
+        }
+        setPairWhyLoad({ requestKey, payload, reason: null })
+      } catch (cause: unknown) {
+        if (signal.aborted || (cause instanceof Error && cause.name === 'AbortError')) return
         setPairWhyLoad({
-          requestKey: pairRequestKey,
+          requestKey,
           payload: null,
           reason: cause instanceof Error ? cause.message : 'PAIR_WHY_UNAVAILABLE',
         })
       }
-    })
+    }
+    if (scheduleRefresh) {
+      scheduleRefresh(pairSchedulerKey, task)
+      return
+    }
+    const controller = new AbortController()
+    void task(controller.signal)
     return () => controller.abort()
-  }, [analysis.chain_id, pairRequestKey, selectedMemberIds])
+  }, [analysis.chain_id, pairRequestKey, pairSchedulerKey, scheduleRefresh, selectedMemberIds])
+
+  useEffect(() => () => {
+    if (pairSchedulerKey) cancelRefresh?.(pairSchedulerKey)
+  }, [cancelRefresh, pairSchedulerKey])
 
   // Metrics calculation
   const totalMembers = members.length

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import type { ChainAnalysis, ChainOverviewCards, Member, TopologyHypothesesResult } from '../types'
 
 import type { TopologyTreePayload } from '../TopologyTree'
+import type { RefreshTask } from '../liveUpdates'
 import { TopologyHypotheses } from '../TopologyHypotheses'
 import { InfoTip } from '../components/InfoTip'
 import { EvidenceDetails, type EvidencePathSelector } from '../components/EvidenceDetails'
@@ -23,6 +24,9 @@ interface TopologyOverlayViewProps {
   snapshotKey?: string | null
   snapshotContext?: ChainOverviewSnapshotContext
   initialPathProjection?: ChainOverviewCards | null
+  refreshEpoch?: number
+  scheduleRefresh?: (key: string, task: RefreshTask) => boolean
+  cancelRefresh?: (key: string) => void
   onRootChange?: (resourceId: string) => void
   onRunDeepDive?: () => void
   isDeepDiveRunning?: boolean
@@ -114,6 +118,9 @@ export function TopologyOverlayView({
   snapshotKey = null,
   snapshotContext,
   initialPathProjection = null,
+  refreshEpoch = 0,
+  scheduleRefresh,
+  cancelRefresh,
   onRootChange: _onRootChange,
   onRunDeepDive,
   isDeepDiveRunning,
@@ -201,16 +208,25 @@ export function TopologyOverlayView({
   // Subgraph state (live fetched from /api/v1/topology/subgraph around seed devices)
   const [subgraphRequest, setSubgraphRequest] = useState<SubgraphRequestState | null>(null)
   const [overviewPathRequest, setOverviewPathRequest] = useState<OverviewPathRequestState | null>(null)
+  const [overviewPathPollEpoch, setOverviewPathPollEpoch] = useState(0)
+  const overviewPathRetryTimer = useRef<number | null>(null)
   const overviewPathRequestKey = `${snapshotKey ?? 'active'}\u0000${analysis.chain_id}`
-  const currentOverviewPathRequest = overviewPathRequest?.requestKey === overviewPathRequestKey
-    ? overviewPathRequest
-    : initialPathProjection?.chain_id === analysis.chain_id &&
-        (snapshotKey === null || (
-          initialPathProjection.snapshot_id === snapshotKey.split(':')[0] &&
-          initialPathProjection.snapshot_version === snapshotKey.split(':')[1]
-        ))
-      ? { requestKey: overviewPathRequestKey, payload: initialPathProjection, error: null }
-      : null
+  const overviewPathRefreshKey = JSON.stringify(['topology-overview-path', overviewPathRequestKey])
+  const currentOverviewPathRequest = useMemo(() => (
+    overviewPathRequest?.requestKey === overviewPathRequestKey
+      ? overviewPathRequest
+      : initialPathProjection?.chain_id === analysis.chain_id &&
+          (snapshotKey === null || (
+            initialPathProjection.snapshot_id === snapshotKey.split(':')[0] &&
+            initialPathProjection.snapshot_version === snapshotKey.split(':')[1]
+          ))
+        ? { requestKey: overviewPathRequestKey, payload: initialPathProjection, error: null }
+        : null
+  ), [analysis.chain_id, initialPathProjection, overviewPathRequest, overviewPathRequestKey, snapshotKey])
+  const currentOverviewPathRequestRef = useRef(currentOverviewPathRequest)
+  useEffect(() => {
+    currentOverviewPathRequestRef.current = currentOverviewPathRequest
+  }, [currentOverviewPathRequest])
   const requestedTopologyVersion = currentOverviewPathRequest?.payload?.status === 'READY'
     ? currentOverviewPathRequest.payload.topology_version
     : null
@@ -235,7 +251,15 @@ export function TopologyOverlayView({
     [expectedOverviewResourceKind, expectedOverviewFingerprint],
   )
   const distinctDevicesKey = useMemo(() => distinctDevices.slice().sort().join(','), [distinctDevices])
-  const subgraphRequestKey = `${activeProfile}:${distinctDevicesKey}:${hopDistance}:${requestedTopologyVersion ?? 'active'}`
+  const subgraphRequestKey = JSON.stringify([
+    snapshotKey,
+    analysis.chain_id,
+    activeProfile,
+    distinctDevicesKey,
+    hopDistance,
+    requestedTopologyVersion ?? 'active',
+  ])
+  const subgraphRefreshKey = JSON.stringify(['topology-subgraph', subgraphRequestKey])
   const selectedDeviceId = selectedDeviceSelection?.requestKey === subgraphRequestKey
     ? selectedDeviceSelection.value
     : null
@@ -248,19 +272,16 @@ export function TopologyOverlayView({
     : null
 
   useEffect(() => {
-    const controller = new AbortController()
-    let retryTimer: number | undefined
-
-    const load = async () => {
+    const task: RefreshTask = async signal => {
       try {
         const payload = await api.chainOverviewCards(
           analysis.chain_id,
-          controller.signal,
+          signal,
           expectedOverviewIdentity,
           expectedOverviewRevision,
           snapshotContext,
         )
-        if (controller.signal.aborted) return
+        if (signal.aborted) return
         const [expectedSnapshotId, expectedSnapshotVersion] = snapshotKey?.split(':') ?? []
         if (
           payload.chain_id !== analysis.chain_id ||
@@ -271,78 +292,110 @@ export function TopologyOverlayView({
         ) {
           setOverviewPathRequest({
             requestKey: overviewPathRequestKey,
-            payload: null,
+            payload: currentOverviewPathRequestRef.current?.payload ?? null,
             error: 'OVERVIEW_PATH_CONTEXT_MISMATCH',
           })
           return
         }
         setOverviewPathRequest({ requestKey: overviewPathRequestKey, payload, error: null })
         if (payload.status === 'PENDING') {
-          retryTimer = window.setTimeout(() => void load(), 4000)
+          if (overviewPathRetryTimer.current !== null) window.clearTimeout(overviewPathRetryTimer.current)
+          overviewPathRetryTimer.current = window.setTimeout(() => {
+            overviewPathRetryTimer.current = null
+            setOverviewPathPollEpoch(epoch => epoch + 1)
+          }, 4000)
+        } else if (overviewPathRetryTimer.current !== null) {
+          window.clearTimeout(overviewPathRetryTimer.current)
+          overviewPathRetryTimer.current = null
         }
       } catch (cause) {
-        if (controller.signal.aborted) return
+        if (signal.aborted || (cause instanceof Error && cause.name === 'AbortError')) return
         setOverviewPathRequest({
           requestKey: overviewPathRequestKey,
-          payload: null,
+          payload: currentOverviewPathRequestRef.current?.payload ?? null,
           error: cause instanceof Error ? cause.message : 'TOPOLOGY_PATH_PROJECTION_REQUEST_FAILED',
         })
       }
     }
-
-    void load()
-    return () => {
-      controller.abort()
-      if (retryTimer !== undefined) window.clearTimeout(retryTimer)
+    if (scheduleRefresh) {
+      scheduleRefresh(overviewPathRefreshKey, task)
+      return
     }
+    const controller = new AbortController()
+    void task(controller.signal)
+    return () => controller.abort()
   }, [
     analysis.chain_id,
     expectedOverviewIdentity,
     expectedOverviewRevision,
+    overviewPathPollEpoch,
+    overviewPathRefreshKey,
     overviewPathRequestKey,
+    refreshEpoch,
+    scheduleRefresh,
     snapshotContext,
     snapshotKey,
   ])
 
+  useEffect(() => () => {
+    cancelRefresh?.(overviewPathRefreshKey)
+    if (overviewPathRetryTimer.current !== null) window.clearTimeout(overviewPathRetryTimer.current)
+    overviewPathRetryTimer.current = null
+  }, [cancelRefresh, overviewPathRefreshKey])
+
   useEffect(() => {
     if (externalSubgraph !== undefined) return
-
-    const controller = new AbortController()
-    let active = true
-
     if (!distinctDevicesKey) {
-      return () => controller.abort()
+      return
     }
-
-    api.topologySubgraph(
-      activeProfile,
-      distinctDevices,
-      hopDistance,
-      controller.signal,
-      requestedTopologyVersion ?? undefined,
-    )
-      .then(res => {
-        if (!active) return
+    const task: RefreshTask = async signal => {
+      try {
+        const res = await api.topologySubgraph(
+          activeProfile,
+          distinctDevices,
+          hopDistance,
+          signal,
+          requestedTopologyVersion ?? undefined,
+        )
+        if (signal.aborted) return
         if (res.status === 'AVAILABLE' && res.nodes.length > 0) {
           setSubgraphRequest({ requestKey: subgraphRequestKey, status: 'available', result: res, error: null })
         } else {
           setSubgraphRequest({ requestKey: subgraphRequestKey, status: 'unavailable', result: res, error: null })
         }
-      })
-      .catch(error => {
-        if (!active || (error as { name?: string })?.name === 'AbortError') return
+      } catch (error) {
+        if (signal.aborted || (error as { name?: string })?.name === 'AbortError') return
         setSubgraphRequest({
           requestKey: subgraphRequestKey,
           status: 'error',
           result: null,
           error: error instanceof Error ? error.message : 'Không thể tải topology',
         })
-      })
-    return () => {
-      active = false
-      controller.abort()
+      }
     }
-  }, [activeProfile, distinctDevices, distinctDevicesKey, externalSubgraph, hopDistance, requestedTopologyVersion, subgraphRequestKey])
+    if (scheduleRefresh) {
+      scheduleRefresh(subgraphRefreshKey, task)
+      return
+    }
+    const controller = new AbortController()
+    void task(controller.signal)
+    return () => controller.abort()
+  }, [
+    activeProfile,
+    distinctDevices,
+    distinctDevicesKey,
+    externalSubgraph,
+    hopDistance,
+    refreshEpoch,
+    requestedTopologyVersion,
+    scheduleRefresh,
+    subgraphRefreshKey,
+    subgraphRequestKey,
+  ])
+
+  useEffect(() => () => {
+    if (externalSubgraph === undefined) cancelRefresh?.(subgraphRefreshKey)
+  }, [cancelRefresh, externalSubgraph, subgraphRefreshKey])
 
   const currentSubgraphRequest = subgraphRequest?.requestKey === subgraphRequestKey ? subgraphRequest : null
   const activeSubgraph = externalSubgraph !== undefined ? externalSubgraph : currentSubgraphRequest?.result ?? null
