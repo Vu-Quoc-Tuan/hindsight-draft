@@ -493,6 +493,27 @@ class ChainQualityAssessmentRecord(Base):
     )
 
 
+class QualityEvaluationReceiptRecord(Base):
+    """Immutable evidence for one exact quality materialization revision."""
+
+    __tablename__ = "quality_evaluation_receipts"
+
+    receipt_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    identity_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    artifact_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    analysis_identity: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    assessment: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    source_artifact_refs: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("identity_digest", "artifact_revision", name="uq_quality_receipt_identity_revision"),
+        Index("ix_quality_receipts_identity_created", "identity_digest", "created_at"),
+    )
+
+
 class OperatorFeedbackRecord(Base):
     __tablename__ = "operator_feedback"
     __table_args__ = (

@@ -63,6 +63,7 @@ from .models import (
     AuditArtifactRecord,
     Chain,
     ChainQualityAssessmentRecord,
+    QualityEvaluationReceiptRecord,
     CounterfactualJobRecord,
     DeepDiveJobRecord,
     KafkaInbox,
@@ -99,6 +100,31 @@ from review_learning.contracts import (
     ReviewSession,
     TruthTier,
 )
+
+
+def _canonical_sha256(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    ).hexdigest()
+
+
+def _receipt_revision(assessment: dict[str, Any], source_refs: dict[str, Any]) -> str:
+    """Hash stable assessment facts and exact sources, never publication metadata."""
+    def stable(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {key: stable(item) for key, item in value.items()
+                    if key not in {"created_at", "updated_at", "progress", "progress_percent"}}
+        if isinstance(value, list):
+            return [stable(item) for item in value]
+        return value
+
+    return _canonical_sha256({
+        "assessment": stable(assessment),
+        "source_artifact_fingerprints": {
+            key: value for key, value in source_refs.items() if key.endswith("fingerprint")
+        },
+        "policy_version": assessment["readiness_policy_version"],
+    })
 
 
 def _record_db_read(stage: str, started: float) -> None:
@@ -202,6 +228,17 @@ class StoredChainQualityAssessment:
     payload: dict[str, Any]
     created_at: datetime
     updated_at: datetime
+
+
+@dataclass(frozen=True)
+class StoredQualityEvaluationReceipt:
+    receipt_id: str
+    identity_digest: str
+    artifact_revision: str
+    analysis_identity: dict[str, Any]
+    assessment: dict[str, Any]
+    source_artifact_refs: dict[str, Any]
+    created_at: datetime
 
 
 @dataclass(frozen=True)
@@ -985,11 +1022,33 @@ class SnapshotRepository:
             ),
         )
         async with self.sessions.begin() as session:
+            receipt_values = await self._verified_quality_receipt_values(session, payload)
             changed_chain_id = (
                 await session.execute(
                     statement.returning(ChainQualityAssessmentRecord.chain_id)
                 )
             ).scalar_one_or_none()
+            if receipt_values is not None:
+                receipt_insert = pg_insert(QualityEvaluationReceiptRecord).values(**receipt_values)
+                inserted = (await session.execute(
+                    receipt_insert.on_conflict_do_nothing(
+                        index_elements=[
+                            QualityEvaluationReceiptRecord.identity_digest,
+                            QualityEvaluationReceiptRecord.artifact_revision,
+                        ]
+                    ).returning(QualityEvaluationReceiptRecord.receipt_id)
+                )).scalar_one_or_none()
+                if inserted is None:
+                    existing = (await session.execute(
+                        select(QualityEvaluationReceiptRecord).where(
+                            QualityEvaluationReceiptRecord.identity_digest == receipt_values["identity_digest"],
+                            QualityEvaluationReceiptRecord.artifact_revision == receipt_values["artifact_revision"],
+                        )
+                    )).scalar_one()
+                    if any(getattr(existing, key) != receipt_values[key] for key in (
+                        "analysis_identity", "assessment", "source_artifact_refs"
+                    )):
+                        raise RuntimeError("quality receipt integrity conflict")
             if changed_chain_id is not None:
                 projection = persisted_payload.get("overview_projection")
                 adapted = analysis_identity_from_projection(projection)
@@ -1032,6 +1091,107 @@ class SnapshotRepository:
             raise RuntimeError("persisted chain quality assessment is unavailable")
         return stored
 
+    async def _verified_quality_receipt_values(self, session, payload: dict[str, Any]) -> dict[str, Any] | None:
+        """Admit only a current, source-backed deterministic quality result."""
+        from ..quality_freshness import projection_staleness_reason
+        from ..quality_readiness import quality_assessment_contract_is_valid
+        from libs.contracts.analysis_identity import analysis_identity_from_review
+
+        assessment = payload.get("assessment")
+        projection = payload.get("overview_projection")
+        if not quality_assessment_contract_is_valid(assessment) or not isinstance(projection, dict):
+            return None
+        if assessment.get("status") not in {"EVALUATED", "UNAVAILABLE"}:
+            return None
+        adapted = analysis_identity_from_projection(projection)
+        if not adapted.available or adapted.identity is None:
+            return None
+        identity = adapted.identity
+        if projection_staleness_reason(
+            projection,
+            snapshot_id=payload["snapshot_id"],
+            snapshot_version=payload["snapshot_version"],
+            chain_id=payload["chain_id"],
+            input_fingerprint=payload["input_fingerprint"],
+        ) is not None:
+            return None
+        if assessment.get("method") != payload.get("assessment_version"):
+            return None
+        job_id = payload.get("counterfactual_job_id")
+        revision_ref = projection.get("review_artifact_revision")
+        if not isinstance(job_id, str) or not isinstance(revision_ref, dict):
+            return None
+        review = await session.get(CounterfactualJobRecord, job_id)
+        if (
+            review is None or review.status != "SUCCEEDED" or review.result_payload is None
+            or (review.snapshot_id, review.snapshot_version, review.chain_id)
+            != (identity.snapshot_id, identity.snapshot_version, identity.chain_id)
+            or revision_ref.get("resource_kind") != "counterfactual_review"
+            or revision_ref.get("fingerprint") != review.cache_fingerprint
+        ):
+            return None
+        review_identity = analysis_identity_from_review(
+            review.identity_payload,
+            pipeline_version=str(review.identity_payload.get("engine_version") or ""),
+            input_fingerprint=str(review.identity_payload.get("tier1b_artifact_fingerprint") or ""),
+        )
+        if (
+            not review_identity.available or review_identity.identity is None
+            or projection.get("review_analysis_identity") != review_identity.identity.to_payload()
+            or review_identity.identity.snapshot_id != identity.snapshot_id
+            or review_identity.identity.snapshot_version != identity.snapshot_version
+            or review_identity.identity.chain_id != identity.chain_id
+            or review_identity.identity.topology_version != identity.topology_version
+            or review_identity.identity.analysis_config_version != identity.analysis_config_version
+            or review_identity.identity.review_config_version != identity.review_config_version
+        ):
+            return None
+        deep_id = payload.get("deep_dive_job_id")
+        deep_fingerprint = None
+        if deep_id is not None:
+            deep = await session.get(DeepDiveJobRecord, deep_id)
+            if (
+                deep is None or deep.status != "SUCCEEDED" or deep.result_payload is None
+                or (deep.snapshot_id, deep.snapshot_version, deep.chain_id)
+                != (identity.snapshot_id, identity.snapshot_version, identity.chain_id)
+                or deep.analysis_config_version != identity.analysis_config_version
+                or deep.topology_version != identity.topology_version
+            ):
+                return None
+            deep_fingerprint = deep.cache_fingerprint
+        fingerprint_payload = {
+            "pipeline_version": identity.pipeline_version,
+            "config_version": identity.analysis_config_version,
+            "review_config_version": identity.review_config_version,
+            "snapshot_id": identity.snapshot_id,
+            "snapshot_version": identity.snapshot_version,
+            "topology_version": identity.topology_version,
+            "chain_id": identity.chain_id,
+            "deep_dive_job_id": deep_id,
+            "deep_dive_cache_fingerprint": deep_fingerprint,
+            "counterfactual_job_id": job_id,
+            "counterfactual_cache_fingerprint": review.cache_fingerprint,
+        }
+        if _canonical_sha256(fingerprint_payload) != identity.input_fingerprint:
+            return None
+        source_refs = {
+            "quality_input_fingerprint": identity.input_fingerprint,
+            "review_job_id": job_id,
+            "review_artifact_fingerprint": review.cache_fingerprint,
+            "tier1b_artifact_fingerprint": review_identity.identity.input_fingerprint,
+            "deep_dive_job_id": deep_id,
+            "deep_dive_cache_fingerprint": deep_fingerprint,
+        }
+        identity_payload = identity.to_payload()
+        return {
+            "receipt_id": uuid.uuid4().hex,
+            "identity_digest": _canonical_sha256(identity_payload),
+            "artifact_revision": _receipt_revision(assessment, source_refs),
+            "analysis_identity": identity_payload,
+            "assessment": assessment,
+            "source_artifact_refs": source_refs,
+        }
+
     async def chain_quality_assessment(
         self, *, snapshot_id: str, snapshot_version: str, chain_id: str
     ) -> StoredChainQualityAssessment | None:
@@ -1045,6 +1205,25 @@ class SnapshotRepository:
                 return self._stored_chain_quality(row) if row is not None else None
         finally:
             _record_db_read("quality-assessment", started)
+
+    async def quality_evaluation_receipt(self, receipt_id: str) -> StoredQualityEvaluationReceipt | None:
+        async with self.sessions() as session:
+            row = await session.get(QualityEvaluationReceiptRecord, receipt_id)
+            return self._stored_quality_receipt(row) if row is not None else None
+
+    async def list_quality_evaluation_receipts(
+        self, *, identity_digest: str, limit: int = 50
+    ) -> list[StoredQualityEvaluationReceipt]:
+        if not 1 <= limit <= 100:
+            raise ValueError("receipt limit must be between 1 and 100")
+        async with self.sessions() as session:
+            rows = (await session.scalars(
+                select(QualityEvaluationReceiptRecord)
+                .where(QualityEvaluationReceiptRecord.identity_digest == identity_digest)
+                .order_by(QualityEvaluationReceiptRecord.created_at.desc(), QualityEvaluationReceiptRecord.receipt_id.desc())
+                .limit(limit)
+            )).all()
+            return [self._stored_quality_receipt(row) for row in rows]
 
     async def list_chain_quality_assessments(
         self, *, snapshot_id: str | None = None, snapshot_version: str | None = None
@@ -2065,6 +2244,18 @@ class SnapshotRepository:
             payload=row.payload,
             created_at=row.created_at,
             updated_at=row.updated_at,
+        )
+
+    @staticmethod
+    def _stored_quality_receipt(row: QualityEvaluationReceiptRecord) -> StoredQualityEvaluationReceipt:
+        return StoredQualityEvaluationReceipt(
+            receipt_id=row.receipt_id,
+            identity_digest=row.identity_digest,
+            artifact_revision=row.artifact_revision,
+            analysis_identity=row.analysis_identity,
+            assessment=row.assessment,
+            source_artifact_refs=row.source_artifact_refs,
+            created_at=row.created_at,
         )
 
     async def record_kafka_event(
