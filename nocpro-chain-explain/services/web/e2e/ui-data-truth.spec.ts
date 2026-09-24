@@ -50,6 +50,14 @@ async function installApi(page: Page, delayedB?: Promise<void>, assistantContext
     if (url.pathname === '/api/v1/health') return fulfillJson(route, { status: 'ok' })
     if (url.pathname === '/api/v1/config') return fulfillJson(route, { config_version: 'cfg-browser' })
     if (url.pathname === '/api/v1/chains') return fulfillJson(route, chains)
+    if (url.pathname === '/api/v1/topology/projection') return fulfillJson(route, {
+      status: 'UNAVAILABLE', reason: 'TOPOLOGY_FIXTURE_UNAVAILABLE', profile: 'IP_NETWORK', topology_kind: 'UNAVAILABLE',
+    })
+    if (url.pathname === '/api/v1/topology/subgraph') return fulfillJson(route, {
+      status: 'UNAVAILABLE', reason: 'TOPOLOGY_FIXTURE_UNAVAILABLE', profile_id: 'IP_NETWORK',
+      nodes: [], edges: [], requested_seed_count: 1, resolved_seed_count: 0, retained_seed_count: 0,
+      dropped_seed_count: 1, truncated: false, truncation_reasons: [],
+    })
     if (url.pathname === '/api/v1/chains/C-A') return fulfillJson(route, analysis('C-A'))
     if (url.pathname === '/api/v1/chains/C-B') {
       if (delayedB) await delayedB
@@ -61,8 +69,8 @@ async function installApi(page: Page, delayedB?: Promise<void>, assistantContext
       return fulfillJson(route, {
         contract_version: 'nocpro-assistant-v1', status: 'AVAILABLE',
         message: 'ASSISTANT_CONTEXT_RESPONSE', fact_refs: ['analysis:C-A'], actions: [],
-        model: 'DETERMINISTIC_EVIDENCE', provider_status: 'NOT_CONFIGURED',
-        response_mode: 'DETERMINISTIC_FALLBACK', tools_used: [],
+        model: 'fixture-provider', provider_status: 'OK',
+        response_mode: 'LLM_PRIMARY', tools_used: [],
       })
     }
     if (url.pathname === '/api/v1/chains/C-A/audit-visualization') return fulfillJson(route, {
@@ -99,8 +107,9 @@ test('overview uses observed values and remains within a mobile viewport', async
   await page.goto('/')
 
   await expect(page.getByRole('main').getByText('S-BROWSER@v1')).toBeVisible()
-  await expect(page.getByText('Largest observed chains')).toBeVisible()
-  await expect(page.getByRole('cell', { name: 'Observed A', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Observed chain-size distribution' })).toBeVisible()
+  await expect(page.getByText('Observed chains', { exact: true })).toBeVisible()
+  await expect(page.getByRole('main').getByText('S-BROWSER@v1', { exact: true })).toBeVisible()
   await expect(page.getByText('CHAIN:', { exact: true })).toHaveCount(0)
   await expect(page.getByText('8,714')).toHaveCount(0)
   await expect(page.getByText('37 Structural Findings')).toHaveCount(0)
@@ -108,25 +117,19 @@ test('overview uses observed values and remains within a mobile viewport', async
   expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.client)
 })
 
-test('Explorer comparison remains a visible two-chain selection', async ({ page }) => {
+test('All Chains keeps the full inventory and exposes type and star filters', async ({ page }) => {
   await installApi(page)
   await page.goto('/')
-  await page.getByRole('button', { name: 'Chains Explorer' }).click()
+  await page.getByRole('button', { name: 'All Chains', exact: true }).click()
 
-  await page.getByLabel('Select C-A').click()
-  await page.getByLabel('Select C-B').click()
-  await page.getByLabel('Select C-C').click()
-
-  await expect(page.getByLabel('Select C-A')).not.toBeChecked()
-  await expect(page.getByLabel('Select C-B')).toBeChecked()
-  await expect(page.getByLabel('Select C-C')).toBeChecked()
-  await expect(page.getByText('2 selected')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Compare pair' })).toBeEnabled()
-
-  await page.getByRole('button', { name: 'Singleton', exact: true }).click()
-  await expect(page.getByLabel('Select C-B')).not.toBeChecked()
-  await expect(page.getByText('1 selected')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Compare pair' })).toBeDisabled()
+  await expect(page.getByText('C-A', { exact: true })).toBeVisible()
+  await expect(page.getByText('C-B', { exact: true })).toBeVisible()
+  await expect(page.getByText('C-C', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: /Singleton \(1\)/ }).click()
+  await expect(page.getByText('C-B', { exact: true })).toBeVisible()
+  await expect(page.getByText('C-A', { exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Chưa chấm', exact: true }).click()
+  await expect(page.getByText('C-B', { exact: true })).toBeVisible()
 })
 
 test('switching chains never renders the previous analysis under the new chain', async ({ page }) => {
@@ -134,31 +137,35 @@ test('switching chains never renders the previous analysis under the new chain',
   const delayedB = new Promise<void>(resolve => { releaseB = resolve })
   await installApi(page, delayedB)
   await page.goto('/')
-  await page.getByRole('button', { name: 'Chains Explorer' }).click()
+  await page.getByRole('button', { name: 'All Chains', exact: true }).click()
   await page.getByText('C-A', { exact: true }).click()
+  await page.getByRole('button', { name: 'Members' }).click()
   await expect(page.getByText('Observed alarm one')).toBeVisible()
 
-  await page.getByRole('button', { name: 'arrow_back Chains', exact: true }).click()
+  await page.getByRole('button', { name: 'Overview', exact: true }).click()
+  await page.getByRole('button', { name: 'All Chains', exact: true }).click()
   await page.getByText('C-B', { exact: true }).click()
-  await expect(page.getByText('Loading analysis for C-B…')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Observed B', exact: true })).toBeVisible()
   await expect(page.getByText('Observed alarm one')).toHaveCount(0)
   releaseB()
+  await page.getByRole('button', { name: 'Members' }).click()
   await expect(page.getByText('Observed singleton')).toBeVisible()
 })
 
 test('missing lineage and topology are explicit unavailable states', async ({ page }) => {
   await installApi(page)
   await page.goto('/')
-  await page.getByRole('button', { name: 'Chains Explorer' }).click()
+  await page.getByRole('button', { name: 'All Chains', exact: true }).click()
   await page.getByText('C-A', { exact: true }).click()
+  await page.getByRole('button', { name: 'Members' }).click()
   await expect(page.getByText('Observed alarm one')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Evolution' }).click()
-  await expect(page.getByRole('heading', { name: 'Sequential snapshots are not available.' })).toBeVisible()
-  await expect(page.getByText('Sequential Snapshots Not Available')).toBeVisible()
+  await page.getByRole('button', { name: 'Timeline & Evolution' }).click()
+  await expect(page.getByRole('heading', { name: /Alarm Arrival Timeline/ })).toBeVisible()
+  await expect(page.getByText('Alarm Arrival Timeline', { exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: 'Topology' }).click()
-  await expect(page.getByRole('heading', { name: 'Topology unavailable' })).toBeVisible()
+  await expect(page.getByText('Chưa có dữ liệu topology', { exact: true })).toBeVisible()
   await expect(page.getByText('TOPOLOGY_FIXTURE_UNAVAILABLE')).toBeVisible()
 })
 
@@ -170,7 +177,7 @@ test('Structure reads and renders the persisted bounded Audit graph without subm
   await installApi(page)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
-  await page.getByRole('button', { name: 'Chains Explorer' }).click()
+  await page.getByRole('button', { name: 'All Chains', exact: true }).click()
   await page.getByText('C-A', { exact: true }).click()
   await page.getByRole('button', { name: 'Audit & Structure' }).click()
 
@@ -178,8 +185,8 @@ test('Structure reads and renders the persisted bounded Audit graph without subm
   await expect(graph).toBeVisible()
   await expect(page.getByText('3 / 5 nodes')).toBeVisible()
   await expect(page.getByText('2 nodes and 2 edges hidden by display bounds')).toBeVisible()
-  await expect(graph.locator('circle')).toHaveCount(3)
-  await expect(graph.locator('line')).toHaveCount(2)
+  await expect(graph.locator('[data-audit-node="true"]')).toHaveCount(3)
+  await expect(graph.locator('#graph-edges > g')).toHaveCount(2)
   expect(mutations).toEqual([])
   const dimensions = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }))
   expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.client)
@@ -188,25 +195,28 @@ test('Structure reads and renders the persisted bounded Audit graph without subm
 test('switching chains cannot retain a persisted Audit graph from the previous context', async ({ page }) => {
   await installApi(page)
   await page.goto('/')
-  await page.getByRole('button', { name: 'Chains Explorer' }).click()
+  await page.getByRole('button', { name: 'All Chains', exact: true }).click()
   await page.getByText('C-A', { exact: true }).click()
   await page.getByRole('button', { name: 'Audit & Structure' }).click()
   await expect(page.getByRole('img', { name: 'Audit graph with 3 nodes and 2 edges' })).toBeVisible()
 
-  await page.getByRole('button', { name: 'arrow_back Chains', exact: true }).click()
+  await page.getByRole('button', { name: 'Overview', exact: true }).click()
+  await page.getByRole('button', { name: 'All Chains', exact: true }).click()
   await page.getByText('C-B', { exact: true }).click()
+  await page.getByRole('button', { name: 'Members' }).click()
   await expect(page.getByText('Observed singleton')).toBeVisible()
   await page.getByRole('button', { name: 'Audit & Structure' }).click()
 
   await expect(page.getByRole('img', { name: 'Audit graph with 3 nodes and 2 edges' })).toHaveCount(0)
-  await expect(page.getByRole('heading', { name: 'Structural Audit unavailable' })).toBeVisible()
+  await expect(page.getByText(/Chưa có kết quả Deep Dive tương thích/)).toBeVisible()
 })
 
 test('Assistant history is discarded when the selected chain context changes', async ({ page }) => {
   await installApi(page)
   await page.goto('/')
-  await page.getByRole('button', { name: 'Chains Explorer' }).click()
+  await page.getByRole('button', { name: 'All Chains', exact: true }).click()
   await page.getByText('C-A', { exact: true }).click()
+  await page.getByRole('button', { name: 'Members' }).click()
   await expect(page.getByText('Observed alarm one')).toBeVisible()
 
   await page.getByRole('button', { name: 'NocPro Assistant' }).click()
@@ -215,8 +225,10 @@ test('Assistant history is discarded when the selected chain context changes', a
   await page.getByRole('button', { name: 'Hỏi' }).click()
   await expect(page.getByText('ASSISTANT_CONTEXT_RESPONSE')).toBeVisible()
 
-  await page.getByRole('button', { name: 'arrow_back Chains', exact: true }).click()
+  await page.getByRole('button', { name: 'Overview', exact: true }).click()
+  await page.getByRole('button', { name: 'All Chains', exact: true }).click()
   await page.getByText('C-B', { exact: true }).click()
+  await page.getByRole('button', { name: 'Members' }).click()
   await expect(page.getByText('Observed singleton')).toBeVisible()
   await expect(page.getByText('ASSISTANT_CONTEXT_RESPONSE')).toHaveCount(0)
 })
@@ -225,11 +237,10 @@ test('Assistant receives Pair WHY context and discards history when the pair cha
   const assistantContexts: Array<Record<string, unknown>> = []
   await installApi(page, undefined, assistantContexts)
   await page.goto('/')
-  await page.getByRole('button', { name: 'Chains Explorer' }).click()
+  await page.getByRole('button', { name: 'All Chains', exact: true }).click()
   await page.getByText('C-A', { exact: true }).click()
-  await page.getByRole('button', { name: 'Why' }).click()
-  await page.getByText('Scope:', { exact: true }).click()
-  await page.getByText('Pair', { exact: true }).last().click()
+  await page.getByRole('button', { name: /WHY/ }).click()
+  await page.getByText('Pair', { exact: true }).click()
   await page.getByLabel('Pair endpoint A').selectOption('A-1')
   await page.getByLabel('Pair endpoint B').selectOption('A-2')
 

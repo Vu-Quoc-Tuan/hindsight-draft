@@ -6,6 +6,7 @@ export type DatasetProfile = 'IP_NETWORK' | 'IT_SERVICES' | 'ALARM_ONLY'
 
 export interface HeaderSnapshotItem {
   snapshot_id: string
+  snapshot_version?: string | null
   name: string
   profile: DatasetProfile
   alarm_count: number
@@ -45,7 +46,7 @@ interface NocHeaderProps {
   onOpenSettings?: () => void
   onChangeDatasetProfile?: (profile: DatasetProfile) => void
   snapshots?: HeaderSnapshotItem[]
-  onSelectSnapshot?: (snapshotId: string, profile: DatasetProfile) => void
+  onSelectSnapshot?: (snapshotId: string, profile: DatasetProfile, snapshotVersion?: string | null) => void
   onUploadSnapshotFile?: (file: File) => void
   onOpenReviewLearning?: () => void
   onOpenLearning?: (tab?: 'engine' | 'ranker') => void
@@ -68,7 +69,7 @@ export function NocHeader({
   const [selectedCategoryTab, setSelectedCategoryTab] = useState<'ALL' | DatasetProfile>('ALL')
 
   const activeProfile: DatasetProfile = datasetName in DATASET_PROFILES ? (datasetName as DatasetProfile) : 'ALARM_ONLY'
-  const cleanActiveSnapshotId = snapshotId.split('@')[0]
+  const [cleanActiveSnapshotId, activeSnapshotVersion] = snapshotId.split('@')
 
   const filteredSnapshots = useMemo(() => {
     if (selectedCategoryTab === 'ALL') return snapshots
@@ -195,11 +196,13 @@ export function NocHeader({
                       </div>
                     ) : (
                       filteredSnapshots.map(item => {
-                        const isActive = item.snapshot_id === cleanActiveSnapshotId || item.snapshot_id === snapshotId
+                        const isActive = item.snapshot_id === cleanActiveSnapshotId && (
+                          !item.snapshot_version || !activeSnapshotVersion || item.snapshot_version === activeSnapshotVersion
+                        )
                         const profMeta = DATASET_PROFILES[item.profile]
                         return (
                           <div
-                            key={item.snapshot_id}
+                            key={`${item.snapshot_id}@${item.snapshot_version ?? 'unknown'}`}
                             className={`rounded-lg border p-3 text-left transition-all ${
                               isActive
                                 ? 'border-secondary/80 bg-[#14233a] shadow-sm'
@@ -245,7 +248,7 @@ export function NocHeader({
                                   <button
                                     onClick={() => {
                                       onChangeDatasetProfile?.(item.profile)
-                                      onSelectSnapshot?.(item.snapshot_id, item.profile)
+                                      onSelectSnapshot?.(item.snapshot_id, item.profile, item.snapshot_version)
                                       setSelectorOpen(false)
                                     }}
                                     className="rounded border border-secondary/50 bg-secondary/15 px-2.5 py-1 font-code-sm text-xs font-semibold text-secondary hover:bg-secondary hover:text-on-secondary transition-colors"
@@ -287,7 +290,7 @@ export function NocHeader({
           </div>
         </div>
         <nav className="order-3 flex w-full items-center gap-space-sm overflow-x-auto lg:order-none lg:w-auto" aria-label="Snapshot navigation">
-          {([['snapshot-overview', 'Overview'], ['chains-explorer', 'Chains Explorer'], ['multi-chain-timeline', 'Timeline']] as const).map(([view, label]) => (
+          {([['snapshots-overview', 'Snapshots'], ['snapshot-overview', 'Overview'], ['all-chains', 'All Chains']] as const).map(([view, label]) => (
             <button key={view} className={`shrink-0 rounded px-space-md py-1 font-code-sm text-code-sm transition-all ${currentView === view ? 'bg-surface-container-high font-semibold text-secondary' : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'}`} onClick={() => onNavigate(view)}>{label}</button>
           ))}
         </nav>

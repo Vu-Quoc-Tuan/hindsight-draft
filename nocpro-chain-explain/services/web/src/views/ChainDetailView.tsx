@@ -1,7 +1,15 @@
 import { useEffect, useState, useMemo, lazy, Suspense } from 'react'
 import { api } from '../api'
-import type { ChainAnalysis, Job, Member, PairWhy } from '../types'
+import type {
+  ChainAnalysis,
+  ChainOverviewCardContext,
+  ChainOverviewCards,
+  Job,
+  Member,
+  PairWhy,
+} from '../types'
 import { InfoTip } from '../components/InfoTip'
+import { ChainQualityCard, RepresentativeMemberCard, TopologyCoverageCard } from '../components/ChainQualityCards'
 import { compactTime } from '../format'
 
 const ChainScopeView = lazy(() => import('./why/ChainScopeView').then(m => ({ default: m.ChainScopeView })))
@@ -18,6 +26,9 @@ interface ChainDetailViewProps {
   onNavigateTab?: (tab: any) => void
   onInspectMember?: (member: Member) => void
   onPairContextChange?: (pair: [string, string] | null) => void
+  reviewEpoch?: number
+  snapshotKey?: string | null
+  initialOverviewCards?: ChainOverviewCards | null
 }
 
 type WhyScope = 'Chain' | 'Member' | 'Pair' | 'Group'
@@ -39,6 +50,9 @@ export function ChainDetailView({
   onNavigateTab,
   onInspectMember,
   onPairContextChange,
+  reviewEpoch = 0,
+  snapshotKey = null,
+  initialOverviewCards = null,
 }: ChainDetailViewProps) {
   const [whyScope, setWhyScope] = useState<WhyScope>('Chain')
   const [memberFilter, setMemberFilter] = useState<'ALL' | 'CORE' | 'WEAK' | 'CONNECTORS'>('ALL')
@@ -51,28 +65,77 @@ export function ChainDetailView({
     payload: PairWhy | null
     reason: string | null
   } | null>(null)
-  const [reviewRecommendationCount, setReviewRecommendationCount] = useState<number | null>(null)
-
-  useEffect(() => {
-    let active = true
-    const checkReview = async () => {
-      try {
-        const job = await api.latestReview(analysis.chain_id)
-        if (!active) return
-        const count = job?.result?.recommendations?.length ?? 0
-        setReviewRecommendationCount(count)
-      } catch {
-        if (!active) return
-        setReviewRecommendationCount(null)
-      }
-    }
-    checkReview()
-    return () => {
-      active = false
-    }
-  }, [analysis.chain_id])
+  const [overviewCards, setOverviewCards] = useState<{
+    requestKey: string
+    payload: ChainOverviewCards
+  } | null>(null)
 
   const members = useMemo(() => analysis.members ?? [], [analysis.members])
+  const overviewCardsRequestKey = (snapshotKey ?? 'active') + '\u0000' + analysis.chain_id
+
+  useEffect(() => {
+    if (activeSubTab !== 'OVERVIEW') return
+    const controller = new AbortController()
+    let retryTimer: number | undefined
+    const requestKey = overviewCardsRequestKey
+
+    if (initialOverviewCards && initialOverviewCards.status !== 'PENDING') {
+      return () => controller.abort()
+    }
+
+    const load = async () => {
+      try {
+        const payload = await api.chainOverviewCards(analysis.chain_id, controller.signal)
+        if (controller.signal.aborted) return
+        setOverviewCards({ requestKey, payload })
+        if (payload.status === 'PENDING') {
+          retryTimer = window.setTimeout(() => void load(), 4000)
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setOverviewCards({
+            requestKey,
+            payload: {
+              snapshot_id: snapshotKey?.split(':')[0] ?? 'active',
+              snapshot_version: snapshotKey?.split(':')[1] ?? 'unknown',
+              chain_id: analysis.chain_id,
+              status: 'UNAVAILABLE',
+              projection_version: null,
+              reason: 'OVERVIEW_CARDS_REQUEST_FAILED',
+              topology_version: null,
+              representative_member: null,
+              topology: null,
+              quality_assessment: null,
+              recommendations: null,
+            },
+          })
+        }
+      }
+    }
+    void load()
+    return () => {
+      controller.abort()
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer)
+    }
+  }, [activeSubTab, analysis.chain_id, initialOverviewCards, overviewCardsRequestKey, snapshotKey])
+
+  const initialCardsPayload = initialOverviewCards && initialOverviewCards.status !== 'PENDING'
+    ? initialOverviewCards
+    : null
+  const cardsPayload = initialCardsPayload ?? (
+    overviewCards?.requestKey === overviewCardsRequestKey
+      ? overviewCards.payload
+      : null
+  )
+  const cardsContext: ChainOverviewCardContext | null = cardsPayload?.status === 'READY'
+    ? {
+        representative_member: cardsPayload.representative_member,
+        topology: cardsPayload.topology ?? undefined,
+        quality_assessment: cardsPayload.quality_assessment ?? undefined,
+        recommendations: cardsPayload.recommendations ?? undefined,
+      }
+    : null
+  const cardsStatus = cardsPayload?.status ?? 'PENDING'
 
   const pairRequestKey = activeSubTab === 'WHY' && whyScope === 'Pair' && selectedMemberIds.length === 2
     ? `${analysis.chain_id}\u0000${selectedMemberIds[0]}\u0000${selectedMemberIds[1]}`
@@ -128,7 +191,6 @@ export function ChainDetailView({
   const coreCount = members.filter(m => m.role?.toUpperCase().includes('CORE') || m.role?.toUpperCase().includes('ROOT')).length
   const weakCount = members.filter(m => m.role?.toUpperCase().includes('WEAK') || m.role?.toUpperCase().includes('LEAF')).length
   const connectorCount = members.filter(m => m.role?.toUpperCase().includes('CONNECT')).length
-  const insufficientCount = members.filter(m => m.role?.toUpperCase().includes('INSUFFICIENT')).length
   const observedTimes = members
     .map(member => member.canonical_start_time)
     .filter((value): value is string => value !== null)
@@ -141,16 +203,6 @@ export function ChainDetailView({
     const t = new Date(observedStart).getTime()
     return isNaN(t) ? null : t
   }, [observedStart])
-
-  const firstObservedAlarm = useMemo(() => {
-    if (members.length === 0) return null
-    const sorted = [...members].sort((a, b) => {
-      const ta = a.canonical_start_time ? new Date(a.canonical_start_time).getTime() : Infinity
-      const tb = b.canonical_start_time ? new Date(b.canonical_start_time).getTime() : Infinity
-      return ta - tb
-    })
-    return sorted[0] ?? null
-  }, [members])
 
   const durationSecs = useMemo(() => {
     if (!observedStart || !observedEnd) return null
@@ -181,20 +233,6 @@ export function ChainDetailView({
 
   const isTemporalBurst = useMemo(() => {
     return analysis.descriptors?.some(d => d.kind === 'temporal_burst' || d.label.toLowerCase().includes('burst')) ?? false
-  }, [analysis.descriptors])
-
-  const siteScopeDisplay = useMemo(() => {
-    const locDesc = analysis.descriptors.find(
-      (d) => d.kind === 'location_code' || d.label.includes('location_code=')
-    )
-    if (locDesc) {
-      const match = locDesc.label.match(/location_code=(?:\[(.*?)\]|'([^']+)'|([A-Za-z0-9_-]+))/)
-      if (match) {
-        return match[1] || match[2] || match[3] || locDesc.label.replace('location_code=', '')
-      }
-      return locDesc.label.replace('location_code=', '')
-    }
-    return 'Chưa xác định (Site scope: UNAVAILABLE)'
   }, [analysis.descriptors])
 
   const filteredMembers = useMemo(() => {
@@ -249,30 +287,7 @@ export function ChainDetailView({
         <div className="flex flex-col gap-space-lg">
           {/* TẦNG 1: EXECUTIVE KPI DECK (4 CARDS) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-space-md">
-            <div className="bg-[#0b1322] border border-[#1b2b48] hover:border-amber-500/50 p-space-md rounded-lg shadow-sm flex flex-col justify-between transition-all">
-              <div>
-                <div className="flex items-center justify-between text-on-surface-variant font-label-caps text-xs mb-1.5">
-                  <span className="flex items-center gap-1.5 text-amber-400 font-bold uppercase tracking-wider">
-                    <span className="material-symbols-outlined text-[16px]">schedule</span>
-                    Cảnh báo quan sát đầu (T₀)
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-400 font-mono text-[10px] font-bold">
-                    T₀
-                  </span>
-                </div>
-                <h4 className="font-headline-sm text-sm text-on-surface font-bold truncate mt-1" title={firstObservedAlarm?.alarm_name || 'N/A'}>
-                  {firstObservedAlarm?.alarm_name || 'Không xác định'}
-                </h4>
-                <div className="flex items-center gap-1.5 mt-2 text-xs font-mono text-on-surface-variant">
-                  <span className="material-symbols-outlined text-[14px] text-primary">router</span>
-                  <span className="text-on-surface font-bold">{firstObservedAlarm?.device_code || firstObservedAlarm?.node_reference || 'Unassigned'}</span>
-                </div>
-              </div>
-              <div className="mt-3 pt-2 border-t border-[#17233a] flex items-center justify-between text-xs font-mono text-on-surface-variant">
-                <span>Bắt đầu:</span>
-                <span className="text-secondary font-bold">{observedStart ? compactTime(observedStart) : 'N/A'}</span>
-              </div>
-            </div>
+            <RepresentativeMemberCard context={cardsContext} status={cardsStatus} />
 
             {/* Card 2: Duration & Velocity */}
             <div className="bg-[#0b1322] border border-[#1b2b48] hover:border-secondary/50 p-space-md rounded-lg shadow-sm flex flex-col justify-between transition-all">
@@ -308,112 +323,21 @@ export function ChainDetailView({
               </div>
             </div>
 
-            {/* Card 3: Observed Devices & Scope */}
-            <div className="bg-[#0b1322] border border-[#1b2b48] hover:border-primary/50 p-space-md rounded-lg shadow-sm flex flex-col justify-between transition-all">
-              <div>
-                <div className="flex items-center justify-between text-on-surface-variant font-label-caps text-xs mb-1.5">
-                  <span className="flex items-center gap-1.5 text-primary font-bold uppercase tracking-wider">
-                    <span className="material-symbols-outlined text-[16px]">lan</span>
-                    Phạm vi thiết bị
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded bg-primary/15 text-primary font-mono text-[10px] font-bold">
-                    {distinctDevices.length} NODES
-                  </span>
-                </div>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className="font-headline-lg text-2xl font-bold text-on-surface">{distinctDevices.length}</span>
-                  <span className="text-xs text-on-surface-variant">Thiết bị ghi nhận</span>
-                </div>
-                <p className="text-xs text-on-surface-variant font-mono mt-2 truncate" title={distinctDevices.join(', ')}>
-                  {distinctDevices.slice(0, 2).join(', ')}{distinctDevices.length > 2 ? ` (+${distinctDevices.length - 2})` : ''}
-                </p>
-              </div>
-              <div className="mt-3 pt-2 border-t border-[#17233a] flex items-center justify-between text-xs font-mono text-on-surface-variant">
-                <span>Phân đoạn trạm:</span>
-                <span className="text-on-surface font-semibold truncate max-w-[150px]" title={siteScopeDisplay}>
-                  {siteScopeDisplay}
-                </span>
-              </div>
-            </div>
-
-            {/* Card 4: Evidence Readiness */}
-            <div className={`bg-[#0b1322] border p-space-md rounded-lg shadow-sm flex flex-col justify-between transition-all ${
-              weakCount > 0
-                ? 'border-[#1b2b48] hover:border-amber-500/60'
-                : insufficientCount > 0
-                ? 'border-amber-500/30 hover:border-amber-400/50'
-                : 'border-[#1b2b48] hover:border-emerald-500/50'
-            }`}>
-              <div>
-                <div className="flex items-center justify-between text-on-surface-variant font-label-caps text-xs mb-1.5">
-                  <span className={`flex items-center gap-1.5 font-bold uppercase tracking-wider ${
-                    weakCount > 0
-                      ? 'text-amber-400'
-                      : insufficientCount > 0
-                      ? 'text-amber-300'
-                      : 'text-emerald-400'
-                  }`}>
-                    <span className="material-symbols-outlined text-[16px]">
-                      {weakCount > 0 ? 'warning' : insufficientCount > 0 ? 'help_center' : 'verified'}
-                    </span>
-                    Mức độ sẵn sàng bằng chứng
-                  </span>
-                  <span className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-bold ${
-                    weakCount > 0
-                      ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                      : insufficientCount > 0
-                      ? 'bg-amber-400/10 text-amber-300 border border-amber-400/20'
-                      : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
-                  }`}>
-                    {weakCount > 0 ? 'CÓ WEAK' : insufficientCount > 0 ? 'THIếU DỮ LIỆU' : 'ROLES EVALUATED'}
-                  </span>
-                </div>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className="font-headline-lg text-2xl font-bold text-on-surface">
-                    {totalMembers - insufficientCount}/{totalMembers}
-                  </span>
-                  <span className="text-xs text-on-surface-variant font-mono">
-                    Đã xác định vai trò ({Math.round(((totalMembers - insufficientCount) / Math.max(1, totalMembers)) * 100)}%)
-                  </span>
-                </div>
-              </div>
-              <div className="mt-3 pt-2 border-t border-[#17233a] flex items-center justify-between text-xs font-mono text-on-surface-variant">
-                <span>Khuyến nghị:</span>
-                {reviewRecommendationCount !== null && reviewRecommendationCount > 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => onNavigateTab?.('review')}
-                    className="inline-flex items-center gap-1 text-cyan-400 font-bold hover:underline cursor-pointer bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/25 transition-colors hover:bg-cyan-500/20"
-                  >
-                    <span>Có {reviewRecommendationCount} đề xuất tách</span>
-                    <span className="material-symbols-outlined text-[13px]">arrow_forward</span>
-                  </button>
-                ) : (
-                  <span className={
-                    weakCount > 0
-                      ? 'text-amber-400 font-bold'
-                      : insufficientCount > 0
-                      ? 'text-amber-300 font-medium'
-                      : 'text-emerald-400 font-bold'
-                  }>
-                    {weakCount > 0
-                      ? 'Nên xét tách'
-                      : insufficientCount > 0
-                      ? 'Chưa đủ dữ liệu'
-                      : 'Không có đề xuất (0 proposals)'}
-                  </span>
-                )}
-              </div>
-            </div>
+            <TopologyCoverageCard context={cardsContext} status={cardsStatus} />
+            <ChainQualityCard
+              context={cardsContext}
+              status={cardsStatus}
+              onOpenRecommendations={() => onNavigateTab?.('review')}
+            />
           </div>
 
-          {/* TẦNG 2: AI GROUNDED INCIDENT DOSSIER & QUANTITATIVE EVIDENCE MATRIX */}
+          {/* TẦNG 2: short grounded explanation of the deterministic rating */}
           <div className="w-full">
             <Suspense
               fallback={
                 <div className="flex h-32 items-center justify-center gap-space-sm text-on-surface-variant font-code-sm bg-surface-container-low rounded-lg p-space-md">
                   <span className="material-symbols-outlined animate-spin text-xl text-primary">progress_activity</span>
-                  <span>Đang tải AI Evidence Summary…</span>
+                  <span>Đang tải nhận định độ vững…</span>
                 </div>
               }
             >
@@ -423,6 +347,7 @@ export function ChainDetailView({
                 job={job}
                 onSubTabChange={onSubTabChange}
                 onNavigateTab={onNavigateTab}
+                reviewEpoch={reviewEpoch}
               />
             </Suspense>
           </div>
@@ -755,4 +680,3 @@ export function ChainDetailView({
     </div>
   )
 }
-

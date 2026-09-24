@@ -13,7 +13,35 @@ export type ChainSummary = {
 export type ChainList = {
   snapshot_id: string
   snapshot_version: string
+  topology_version?: string | null
   chains: ChainSummary[]
+}
+
+export type ChainQualitySummary = {
+  snapshot_id: string
+  snapshot_version: string
+  total_chain_count: number
+  eligible_chain_count: number
+  sturdy_count: number
+  review_count: number
+  evaluating_count: number
+  unevaluated_count: number
+  unavailable_count?: number
+  not_applicable_count: number
+  star_counts: Record<string, number>
+  attention_chains: ChainQualityAssessment[]
+  chain_assessments?: ChainQualityAssessment[]
+}
+
+export type ChainQualityAssessment = {
+    chain_id: string
+    member_count: number
+    title: string
+    duration_seconds: number | null
+    status: 'EVALUATED' | 'REVIEW' | 'UNAVAILABLE' | 'EVALUATING' | 'WAITING' | 'NOT_APPLICABLE'
+    stars: number | null
+    label: string
+    reason: string | null
 }
 
 export type EvolutionNode = {
@@ -162,6 +190,17 @@ export type PairEvidence = {
   evidence_metadata: Record<string, unknown> | null
 }
 
+export type TopologyPath = {
+  source: string
+  target: string
+  source_devices?: string[]
+  target_devices?: string[]
+  hop_count: number
+  relation_type: string
+  path: string[]
+  traversal_semantic: string
+}
+
 export type PairWhy = {
   chain_id: string
   alarm_id_a: string
@@ -300,6 +339,9 @@ export type AttributionDeletionEvaluationResult = {
 
 export type Job = {
   job_id: string
+  snapshot_id: string
+  snapshot_version: string
+  topology_version?: string | null
   chain_id: string
   status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'INTERRUPTED'
   progress_percent: number
@@ -486,6 +528,7 @@ export type CounterfactualResult = {
   identity: {
     snapshot_id: string
     snapshot_version: string
+    topology_version?: string | null
     chain_id: string
     alarm_universe_fingerprint: string
     analysis_version: string
@@ -651,6 +694,20 @@ export type ReviewDecision =
   | 'APPROVED'
   | 'REJECTED'
 
+/**
+ * The API stores canonical enum values (APPROVE/REJECT), while older UI
+ * payloads and persisted fixtures may still contain the past-tense aliases.
+ * Keep the compatibility rule in one place so a canonical APPROVE is never
+ * rendered as a rejection.
+ */
+export function isReviewApproved(decision: ReviewDecision | string | null | undefined): boolean {
+  return decision === 'APPROVE' || decision === 'APPROVED'
+}
+
+export function isReviewRejected(decision: ReviewDecision | string | null | undefined): boolean {
+  return decision === 'REJECT' || decision === 'REJECTED'
+}
+
 export type ReviewReasonItem = {
   code: string
   label: string
@@ -782,6 +839,36 @@ export type CohesionNarrativeView = {
       device_types: string[]
       devices: string[]
     }
+    representative_member?: {
+      status: 'AVAILABLE' | 'UNAVAILABLE' | string
+      alarm_id?: string
+      alarm_name?: string | null
+      device_code?: string | null
+      role?: 'CORE' | 'PERIPHERAL' | string
+      membership_support?: number | null
+      availability_coverage?: number | null
+      computable_groups?: number | null
+      representativeness?: number | null
+      selection_semantic: string
+      reason?: string
+    } | null
+    alarm_observation_groups?: Array<{
+      device: string
+      alarm_name: string
+      count: number
+      first_observed?: string | null
+      last_observed?: string | null
+      components: string[]
+      locations: string[]
+      remote_nodes: string[]
+      severities: string[]
+      ports: string[]
+      peer_hints: string[]
+      device_types: string[]
+      network_classes: string[]
+      alarm_groups: string[]
+      content_examples: string[]
+    }>
     why: {
       strong_views: string[]
       partial_views: string[]
@@ -790,7 +877,13 @@ export type CohesionNarrativeView = {
     topology: {
       mapped: number
       total: number
+      mapped_device_count?: number
+      total_device_count?: number
+      device_mapping_ratio?: number | null
       resource_types: string[]
+      mapped_resources?: string[]
+      display_paths?: TopologyPath[]
+      display_paths_truncated?: boolean
       dependency_verified: boolean
       connected_pair_count?: number
       pair_total?: number
@@ -804,9 +897,70 @@ export type CohesionNarrativeView = {
       verdict?: string | null
       reason?: string | null
       best_cut_label?: string | null
+      partition_summary?: {
+        status: string
+        cut_source?: string
+        cut_label?: string | null
+        side_a: {
+          alarm_count: number
+          resolved_alarm_count: number
+          devices: Array<{ device: string; alarm_count: number }>
+          alarm_types: Array<{ alarm_name: string; alarm_count: number }>
+          first_observed?: { start_time: string; device: string; alarm_name: string } | null
+        }
+        side_b: {
+          alarm_count: number
+          resolved_alarm_count: number
+          devices: Array<{ device: string; alarm_count: number }>
+          alarm_types: Array<{ alarm_name: string; alarm_count: number }>
+          first_observed?: { start_time: string; device: string; alarm_name: string } | null
+        }
+        linkage: {
+          onset_gap_seconds?: number | null
+          topology_paths: Array<{
+            source_devices: string[]
+            target_devices: string[]
+            hop_count: number
+            relation_type?: string | null
+            path: string[]
+            traversal_semantic?: string | null
+          }>
+          supporting_groups: Array<{ group: string; label_vi: string; edge_count: number }>
+        }
+        separation: {
+          cross_edge_count: number
+          internal_edge_count: number
+          cross_edge_weight: number
+          internal_edge_weight: number
+          edge_counts_are_complete: boolean
+          visualization_truncated: boolean
+        }
+      } | null
     }
     recommendations: {
+      status?: string
+      count?: number
+      evaluation_completed?: boolean
+      evaluated_count?: number
+      rejected_count?: number
+      reason?: string | null
+      calibration_status?: string | null
       split_recommended: boolean
+      best_alternative?: {
+        candidate_id?: string | null
+        operation?: string | null
+        summary_action?: string | null
+        why_better?: string | null
+      } | null
+    }
+    quality_assessment?: {
+      method: 'HEURISTIC_V1' | string
+      status: 'EVALUATED' | 'UNAVAILABLE' | 'NOT_APPLICABLE' | string
+      stars: number | null
+      label: string
+      score?: number
+      reasons: string[]
+      available_dimension_count: number
     }
     cohesion_factors?: string[]
     temporal_progression?: {
@@ -894,6 +1048,25 @@ export type CohesionNarrativeView = {
   }
 }
 
+export type ChainOverviewCardContext = Partial<Pick<
+  CohesionNarrativeView['context'],
+  'representative_member' | 'topology' | 'quality_assessment' | 'recommendations'
+>>
+
+export type ChainOverviewCards = {
+  snapshot_id: string
+  snapshot_version: string
+  chain_id: string
+  status: 'READY' | 'PENDING' | 'UNAVAILABLE' | 'NOT_APPLICABLE'
+  projection_version: string | null
+  reason: string | null
+  topology_version: string | null
+  representative_member: ChainOverviewCardContext['representative_member']
+  topology: ChainOverviewCardContext['topology'] | null
+  quality_assessment: ChainOverviewCardContext['quality_assessment'] | null
+  recommendations: ChainOverviewCardContext['recommendations'] | null
+}
+
 export type AssistantAction = {
   kind: 'NAVIGATE'
   label: string
@@ -915,7 +1088,7 @@ export type AssistantResponse = {
   actions: AssistantAction[]
   model: string
   provider_status: string
-  response_mode: 'LLM_PRIMARY' | 'DETERMINISTIC_FALLBACK'
+  response_mode: 'LLM_PRIMARY' | 'DETERMINISTIC_FALLBACK' | 'PROVIDER_UNAVAILABLE'
   tools_used: string[]
   chart_data?: Record<string, unknown> | null
 }

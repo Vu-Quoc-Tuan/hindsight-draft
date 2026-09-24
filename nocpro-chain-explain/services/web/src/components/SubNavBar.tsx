@@ -1,7 +1,7 @@
 export type SubNavTab =
+  | 'snapshots-overview'
   | 'snapshot-overview'
-  | 'chains-explorer'
-  | 'multi-chain-timeline'
+  | 'all-chains'
   | 'chain-overview'
   | 'why'
   | 'members'
@@ -26,9 +26,9 @@ export function SubNavBar({
 }: SubNavBarProps) {
   // If no chain is selected OR if on a snapshot-level view, top-level navigation is active in NocHeader
   const isSnapshotLevel = (
+    currentTab === 'snapshots-overview' ||
     currentTab === 'snapshot-overview' ||
-    currentTab === 'chains-explorer' ||
-    currentTab === 'multi-chain-timeline'
+    currentTab === 'all-chains'
   )
   if (!selectedChainId || isSnapshotLevel) {
     return null
@@ -40,14 +40,14 @@ export function SubNavBar({
       className="sticky top-16 z-20 w-full px-space-lg flex items-center justify-between shadow-md border-b border-surface-container-high/60 overflow-x-auto select-none py-1"
     >
       <div className="flex items-center gap-space-xs shrink-0">
-        {/* Return to Chains Explorer */}
+        {/* Return to the active snapshot overview */}
         <button
           className="mr-space-xs px-2.5 py-1.5 font-code-sm text-code-sm text-on-surface-variant hover:text-on-surface bg-surface-container hover:bg-surface-container-high rounded flex items-center gap-1 transition-colors cursor-pointer border border-surface-container-highest"
           onClick={onClearSelectedChain}
-          title="Quay lại danh sách chuỗi (Chains Explorer)"
+          title="Quay lại Overview của snapshot đang mở"
         >
           <span className="material-symbols-outlined text-[16px]">arrow_back</span>
-          <span className="font-bold text-secondary">Chains</span>
+          <span className="font-bold text-secondary">Overview</span>
         </button>
 
         <span className="h-4 w-px bg-surface-container-highest mr-space-xs" />

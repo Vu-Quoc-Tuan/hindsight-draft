@@ -1,31 +1,22 @@
-import type { ChainList } from '../types'
+import type { ChainList, ChainQualitySummary } from '../types'
 import { formatDuration } from '../format'
 
 interface SnapshotOverviewViewProps {
   chainList?: ChainList | null
   onSelectChain: (chainId: string) => void
   onNavigate: (view: string) => void
-}
-
-function median(values: number[]): number | null {
-  if (values.length === 0) return null
-  const ordered = [...values].sort((a, b) => a - b)
-  const middle = Math.floor(ordered.length / 2)
-  return ordered.length % 2 === 0
-    ? (ordered[middle - 1] + ordered[middle]) / 2
-    : ordered[middle]
-}
-
-function formatTimestamp(value: string | null): string {
-  if (!value) return 'Unavailable'
-  const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
+  qualitySummary?: ChainQualitySummary | null
+  qualitySummaryLoading?: boolean
+  qualitySummaryError?: string | null
 }
 
 export function SnapshotOverviewView({
   chainList,
   onSelectChain,
   onNavigate,
+  qualitySummary,
+  qualitySummaryLoading = false,
+  qualitySummaryError,
 }: SnapshotOverviewViewProps) {
   if (!chainList) {
     return (
@@ -46,50 +37,21 @@ export function SnapshotOverviewView({
   const totalChains = chains.length
   const singletons = chains.filter(chain => chain.is_singleton).length
   const multiAlarmChains = totalChains - singletons
-  const largest = [...chains].sort((a, b) => b.member_count - a.member_count || a.chain_id.localeCompare(b.chain_id))[0] ?? null
-  const observedStarts = chains
-    .map(chain => chain.start_time)
-    .filter((value): value is string => Boolean(value))
-    .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
-  const observedEnds = chains
-    .map(chain => chain.end_time)
-    .filter((value): value is string => Boolean(value))
-    .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
-  const earliestStart = observedStarts[0] ?? null
-  const latestEnd = observedEnds.at(-1) ?? null
-
-  const windowDurationSec = (earliestStart && latestEnd)
-    ? Math.max(0, (new Date(latestEnd).getTime() - new Date(earliestStart).getTime()) / 1000)
-    : null
-
-  const durations = chains
-    .map(c => c.duration_seconds)
-    .filter((d): d is number => d != null && !Number.isNaN(d) && d >= 0)
-
-  const medianDuration = median(durations)
-  const maxDuration = durations.length > 0 ? Math.max(...durations) : null
-
-  const timedChains = chains.filter(c => c.start_time && c.end_time).length
-  const timedPercentage = totalChains > 0 ? (timedChains / totalChains) * 100 : 0
-
-  const buckets = [
-    { label: 'Singleton (1)', count: chains.filter(c => c.member_count === 1).length, barClass: 'bg-secondary' },
-    { label: '2–5 alarms', count: chains.filter(c => c.member_count >= 2 && c.member_count <= 5).length, barClass: 'bg-sky-400' },
-    { label: '6–20 alarms', count: chains.filter(c => c.member_count >= 6 && c.member_count <= 20).length, barClass: 'bg-amber-400' },
-    { label: '>20 alarms', count: chains.filter(c => c.member_count > 20).length, barClass: 'bg-rose-500' },
-  ]
-
   const singletonShare = totalChains > 0 ? (singletons / totalChains) * 100 : 0
-  const isHeavyTail = largest && largest.member_count > 10
-
-  const topChains = [...chains]
-    .sort((a, b) => b.member_count - a.member_count || a.chain_id.localeCompare(b.chain_id))
-    .slice(0, 5)
+  const buckets = [
+    { label: 'Singleton (1)', count: chains.filter(chain => chain.member_count === 1), barClass: 'bg-secondary' },
+    { label: '2–5 alarms', count: chains.filter(chain => chain.member_count >= 2 && chain.member_count <= 5), barClass: 'bg-sky-400' },
+    { label: '6–20 alarms', count: chains.filter(chain => chain.member_count >= 6 && chain.member_count <= 20), barClass: 'bg-amber-400' },
+    { label: '>20 alarms', count: chains.filter(chain => chain.member_count > 20), barClass: 'bg-rose-500' },
+  ]
+  const isHeavyTail = Math.max(0, ...sizes) > 10
+  const attentionChains = qualitySummary?.attention_chains ?? []
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-space-lg animate-fadeIn select-none">
+      {qualitySummaryError ? <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-space-md py-space-sm text-sm text-amber-200" role="alert">Không thể tải trạng thái quality của snapshot: {qualitySummaryError}</div> : null}
       {/* 1. Top Tier: 3 Core Macro KPI Cards */}
-      <section className="grid grid-cols-1 gap-space-md md:grid-cols-3" aria-label="Observed snapshot metrics">
+      <section className="grid w-full min-w-0 max-w-full grid-cols-1 gap-space-md md:grid-cols-3" aria-label="Observed snapshot metrics">
         {/* Card 1: Observed alarms */}
         <div className="min-w-0 rounded-xl border border-[#1e2b44] bg-[#0c1322] p-space-md shadow-sm transition-all hover:border-secondary/40 flex flex-col justify-between">
           <div className="flex items-center justify-between">
@@ -109,8 +71,8 @@ export function SnapshotOverviewView({
         {/* Card 2: Observed chains */}
         <div
           className="min-w-0 rounded-xl border border-[#1e2b44] bg-[#0c1322] p-space-md shadow-sm transition-all hover:border-secondary/50 hover:bg-[#101a2e] cursor-pointer flex flex-col justify-between group"
-          onClick={() => onNavigate('chains-explorer')}
-          title="Open Chains Explorer"
+          onClick={() => onNavigate('all-chains')}
+          title="Open all chains"
         >
           <div className="flex items-center justify-between">
             <span className="font-label-caps text-label-caps uppercase text-on-surface-variant tracking-wider font-semibold group-hover:text-secondary transition-colors">Observed chains</span>
@@ -128,192 +90,101 @@ export function SnapshotOverviewView({
           </div>
         </div>
 
-        {/* Card 3: Largest chain */}
-        <div
-          className="min-w-0 rounded-xl border border-[#1e2b44] bg-[#0c1322] p-space-md shadow-sm transition-all hover:border-primary/50 hover:bg-[#101a2e] cursor-pointer flex flex-col justify-between group"
-          onClick={() => largest && onSelectChain(largest.chain_id)}
-          title={largest ? `Inspect largest chain ${largest.chain_id}` : 'No chains'}
-        >
+        {/* Card 3: persisted quality coverage for multi-alarm chains */}
+        <div className="min-w-0 rounded-xl border border-[#1e2b44] bg-[#0c1322] p-space-md shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="font-label-caps text-label-caps uppercase text-on-surface-variant tracking-wider font-semibold group-hover:text-primary transition-colors">Largest chain</span>
-            <span className="material-symbols-outlined text-primary text-[22px]">warning</span>
+            <span className="font-label-caps text-label-caps uppercase text-on-surface-variant tracking-wider font-semibold">Chain quality</span>
+            <span className="material-symbols-outlined text-amber-300 text-[22px]">hotel_class</span>
           </div>
           <div className="mt-space-sm">
-            <div className="flex items-baseline gap-1.5">
-              <span className="font-headline-xl text-headline-xl font-extrabold text-primary tracking-tight">
-                {largest ? largest.member_count.toLocaleString() : 'N/A'}
-              </span>
-              <span className="font-code-sm text-code-sm text-on-surface-variant">alarms</span>
-            </div>
-            <div className="font-code-sm text-code-sm text-on-surface-variant mt-1 truncate">
-              Ref: <span className="font-bold text-primary">{largest ? largest.chain_id : 'None'}</span>
-              {largest?.title && <span className="text-[#64748b] ml-1.5">({largest.title})</span>}
+            {qualitySummary ? (
+              <>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="font-headline-xl text-headline-xl font-extrabold text-on-surface tracking-tight">{qualitySummary.eligible_chain_count}</span>
+                  <span className="font-code-sm text-code-sm text-on-surface-variant">chain nhiều cảnh báo</span>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-code-sm text-[11px]">
+                  <span className="font-bold text-emerald-300">● {qualitySummary.sturdy_count} vững</span>
+                  <span className="font-bold text-amber-300">● {qualitySummary.review_count} cần xem</span>
+                  <span className="font-bold text-cyan-300">● {qualitySummary.evaluating_count} đang chạy</span>
+                  <span className="text-on-surface-variant">○ {qualitySummary.unevaluated_count} chờ đánh giá</span>
+                  <span className="text-[#94a3b8]">◌ {qualitySummary.unavailable_count ?? 0} thiếu evidence</span>
+                </div>
+              </>
+            ) : qualitySummaryLoading ? (
+              <div className="flex items-center gap-2 text-sm text-on-surface-variant" role="status">
+                <span className="material-symbols-outlined animate-spin text-[18px] text-cyan-300">progress_activity</span>
+                Đang đọc kết quả đã lưu…
+              </div>
+            ) : (
+              <div className="text-sm text-on-surface-variant">
+                Chưa có kết quả đánh giá được lưu cho {multiAlarmChains} chain nhiều cảnh báo.
+              </div>
+            )}
+            <div className="mt-2 font-code-sm text-[10px] text-[#64748b]">
+              Singleton không áp dụng chấm độ vững.
             </div>
           </div>
         </div>
       </section>
 
-      {/* 2. Middle Tier: Chain Size Distribution & Snapshot Temporal Coverage */}
-      <section className="grid min-w-0 grid-cols-1 gap-space-md lg:grid-cols-2">
-        {/* Left: Chain Size Distribution */}
-        <article className="min-w-0 rounded-xl border border-[#1e2b44] bg-[#0c1322] p-space-md shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between border-b border-[#1a253c] pb-3">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-secondary text-[20px]">bar_chart</span>
-                <h2 className="font-headline-md text-headline-md font-bold text-on-surface">Observed chain-size distribution</h2>
-              </div>
-              <span className="rounded bg-[#141d30] px-2 py-0.5 font-code-sm text-[11px] text-on-surface-variant border border-[#22304c]">
-                {totalChains.toLocaleString()} chains
-              </span>
+      <section className="grid min-w-0 grid-cols-1 gap-space-md">
+        <article className="min-w-0 rounded-xl border border-[#1e2b44] bg-[#0c1322] p-space-md shadow-sm">
+          <div className="flex items-center justify-between border-b border-[#1a253c] pb-3">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-secondary text-[20px]">bar_chart</span>
+              <h2 className="font-headline-md text-headline-md font-bold text-on-surface">Observed chain-size distribution</h2>
             </div>
-
-            <div className="mt-space-md space-y-space-sm">
-              {buckets.map(bucket => {
-                const share = totalChains > 0 ? (bucket.count / totalChains) * 100 : 0
-                return (
-                  <div key={bucket.label} className="space-y-1">
-                    <div className="flex items-center justify-between text-code-sm">
-                      <span className="font-medium text-on-surface">{bucket.label}</span>
-                      <span className="font-bold text-on-surface-variant">
-                        {bucket.count.toLocaleString()}{' '}
-                        <span className="font-normal text-[11px] text-[#64748b]">({share.toFixed(1)}%)</span>
-                      </span>
-                    </div>
-                    <div className="h-2.5 w-full overflow-hidden rounded-full bg-[#080d17] p-0.5 border border-[#192339]">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${bucket.barClass}`}
-                        style={{ width: `${Math.max(share > 0 ? 1.5 : 0, share)}%` }}
-                      />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+            <span className="rounded border border-[#22304c] bg-[#141d30] px-2 py-0.5 font-code-sm text-[11px] text-on-surface-variant">
+              {totalChains.toLocaleString()} chains
+            </span>
           </div>
-
+          <div className="mt-space-md space-y-space-sm">
+            {buckets.map(bucket => {
+              const share = totalChains > 0 ? (bucket.count.length / totalChains) * 100 : 0
+              return (
+                <div key={bucket.label} className="space-y-1">
+                  <div className="flex items-center justify-between text-code-sm">
+                    <span className="font-medium text-on-surface">{bucket.label}</span>
+                    <span className="font-bold text-on-surface-variant">
+                      {bucket.count.length.toLocaleString()} <span className="font-normal text-[11px] text-[#64748b]">({share.toFixed(1)}%)</span>
+                    </span>
+                  </div>
+                  <div className="h-2.5 w-full overflow-hidden rounded-full border border-[#192339] bg-[#080d17] p-0.5">
+                    <div className={`h-full rounded-full transition-all duration-500 ${bucket.barClass}`} style={{ width: `${Math.max(share > 0 ? 1.5 : 0, share)}%` }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
           <div className="mt-space-md grid grid-cols-3 gap-2 border-t border-[#1a253c] pt-space-sm">
-            <div className="rounded-lg bg-[#080d17] p-2.5 border border-[#172136]">
-              <span className="text-[10px] uppercase tracking-wider text-on-surface-variant font-label-caps block">Avg Size</span>
-              <span className="text-sm font-bold text-on-surface font-code-sm mt-0.5 block truncate">
-                {totalChains > 0 ? (totalAlarms / totalChains).toFixed(1) : 0} <span className="text-[11px] font-normal text-on-surface-variant">alarms</span>
-              </span>
+            <div className="rounded-lg border border-[#172136] bg-[#080d17] p-2.5">
+              <span className="block text-[10px] uppercase tracking-wider text-on-surface-variant font-label-caps">Avg Size</span>
+              <span className="mt-0.5 block truncate font-code-sm text-sm font-bold text-on-surface">{totalChains > 0 ? (totalAlarms / totalChains).toFixed(1) : 0} <span className="text-[11px] font-normal text-on-surface-variant">alarms</span></span>
             </div>
-            <div className="rounded-lg bg-[#080d17] p-2.5 border border-[#172136]">
-              <span className="text-[10px] uppercase tracking-wider text-on-surface-variant font-label-caps block">Singletons</span>
-              <span className="text-sm font-bold text-secondary font-code-sm mt-0.5 block truncate">
-                {singletonShare.toFixed(0)}% <span className="text-[11px] font-normal text-on-surface-variant">({singletons})</span>
-              </span>
+            <div className="rounded-lg border border-[#172136] bg-[#080d17] p-2.5">
+              <span className="block text-[10px] uppercase tracking-wider text-on-surface-variant font-label-caps">Singletons</span>
+              <span className="mt-0.5 block truncate font-code-sm text-sm font-bold text-secondary">{singletonShare.toFixed(0)}% <span className="text-[11px] font-normal text-on-surface-variant">({singletons})</span></span>
             </div>
-            <div className="rounded-lg bg-[#080d17] p-2.5 border border-[#172136]">
-              <span className="text-[10px] uppercase tracking-wider text-on-surface-variant font-label-caps block">Tail Skew</span>
-              <span className={`text-sm font-bold font-code-sm mt-0.5 block truncate ${isHeavyTail ? 'text-rose-400' : 'text-emerald-400'}`}>
-                {isHeavyTail ? 'Heavy Tail' : 'Normal'}
-              </span>
+            <div className="rounded-lg border border-[#172136] bg-[#080d17] p-2.5">
+              <span className="block text-[10px] uppercase tracking-wider text-on-surface-variant font-label-caps">Tail Skew</span>
+              <span className={`mt-0.5 block truncate font-code-sm text-sm font-bold ${isHeavyTail ? 'text-rose-400' : 'text-emerald-400'}`}>{isHeavyTail ? 'Heavy Tail' : 'Normal'}</span>
             </div>
           </div>
         </article>
 
-        {/* Right: Observed temporal coverage */}
-        <article className="min-w-0 rounded-xl border border-[#1e2b44] bg-[#0c1322] p-space-md shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between border-b border-[#1a253c] pb-3">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-secondary text-[20px]">crisis_alert</span>
-                <h2 className="font-headline-md text-headline-md font-bold text-on-surface">Observed temporal coverage</h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => onNavigate('multi-chain-timeline')}
-                className="inline-flex items-center gap-1 rounded bg-secondary/10 px-2.5 py-1 font-code-sm text-xs font-semibold text-secondary hover:bg-secondary hover:text-on-secondary border border-secondary/30 transition-colors cursor-pointer"
-                title="Open Multi-chain Timeline"
-              >
-                <span className="material-symbols-outlined text-[15px]">timeline</span>
-                <span>Timeline View →</span>
-              </button>
-            </div>
-
-            {/* Temporal Coverage Panels */}
-            <div className="mt-space-md space-y-3">
-              {/* Row 1: Observation Window */}
-              <div className="p-3.5 rounded-lg bg-[#080d17] border border-[#1a253c] flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-sky-400 shrink-0">
-                    <span className="material-symbols-outlined text-[22px]">date_range</span>
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <strong className="text-sm font-bold text-on-surface">Observation Window</strong>
-                      {windowDurationSec != null && (
-                        <span className="rounded bg-sky-500/15 px-1.5 py-0.5 font-code-sm text-[10px] font-semibold text-sky-400 border border-sky-500/30">
-                          {formatDuration(windowDurationSec)} span
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-[11px] text-on-surface-variant font-code-sm block mt-0.5">
-                      {formatTimestamp(earliestStart)} → {formatTimestamp(latestEnd)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Row 2: Chain Duration Span */}
-              <div className="p-3.5 rounded-lg bg-[#080d17] border border-[#1a253c] flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
-                    <span className="material-symbols-outlined text-[22px]">timelapse</span>
-                  </div>
-                  <div>
-                    <strong className="block text-sm font-bold text-on-surface">
-                      Chain Duration Profile
-                    </strong>
-                    <span className="text-[11px] text-on-surface-variant font-code-sm block mt-0.5">
-                      Median: <strong className="text-on-surface">{formatDuration(medianDuration)}</strong> · Max: <strong className="text-on-surface">{formatDuration(maxDuration)}</strong>
-                    </span>
-                  </div>
-                </div>
-                <span className="rounded bg-[#141d30] px-2 py-0.5 font-code-sm text-[11px] text-on-surface-variant border border-[#22304c] shrink-0">
-                  {timedChains}/{totalChains} timed ({timedPercentage.toFixed(0)}%)
-                </span>
-              </div>
-
-              {/* Row 3: Visual Timeline Mini-Track */}
-              <div className="p-3 rounded-lg bg-[#080d17] border border-[#1a253c] space-y-2">
-                <div className="flex items-center justify-between text-code-sm text-[11px]">
-                  <span className="text-on-surface-variant flex items-center gap-1.5 font-medium">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Snapshot Activity Span
-                  </span>
-                  <span className="text-secondary font-bold font-code-sm">
-                    {windowDurationSec != null ? formatDuration(windowDurationSec) : '0s'}
-                  </span>
-                </div>
-                <div className="relative h-2 w-full rounded-full bg-[#141d30] overflow-hidden border border-[#22304c]">
-                  <div className="absolute inset-y-0 left-0 w-full rounded-full bg-gradient-to-r from-sky-500 via-secondary to-emerald-400 opacity-80" />
-                </div>
-                <div className="flex items-center justify-between text-[10px] text-[#64748b] font-code-sm">
-                  <span className="truncate max-w-[45%]">{formatTimestamp(earliestStart)}</span>
-                  <span className="shrink-0 text-on-surface-variant/60">━</span>
-                  <span className="truncate max-w-[45%] text-right">{formatTimestamp(latestEnd)}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <span className="sr-only">{chainList.snapshot_id}@{chainList.snapshot_version}</span>
-        </article>
       </section>
 
-      {/* 3. Bottom Tier: Largest observed chains (Triage Table) */}
+      {/* 3. Bottom Tier: action-first quality queue */}
       <section className="min-w-0 overflow-hidden rounded-xl border border-[#1e2b44] bg-[#0c1322] shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-space-sm border-b border-[#1a253c] px-space-md py-3 bg-[#0f1728]">
           <div className="flex items-center gap-2.5">
             <div className="h-8 w-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-              <span className="material-symbols-outlined text-[18px]">format_list_numbered</span>
+              <span className="material-symbols-outlined text-[18px]">priority_high</span>
             </div>
             <div>
-              <h2 className="font-headline-md text-headline-md font-bold text-on-surface">Largest observed chains</h2>
-              <p className="text-code-sm text-xs text-on-surface-variant">Top chains ordered by member alarm count in this snapshot.</p>
+              <h2 className="font-headline-md text-headline-md font-bold text-on-surface">Chain cần xem trước</h2>
+              <p className="text-code-sm text-xs text-on-surface-variant">Ưu tiên chain điểm thấp; tiếp theo là các chain đang chạy hoặc chưa được đánh giá.</p>
             </div>
           </div>
 
@@ -324,14 +195,14 @@ export function SnapshotOverviewView({
             <thead>
               <tr className="bg-[#080d17] font-label-caps text-label-caps uppercase tracking-wider text-on-surface-variant border-b border-[#1a253c]">
                 <th className="px-space-md py-2.5">Chain</th>
-                <th className="px-space-md py-2.5">Title / Component</th>
+                <th className="px-space-md py-2.5">Nhận định hiện tại</th>
                 <th className="px-space-md py-2.5 text-right">Duration</th>
-                <th className="px-space-md py-2.5 text-right">Members</th>
+                <th className="px-space-md py-2.5 text-right">Quality</th>
                 <th className="px-space-md py-2.5 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#151f33]">
-              {topChains.map((chain, index) => (
+              {attentionChains.map(chain => (
                 <tr
                   key={chain.chain_id}
                   onClick={() => onSelectChain(chain.chain_id)}
@@ -346,22 +217,23 @@ export function SnapshotOverviewView({
                         onSelectChain(chain.chain_id)
                       }}
                     >
-                      <span className="flex h-5 w-5 items-center justify-center rounded bg-[#141d30] text-[10px] font-bold text-on-surface-variant border border-[#22304c]">
-                        {index + 1}
-                      </span>
                       <span className="material-symbols-outlined text-[16px] text-secondary">device_hub</span>
                       <span>{chain.chain_id}</span>
                     </button>
                   </td>
-                  <td className="px-space-md py-3 text-on-surface font-medium max-w-[320px] truncate" title={chain.title}>
-                    {chain.title || 'Unavailable'}
+                  <td className="max-w-[430px] px-space-md py-3">
+                    <strong className="block truncate text-on-surface" title={chain.title}>{chain.title}</strong>
+                    <span className="block truncate text-[11px] text-on-surface-variant" title={chain.reason ?? undefined}>{chain.reason ?? chain.label}</span>
                   </td>
                   <td className="px-space-md py-3 text-right font-code-sm text-on-surface-variant">
                     {chain.duration_seconds != null ? formatDuration(chain.duration_seconds) : '—'}
                   </td>
                   <td className="px-space-md py-3 text-right">
-                    <span className="font-bold text-on-surface text-base">{chain.member_count}</span>{' '}
-                    <span className="text-[11px] text-on-surface-variant">alarms</span>
+                    {chain.stars != null ? (
+                      <span className="font-bold text-amber-300">{'★'.repeat(chain.stars)}{'☆'.repeat(5 - chain.stars)}</span>
+                    ) : (
+                      <span className={`rounded px-2 py-1 text-[10px] font-bold ${chain.status === 'EVALUATING' ? 'bg-cyan-400/10 text-cyan-300' : 'bg-surface-container-high text-on-surface-variant'}`}>{chain.label}</span>
+                    )}
                   </td>
                   <td className="px-space-md py-3 text-center">
                     <button
@@ -372,15 +244,15 @@ export function SnapshotOverviewView({
                         onSelectChain(chain.chain_id)
                       }}
                     >
-                      Inspect Chain →
+                      Mở →
                     </button>
                   </td>
                 </tr>
               ))}
-              {topChains.length === 0 && (
+              {attentionChains.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-space-md py-space-lg text-center text-on-surface-variant">
-                    No chains returned.
+                    Không có chain nào đang chờ xử lý hoặc cần xem lại.
                   </td>
                 </tr>
               )}
@@ -388,6 +260,7 @@ export function SnapshotOverviewView({
           </table>
         </div>
       </section>
+      <span className="sr-only">{chainList.snapshot_id}@{chainList.snapshot_version}</span>
     </div>
   )
 }

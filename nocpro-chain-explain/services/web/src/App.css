@@ -2839,9 +2839,79 @@ button.table-row.is-selected {
 
 .topology-card-grid {
   display: grid;
-  grid-template-columns: minmax(220px, 0.8fr) minmax(320px, 1.35fr) minmax(260px, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
   gap: 1px;
   background: var(--border-subtle);
+}
+
+.topology-insufficient {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+  padding: 1.25rem 1.4rem;
+  border-top: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--accent-cyan);
+  color: var(--text-primary);
+  background: linear-gradient(105deg, rgba(6, 182, 212, 0.09), rgba(15, 23, 42, 0.34) 48%);
+}
+
+.topology-insufficient--compact {
+  border-top: 1px solid var(--border-subtle);
+  background: rgba(6, 182, 212, 0.035);
+}
+
+.topology-insufficient-icon {
+  flex: 0 0 auto;
+  display: grid;
+  width: 1.45rem;
+  height: 1.45rem;
+  place-items: center;
+  margin-top: 0.05rem;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  color: var(--accent-cyan);
+  font: 700 0.85rem/1 var(--sans);
+}
+
+.topology-insufficient-content {
+  min-width: 0;
+}
+
+.topology-insufficient h3 {
+  margin: 0;
+  color: #f1f5f9;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.topology-insufficient-content > p {
+  max-width: 860px;
+  margin: 0.35rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.topology-missing-signals {
+  display: grid;
+  gap: 0.38rem;
+  margin: 0.65rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.topology-missing-signals li {
+  display: grid;
+  grid-template-columns: minmax(145px, 0.32fr) minmax(0, 1fr);
+  gap: 0.25rem 0.8rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.topology-missing-signals strong {
+  color: #dbeafe;
+  font-weight: 650;
 }
 
 .topology-card {
@@ -3205,6 +3275,22 @@ button.table-row.is-selected {
   .topology-card-grid {
     grid-template-columns: 1fr;
   }
+  .topology-section-heading {
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+  .topology-section-heading > div:last-child {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .topology-insufficient {
+    gap: 0.65rem;
+    padding: 1rem 0.9rem;
+  }
+  .topology-missing-signals li {
+    grid-template-columns: 1fr;
+    gap: 0.1rem;
+  }
   .topology-card--scope {
     grid-column: auto;
   }
@@ -3541,515 +3627,6 @@ button.table-row.is-selected {
 .inspector-btn-active {
   background: var(--accent-emerald) !important;
 }
-
-/* ==========================================================================
-   Chain Tree Component Styling
-   ========================================================================== */
-.chain-tree-container {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.tree-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.85rem 1.25rem;
-  background: rgba(10, 16, 30, 0.8);
-  border-bottom: 1px solid var(--border-subtle);
-  flex-wrap: wrap;
-}
-
-.tree-group-switchers {
-  display: flex;
-  align-items: center;
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  padding: 0.2rem;
-  gap: 0.2rem;
-}
-
-.tree-mode-btn {
-  padding: 0.4rem 0.8rem;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  border: 0;
-  background: transparent;
-  border-radius: var(--radius-xs);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.tree-mode-btn:hover {
-  color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.tree-mode-btn.is-active {
-  color: #ffffff;
-  background: linear-gradient(135deg, rgba(6, 182, 212, 0.25), rgba(99, 102, 241, 0.3));
-  border: 1px solid rgba(6, 182, 212, 0.4);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-}
-
-.tree-toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.tree-search-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.tree-search-wrapper .search-icon {
-  position: absolute;
-  left: 8px;
-  color: var(--text-muted);
-  pointer-events: none;
-}
-
-.tree-search-input {
-  width: 200px;
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  padding: 0.35rem 1.6rem 0.35rem 1.75rem;
-  color: #ffffff;
-  font-size: 0.78rem;
-  outline: none;
-  transition: all 0.15s ease;
-}
-
-.tree-search-input:focus {
-  border-color: var(--accent-cyan-light);
-  width: 240px;
-  background: rgba(15, 23, 42, 0.9);
-}
-
-.search-clear-btn {
-  position: absolute;
-  right: 6px;
-  background: transparent;
-  border: 0;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 0.9rem;
-}
-
-.tree-expand-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.75rem;
-}
-
-.tree-action-link {
-  background: transparent;
-  border: 0;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: inherit;
-  transition: color 0.15s ease;
-}
-
-.tree-action-link:hover {
-  color: var(--accent-cyan-light);
-  text-decoration: underline;
-}
-
-.divider {
-  color: var(--text-dim);
-}
-
-/* Tree Root & Groups */
-.tree-root-stem {
-  padding: 1.25rem 1.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.tree-group {
-  display: flex;
-  flex-direction: column;
-}
-
-.tree-group-header {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.65rem 0.95rem;
-  background: rgba(18, 26, 46, 0.6);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  user-select: none;
-  transition: all 0.15s ease;
-}
-
-.tree-group-header:hover {
-  background: rgba(26, 36, 64, 0.8);
-  border-color: rgba(255, 255, 255, 0.15);
-}
-
-.tree-collapse-chevron {
-  font-size: 0.65rem;
-  color: var(--accent-cyan-light);
-  transition: transform 0.2s ease;
-}
-
-.tree-collapse-chevron.collapsed {
-  transform: rotate(-90deg);
-}
-
-.tree-group-titles {
-  display: flex;
-  align-items: baseline;
-  gap: 0.6rem;
-  flex: 1;
-}
-
-.tree-group-title {
-  font-size: 0.88rem;
-  font-weight: 700;
-  color: #ffffff;
-}
-
-.tree-group-subtitle {
-  font-size: 0.72rem;
-  color: var(--text-muted);
-}
-
-.tree-group-badge {
-  font-size: 0.7rem;
-  font-family: var(--mono);
-  font-weight: 600;
-  padding: 0.15rem 0.55rem;
-  border-radius: 9999px;
-  border: 1px solid var(--border-subtle);
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-secondary);
-}
-
-.tree-group-badge.badge--core {
-  background: rgba(244, 63, 94, 0.15);
-  color: #fca5a5;
-  border-color: rgba(244, 63, 94, 0.35);
-}
-
-.tree-group-badge.badge--connector {
-  background: rgba(99, 102, 241, 0.15);
-  color: #c7d2fe;
-  border-color: rgba(99, 102, 241, 0.35);
-}
-
-.tree-group-badge.badge--extender {
-  background: rgba(6, 182, 212, 0.15);
-  color: #a5f3fc;
-  border-color: rgba(6, 182, 212, 0.35);
-}
-
-.tree-group-badge.badge--leaf {
-  background: rgba(16, 185, 129, 0.15);
-  color: #a7f3d0;
-  border-color: rgba(16, 185, 129, 0.35);
-}
-
-/* Branch Lines and Nodes List */
-.tree-branch-container {
-  display: flex;
-  position: relative;
-  margin-left: 1.1rem;
-  padding-left: 1.25rem;
-  margin-top: 0.4rem;
-}
-
-.tree-branch-line {
-  position: absolute;
-  top: 0;
-  bottom: 12px;
-  left: 0;
-  width: 2px;
-  background: linear-gradient(to bottom, rgba(56, 189, 248, 0.4), rgba(255, 255, 255, 0.08));
-}
-
-.tree-nodes-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  width: 100%;
-}
-
-.tree-node-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.tree-connector-elbow {
-  position: absolute;
-  left: -1.25rem;
-  width: 1.25rem;
-  height: 2px;
-  background: rgba(56, 189, 248, 0.3);
-}
-
-/* Node Card */
-.tree-node-card {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.65rem 1rem;
-  background: rgba(14, 20, 36, 0.55);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  user-select: none;
-}
-
-.tree-node-card:hover {
-  background: rgba(22, 32, 58, 0.85);
-  border-color: rgba(56, 189, 248, 0.4);
-  transform: translateX(2px);
-}
-
-.tree-node-wrapper.is-inspecting .tree-node-card {
-  border-color: var(--accent-cyan-light);
-  background: rgba(6, 182, 212, 0.12);
-  box-shadow: 0 0 12px rgba(6, 182, 212, 0.25);
-}
-
-.tree-node-wrapper.is-selected-pair .tree-node-card {
-  border-color: var(--accent-emerald);
-  background: rgba(16, 185, 129, 0.12);
-}
-
-.node-card-left {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.node-role-pill {
-  font-size: 0.65rem;
-  font-family: var(--mono);
-  font-weight: 700;
-  text-transform: uppercase;
-  padding: 0.15rem 0.45rem;
-  border-radius: 4px;
-  letter-spacing: 0.04em;
-}
-
-.node-role-pill.pill--core {
-  background: rgba(244, 63, 94, 0.2);
-  color: #f87171;
-  border: 1px solid rgba(244, 63, 94, 0.4);
-}
-
-.node-role-pill.pill--connector {
-  background: rgba(99, 102, 241, 0.2);
-  color: #818cf8;
-  border: 1px solid rgba(99, 102, 241, 0.4);
-}
-
-.node-role-pill.pill--extender {
-  background: rgba(6, 182, 212, 0.2);
-  color: #38bdf8;
-  border: 1px solid rgba(6, 182, 212, 0.4);
-}
-
-.node-role-pill.pill--leaf {
-  background: rgba(16, 185, 129, 0.2);
-  color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.4);
-}
-
-.node-role-pill.pill--neutral {
-  background: rgba(148, 163, 184, 0.2);
-  color: #cbd5e1;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-}
-
-.node-id-block {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-
-.node-alarm-name {
-  font-size: 0.85rem;
-  color: #ffffff;
-  font-weight: 600;
-}
-
-.node-sub-info {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  font-family: var(--mono);
-}
-
-.node-id-code {
-  color: var(--text-secondary);
-}
-
-.node-dot {
-  color: var(--text-dim);
-}
-
-.node-device {
-  color: var(--accent-cyan-light);
-}
-
-.node-card-right {
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-}
-
-.node-time-block {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.1rem;
-}
-
-.node-clock {
-  font-size: 0.75rem;
-  font-family: var(--mono);
-  color: var(--text-secondary);
-}
-
-.node-rel-time {
-  font-size: 0.68rem;
-  font-family: var(--mono);
-  font-weight: 600;
-  color: var(--accent-amber);
-}
-
-.tree-empty-state {
-  padding: 3rem 2rem;
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 0.88rem;
-}
-
-/* ==========================================================================
-   3-Level Resource Hierarchy (Site -> Device -> Alarm)
-   ========================================================================== */
-
-/* Level 1: Site Header */
-.tree-site-header {
-  background: rgba(15, 23, 42, 0.85);
-  border: 1px solid rgba(56, 189, 248, 0.25);
-}
-
-.tree-site-header:hover {
-  background: rgba(22, 36, 68, 0.95);
-  border-color: rgba(56, 189, 248, 0.45);
-}
-
-.tree-site-header .tree-group-title {
-  color: #38bdf8;
-  font-size: 0.92rem;
-  letter-spacing: -0.01em;
-}
-
-/* Level 2: Device Block & Header */
-.tree-devices-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  width: 100%;
-}
-
-.tree-device-block {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.tree-device-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.5rem 0.85rem;
-  background: rgba(20, 28, 50, 0.65);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  user-select: none;
-  transition: all 0.15s ease;
-}
-
-.tree-device-header:hover {
-  background: rgba(28, 40, 72, 0.85);
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
-.tree-device-titles {
-  display: flex;
-  align-items: baseline;
-  gap: 0.6rem;
-  flex: 1;
-}
-
-.tree-device-code {
-  font-size: 0.84rem;
-  color: #ffffff;
-  font-family: var(--mono);
-}
-
-.tree-device-alarm-count {
-  font-size: 0.72rem;
-  color: var(--text-muted);
-}
-
-.tree-device-role-pills {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  flex-wrap: wrap;
-}
-
-.pill-mini {
-  font-size: 0.62rem !important;
-  padding: 0.1rem 0.4rem !important;
-  font-family: var(--mono);
-  font-weight: 600;
-  border-radius: 4px;
-}
-
-.device-branch-container {
-  margin-left: 1.25rem;
-  padding-left: 1.25rem;
-  margin-top: 0.25rem;
-}
-
-.device-branch-line {
-  border-left: 1px dashed rgba(56, 189, 248, 0.35);
-  background: transparent;
-}
-
 
 /* Source-navigation tree. It is deliberately distinct from P2 hypotheses: it
    exposes record provenance without implying dependency semantics. */
