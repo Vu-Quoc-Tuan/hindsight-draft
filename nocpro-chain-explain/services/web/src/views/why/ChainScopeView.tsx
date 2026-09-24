@@ -82,7 +82,7 @@ export function ChainScopeView({
       cancelled = true
       controller.abort()
     }
-  }, [analysis.chain_id, job?.chain_id, job?.status, narrativeData?.context?.has_p2])
+  }, [analysis.chain_id, job, narrativeData?.context?.has_p2])
 
   const members = useMemo(() => analysis.members || [], [analysis.members])
   const totalAlarms = members.length || analysis.member_count || 1
@@ -1100,10 +1100,10 @@ export function ChainScopeView({
             ) : (
               <div className="flex flex-col gap-2">
                 <p className="font-body-sm text-xs text-on-surface-variant leading-relaxed">
-                  {narrativeData?.narrative || (
-                    analysis.singleton
-                      ? 'Chuỗi này chỉ chứa 1 cảnh báo duy nhất đã quan sát. Phân tích gắn kết đa thành viên và lan truyền không áp dụng.'
-                      : `Chuỗi ${analysis.chain_id} chứa ${totalAlarms} cảnh báo đã quan sát. Kiểm tra cấu trúc Tier-2 chưa được thực hiện.`
+                  {narrativeData?.narrative?.trim() || (
+                    narrativeData
+                      ? `Provider chưa trả về văn bản AI (${narrativeData.provider_status ?? 'UNAVAILABLE'}). Các số liệu và evidence xác định vẫn hiển thị ở những phần bên dưới.`
+                      : 'Chưa có nhận định AI từ provider.'
                   )}
                 </p>
                 {narrativeData?.context?.operational_insights?.actionable_takeaway && (

@@ -1,16 +1,25 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
-import type { ChainAnalysis, Member, TopologyHypothesesResult } from '../types'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
+import type { ChainAnalysis, ChainOverviewCards, Member, TopologyHypothesesResult } from '../types'
 
 import type { TopologyTreePayload } from '../TopologyTree'
 import { TopologyHypotheses } from '../TopologyHypotheses'
 import { InfoTip } from '../components/InfoTip'
 import { api, type TopologySubgraphResult } from '../api'
+import {
+  buildAlarmConnector,
+  compactHopLabel,
+  getFocusNodeIds,
+  type EvidenceTopologyPath,
+} from '../topologyGraph'
 
 interface TopologyOverlayViewProps {
   analysis: ChainAnalysis
   topologyPayload?: TopologyTreePayload | null
   topologyHypotheses?: TopologyHypothesesResult | null
   subgraphData?: TopologySubgraphResult | null
+  snapshotKey?: string | null
+  initialPathProjection?: ChainOverviewCards | null
   onRootChange?: (resourceId: string) => void
   onRunDeepDive?: () => void
   isDeepDiveRunning?: boolean
@@ -29,6 +38,7 @@ interface NetworkNode {
   candidateAlarmCount: number
   isDominant: boolean
   isAlarmBearer: boolean
+  isAlarmTerminal: boolean
   isExactBearer: boolean
   isCandidateOnly: boolean
   badgeColor: string
@@ -47,6 +57,24 @@ interface NetworkEdge {
   targetY: number
   label: string
   isAlarmPath: boolean
+  isAlarmConnector?: boolean
+  relationType: string | null
+  pathHops?: number
+}
+
+type SubgraphLoadState = 'loading' | 'available' | 'unavailable' | 'error'
+
+type SubgraphRequestState = {
+  requestKey: string
+  status: 'available' | 'unavailable' | 'error'
+  result: TopologySubgraphResult | null
+  error: string | null
+}
+
+type OverviewPathRequestState = {
+  requestKey: string
+  payload: ChainOverviewCards | null
+  error: string | null
 }
 
 const EVIDENCE_TIER_LABELS: Record<string, string> = {
@@ -58,28 +86,47 @@ const EVIDENCE_TIER_LABELS: Record<string, string> = {
   VERIFIED_ALIAS: 'Verified alias',
 }
 
+const MATCH_STRENGTH_LABELS: Record<string, string> = {
+  EXACT: 'Đối sánh xác thực',
+  VERIFIED_ALIAS: 'Alias đã xác thực',
+  STRUCTURED_FIELD_UNIQUE: 'Khớp duy nhất theo trường cấu trúc',
+  TEXT_MATCH_CANDIDATE: 'Ứng viên từ văn bản',
+  AMBIGUOUS: 'Chưa phân giải duy nhất',
+  UNMAPPED: 'Chưa ánh xạ',
+}
+
 export function TopologyOverlayView({
   analysis,
   topologyPayload,
   topologyHypotheses,
   subgraphData: externalSubgraph,
+  snapshotKey = null,
+  initialPathProjection = null,
   onRootChange: _onRootChange,
   onRunDeepDive,
   isDeepDiveRunning,
 }: TopologyOverlayViewProps) {
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null)
+  const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null)
   const [showAlarmsLayer, setShowAlarmsLayer] = useState(true)
   const [showLinksLayer, setShowLinksLayer] = useState(true)
-  const [showNeighborsLayer, setShowNeighborsLayer] = useState(true)
+  const [showNeighborsLayer, setShowNeighborsLayer] = useState(false)
   const [showModulesDetail, setShowModulesDetail] = useState(false)
   const [hopDistance, setHopDistance] = useState<number>(2)
   const [summaryNode, setSummaryNode] = useState<NetworkNode | null>(null)
   const [alarmFilter, setAlarmFilter] = useState<'ALL' | 'EXACT' | 'CANDIDATE'>('ALL')
+  const [canvasElement, setCanvasElement] = useState<HTMLDivElement | null>(null)
+
+  const closeNodeFocus = () => {
+    setSummaryNode(null)
+    setSelectedDeviceId(null)
+    setHoveredEdgeId(null)
+  }
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setSummaryNode(null)
+        closeNodeFocus()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
@@ -130,7 +177,7 @@ export function TopologyOverlayView({
 
   const distinctDevices = useMemo(() => deviceGroups.map(([dev]) => dev), [deviceGroups])
   const dominantDevice = distinctDevices[0] || 'DOMINANT_NODE'
-  const activeDevice = selectedDeviceId || dominantDevice
+  const activeDevice = selectedDeviceId
 
   const alarmMap = useMemo(() => {
     const map = new Map<string, Member[]>()
@@ -139,31 +186,130 @@ export function TopologyOverlayView({
   }, [deviceGroups])
 
   // Subgraph state (live fetched from /api/v1/topology/subgraph around seed devices)
-  const [fetchedSubgraph, setFetchedSubgraph] = useState<TopologySubgraphResult | null>(null)
-  const [isLoadingSubgraph, setIsLoadingSubgraph] = useState<boolean>(false)
-
-  const distinctDevicesKey = useMemo(() => distinctDevices.slice().sort().join(','), [distinctDevices])
+  const [subgraphRequest, setSubgraphRequest] = useState<SubgraphRequestState | null>(null)
+  const [overviewPathRequest, setOverviewPathRequest] = useState<OverviewPathRequestState | null>(null)
+  const overviewPathRequestKey = `${snapshotKey ?? 'active'}\u0000${analysis.chain_id}`
+  const currentOverviewPathRequest = overviewPathRequest?.requestKey === overviewPathRequestKey
+    ? overviewPathRequest
+    : initialPathProjection?.chain_id === analysis.chain_id &&
+        (snapshotKey === null || (
+          initialPathProjection.snapshot_id === snapshotKey.split(':')[0] &&
+          initialPathProjection.snapshot_version === snapshotKey.split(':')[1]
+        ))
+      ? { requestKey: overviewPathRequestKey, payload: initialPathProjection, error: null }
+      : null
+  const requestedTopologyVersion = currentOverviewPathRequest?.payload?.status === 'READY'
+    ? currentOverviewPathRequest.payload.topology_version
+    : null
 
   useEffect(() => {
-    let cancelled = false
-    if (!distinctDevicesKey) return
-    setIsLoadingSubgraph(true)
-    api.topologySubgraph(activeProfile, distinctDevices, hopDistance)
+    const controller = new AbortController()
+    let retryTimer: number | undefined
+
+    const load = async () => {
+      try {
+        const payload = await api.chainOverviewCards(analysis.chain_id, controller.signal)
+        if (controller.signal.aborted) return
+        const [expectedSnapshotId, expectedSnapshotVersion] = snapshotKey?.split(':') ?? []
+        if (
+          payload.chain_id !== analysis.chain_id ||
+          (snapshotKey !== null && (
+            payload.snapshot_id !== expectedSnapshotId ||
+            payload.snapshot_version !== expectedSnapshotVersion
+          ))
+        ) {
+          setOverviewPathRequest({
+            requestKey: overviewPathRequestKey,
+            payload: null,
+            error: 'OVERVIEW_PATH_CONTEXT_MISMATCH',
+          })
+          return
+        }
+        setOverviewPathRequest({ requestKey: overviewPathRequestKey, payload, error: null })
+        if (payload.status === 'PENDING') {
+          retryTimer = window.setTimeout(() => void load(), 4000)
+        }
+      } catch (cause) {
+        if (controller.signal.aborted) return
+        setOverviewPathRequest({
+          requestKey: overviewPathRequestKey,
+          payload: null,
+          error: cause instanceof Error ? cause.message : 'TOPOLOGY_PATH_PROJECTION_REQUEST_FAILED',
+        })
+      }
+    }
+
+    void load()
+    return () => {
+      controller.abort()
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer)
+    }
+  }, [analysis.chain_id, overviewPathRequestKey, snapshotKey])
+
+  const distinctDevicesKey = useMemo(() => distinctDevices.slice().sort().join(','), [distinctDevices])
+  const subgraphRequestKey = `${activeProfile}:${distinctDevicesKey}:${hopDistance}:${requestedTopologyVersion ?? 'active'}`
+
+  // A focus selection belongs to the graph context it was made in. Clear it
+  // before a profile/seed/hop change so a new response cannot inherit a stale
+  // node selection and render an empty or misleading focused graph.
+  useEffect(() => {
+    setSelectedDeviceId(null)
+    setSummaryNode(null)
+    setHoveredEdgeId(null)
+  }, [subgraphRequestKey])
+
+  useEffect(() => {
+    if (externalSubgraph !== undefined) return
+
+    const controller = new AbortController()
+    let active = true
+
+    if (!distinctDevicesKey) {
+      return () => controller.abort()
+    }
+
+    api.topologySubgraph(
+      activeProfile,
+      distinctDevices,
+      hopDistance,
+      controller.signal,
+      requestedTopologyVersion ?? undefined,
+    )
       .then(res => {
-        if (!cancelled && res.status === 'AVAILABLE') {
-          setFetchedSubgraph(res)
+        if (!active) return
+        if (res.status === 'AVAILABLE' && res.nodes.length > 0) {
+          setSubgraphRequest({ requestKey: subgraphRequestKey, status: 'available', result: res, error: null })
+        } else {
+          setSubgraphRequest({ requestKey: subgraphRequestKey, status: 'unavailable', result: res, error: null })
         }
       })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setIsLoadingSubgraph(false)
+      .catch(error => {
+        if (!active || (error as { name?: string })?.name === 'AbortError') return
+        setSubgraphRequest({
+          requestKey: subgraphRequestKey,
+          status: 'error',
+          result: null,
+          error: error instanceof Error ? error.message : 'Không thể tải topology',
+        })
       })
-    return () => { cancelled = true }
-  }, [activeProfile, distinctDevicesKey, hopDistance])
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [activeProfile, distinctDevices, distinctDevicesKey, externalSubgraph, hopDistance, requestedTopologyVersion, subgraphRequestKey])
 
-  const activeSubgraph = externalSubgraph || fetchedSubgraph
-
-  function getDeviceRoleInfo(devCode: string, resourceType?: string) {
+  const currentSubgraphRequest = subgraphRequest?.requestKey === subgraphRequestKey ? subgraphRequest : null
+  const activeSubgraph = externalSubgraph !== undefined ? externalSubgraph : currentSubgraphRequest?.result ?? null
+  const effectiveSubgraphState: SubgraphLoadState = externalSubgraph !== undefined
+    ? externalSubgraph?.status === 'AVAILABLE' && externalSubgraph.nodes.length > 0
+      ? 'available'
+      : 'unavailable'
+    : !distinctDevicesKey
+      ? 'unavailable'
+      : currentSubgraphRequest?.status ?? 'loading'
+  const subgraphError = currentSubgraphRequest?.error ?? null
+  const isLoadingSubgraph = effectiveSubgraphState === 'loading'
+  const getDeviceRoleInfo = useCallback((devCode: string, resourceType?: string) => {
     const code = (devCode || '').toUpperCase()
     const type = (resourceType || '').toUpperCase()
 
@@ -227,7 +373,7 @@ export function TopologyOverlayView({
       return { roleCode: 'SAN', roleName: 'Hạ tầng Lưu trữ (Storage)', tier: 3, badgeColor: 'text-rose-300', bgFill: '#4c0519', icon: 'hard_drive' }
     }
     return { roleCode: 'DEV', roleName: 'Thiết bị mạng', tier: 2, badgeColor: 'text-slate-300', bgFill: '#1e293b', icon: 'memory' }
-  }
+  }, [isITChain])
 
   // Build the complete topology graph
   const networkGraph = useMemo(() => {
@@ -287,25 +433,14 @@ export function TopologyOverlayView({
       // Check if services exist in rawNodes (2-hop has services, 1-hop does not)
       const hasServices = rawNodes.some(n => n.type === 'SERVICE')
 
-      // Incident hosts filter (keeps seed/alarm hosts when there are hundreds of shared storage hosts in 2-hop)
-      const isIncidentHost = (n: typeof rawNodes[0]) => {
-        if (n.type !== 'INSTANCE') return false
-        const cleanName = n.name.replace(/\/\d+$/, '').trim()
-        return n.is_seed || distinctDevices.some(d => cleanName.includes(d) || d.includes(cleanName))
-      }
-
       const allInstances = deduplicatedNodes.filter(n => n.type === 'INSTANCE')
-      const incidentInstances = allInstances.filter(isIncidentHost)
-      const visibleInstances = incidentInstances.length > 0 && allInstances.length > 12
-        ? incidentInstances
-        : allInstances
 
       // Modules filter: show modules with alarms or all modules if detail toggle is on
       const allModules = deduplicatedNodes.filter(n => n.type === 'MODULE')
       const modulesWithAlarms = allModules.filter(m => (moduleAlarmsMap.get(m.id) || []).length > 0)
       
       let visibleModules: typeof rawNodes = []
-      if (showModulesDetail) {
+      if (showNeighborsLayer || showModulesDetail) {
         visibleModules = allModules
       } else if (hopDistance === 1 || !hasServices) {
         // In 1-Hop: show the modules with alarms (or top 10 if none have alarms)
@@ -454,6 +589,7 @@ export function TopologyOverlayView({
               candidateAlarmCount: candidateCount,
               isDominant: cleanName === dominantDevice || item.name === dominantDevice,
               isAlarmBearer: nodeAlarms.length > 0 || item.is_seed,
+              isAlarmTerminal: item.is_seed || (item.type !== 'SERVICE' && nodeAlarms.length > 0),
               isExactBearer,
               isCandidateOnly,
               badgeColor: role.badgeColor,
@@ -471,7 +607,7 @@ export function TopologyOverlayView({
         // IT Cloud Stack Profile (Service -> Module -> Host -> Storage/DB)
         const tier0 = deduplicatedNodes.filter(n => n.type === 'SERVICE')
         const tier1 = visibleModules
-        const tier2 = visibleInstances
+        const tier2 = allInstances
         const tier3 = deduplicatedNodes.filter(n => n.type === 'STORAGE' || n.type === 'DATABASE')
 
         let currentY = 80
@@ -524,7 +660,7 @@ export function TopologyOverlayView({
 
       const addedEdgeKeys = new Set<string>()
 
-      if (!showModulesDetail && hasServices && visibleModules.length === 0) {
+      if (!showNeighborsLayer && !showModulesDetail && hasServices && visibleModules.length === 0) {
         // 2-Hop collapsed: synthesize direct Service <-> Host links across modules
         const moduleToService = new Map<string, string>()
         const moduleToInstance = new Map<string, string>()
@@ -558,6 +694,8 @@ export function TopologyOverlayView({
                     targetY: tgtNode.y,
                     label: 'SERVICE_CLUSTER',
                     isAlarmPath: tgtNode.isAlarmBearer,
+                    relationType: null,
+                    pathHops: 2,
                   })
                 }
               }
@@ -604,287 +742,96 @@ export function TopologyOverlayView({
             targetY: tgtNode.y,
             label,
             isAlarmPath: srcNode.isAlarmBearer || tgtNode.isAlarmBearer,
+            relationType: e.relation,
+            pathHops: 1,
           })
         }
       })
 
       return { nodes, edges }
     }
-
-    // 2. Fallback if subgraph not yet returned
-    if (isITChain) {
-      if (hopDistance === 1) {
-        // 1-Hop Fallback: Inferred Modules (Top) <-> Incident Hosts (Middle) <-> Storage (Bottom)
-        const inferredModules = [
-          { id: 'mod:nova-compute', name: 'nova-compute (Module)', roleName: 'Compute Agent' },
-          { id: 'mod:neutron-ovs', name: 'neutron-openvswitch-agent', roleName: 'Network Agent' },
-          { id: 'mod:fluentd', name: 'fluentd (Logging)', roleName: 'Logging Container' },
-        ]
-        const modSpacing = 260
-        const modStartX = 500 - ((inferredModules.length - 1) * modSpacing) / 2
-        inferredModules.forEach((mod, idx) => {
-          const initX = Math.round(modStartX + idx * modSpacing)
-          const initY = 120
-          const posX = nodePositions[mod.id]?.x ?? initX
-          const posY = nodePositions[mod.id]?.y ?? initY
-          nodes.push({
-            id: mod.id,
-            name: mod.name,
-            x: posX,
-            y: posY,
-            tier: 1,
-            roleCode: 'DEV',
-            roleName: mod.roleName,
-            alarmCount: 1,
-            exactAlarmCount: 0,
-            candidateAlarmCount: 1,
-            isDominant: false,
-            isAlarmBearer: true,
-            isExactBearer: false,
-            isCandidateOnly: true,
-            badgeColor: 'text-indigo-300',
-            icon: 'extension',
-            alarms: [],
-          })
-        })
-
-        const hostSpacing = Math.max(210, 1000 / Math.max(1, distinctDevices.length))
-        const hostStartX = 500 - ((distinctDevices.length - 1) * hostSpacing) / 2
-        distinctDevices.forEach((dev, idx) => {
-          const devAlarms = alarmMap.get(dev) || []
-          const initX = Math.round(hostStartX + idx * hostSpacing)
-          const initY = 280
-          const posX = nodePositions[dev]?.x ?? initX
-          const posY = nodePositions[dev]?.y ?? initY
-          nodes.push({
-            id: dev,
-            name: dev,
-            x: posX,
-            y: posY,
-            tier: 2,
-            roleCode: 'HOST',
-            roleName: 'Máy chủ / Host',
-            alarmCount: devAlarms.length,
-            exactAlarmCount: devAlarms.length,
-            candidateAlarmCount: 0,
-            isDominant: dev === dominantDevice,
-            isAlarmBearer: devAlarms.length > 0,
-            isExactBearer: devAlarms.length > 0,
-            isCandidateOnly: false,
-            badgeColor: 'text-emerald-300',
-            icon: 'dns',
-            alarms: devAlarms,
-          })
-
-          const primMod = nodes[idx % inferredModules.length]
-          edges.push({
-            id: `edge-${primMod.id}-${dev}`,
-            sourceId: primMod.id,
-            targetId: dev,
-            sourceX: primMod.x,
-            sourceY: primMod.y,
-            targetX: posX,
-            targetY: posY,
-            label: 'MODULE',
-            isAlarmPath: true,
-          })
-        })
-
-        // Inferred Storage at bottom
-        const storageNode = {
-          id: 'storage:vsp',
-          name: 'VSP-G1000 SAN Storage',
-          x: 500,
-          y: 450,
-          tier: 3,
-          roleCode: 'SAN',
-          roleName: 'Hạ tầng Lưu trữ',
-          alarmCount: 0,
-          exactAlarmCount: 0,
-          candidateAlarmCount: 0,
-          isDominant: false,
-          isAlarmBearer: false,
-          isExactBearer: false,
-          isCandidateOnly: false,
-          badgeColor: 'text-rose-300',
-          icon: 'hard_drive',
-          alarms: [],
-        }
-        nodes.push(storageNode)
-        distinctDevices.forEach(dev => {
-          const hNode = nodes.find(n => n.id === dev)
-          if (hNode) {
-            edges.push({
-              id: `edge-${dev}-${storageNode.id}`,
-              sourceId: dev,
-              targetId: storageNode.id,
-              sourceX: hNode.x,
-              sourceY: hNode.y,
-              targetX: storageNode.x,
-              targetY: storageNode.y,
-              label: 'SAN',
-              isAlarmPath: false,
-            })
-          }
-        })
-
-        return { nodes, edges }
-      }
-
-      // 2-Hop Fallback: Cloud Services (Top) <-> Hosts (Bottom)
-      const inferredServices = [
-        { id: 'svc:nova', name: 'OpenStack NOVA Cloud', roleCode: 'CORE', roleName: 'Compute Service' },
-        { id: 'svc:neutron', name: 'Neutron Network', roleCode: 'CORE', roleName: 'Network Service' },
-        { id: 'svc:ovs', name: 'OpenvSwitch Mesh', roleCode: 'CORE', roleName: 'Virtual Switch' },
-      ]
-
-      const svcSpacing = 280
-      const svcStartX = 500 - ((inferredServices.length - 1) * svcSpacing) / 2
-      inferredServices.forEach((svc, idx) => {
-        const initX = Math.round(svcStartX + idx * svcSpacing)
-        const initY = 100
-        const posX = nodePositions[svc.id]?.x ?? initX
-        const posY = nodePositions[svc.id]?.y ?? initY
-
-        nodes.push({
-          id: svc.id,
-          name: svc.name,
-          x: posX,
-          y: posY,
-          tier: 0,
-          roleCode: svc.roleCode,
-          roleName: svc.roleName,
-          alarmCount: 0,
-          exactAlarmCount: 0,
-          candidateAlarmCount: 0,
-          isDominant: false,
-          isAlarmBearer: false,
-          isExactBearer: false,
-          isCandidateOnly: false,
-          badgeColor: 'text-cyan-300',
-          icon: 'hub',
-          alarms: [],
-        })
-      })
-
-      const hostSpacing = Math.max(250, 1100 / Math.max(1, distinctDevices.length))
-      const hostStartX = 500 - ((distinctDevices.length - 1) * hostSpacing) / 2
-
-      distinctDevices.forEach((dev, idx) => {
-        const devAlarms = alarmMap.get(dev) || []
-        const initX = Math.round(hostStartX + idx * hostSpacing)
-        const initY = 370
-        const posX = nodePositions[dev]?.x ?? initX
-        const posY = nodePositions[dev]?.y ?? initY
-
-        nodes.push({
-          id: dev,
-          name: dev,
-          x: posX,
-          y: posY,
-          tier: 2,
-          roleCode: 'HOST',
-          roleName: 'Máy chủ / Host',
-          alarmCount: devAlarms.length,
-          exactAlarmCount: devAlarms.length,
-          candidateAlarmCount: 0,
-          isDominant: dev === dominantDevice,
-          isAlarmBearer: devAlarms.length > 0,
-          isExactBearer: devAlarms.length > 0,
-          isCandidateOnly: false,
-          badgeColor: 'text-emerald-300',
-          icon: 'dns',
-          alarms: devAlarms,
-        })
-
-        // Connect each host to primary cloud service
-        const primSvc = nodes[idx % inferredServices.length]
-        edges.push({
-          id: `edge-${primSvc.id}-${dev}`,
-          sourceId: primSvc.id,
-          targetId: dev,
-          sourceX: primSvc.x,
-          sourceY: primSvc.y,
-          targetX: posX,
-          targetY: posY,
-          label: 'IT_CLUSTER',
-          isAlarmPath: true,
-        })
-      })
-
-      return { nodes, edges }
-    }
-
-    // IP Network fallback: Multi-tier placement if multiple telecom classes present
-    const devList = distinctDevices.map(dev => ({
-      dev,
-      alarms: alarmMap.get(dev) || [],
-      role: getDeviceRoleInfo(dev),
-    }))
-
-    const coreDevs = devList.filter(d => d.role.roleCode === 'CORE')
-    const aggDevs = devList.filter(d => d.role.roleCode === 'AGG')
-    const oltDevs = devList.filter(d => d.role.roleCode === 'OLT')
-    const srtDevs = devList.filter(d => d.role.roleCode !== 'CORE' && d.role.roleCode !== 'AGG' && d.role.roleCode !== 'OLT')
-
-    const layers = [coreDevs, aggDevs, srtDevs, oltDevs].filter(l => l.length > 0)
-    const yStarts = layers.length === 4 ? [80, 210, 360, 510]
-      : layers.length === 3 ? [110, 290, 470]
-      : layers.length === 2 ? [160, 390]
-      : [240]
-
-    layers.forEach((layer, layerIdx) => {
-      const y = yStarts[layerIdx]
-      const count = layer.length
-      const spacing = Math.max(250, Math.min(320, 1000 / Math.max(1, count)))
-      const startX = 500 - ((count - 1) * spacing) / 2
-      layer.forEach((item, idx) => {
-        const posX = nodePositions[item.dev]?.x ?? Math.round(startX + idx * spacing)
-        const posY = nodePositions[item.dev]?.y ?? y
-
-        nodes.push({
-          id: item.dev,
-          name: item.dev,
-          x: posX,
-          y: posY,
-          tier: item.role.tier,
-          roleCode: item.role.roleCode,
-          roleName: item.role.roleName,
-          alarmCount: item.alarms.length,
-          exactAlarmCount: item.alarms.length,
-          candidateAlarmCount: 0,
-          isDominant: item.dev === dominantDevice,
-          isAlarmBearer: item.alarms.length > 0,
-          isExactBearer: item.alarms.length > 0,
-          isCandidateOnly: false,
-          badgeColor: item.role.badgeColor,
-          icon: item.role.icon,
-          alarms: item.alarms,
-          hopDistance: 0,
-        })
-      })
-    })
 
     return { nodes, edges }
-  }, [activeSubgraph, showModulesDetail, isITChain, distinctDevices, nodePositions, dominantDevice, alarmMap, hopDistance])
+  }, [activeSubgraph, showModulesDetail, showNeighborsLayer, isITChain, distinctDevices, nodePositions, dominantDevice, alarmMap, hopDistance, getDeviceRoleInfo, members])
 
-  const neighborAlarmsCount = useMemo(() => {
-    return networkGraph.nodes
-      .filter(n => !n.isAlarmBearer)
-      .reduce((acc, n) => acc + n.alarmCount, 0)
-  }, [networkGraph.nodes])
+  const hasRenderableSubgraph = effectiveSubgraphState === 'available' && networkGraph.nodes.length > 0
+  const pathCards = currentOverviewPathRequest?.payload
+  const pathTopology = pathCards?.status === 'READY' ? pathCards.topology : null
+  const topologyVersionMatches = Boolean(
+    pathCards?.status === 'READY' &&
+    pathCards.topology_version &&
+    activeSubgraph?.topology_version &&
+    pathCards.topology_version === activeSubgraph.topology_version,
+  )
+  const hasCanonicalPathProjection = Boolean(
+    topologyVersionMatches &&
+    Array.isArray(pathTopology?.mapped_resources) &&
+    Array.isArray(pathTopology?.display_paths) &&
+    typeof pathTopology?.display_paths_truncated === 'boolean',
+  )
+  const canonicalPaths = hasCanonicalPathProjection
+    ? pathTopology!.display_paths as EvidenceTopologyPath[]
+    : []
+  const canonicalTerminals = hasCanonicalPathProjection
+    ? pathTopology!.mapped_resources as string[]
+    : []
+  const requiredPathHops = canonicalPaths.reduce((maxHops, path) => (
+    Number.isInteger(path?.hop_count)
+      ? Math.max(maxHops, Math.min(4, path.hop_count))
+      : maxHops
+  ), 0)
+  const recommendedPathHops = Math.min(4, Math.max(hopDistance + 1, requiredPathHops))
 
+  const alarmConnector = useMemo(
+    () => buildAlarmConnector(
+      networkGraph.nodes.map(node => ({ id: node.id })),
+      networkGraph.edges.map(edge => ({
+        id: edge.id,
+        sourceId: edge.sourceId,
+        targetId: edge.targetId,
+        relationType: edge.relationType,
+      })),
+      canonicalTerminals,
+      canonicalPaths,
+    ),
+    [canonicalPaths, canonicalTerminals, networkGraph.edges, networkGraph.nodes],
+  )
+  const canRenderEvidencePaths = hasCanonicalPathProjection &&
+    canonicalPaths.length > 0 &&
+    pathTopology?.display_paths_truncated === false &&
+    alarmConnector.unrenderedPathCount === 0 &&
+    alarmConnector.unrenderedTerminalCount === 0
+
+  const moduleCount = useMemo(
+    () => activeSubgraph?.nodes.filter(node => node.type === 'MODULE').length ?? 0,
+    [activeSubgraph],
+  )
+
+  const focusNodeIds = useMemo(
+    () => getFocusNodeIds(selectedDeviceId, networkGraph.edges),
+    [selectedDeviceId, networkGraph.edges],
+  )
   const displayedNodes = useMemo(() => {
-    if (showNeighborsLayer) return networkGraph.nodes
-    return networkGraph.nodes.filter(n => n.isAlarmBearer || n.alarmCount > 0)
-  }, [networkGraph.nodes, showNeighborsLayer])
+    const layerNodes = showNeighborsLayer || !canRenderEvidencePaths
+      ? networkGraph.nodes
+      : networkGraph.nodes.filter(node => alarmConnector.nodeIds.has(node.id))
+    if (!focusNodeIds) return layerNodes
+    return layerNodes.filter(node => focusNodeIds.has(node.id))
+  }, [alarmConnector.nodeIds, canRenderEvidencePaths, focusNodeIds, networkGraph.nodes, showNeighborsLayer])
 
   const displayedNodeIds = useMemo(() => new Set(displayedNodes.map(n => n.id)), [displayedNodes])
 
   const displayedEdges = useMemo(() => {
     if (!showLinksLayer) return []
-    return networkGraph.edges.filter(e => displayedNodeIds.has(e.sourceId) && displayedNodeIds.has(e.targetId))
-  }, [networkGraph.edges, displayedNodeIds, showLinksLayer])
+    const scopeEdges = showNeighborsLayer || !canRenderEvidencePaths
+      ? networkGraph.edges
+      : networkGraph.edges.filter(edge => alarmConnector.edgeIds.has(edge.id))
+    return scopeEdges.filter(e => {
+      if (!displayedNodeIds.has(e.sourceId) || !displayedNodeIds.has(e.targetId)) return false
+      if (!focusNodeIds) return true
+      return focusNodeIds.has(e.sourceId) && focusNodeIds.has(e.targetId)
+    }).map(edge => ({ ...edge, isAlarmConnector: alarmConnector.edgeIds.has(edge.id) }))
+  }, [alarmConnector.edgeIds, canRenderEvidencePaths, networkGraph.edges, displayedNodeIds, focusNodeIds, showLinksLayer, showNeighborsLayer])
 
   const maxSvgHeight = useMemo(() => {
     let maxY = 600
@@ -892,6 +839,16 @@ export function TopologyOverlayView({
       if (n.y + 70 > maxY) maxY = n.y + 70
     })
     return Math.max(620, maxY + 20)
+  }, [displayedNodes])
+
+  const svgHorizontalBounds = useMemo(() => {
+    if (displayedNodes.length === 0) return { minX: 0, width: 1000 }
+    const rawMinX = Math.min(...displayedNodes.map(node => node.x)) - 120
+    const rawMaxX = Math.max(...displayedNodes.map(node => node.x)) + 120
+    const contentWidth = rawMaxX - rawMinX
+    const width = Math.max(1000, contentWidth)
+    const centerX = (rawMinX + rawMaxX) / 2
+    return { minX: centerX - width / 2, width }
   }, [displayedNodes])
 
   // Mouse handlers for dragging nodes and panning canvas
@@ -953,30 +910,31 @@ export function TopologyOverlayView({
     setPan({ x: 0, y: 0 })
     setZoom(1.0)
     setNodePositions({})
+    closeNodeFocus()
   }
 
   return (
-    <div className="flex flex-col gap-space-md w-full animate-fade-in select-none">
+    <div className="relative flex flex-col gap-space-md w-full animate-fade-in select-none">
       {/* 1. Header Toolbar */}
-      <section className="bg-[#0c1424] rounded-xl border border-[#1b273e] p-space-md shadow-md flex items-center justify-between">
-        <div className="flex items-center gap-space-sm">
-          <div className="w-9 h-9 rounded-lg bg-secondary/15 flex items-center justify-center text-secondary border border-secondary/20">
+      <section className="bg-[#0c1424] rounded-xl border border-[#1b273e] p-space-sm md:p-space-md shadow-md flex flex-col gap-space-sm lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 items-center gap-space-sm">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-secondary/20 bg-secondary/15 text-secondary md:h-9 md:w-9">
             <span className="material-symbols-outlined text-[20px]">hub</span>
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="font-headline-sm text-sm font-bold text-on-surface">
-                Topology Graph tương tác &amp; Mở rộng Láng giềng
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <h2 className="truncate font-headline-sm text-sm font-bold text-on-surface">
+                Kết nối topology giữa các thiết bị có cảnh báo
               </h2>
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-primary-container text-on-primary-container border border-primary/30">
+              <span className="shrink-0 rounded border border-primary/30 bg-primary-container px-2 py-0.5 text-[10px] font-bold text-on-primary-container">
                 {activeProfile}
               </span>
-              <InfoTip text="Đồ thị mạng tương tác kiểu Neo4j: Có thể kéo thả di chuyển từng node, cuộn chuột để zoom và rê chuột để di chuyển canvas." />
+              <InfoTip text="Đường được tô lấy từ path projection của Overview và chỉ xuất hiện khi các cạnh topology gốc cùng relation có trong vùng đang tải. Đây là kết nối cấu trúc, không chứng minh hướng phụ thuộc hay nguyên nhân. Kéo node để sắp xếp, cuộn để zoom." />
             </div>
-            <p className="font-body-sm text-xs text-on-surface-variant flex items-center gap-2">
-              <span>{networkGraph.nodes.length} nodes • {networkGraph.edges.length} edges • {totalAlarms} cảnh báo • Mở rộng láng giềng từ {distinctDevices.length} seed thiết bị</span>
+            <p className="flex min-w-0 items-center gap-2 truncate font-body-sm text-xs text-on-surface-variant">
+              <span className="truncate">{displayedNodes.length} node • {displayedEdges.length} liên kết • {totalAlarms} cảnh báo • {activeSubgraph?.requested_seed_count ?? distinctDevices.length} thiết bị đầu vào</span>
               {isLoadingSubgraph && (
-                <span className="inline-flex items-center gap-1 text-[11px] text-cyan-400 font-semibold px-2 py-0.5 rounded-full bg-cyan-950/60 border border-cyan-500/30 animate-pulse">
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-cyan-500/30 bg-cyan-950/60 px-2 py-0.5 text-[11px] font-semibold text-cyan-400 animate-pulse">
                   <span className="material-symbols-outlined text-xs animate-spin">sync</span>
                   <span>Đang tải {hopDistance}-Hop...</span>
                 </span>
@@ -986,8 +944,8 @@ export function TopologyOverlayView({
         </div>
 
         {/* Controls Toolbar */}
-        <div className="flex items-center gap-space-xs">
-          {isITChain && (
+        <div className="flex max-w-full flex-wrap items-center justify-start gap-space-xs lg:justify-end">
+          {isITChain && !showNeighborsLayer && (
             <button
               type="button"
               onClick={() => setShowModulesDetail(!showModulesDetail)}
@@ -998,7 +956,7 @@ export function TopologyOverlayView({
               }`}
               title="Xem tất cả các module container trên các máy chủ"
             >
-              {showModulesDetail ? 'Thu gọn Modules' : 'Hiện đầy đủ Modules (84)'}
+              {showModulesDetail ? 'Thu gọn Modules' : `Modules (${moduleCount})`}
             </button>
           )}
 
@@ -1009,13 +967,9 @@ export function TopologyOverlayView({
               className={`px-2 py-1 text-[11px] rounded font-bold transition-colors ${
                 hopDistance === 1 ? 'bg-secondary text-on-secondary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
               }`}
-              title={
-                isITChain
-                  ? '1-Hop: Láng giềng 1 bước từ Server (Lên Module Container & Xuống Hạ tầng Storage/DB)'
-                  : '1-Hop: Chỉ hiển thị các thiết bị Router/Switch kết nối vật lý trực tiếp với thiết bị sự cố'
-              }
+              title="Mở rộng tới 1-Hop quanh từng thiết bị alarm; tổng đường nối giữa hai thiết bị có thể dài hơn"
             >
-              {isITChain ? '1-Hop (Lên Module & Xuống Storage/DB)' : '1-Hop (Láng giềng trực tiếp)'}
+              1-Hop
             </button>
             <button
               type="button"
@@ -1023,13 +977,29 @@ export function TopologyOverlayView({
               className={`px-2 py-1 text-[11px] rounded font-bold transition-colors ${
                 hopDistance === 2 ? 'bg-secondary text-on-secondary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
               }`}
-              title={
-                isITChain
-                  ? '2-Hop: Mở rộng 2 bước vươn lên Service đám mây lõi (Service đám mây ↔ Module ↔ Server ↔ Storage/DB)'
-                  : '2-Hop: Mở rộng 2 bước láng giềng kề để bao quát toàn bộ vành đai Ring / Aggregation lân cận'
-              }
+              title="Mở rộng tới 2-Hop quanh từng thiết bị alarm; tổng đường nối giữa hai thiết bị có thể dài hơn"
             >
-              {isITChain ? '2-Hop (Lên Service đám mây)' : '2-Hop (Mở rộng láng giềng cấp 2)'}
+              2-Hop
+            </button>
+            <button
+              type="button"
+              onClick={() => setHopDistance(3)}
+              className={`px-2 py-1 text-[11px] rounded font-bold transition-colors ${
+                hopDistance === 3 ? 'bg-secondary text-on-secondary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
+              }`}
+              title="Mở rộng tới 3-Hop quanh từng thiết bị alarm; chỉ path backend mới là bằng chứng đường nối"
+            >
+              3-Hop
+            </button>
+            <button
+              type="button"
+              onClick={() => setHopDistance(4)}
+              className={`px-2 py-1 text-[11px] rounded font-bold transition-colors ${
+                hopDistance === 4 ? 'bg-secondary text-on-secondary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
+              }`}
+              title="Mở rộng tới 4-Hop quanh từng thiết bị alarm; giới hạn node có thể làm vùng topology bị cắt"
+            >
+              4-Hop
             </button>
           </div>
 
@@ -1077,14 +1047,54 @@ export function TopologyOverlayView({
         </section>
       ) : (
         <>
-          {/* Main Interactive Neo4j-style Canvas */}
-          <div className="w-full flex flex-col bg-[#0c1424] rounded-xl border border-[#1b273e] shadow-md overflow-hidden h-[680px] relative">
+          {isLoadingSubgraph ? (
+            <section
+              role="status"
+              aria-live="polite"
+              className="p-space-xl bg-[#0c1424] border border-[#1b273e] rounded-xl flex items-center justify-center gap-space-sm text-on-surface-variant text-sm shadow-md"
+            >
+              <span aria-hidden="true" className="w-4 h-4 rounded-full border-2 border-secondary border-t-transparent animate-spin" />
+              Đang tải topology thật {hopDistance}-Hop…
+            </section>
+          ) : !hasRenderableSubgraph ? (
+            <section
+              role="status"
+              aria-live="polite"
+              className="p-space-xl bg-[#0c1424] border border-[#1b273e] rounded-xl flex flex-col items-center justify-center gap-space-sm text-center text-sm shadow-md"
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-3xl text-on-surface-variant">cloud_off</span>
+              <span className="font-semibold text-on-surface">Chưa có dữ liệu topology</span>
+              <span className="max-w-2xl text-xs text-on-surface-variant">
+                {effectiveSubgraphState === 'error'
+                  ? `Không thể tải subgraph hiện hành${subgraphError ? `: ${subgraphError}` : '.'}`
+                  : activeSubgraph?.reason
+                    ? `Nguồn topology báo trạng thái ${activeSubgraph.reason}.`
+                    : 'Không tìm thấy node topology đã ingest cho các seed hiện tại.'}
+                {' '}Hệ thống không dựng node hoặc liên kết suy diễn.
+              </span>
+            </section>
+          ) : (
+            <>
+              {activeSubgraph?.truncated && (
+                <section
+                  role="status"
+                  className="rounded-xl border border-amber-500/40 bg-amber-950/30 px-space-md py-space-sm text-xs text-amber-100 shadow-sm"
+                >
+                  <span className="font-bold">Topology đang được hiển thị có giới hạn.</span>{' '}
+                  Đã phân giải {activeSubgraph.resolved_seed_count ?? 0}/{activeSubgraph.requested_seed_count ?? distinctDevices.length} seed
+                  và giữ {activeSubgraph.retained_seed_count ?? 0}/{activeSubgraph.resolved_seed_count ?? 0} seed đã phân giải;
+                  một số node hoặc liên kết có thể chưa xuất hiện.
+                </section>
+              )}
+
+              {/* Main Interactive Neo4j-style Canvas */}
+              <div className="w-full flex flex-col bg-[#0c1424] rounded-xl border border-[#1b273e] shadow-md overflow-hidden h-[680px] relative">
             {/* Header info bar: Title and LỚP HIỂN THỊ on the SAME row */}
             <div className="min-h-10 px-space-md py-1.5 bg-[#080d17] border-b border-[#1b273e] flex flex-wrap items-center justify-between gap-2 shrink-0">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-secondary text-[18px]">device_hub</span>
                 <span className="font-headline-md text-xs font-bold text-on-surface">
-                  Phân bố cảnh báo theo Topology &amp; Mạng lưới kề
+                  Đường nối topology giữa các thiết bị alarm
                 </span>
                 <span className="text-[11px] text-on-surface-variant hidden xl:inline">
                   (Click và kéo để di chuyển node)
@@ -1094,7 +1104,7 @@ export function TopologyOverlayView({
               {/* LỚP HIỂN THỊ Controls on the same row */}
               <div className="flex items-center gap-2 font-code-sm text-xs flex-wrap">
                 <span className="font-label-caps text-[11px] uppercase text-[#ffb4a2] font-bold tracking-wider mr-0.5">
-                  LỚP HIỂN THỊ:
+                  PHẠM VI:
                 </span>
 
                 {/* Huy hiệu Cảnh báo */}
@@ -1133,27 +1143,109 @@ export function TopologyOverlayView({
                   </span>
                 </button>
 
-                {/* Node kề mạng */}
-                <button
-                  type="button"
-                  onClick={() => setShowNeighborsLayer(!showNeighborsLayer)}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs font-code-sm transition-colors cursor-pointer ${
-                    showNeighborsLayer
-                      ? 'bg-[#132238] text-[#8bc4ff] border-[#243754]'
-                      : 'bg-[#080d17] text-on-surface-variant/60 border-[#1b273e] hover:bg-[#121c2e]'
-                  }`}
-                  title="Bật/tắt node láng giềng kề"
-                >
-                  <span className="material-symbols-outlined text-[15px]">
-                    {showNeighborsLayer ? 'check_box' : 'check_box_outline_blank'}
-                  </span>
-                  <span>Node kề mạng ({neighborAlarmsCount} cảnh báo)</span>
-                </button>
+                {canRenderEvidencePaths && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      closeNodeFocus()
+                      setShowNeighborsLayer(current => !current)
+                    }}
+                    aria-pressed={showNeighborsLayer}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs font-code-sm transition-colors cursor-pointer ${
+                      showNeighborsLayer
+                        ? 'bg-[#132238] text-[#8bc4ff] border-[#243754]'
+                        : 'bg-secondary/15 text-secondary border-secondary/40 hover:bg-secondary/20'
+                    }`}
+                    title={showNeighborsLayer
+                      ? 'Chỉ hiển thị các đường backend đã tính trong Overview'
+                      : 'Mở toàn bộ topology đã tải, gồm cả các cạnh ngoài đường bằng chứng'}
+                  >
+                    <span className="material-symbols-outlined text-[15px]">
+                      {showNeighborsLayer ? 'account_tree' : 'route'}
+                    </span>
+                    <span>{showNeighborsLayer
+                      ? `Toàn bộ topology (${networkGraph.nodes.length} node)`
+                      : `Đường evidence (${alarmConnector.nodeIds.size} node)`}</span>
+                  </button>
+                )}
               </div>
+            </div>
+
+            <div
+              role="status"
+              aria-live="polite"
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[#1b273e] bg-[#0a1220] px-space-md py-1.5 text-[11px] text-on-surface-variant"
+            >
+              {canRenderEvidencePaths ? (
+                <>
+                  <span className="font-semibold text-on-surface">
+                    {alarmConnector.terminalCount === 0
+                      ? 'Không có resource đã mapping nằm trong topology đang tải.'
+                      : `${alarmConnector.linkedTerminalCount}/${alarmConnector.terminalCount} resource được nối bằng các đường Overview; ${alarmConnector.componentCount} nhóm.`}
+                  </span>
+                  {alarmConnector.maxConnectionHops > 0 && (
+                    <span>Đường backend dài nhất đang hiển thị: {alarmConnector.maxConnectionHops} hop</span>
+                  )}
+                  {!showNeighborsLayer && networkGraph.nodes.length > alarmConnector.nodeIds.size && (
+                    <span>{networkGraph.nodes.length - alarmConnector.nodeIds.size} node ngoài đường bằng chứng đang thu gọn</span>
+                  )}
+                </>
+              ) : (
+                <span className="font-semibold text-amber-200">
+                  {alarmConnector.unrenderedPathCount > 0 || alarmConnector.unrenderedTerminalCount > 0
+                    ? pathTopology?.display_paths_truncated
+                      ? 'Display forest của Overview đã chạm giới hạn 100 đường đại diện; tạm hiển thị toàn bộ topology đã tải, nên chưa thể xác nhận toàn bộ path evidence.'
+                      : activeSubgraph?.truncated
+                      ? `Topology ${hopDistance}-Hop bị cắt (${(activeSubgraph.truncation_reasons ?? []).join(', ') || 'giới hạn tải'}); chưa đủ dữ liệu để vẽ ${alarmConnector.unrenderedPathCount} đường Overview. Đang hiển thị toàn bộ phần đã tải, không tự tính đường thay thế.`
+                      : alarmConnector.missingPathNodeCount > 0
+                        ? `Thiếu ${alarmConnector.missingPathNodeCount} node thuộc path Overview trong vùng ${hopDistance}-Hop đang tải; tạm hiển thị toàn bộ topology đã tải.`
+                        : alarmConnector.missingPathEdgeCount > 0
+                          ? `Thiếu ${alarmConnector.missingPathEdgeCount} cạnh topology gốc khớp path Overview; tạm hiển thị toàn bộ topology đã tải, không tự tính đường thay thế.`
+                          : alarmConnector.invalidPathCount > 0
+                            ? 'Path projection của Overview có dữ liệu không hợp lệ; tạm hiển thị toàn bộ topology đã tải.'
+                            : `Có ${alarmConnector.unrenderedPathCount} đường hoặc ${alarmConnector.unrenderedTerminalCount} resource không nằm đầy đủ trong vùng ${hopDistance}-Hop; đang hiển thị toàn bộ topology đã tải, không tự tính đường thay thế.`
+                    : pathCards?.status === 'PENDING'
+                      ? 'Đang chờ path projection của Overview; tạm hiển thị toàn bộ topology đã tải.'
+                    : pathCards?.status === 'READY' && !topologyVersionMatches
+                        ? 'Topology version của graph và Overview không trùng; tạm hiển thị toàn bộ topology đã tải.'
+                        : pathTopology?.display_paths_truncated
+                          ? 'Display forest của Overview đã chạm giới hạn 100 đường đại diện; tạm hiển thị toàn bộ topology đã tải để tránh trình bày path thiếu.'
+                        : hasCanonicalPathProjection && canonicalPaths.length === 0
+                          ? 'Overview không ghi nhận cặp resource nào có đường transit trong giới hạn 4 hop; điều này không chứng minh topology ngoài vùng đã tải không kết nối.'
+                        : pathCards?.status === 'READY' && topologyVersionMatches
+                          ? 'Overview chưa có path projection hợp lệ; tạm hiển thị toàn bộ topology đã tải.'
+                        : pathCards?.status === 'UNAVAILABLE'
+                          ? 'Overview chưa có path projection khả dụng; tạm hiển thị toàn bộ topology đã tải.'
+                          : currentOverviewPathRequest?.error
+                            ? 'Không tải được path projection của Overview; tạm hiển thị toàn bộ topology đã tải.'
+                            : 'Đang tải path projection của Overview; tạm hiển thị toàn bộ topology đã tải.'}
+                </span>
+              )}
+              <span className="text-on-surface-variant/80">
+                {hopDistance}-Hop là vùng topology hiện tải; việc chưa vẽ được một path không phủ định khả năng có đường ngoài vùng đó.
+              </span>
+              {!canRenderEvidencePaths &&
+                hasCanonicalPathProjection &&
+                pathTopology?.display_paths_truncated === false &&
+                alarmConnector.missingPathNodeCount > 0 &&
+                !activeSubgraph?.truncated &&
+                hopDistance < 4 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      closeNodeFocus()
+                      setHopDistance(recommendedPathHops)
+                    }}
+                    className="rounded border border-cyan-700/50 bg-cyan-950/40 px-2 py-1 text-cyan-200 hover:bg-cyan-900/50"
+                  >
+                    Tải vùng {recommendedPathHops}-Hop để lấy đủ node path
+                  </button>
+                )}
             </div>
 
             {/* SVG Canvas Area */}
             <div
+              ref={setCanvasElement}
               id="canvas-bg"
               className="relative flex-1 bg-[#070e1d] overflow-hidden cursor-grab active:cursor-grabbing"
               onMouseDown={handleCanvasMouseDown}
@@ -1176,7 +1268,7 @@ export function TopologyOverlayView({
               <svg
                 ref={svgRef}
                 className="w-full h-full"
-                viewBox={`0 0 1000 ${maxSvgHeight}`}
+                viewBox={`${svgHorizontalBounds.minX} 0 ${svgHorizontalBounds.width} ${maxSvgHeight}`}
                 fill="none"
                 xmlns="http://www.w3.org/2000/svg"
               >
@@ -1201,7 +1293,6 @@ export function TopologyOverlayView({
 
                 {/* Transformable Canvas Layer (Pan & Zoom) */}
                 <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
-                  {/* EDGES LAYER */}
                   {showLinksLayer &&
                     displayedEdges.map(edge => {
                       const startX = edge.sourceX
@@ -1210,79 +1301,86 @@ export function TopologyOverlayView({
                       const endY = edge.targetY
                       const midX = (startX + endX) / 2
                       const midY = (startY + endY) / 2
+                      const isHovered = hoveredEdgeId === edge.id
+                      const edgeDescription = edge.label === 'SERVICE_CLUSTER'
+                        ? 'Service–Host qua module đã thu gọn (2 hop)'
+                        : edge.label
 
-                      // Cubic bezier smooth curve
+                      // Cubic bezier smooth curve. Relation text is intentionally
+                      // rendered only for the edge currently under the pointer.
                       const dy = endY - startY
                       const pathD = `M ${startX} ${startY} C ${startX} ${startY + dy * 0.5}, ${endX} ${endY - dy * 0.5}, ${endX} ${endY}`
+                      const isPhysicalAdjacency = edge.label.includes('KỀ VẬT LÝ')
+                      const edgeColor = edge.isAlarmConnector
+                        ? '#67e8f9'
+                        : isPhysicalAdjacency
+                        ? (edge.isAlarmPath ? '#38bdf8' : '#0284c7')
+                        : edge.label === 'SAN'
+                        ? '#f43f5e'
+                        : edge.label === 'DATABASE' || edge.label === 'DB_LINK'
+                        ? '#f59e0b'
+                        : edge.isAlarmPath
+                        ? '#38bdf8'
+                        : '#64748b'
+                      const edgeWidth = edge.isAlarmConnector
+                        ? '2.2'
+                        : isPhysicalAdjacency
+                        ? (edge.isAlarmPath ? '2' : '1.4')
+                        : edge.label === 'SAN' || edge.label === 'DATABASE'
+                        ? '1.7'
+                        : edge.isAlarmPath ? '1.8' : '1.2'
+                      const labelWidth = Math.max(76, edgeDescription.length * 6.5 + 16)
 
                       return (
-                        <g key={edge.id} className="pointer-events-none">
+                        <g
+                          key={edge.id}
+                          data-testid={`topology-edge-${edge.id}`}
+                          aria-label={edgeDescription}
+                          onMouseEnter={() => setHoveredEdgeId(edge.id)}
+                          onMouseLeave={() => setHoveredEdgeId(null)}
+                        >
                           <path
                             d={pathD}
-                            stroke={
-                              edge.label.includes('KỀ VẬT LÝ')
-                                ? (edge.isAlarmPath ? '#38bdf8' : '#0284c7')
-                                : edge.label === 'SAN'
-                                ? '#f43f5e'
-                                : edge.label === 'DATABASE' || edge.label === 'DB_LINK'
-                                ? '#f59e0b'
-                                : edge.isAlarmPath
-                                ? '#38bdf8'
-                                : '#334155'
-                            }
-                            strokeWidth={edge.label.includes('KỀ VẬT LÝ') ? (edge.isAlarmPath ? '2.2' : '1.6') : edge.label === 'SAN' || edge.label === 'DATABASE' ? '1.8' : edge.isAlarmPath ? '2.2' : '1.4'}
-                            strokeDasharray={edge.isAlarmPath || edge.label.includes('KỀ VẬT LÝ') ? undefined : '5 4'}
-                            opacity="0.85"
+                            stroke={edgeColor}
+                            strokeWidth={edgeWidth}
+                            strokeDasharray={edge.isAlarmConnector || edge.isAlarmPath || isPhysicalAdjacency ? undefined : '5 4'}
+                            opacity={focusNodeIds ? 0.9 : edge.isAlarmConnector ? 0.82 : edge.isAlarmPath ? 0.5 : 0.24}
+                            fill="none"
+                            pointerEvents="stroke"
                           />
-                          {/* Midpoint relation label with dynamic pill width */}
-                          {(() => {
-                            const isPhysicalAdjacency = edge.label.includes('KỀ VẬT LÝ')
-                            const labelWidth = Math.max(76, edge.label.length * 6.5 + 16)
-                            return (
-                              <g>
-                                <rect
-                                  x={midX - labelWidth / 2}
-                                  y={midY - 9}
-                                  width={labelWidth}
-                                  height="18"
-                                  rx="4"
-                                  fill="#070e1d"
-                                  stroke={
-                                    isPhysicalAdjacency
-                                      ? '#0284c7'
-                                      : edge.label === 'SAN'
-                                      ? '#881337'
-                                      : edge.label === 'DATABASE' || edge.label === 'DB_LINK'
-                                      ? '#78350f'
-                                      : '#1b273e'
-                                  }
-                                  strokeWidth="1"
-                                  opacity="0.95"
-                                />
-                                <text
-                                  x={midX}
-                                  y={midY + 3.5}
-                                  fill={
-                                    isPhysicalAdjacency
-                                      ? '#38bdf8'
-                                      : edge.label === 'SAN'
-                                      ? '#fda4af'
-                                      : edge.label === 'DATABASE' || edge.label === 'DB_LINK'
-                                      ? '#fcd34d'
-                                      : edge.isAlarmPath
-                                      ? '#7bd0ff'
-                                      : '#94a3b8'
-                                  }
-                                  fontFamily="JetBrains Mono"
-                                  fontSize="8.5"
-                                  fontWeight="600"
-                                  textAnchor="middle"
-                                >
-                                  {edge.label}
-                                </text>
-                              </g>
-                            )
-                          })()}
+                          <path
+                            d={pathD}
+                            stroke="transparent"
+                            strokeWidth="12"
+                            fill="none"
+                            pointerEvents="stroke"
+                          />
+                          {isHovered && (
+                            <g pointerEvents="none">
+                              <rect
+                                x={midX - labelWidth / 2}
+                                y={midY - 9}
+                                width={labelWidth}
+                                height="18"
+                                rx="4"
+                                fill="#070e1d"
+                                stroke={isPhysicalAdjacency ? '#0284c7' : edgeColor}
+                                strokeWidth="1"
+                                opacity="0.98"
+                              />
+                              <text
+                                x={midX}
+                                y={midY + 3.5}
+                                fill={isPhysicalAdjacency ? '#38bdf8' : edgeColor}
+                                fontFamily="JetBrains Mono"
+                                fontSize="8.5"
+                                fontWeight="700"
+                                textAnchor="middle"
+                              >
+                                {edgeDescription}
+                              </text>
+                            </g>
+                          )}
                         </g>
                       )
                     })}
@@ -1554,31 +1652,7 @@ export function TopologyOverlayView({
                                   {`🟣 ${node.candidateAlarmCount}`}
                                 </text>
                               </g>
-                            ) : (
-                              <g>
-                                <rect
-                                  x="-26"
-                                  y="-10"
-                                  width="34"
-                                  height="20"
-                                  rx="10"
-                                  fill="#10b981"
-                                  stroke="#080d17"
-                                  strokeWidth="1.5"
-                                />
-                                <text
-                                  x="-9"
-                                  y="3.5"
-                                  fill="#ffffff"
-                                  fontFamily="JetBrains Mono"
-                                  fontSize="9"
-                                  fontWeight="800"
-                                  textAnchor="middle"
-                                >
-                                  🟢 0
-                                </text>
-                              </g>
-                            )}
+                            ) : null}
                           </g>
                         )}
 
@@ -1693,6 +1767,10 @@ export function TopologyOverlayView({
                 </span>
                 <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-on-surface text-[10px]">
                   <div className="flex items-center gap-1.5">
+                    <span className="w-5 border-t-2 border-cyan-300 shrink-0" />
+                    <span>Đường nối alarm (đại diện)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />
                     <span>{isITChain ? '🚨 Xác thực (Exact Host)' : '🚨 Thiết bị sự cố (Gốc)'}</span>
                   </div>
@@ -1742,7 +1820,9 @@ export function TopologyOverlayView({
                 </div>
               </div>
             </div>
-          </div>
+              </div>
+            </>
+          )}
 
           {/* Topology Hypotheses */}
           {topologyHypotheses ? (
@@ -1807,8 +1887,8 @@ export function TopologyOverlayView({
         </>
       )}
 
-      {/* ===== NODE SUMMARY MODAL ===== */}
-      {summaryNode !== null && (() => {
+      {/* ===== FIXED NODE ALARM PANEL ===== */}
+      {summaryNode !== null && canvasElement !== null && createPortal((() => {
         const node = summaryNode
         const isExact = (m: Member) => {
           const resolutions = m.entity_resolutions || []
@@ -1831,35 +1911,20 @@ export function TopologyOverlayView({
           : alarmFilter === 'CANDIDATE' ? candidateAlarms
           : node.alarms
 
-        const hopLabel =
-          node.hopDistance === 0 ? 'Gốc cảnh báo (Seed)'
-          : node.hopDistance === 1 ? 'Láng giềng kề trực tiếp (1-Hop)'
-          : `${node.hopDistance}-Hop (Vành đai mở rộng)`
-
-        const tierLabel = isITChain
-          ? (node.tier === 0 ? 'IT Service lõi'
-             : node.tier === 1 ? 'Module Container'
-             : node.tier === 3 ? (node.roleCode === 'SAN' ? 'Storage SAN' : 'Database DB')
-             : 'Máy chủ / Host')
-          : (node.roleCode === 'CORE' ? 'Core Router (Lõi mạng IP)'
-             : node.roleCode === 'AGG' ? 'Aggregation Router (Gom huyện/PE)'
-             : node.roleCode === 'OLT' ? 'GPON OLT (Thiết bị truy nhập quang)'
-             : node.roleCode === 'SRT' ? 'Site Router (Trạm/Xã kề vật lý)'
-             : 'Thiết bị mạng IP')
+        const hopLabel = compactHopLabel(node.hopDistance)
 
         return (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
-            onClick={() => setSummaryNode(null)}
+            className="absolute right-4 top-4 z-40 flex max-h-[calc(100%_-_2rem)] w-[calc(100%_-_2rem)] max-w-[360px] flex-col overflow-hidden rounded-2xl border border-[#1e2e4a] bg-[#090f1d]/98 text-on-surface shadow-[0_25px_60px_-15px_rgba(0,0,0,0.95)]"
+            onClick={closeNodeFocus}
             role="dialog"
-            aria-modal="true"
             aria-labelledby="node-summary-title"
           >
             <div
-              className="relative z-10 w-full max-w-2xl max-h-[88vh] flex flex-col rounded-2xl border border-[#1e2e4a] bg-[#090f1d] text-on-surface shadow-[0_25px_60px_-15px_rgba(0,0,0,0.95)] overflow-hidden"
+              className="flex min-h-0 flex-1 flex-col overflow-hidden"
               onClick={e => e.stopPropagation()}
             >
-              {/* Modal Header */}
+              {/* Fixed panel header */}
               <header className="flex items-center justify-between border-b border-[#182640] bg-[#0c1424] px-5 py-3 shrink-0">
                 <div className="flex items-center gap-2 min-w-0">
                   <span
@@ -1880,9 +1945,7 @@ export function TopologyOverlayView({
                     >
                       {node.name}
                     </h2>
-                    <span className="text-[11px] text-on-surface-variant font-mono">
-                      {node.roleCode} · {tierLabel} · {hopLabel}
-                    </span>
+                    <span className="text-[11px] text-on-surface-variant font-mono">{hopLabel}</span>
                   </div>
                 </div>
 
@@ -1900,11 +1963,11 @@ export function TopologyOverlayView({
                   )}
                   {node.alarmCount === 0 && (
                     <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/40 text-xs font-bold">
-                      {isITChain ? '🟢 Không có lỗi' : `🟢 Láng giềng ${node.hopDistance ?? 1}-Hop (Bình thường)`}
+                      {isITChain ? '🟢 Không có lỗi' : `🟢 ${node.hopDistance ?? 1}-Hop (Bình thường)`}
                     </span>
                   )}
                   <button
-                    onClick={() => setSummaryNode(null)}
+                    onClick={closeNodeFocus}
                     className="rounded-lg p-1 text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors cursor-pointer ml-2"
                     aria-label="Đóng"
                   >
@@ -2034,15 +2097,11 @@ export function TopologyOverlayView({
                               >
                                 {EVIDENCE_TIER_LABELS[mainRes.status] || mainRes.status}
                               </span>
-                              {mainRes.confidence !== undefined && mainRes.confidence !== null && (
-                                <>
-                                  <span className="text-on-surface-variant">·</span>
-                                  <span className="text-on-surface-variant">Độ tin cậy:</span>
-                                  <span className="font-mono text-slate-400">
-                                    {Math.round((mainRes.confidence || 0) * 100)}% (heuristic)
-                                  </span>
-                                </>
-                              )}
+                              <span className="text-on-surface-variant">·</span>
+                              <span className="text-on-surface-variant">Mức ánh xạ:</span>
+                              <span className="font-mono text-slate-400">
+                                {MATCH_STRENGTH_LABELS[mainRes.status] || 'Chưa phân loại'}
+                              </span>
                             </div>
                           </div>
                         )}
@@ -2058,7 +2117,7 @@ export function TopologyOverlayView({
                   {node.name} · {node.alarmCount} cảnh báo tổng cộng
                 </span>
                 <button
-                  onClick={() => setSummaryNode(null)}
+                  onClick={closeNodeFocus}
                   className="px-3 py-1 rounded bg-surface-container text-on-surface text-xs hover:bg-surface-container-high transition-colors cursor-pointer"
                 >
                   Đóng
@@ -2067,7 +2126,7 @@ export function TopologyOverlayView({
             </div>
           </div>
         )
-      })()}
+      })(), canvasElement)}
     </div>
   )
 }

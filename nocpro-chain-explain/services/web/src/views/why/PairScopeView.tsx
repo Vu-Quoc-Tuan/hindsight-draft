@@ -278,8 +278,34 @@ export function PairScopeView({
                 : item.channel_family === 'E_card' ? 'Kiểm định thành phần card mạng, cổng hoặc sub-interface.'
                 : item.channel_family === 'T_burst' ? 'Cả hai cảnh báo nổ ra trong cùng một cụm bùng nổ thời gian ngắn.'
                 : item.channel_family === 'T_delay' ? 'Độ trễ thời gian giữa 2 cảnh báo nằm trong khoảng phân phối lan truyền sự cố.'
-                : item.channel_family === 'Dep_hop' ? 'Hai thiết bị nằm kề nhau trên đồ thị topology mạng IP (1-2 hops).'
+                : item.channel_family === 'Dep_hop' ? 'Hai thiết bị được nối bởi đường topology IP trong giới hạn D_max (mặc định 3 hop); đây là liên kết cấu trúc, không xác nhận quan hệ nhân quả.'
                 : 'Bằng chứng tương quan được tính toán từ các kênh thuộc tính hệ thống.'
+
+              const pathMetadata = item.channel_family === 'Dep_hop' && item.state !== 'UNAVAILABLE'
+                ? item.evidence_metadata?.topology_path as {
+                    nodes?: unknown
+                    hop_count?: unknown
+                    relation_types?: unknown
+                    traversal_semantic?: unknown
+                  } | undefined
+                : undefined
+              const witnessNodes = Array.isArray(pathMetadata?.nodes)
+                && pathMetadata.nodes.every((node): node is string => typeof node === 'string')
+                ? pathMetadata.nodes
+                : null
+              const witnessHops = typeof pathMetadata?.hop_count === 'number'
+                && Number.isInteger(pathMetadata.hop_count)
+                ? pathMetadata.hop_count
+                : null
+              const witnessRelations = Array.isArray(pathMetadata?.relation_types)
+                && pathMetadata.relation_types.every((relation): relation is string => typeof relation === 'string')
+                ? pathMetadata.relation_types
+                : []
+              const hasValidTopologyPath = Boolean(
+                witnessNodes && witnessNodes.length >= 1
+                && witnessHops === witnessNodes.length - 1
+                && pathMetadata?.traversal_semantic === 'STRUCTURAL_TOPOLOGY_PATH_NOT_CAUSAL'
+              )
 
               return (
                 <article
@@ -348,6 +374,19 @@ export function PairScopeView({
                     <p className="mt-2 text-[11px] font-code-sm text-on-surface-variant bg-[#0c1424] px-2.5 py-1.5 rounded border border-[#1b273e]/60">
                       Chi tiết: <span className="text-slate-200">{item.detail}</span>
                     </p>
+                  )}
+
+                  {hasValidTopologyPath && witnessNodes && witnessHops !== null && (
+                    <div className="mt-2 rounded border border-cyan-800/40 bg-cyan-950/20 px-2.5 py-2 font-code-sm text-[11px]" aria-label="Đường topology trong bằng chứng WHY">
+                      <div className="text-cyan-200">
+                        Đường topology: <span className="break-all font-semibold">{witnessNodes.join(' → ')}</span>
+                      </div>
+                      <div className="mt-1 text-on-surface-variant">
+                        {witnessHops} hop{witnessHops === 1 ? '' : 's'}
+                        {witnessRelations.length > 0 ? ` · ${witnessRelations.join(', ')}` : ''}
+                        {' · '}kết nối cấu trúc, không xác nhận quan hệ nhân quả.
+                      </div>
+                    </div>
                   )}
                 </article>
               )

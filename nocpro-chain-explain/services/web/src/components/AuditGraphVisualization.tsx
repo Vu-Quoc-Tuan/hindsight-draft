@@ -678,6 +678,7 @@ function AuditGraphVisualizationContent({
                             strokeWidth={isActive ? 3 : 2.5}
                             transform="rotate(45)"
                             filter={isActive ? 'url(#glow-danger)' : undefined}
+                            data-audit-node="true"
                           />
                         ) : (
                           <circle
@@ -686,6 +687,7 @@ function AuditGraphVisualizationContent({
                             stroke={stroke}
                             strokeWidth={isActive ? 3 : 2}
                             filter={isActive ? 'url(#nodeGlow)' : undefined}
+                            data-audit-node="true"
                           />
                         )}
 

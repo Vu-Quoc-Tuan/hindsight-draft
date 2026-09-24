@@ -166,23 +166,47 @@ function markup(topology_hypotheses: TopologyHypothesesResult) {
 }
 
 describe('TopologyHypotheses', () => {
-  it('renders the three fail-closed status cards and stable reasons', () => {
+  it('replaces unavailable cards with one clear insufficient-data notice', () => {
     const html = markup(unavailableTopology)
 
     expect(html).toContain('Topology hypotheses')
-    expect(html).toContain('Unavoidable dependency annotation')
+    expect(html).toContain('Chưa đủ dữ liệu để đánh giá')
+    expect(html).toContain('Nút phụ thuộc chung')
+    expect(html).toContain('Chưa có topology quan hệ có hướng bao phủ đầy đủ các tài nguyên trong chuỗi.')
+    expect(html).toContain('Luồng lan truyền')
+    expect(html).toContain('Chưa có đủ cấu hình để tính tín hiệu lan truyền.')
+    expect(html).toContain('Phạm vi phụ thuộc')
+    expect(html).toContain('Chưa xác định được phạm vi phụ thuộc từ topology hiện có.')
+    expect(html).not.toContain('UNAVAILABLE')
+    expect(html).not.toContain('DIRECTED_TOPOLOGY_UNAVAILABLE')
+    expect(html).not.toContain('topology-card-grid')
+    expect(html).not.toContain('Unavoidable dependency annotation')
+    expect(html).not.toContain('Propagation hypothesis score')
+    expect(html).not.toContain('Dependency scope overlap signal')
+  })
+
+  it('keeps available results visible and groups only the missing signals', () => {
+    const topology: TopologyHypothesesResult = {
+      ...unavailableTopology,
+      propagation: availableTopology.propagation,
+    }
+    const html = markup(topology)
+
     expect(html).toContain('Propagation hypothesis score')
-    expect(html).toContain('Dependency scope overlap signal')
-    expect(html.match(/>UNAVAILABLE</g)).toHaveLength(3)
-    expect(html).toContain('DIRECTED_TOPOLOGY_UNAVAILABLE')
-    expect(html).toContain('PROPAGATION_CONFIG_INCOMPLETE')
-    expect(html).toContain('DEPENDENCY_SCOPE_UNAVAILABLE')
+    expect(html).toContain('Đã đánh giá')
+    expect(html).toContain('alarm-a')
+    expect(html).toContain('Một số tín hiệu chưa đủ dữ liệu')
+    expect(html).toContain('Nút phụ thuộc chung')
+    expect(html).toContain('Phạm vi phụ thuộc')
+    expect(html).not.toContain('Luồng lan truyền</strong>')
+    expect(html).not.toContain('UNAVAILABLE')
+    expect(html).not.toContain('DIRECTED_TOPOLOGY_UNAVAILABLE')
   })
 
   it('separates stationary node mass from edge propagation flow and shows diagnostics', () => {
     const html = markup(availableTopology)
 
-    expect(html).toContain('AVAILABLE')
+    expect(html).toContain('Đã đánh giá')
     expect(html).toContain('Node stationary mass')
     expect(html).toContain('alarm-a')
     expect(html).toContain('Edge propagation flow')
@@ -191,8 +215,8 @@ describe('TopologyHypotheses', () => {
     expect(html).toContain('0.0000007')
     expect(html).toContain('ALL_SOURCE_NODES_UNIFORM')
     expect(html).toContain('REDISTRIBUTE_TO_RESTART')
-    expect(html).toContain('topology source · synthetic-topology @ syn-topo-v1')
-    expect(html).toContain('synthetic generation · synthetic-active-path-v1 · mockgen-1.4.0')
+    expect(html).toContain('Nguồn topology · synthetic-topology @ syn-topo-v1')
+    expect(html).toContain('Dữ liệu mô phỏng · synthetic-active-path-v1 · mockgen-1.4.0')
   })
 
   it('keeps exact scope aggregates while hiding unavailable detail lists', () => {
@@ -212,7 +236,8 @@ describe('TopologyHypotheses', () => {
 
     expect(html).toContain('66.67%')
     expect(html).toContain('50%')
-    expect(html).toContain('MATERIALIZATION_LIMIT_EXCEEDED')
+    expect(html).toContain('Danh sách tài nguyên vượt giới hạn có thể xử lý để hiển thị chi tiết.')
+    expect(html).not.toContain('MATERIALIZATION_LIMIT_EXCEEDED')
     expect(html).not.toContain('topology-resource-list')
     expect(html).not.toContain('missing resources</')
     expect(html).not.toContain('extra resources</')

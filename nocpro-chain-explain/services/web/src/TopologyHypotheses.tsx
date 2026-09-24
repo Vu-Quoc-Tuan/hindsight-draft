@@ -6,23 +6,17 @@ import type {
   TopologyHypothesesResult,
 } from './types'
 
-type Status = 'AVAILABLE' | 'UNAVAILABLE'
-
-function statusTone(status: Status) {
-  return status === 'AVAILABLE' ? 'positive' : 'muted'
-}
-
-function StatusPill({ status }: { status: Status }) {
-  return <span className={`pill pill--${statusTone(status)}`} role="status">{status}</span>
+function StatusPill() {
+  return <span className="pill pill--positive" role="status">Đã đánh giá</span>
 }
 
 function ratio(value: number | null) {
-  if (value == null) return 'UNAVAILABLE'
+  if (value == null) return 'Chưa đủ dữ liệu'
   return `${(value * 100).toFixed(2).replace(/\.?0+$/, '')}%`
 }
 
 function decimal(value: number | null, digits = 4) {
-  return value == null ? 'UNAVAILABLE' : value.toFixed(digits)
+  return value == null ? 'Chưa đủ dữ liệu' : value.toFixed(digits)
 }
 
 function Metric({ label, value }: { label: string; value: string | number }) {
@@ -38,26 +32,63 @@ function Provenance({ result }: { result: {
   relation_type: string | null
 } }) {
   return <div className="topology-provenance">
-    <p>topology source · {result.source_id ?? 'UNAVAILABLE'} @ {result.source_version ?? 'UNAVAILABLE'} · {result.relation_type ?? 'relation unavailable'}</p>
-    {(result.scenario_id || result.generator_version) && <p>synthetic generation · {result.scenario_id ?? 'UNAVAILABLE'} · {result.generator_version ?? 'UNAVAILABLE'}</p>}
+    <p>Nguồn topology · {result.source_id ?? 'Chưa ghi nhận'} @ {result.source_version ?? 'Chưa ghi nhận'} · {result.relation_type ?? 'Chưa có loại quan hệ'}</p>
+    {(result.scenario_id || result.generator_version) && <p>Dữ liệu mô phỏng · {result.scenario_id ?? 'Chưa ghi nhận'} · {result.generator_version ?? 'Chưa ghi nhận'}</p>}
   </div>
 }
 
-function UnavailableCard({ title, result }: { title: string; result: { status: 'UNAVAILABLE'; reason: string } }) {
-  return <article className="topology-card topology-card--unavailable">
-    <header className="topology-card-heading"><div><p className="kicker">Năng lực P2 (P2 capability)</p><h3>{title}</h3></div><StatusPill status={result.status} /></header>
-    <p className="topology-reason">{result.reason}</p>
-    <p className="topology-muted">Tín hiệu này duy trì trạng thái chưa khả dụng (fail-closed) cho đến khi có đủ chứng cứ quan hệ có hướng và cấu hình hợp lệ.</p>
-  </article>
+const reasonDescriptions: Record<string, string> = {
+  DIRECTED_TOPOLOGY_UNAVAILABLE: 'Chưa có topology quan hệ có hướng bao phủ đầy đủ các tài nguyên trong chuỗi.',
+  RESOURCE_MAPPING_UNAVAILABLE: 'Chưa ánh xạ đầy đủ các cảnh báo tới tài nguyên topology.',
+  TEMPORAL_ORDERING_UNAVAILABLE: 'Thiếu thời điểm bắt đầu hợp lệ của một hoặc nhiều cảnh báo.',
+  PROPAGATION_CONFIG_INCOMPLETE: 'Chưa có đủ cấu hình để tính tín hiệu lan truyền.',
+  INVALID_DAG: 'Quan hệ topology hiện có chưa tạo thành đồ thị có hướng hợp lệ.',
+  CANDIDATE_LIMIT_EXCEEDED: 'Số luồng ứng viên vượt giới hạn phân tích an toàn.',
+  RWR_NOT_CONVERGED: 'Phép tính lan truyền chưa hội tụ trong giới hạn cho phép.',
+  COMMON_DOMINATOR_UNAVAILABLE: 'Chưa tìm thấy tài nguyên topology chung mà các nhánh của chuỗi cùng đi qua.',
+  AMBIGUOUS_DOMINATOR_WITNESS: 'Có nhiều tài nguyên có thể làm điểm chung nên chưa đủ căn cứ chọn một điểm.',
+  DEPENDENCY_SCOPE_UNAVAILABLE: 'Chưa xác định được phạm vi phụ thuộc từ topology hiện có.',
+  SCOPE_LIMIT_EXCEEDED: 'Phạm vi phụ thuộc vượt giới hạn phân tích an toàn.',
+  MATERIALIZATION_LIMIT_EXCEEDED: 'Danh sách tài nguyên vượt giới hạn có thể xử lý để hiển thị chi tiết.',
+  TOPOLOGY_SOURCE_VERSION_MISSING: 'Topology chưa có phiên bản nguồn để kiểm chứng và đối chiếu.',
 }
 
-function DominatorCard({ result }: { result: DominatorResult }) {
-  if (result.status === 'UNAVAILABLE') return <UnavailableCard title="Unavoidable dependency annotation" result={result} />
+function describeReason(reason: string | null | undefined) {
+  return reason
+    ? reasonDescriptions[reason] ?? 'Dữ liệu hiện có chưa đáp ứng điều kiện để đánh giá tín hiệu này.'
+    : 'Dữ liệu hiện có chưa đáp ứng điều kiện để đánh giá tín hiệu này.'
+}
+
+type MissingSignal = { title: string; reason: string }
+
+function InsufficientDataNotice({
+  signals,
+  compact = false,
+}: {
+  signals: MissingSignal[]
+  compact?: boolean
+}) {
+  return <div className={`topology-insufficient${compact ? ' topology-insufficient--compact' : ''}`} role="status" aria-live="polite">
+    {!compact && <span aria-hidden="true" className="topology-insufficient-icon">i</span>}
+    <div className="topology-insufficient-content">
+      <h3>{compact ? 'Một số tín hiệu chưa đủ dữ liệu' : 'Chưa đủ dữ liệu để đánh giá'}</h3>
+      {!compact && <p>Deep Dive chưa thể đánh giá các tín hiệu topology dưới đây. Kết quả được để trống thay vì suy đoán khi dữ liệu hoặc điều kiện kiểm chứng còn thiếu.</p>}
+      <ul className="topology-missing-signals">
+        {signals.map((signal) => <li key={signal.title}>
+          <strong>{signal.title}</strong>
+          <span>{describeReason(signal.reason)}</span>
+        </li>)}
+      </ul>
+    </div>
+  </div>
+}
+
+function DominatorCard({ result }: { result: Extract<DominatorResult, { status: 'AVAILABLE' }> }) {
   return <article className="topology-card topology-card--dominator">
-    <header className="topology-card-heading"><div><p className="kicker">Năng lực P2 (P2 capability)</p><h3>Unavoidable dependency annotation</h3></div><StatusPill status={result.status} /></header>
+    <header className="topology-card-heading"><div><p className="kicker">Năng lực P2 (P2 capability)</p><h3>Unavoidable dependency annotation</h3></div><StatusPill /></header>
     <p className="topology-semantic">{result.semantic}</p>
     <dl className="topology-metrics">
-      <Metric label="Nút chứng thực (witness)" value={result.witness_resource_id ?? 'UNAVAILABLE'} />
+      <Metric label="Nút chứng thực (witness)" value={result.witness_resource_id ?? 'Chưa xác định'} />
       <Metric label="Tài nguyên bao phủ (covered resources)" value={result.covered_resource_ids.length} />
     </dl>
     {result.covered_resource_ids.length > 0 && (
@@ -77,20 +108,19 @@ function DominatorCard({ result }: { result: DominatorResult }) {
   </article>
 }
 
-function PropagationCard({ result }: { result: PropagationResult }) {
-  if (result.status === 'UNAVAILABLE') return <UnavailableCard title="Propagation hypothesis score" result={result} />
+function PropagationCard({ result }: { result: Extract<PropagationResult, { status: 'AVAILABLE' }> }) {
   const diag = (result as Record<string, any>).diagnostics || {}
   const candidateNodeCount = result.candidate_node_count ?? diag.candidate_node_count ?? 0
   const candidateEdgeCount = result.candidate_edge_count ?? diag.candidate_edge_count ?? 0
   const iterations = result.iterations ?? diag.iterations ?? 0
   const finalL1Distance = result.final_l1_distance ?? diag.final_l1_distance
   const convergenceTolerance = result.convergence_tolerance ?? diag.convergence_tolerance
-  const configVersion = result.config_version ?? diag.config_version ?? 'UNAVAILABLE'
+  const configVersion = result.config_version ?? diag.config_version ?? 'Chưa ghi nhận'
   const seedPolicy = result.seed_policy ?? diag.seed_policy ?? 'seed unavailable'
   const danglingPolicy = result.dangling_policy ?? diag.dangling_policy ?? 'dangling policy unavailable'
 
   return <article className="topology-card topology-card--propagation">
-    <header className="topology-card-heading"><div><p className="kicker">Năng lực P2 (P2 capability)</p><h3>Propagation hypothesis score</h3></div><StatusPill status={result.status} /></header>
+    <header className="topology-card-heading"><div><p className="kicker">Năng lực P2 (P2 capability)</p><h3>Propagation hypothesis score</h3></div><StatusPill /></header>
     <p className="topology-semantic">{result.semantic}</p>
     <dl className="topology-metrics topology-metrics--dense">
       <Metric label="Nút ứng viên (candidate nodes)" value={candidateNodeCount} />
@@ -152,23 +182,23 @@ function PropagationCard({ result }: { result: PropagationResult }) {
   </article>
 }
 
-function ScopeMetrics({ result }: { result: DependencyScopeResult }) {
+function ScopeMetrics({ result }: { result: Extract<DependencyScopeResult, { status: 'AVAILABLE' }> }) {
   return <dl className="topology-metrics topology-metrics--scope">
-    <Metric label="Tài nguyên quan sát (observed)" value={result.observed_resource_count ?? 'UNAVAILABLE'} />
-    <Metric label="Tài nguyên phạm vi (scope)" value={result.scope_resource_count ?? 'UNAVAILABLE'} />
-    <Metric label="Giao tập hợp (intersection)" value={result.intersection_count ?? 'UNAVAILABLE'} />
-    <Metric label="Hợp tập hợp (union)" value={result.union_count ?? 'UNAVAILABLE'} />
+    <Metric label="Tài nguyên quan sát (observed)" value={result.observed_resource_count ?? 'Chưa đủ dữ liệu'} />
+    <Metric label="Tài nguyên phạm vi (scope)" value={result.scope_resource_count ?? 'Chưa đủ dữ liệu'} />
+    <Metric label="Giao tập hợp (intersection)" value={result.intersection_count ?? 'Chưa đủ dữ liệu'} />
+    <Metric label="Hợp tập hợp (union)" value={result.union_count ?? 'Chưa đủ dữ liệu'} />
     <Metric label="Độ phủ (coverage)" value={ratio(result.observed_coverage)} />
     <Metric label="Độ chính xác (precision)" value={ratio(result.scope_precision)} />
     <Metric label="Chỉ số Jaccard" value={ratio(result.jaccard)} />
-    <Metric label="Số tài nguyên thiếu (missing)" value={result.missing_resource_count ?? 'UNAVAILABLE'} />
-    <Metric label="Số tài nguyên thừa (extra)" value={result.extra_resource_count ?? 'UNAVAILABLE'} />
+    <Metric label="Số tài nguyên thiếu (missing)" value={result.missing_resource_count ?? 'Chưa đủ dữ liệu'} />
+    <Metric label="Số tài nguyên thừa (extra)" value={result.extra_resource_count ?? 'Chưa đủ dữ liệu'} />
   </dl>
 }
 
-function ScopeDetails({ result }: { result: DependencyScopeResult }) {
+function ScopeDetails({ result }: { result: Extract<DependencyScopeResult, { status: 'AVAILABLE' }> }) {
   const details = result.resource_details
-  if (details.status === 'UNAVAILABLE') return <p className="topology-detail-unavailable">{details.reason}</p>
+  if (details.status === 'UNAVAILABLE') return <p className="topology-detail-unavailable">{describeReason(details.reason)}</p>
   return <div className="topology-resource-lists">
     <div className="topology-resource-list">
       <h4>Tài nguyên thiếu · Missing resources ({details.missing_resources?.length ?? 0})</h4>
@@ -193,14 +223,13 @@ function ScopeDetails({ result }: { result: DependencyScopeResult }) {
   </div>
 }
 
-function ScopeCard({ result }: { result: DependencyScopeResult }) {
-  if (result.status === 'UNAVAILABLE') return <UnavailableCard title="Dependency scope overlap signal" result={result} />
+function ScopeCard({ result }: { result: Extract<DependencyScopeResult, { status: 'AVAILABLE' }> }) {
   return <article className="topology-card topology-card--scope">
-    <header className="topology-card-heading"><div><p className="kicker">Năng lực P2 (P2 capability)</p><h3>Dependency scope overlap signal</h3></div><StatusPill status={result.status} /></header>
+    <header className="topology-card-heading"><div><p className="kicker">Năng lực P2 (P2 capability)</p><h3>Dependency scope overlap signal</h3></div><StatusPill /></header>
     <p className="topology-semantic">{result.semantic}</p>
     <ScopeMetrics result={result} />
     <ScopeDetails result={result} />
-    <p className="topology-provenance">Nút chứng thực: {result.witness_resource_id ?? 'UNAVAILABLE'} · Phạm vi neo theo nút chứng thực được chọn (scope anchored)</p>
+    <p className="topology-provenance">Nút chứng thực: {result.witness_resource_id ?? 'Chưa xác định'} · Phạm vi neo theo nút chứng thực được chọn (scope anchored)</p>
     <Provenance result={result} />
   </article>
 }
@@ -213,6 +242,21 @@ export function TopologyHypotheses({
   action?: React.ReactNode
 }) {
   if (!topology_hypotheses || !topology_hypotheses.dominator) return null
+  const missingSignals: MissingSignal[] = [
+    ...(topology_hypotheses.dominator.status === 'UNAVAILABLE' ? [{
+      title: 'Nút phụ thuộc chung',
+      reason: topology_hypotheses.dominator.reason,
+    }] : []),
+    ...(topology_hypotheses.propagation.status === 'UNAVAILABLE' ? [{
+      title: 'Luồng lan truyền',
+      reason: topology_hypotheses.propagation.reason,
+    }] : []),
+    ...(topology_hypotheses.dependency_scope.status === 'UNAVAILABLE' ? [{
+      title: 'Phạm vi phụ thuộc',
+      reason: topology_hypotheses.dependency_scope.reason,
+    }] : []),
+  ]
+  const availableCount = 3 - missingSignals.length
   return <section className="topology-hypotheses" role="region" aria-labelledby="topology-hypotheses-heading">
     <header className="section-heading topology-section-heading">
       <div>
@@ -224,10 +268,17 @@ export function TopologyHypotheses({
         <span className="text-xs text-on-surface-variant font-mono">Chế độ kiểm chứng an toàn (Fail-closed capability view)</span>
       </div>
     </header>
-    <div className="topology-card-grid">
-      <DominatorCard result={topology_hypotheses.dominator} />
-      <PropagationCard result={topology_hypotheses.propagation} />
-      <ScopeCard result={topology_hypotheses.dependency_scope} />
-    </div>
+    {availableCount === 0 ? (
+      <InsufficientDataNotice signals={missingSignals} />
+    ) : (
+      <>
+        <div className="topology-card-grid">
+          {topology_hypotheses.dominator.status === 'AVAILABLE' && <DominatorCard result={topology_hypotheses.dominator} />}
+          {topology_hypotheses.propagation.status === 'AVAILABLE' && <PropagationCard result={topology_hypotheses.propagation} />}
+          {topology_hypotheses.dependency_scope.status === 'AVAILABLE' && <ScopeCard result={topology_hypotheses.dependency_scope} />}
+        </div>
+        {missingSignals.length > 0 && <InsufficientDataNotice signals={missingSignals} compact />}
+      </>
+    )}
   </section>
 }
