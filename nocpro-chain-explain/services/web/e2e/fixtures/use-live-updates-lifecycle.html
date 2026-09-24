@@ -6,7 +6,6 @@
     <script type="module">
       import React from 'react'
       import { createRoot } from 'react-dom/client'
-      import { useLiveUpdates } from '/src/useLiveUpdates.ts'
 
       const nativeSetInterval = window.setInterval.bind(window)
       const nativeClearInterval = window.clearInterval.bind(window)
@@ -65,6 +64,10 @@
         }
       }
       window.EventSource = FakeEventSource
+
+      // Load the hook only after timer interception is active so module-level
+      // timer ownership is included in the lifecycle observations.
+      const { useLiveUpdates } = await import('/src/useLiveUpdates.ts')
 
       function HookProbe() {
         useLiveUpdates(() => {})
