@@ -16,6 +16,8 @@ import type {
   CounterfactualJob,
   EvidenceBundle,
   Evolution,
+  EvolutionChanges,
+  EvolutionEndpoint,
   Job,
   OperatorFeedback,
   PairWhy,
@@ -491,6 +493,30 @@ export const api = {
     request<Evolution>(`/api/v1/chains/${encodeURIComponent(chainId)}/evolution`, {
       signal,
     }),
+  evolutionChanges: (
+    chainId: string,
+    selection: { parent?: EvolutionEndpoint; parentReceiptId?: string; childReceiptId?: string } = {},
+    signal?: AbortSignal,
+    snapshotContext?: ChainOverviewSnapshotContext,
+  ) => {
+    const query = new URLSearchParams()
+    if (selection.parent) {
+      query.set('parent_snapshot_id', selection.parent.snapshot_id)
+      query.set('parent_snapshot_version', selection.parent.snapshot_version)
+      query.set('parent_chain_id', selection.parent.chain_id)
+    }
+    if (selection.parentReceiptId) query.set('parent_receipt_id', selection.parentReceiptId)
+    if (selection.childReceiptId) query.set('child_receipt_id', selection.childReceiptId)
+    const context: ActiveSnapshotContext = snapshotContext
+      ? { snapshotId: snapshotContext.snapshot_id, snapshotVersion: snapshotContext.snapshot_version }
+      : activeSnapshotContext
+    const suffix = query.size ? `?${query.toString()}` : ''
+    return request<EvolutionChanges>(
+      `/api/v1/chains/${encodeURIComponent(chainId)}/evolution/changes${suffix}`,
+      { signal },
+      context,
+    )
+  },
   pairWhy: (
     chainId: string,
     alarmA: string,

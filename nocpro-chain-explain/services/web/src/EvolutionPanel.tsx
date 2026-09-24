@@ -4,9 +4,21 @@ import { api } from './api'
 import { compactTime, humanize, percent } from './format'
 import type { RefreshTask } from './liveUpdates'
 import type { Evolution } from './types'
+import { EvolutionChanges } from './components/EvolutionChanges'
 
 function productionLabel(value: Evolution['production_validation']) {
   return value === 'ELIGIBLE' ? 'Production sequence eligible' : 'Production validation not established'
+}
+
+function matchesEvolutionContext(
+  value: Evolution | null | undefined,
+  chainId: string,
+  expectedSnapshotId: string | null | undefined,
+  expectedSnapshotVersion: string | null | undefined,
+) {
+  return value?.chain_id === chainId
+    && (expectedSnapshotId == null || value.snapshot_id === expectedSnapshotId)
+    && (expectedSnapshotVersion == null || value.snapshot_version === expectedSnapshotVersion)
 }
 
 export interface EvolutionPanelProps {
@@ -32,38 +44,39 @@ export function EvolutionPanel({
   cancelRefresh,
   onLoadError,
 }: EvolutionPanelProps) {
+  const contextKey = JSON.stringify([resourceKey, chainId, expectedSnapshotId ?? null, expectedSnapshotVersion ?? null])
   const [loaded, setLoaded] = useState<{
-    resourceKey: string
+    contextKey: string
     result: Evolution | null
     error: string | null
-  }>({ resourceKey: initialResult?.chain_id === chainId ? resourceKey : '', result: initialResult, error: null })
+  }>({
+    contextKey: matchesEvolutionContext(initialResult, chainId, expectedSnapshotId, expectedSnapshotVersion) ? contextKey : '',
+    result: initialResult,
+    error: null,
+  })
 
   useEffect(() => {
-    if (initialResult?.chain_id === chainId) return
+    if (matchesEvolutionContext(initialResult, chainId, expectedSnapshotId, expectedSnapshotVersion)) return
     const task: RefreshTask = async signal => {
       try {
         const result = await api.evolution(chainId, signal)
         if (signal.aborted) return
-        if (
-          result.chain_id !== chainId
-          || (expectedSnapshotId != null && result.snapshot_id !== expectedSnapshotId)
-          || (expectedSnapshotVersion != null && result.snapshot_version !== expectedSnapshotVersion)
-        ) {
+        if (!matchesEvolutionContext(result, chainId, expectedSnapshotId, expectedSnapshotVersion)) {
           throw new Error('EVOLUTION_CONTEXT_MISMATCH')
         }
-        setLoaded({ resourceKey, result, error: null })
+        setLoaded({ contextKey, result, error: null })
         onLoadError?.(null)
       } catch (cause: unknown) {
         if (signal.aborted || (cause instanceof Error && cause.name === 'AbortError')) return
         const message = cause instanceof Error ? cause.message : 'Evolution unavailable'
-        setLoaded(current => current.resourceKey === resourceKey
+        setLoaded(current => current.contextKey === contextKey
           ? { ...current, error: message }
-          : { resourceKey, result: null, error: message })
+          : { contextKey, result: null, error: message })
         onLoadError?.(message)
       }
     }
     if (scheduleRefresh) {
-      scheduleRefresh(resourceKey, task)
+      scheduleRefresh(contextKey, task)
     } else {
       const controller = new AbortController()
       void task(controller.signal)
@@ -71,6 +84,7 @@ export function EvolutionPanel({
     }
   }, [
     chainId,
+    contextKey,
     expectedSnapshotId,
     expectedSnapshotVersion,
     initialResult,
@@ -80,19 +94,28 @@ export function EvolutionPanel({
     scheduleRefresh,
   ])
 
-  useEffect(() => () => cancelRefresh?.(resourceKey), [cancelRefresh, resourceKey])
+  useEffect(() => () => cancelRefresh?.(contextKey), [cancelRefresh, contextKey])
 
-  const initial = initialResult?.chain_id === chainId ? initialResult : null
-  const result = initial ?? (loaded.resourceKey === resourceKey ? loaded.result : null)
-  const error = initial ? null : (loaded.resourceKey === resourceKey ? loaded.error : null)
+  const initial = matchesEvolutionContext(initialResult, chainId, expectedSnapshotId, expectedSnapshotVersion)
+    ? initialResult
+    : null
+  const result = initial ?? (loaded.contextKey === contextKey ? loaded.result : null)
+  const error = initial ? null : (loaded.contextKey === contextKey ? loaded.error : null)
 
   if (error && !result) return <section className="unavailable-card" role="alert"><span>UNAVAILABLE</span><h2>Evolution could not be loaded.</h2><p>{error}</p></section>
   if (!result) return <section className="evolution-panel evolution-loading"><p>Loading persisted lineage artifact…</p></section>
   if (result.status !== 'AVAILABLE') {
-    return <section className="unavailable-card" aria-label="Evolution unavailable">
-      <span>UNAVAILABLE</span><h2>Sequential snapshots are not available.</h2>
-      <p>{humanize(result.reason ?? 'SEQUENTIAL_SNAPSHOTS_NOT_AVAILABLE')}</p>
-    </section>
+    return <>
+      <section className="unavailable-card" aria-label="Evolution unavailable">
+        <span>UNAVAILABLE</span><h2>Sequential snapshots are not available.</h2>
+        <p>{humanize(result.reason ?? 'SEQUENTIAL_SNAPSHOTS_NOT_AVAILABLE')}</p>
+      </section>
+      <EvolutionChanges refreshEpoch={refreshEpoch} key={JSON.stringify([result.snapshot_id, result.snapshot_version, result.chain_id])} child={{
+        snapshot_id: result.snapshot_id,
+        snapshot_version: result.snapshot_version,
+        chain_id: result.chain_id,
+      }} />
+    </>
   }
 
   return <section className="evolution-panel" aria-label="Persisted chain evolution">
@@ -130,5 +153,10 @@ export function EvolutionPanel({
         </>
       )}
     </div>
+    <EvolutionChanges refreshEpoch={refreshEpoch} key={JSON.stringify([result.snapshot_id, result.snapshot_version, result.chain_id])} child={{
+      snapshot_id: result.snapshot_id,
+      snapshot_version: result.snapshot_version,
+      chain_id: result.chain_id,
+    }} />
   </section>
 }

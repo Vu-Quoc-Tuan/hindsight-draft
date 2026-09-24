@@ -107,6 +107,62 @@ export type Evolution = {
   edges: EvolutionEdge[]
 }
 
+export type EvolutionEndpoint = {
+  snapshot_id: string
+  snapshot_version: string
+  chain_id: string
+}
+
+export type EvolutionPredecessorChoice = {
+  parent: EvolutionEndpoint
+  event_type: string
+  parent_source_kind: string | null
+  child_source_kind: string | null
+}
+
+export type EvolutionReceiptChoice = {
+  receipt_id: string
+  artifact_revision: string
+  created_at: string
+}
+
+export type EvolutionChanges = {
+  status: 'AVAILABLE' | 'PARTIAL' | 'UNAVAILABLE'
+  reason_codes: string[]
+  parent: EvolutionEndpoint | null
+  child: EvolutionEndpoint
+  event_type: string | null
+  parent_source_kind: string | null
+  child_source_kind: string | null
+  predecessor_choices: EvolutionPredecessorChoice[]
+  predecessor_choices_truncated: boolean
+  parent_receipt_choices: EvolutionReceiptChoice[]
+  child_receipt_choices: EvolutionReceiptChoice[]
+  parent_receipt_choices_truncated: boolean
+  child_receipt_choices_truncated: boolean
+  membership: {
+    added_count: number
+    removed_count: number
+    retained_count: number
+    added_alarm_ids: string[]
+    removed_alarm_ids: string[]
+    truncated: boolean
+  } | null
+  context_changes: Array<{ field: string; before: string | null; after: string | null }>
+  quality: {
+    comparable: boolean
+    reason_codes: string[]
+    before_score: number | null
+    after_score: number | null
+    before_stars: number | null
+    after_stars: number | null
+    delta: number | null
+    before_receipt_id: string | null
+    after_receipt_id: string | null
+  }
+  explanations: Array<{ code: string; text: string; evidence_ids: string[] }>
+}
+
 export type Descriptor = {
   kind: string
   label: string

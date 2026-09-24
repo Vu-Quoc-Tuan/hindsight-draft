@@ -1738,6 +1738,132 @@ button.table-row.is-selected {
   font: 0.72rem var(--mono);
 }
 
+.evolution-changes {
+  min-width: 0;
+  padding: 1rem 1.75rem 1.4rem;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.evolution-changes__heading,
+.evolution-changes__rail,
+.evolution-changes__ledger,
+.evolution-changes__receipts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+}
+
+.evolution-changes__heading {
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 0.7rem;
+}
+
+.evolution-changes__heading h3,
+.evolution-changes__facts h4 {
+  margin: 0;
+  color: #fff;
+}
+
+.evolution-changes__heading small,
+.evolution-changes__choice small,
+.evolution-changes__rail small {
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.evolution-changes__notice {
+  color: var(--accent-cyan-light);
+  overflow-wrap: anywhere;
+}
+
+.evolution-changes__error {
+  border-left: 2px solid var(--accent-red, #ff6b6b);
+  padding-left: 0.6rem;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.evolution-changes__parents {
+  min-width: 0;
+  margin: 0.7rem 0;
+  padding: 0;
+  border: 0;
+}
+
+.evolution-changes__parents legend {
+  margin-bottom: 0.5rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.evolution-changes__choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  min-width: 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  cursor: pointer;
+}
+
+.evolution-changes__choice + .evolution-changes__choice { margin-top: 0.4rem; }
+.evolution-changes__choice:has(input:checked) { border-color: var(--accent-cyan); background: color-mix(in srgb, var(--accent-cyan) 10%, var(--bg-card)); }
+.evolution-changes__choice input { margin-top: 0.2rem; accent-color: var(--accent-cyan); }
+.evolution-changes__choice span { display: grid; gap: 0.2rem; min-width: 0; overflow-wrap: anywhere; }
+.evolution-changes__choice strong { color: #fff; }
+.evolution-changes__choice:focus-within { outline: 2px solid var(--accent-cyan-light); outline-offset: 2px; }
+
+.evolution-changes__details { min-width: 0; }
+.evolution-changes__rail {
+  min-width: 0;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--accent-cyan);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+}
+
+.evolution-changes__rail > span:not(.evolution-changes__arrow):not(.evolution-changes__event) {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.evolution-changes__rail strong { color: #fff; }
+.evolution-changes__arrow { color: var(--accent-cyan-light); font-size: 1.25rem; }
+.evolution-changes__event { color: var(--accent-cyan-light); font: 700 0.65rem var(--mono); }
+.evolution-changes__receipts { align-items: flex-start; margin-top: 0.7rem; }
+.evolution-changes__receipt { flex: 1 1 220px; min-width: 0; }
+.evolution-changes__receipt label { display: grid; gap: 0.3rem; color: #fff; }
+.evolution-changes__receipt select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.45rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: #fff;
+}
+.evolution-changes__receipt select:focus-visible { outline: 2px solid var(--accent-cyan-light); outline-offset: 2px; }
+.evolution-changes__facts { min-width: 0; margin-top: 0.8rem; border-top: 1px solid var(--border-subtle); padding-top: 0.7rem; overflow-wrap: anywhere; }
+.evolution-changes__facts p { margin: 0.4rem 0; }
+.evolution-changes__facts ul { padding-left: 1.2rem; }
+.evolution-changes__ledger { margin: 0.55rem 0; }
+.evolution-changes__ledger span { display: inline-flex; gap: 0.4rem; align-items: baseline; }
+.evolution-changes__ledger strong { color: var(--accent-cyan-light); font: 700 0.9rem var(--mono); }
+
+@media (max-width: 480px) {
+  .evolution-changes { padding: 0.85rem; }
+  .evolution-changes__rail { gap: 0.4rem; }
+  .evolution-changes__rail > span:not(.evolution-changes__arrow):not(.evolution-changes__event) { flex: 1 1 100%; }
+  .evolution-changes__arrow { display: none; }
+}
+
 /* ==========================================================================
    Counterfactual Review
    ========================================================================== */
