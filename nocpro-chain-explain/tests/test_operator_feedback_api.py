@@ -128,7 +128,7 @@ async def test_feedback_rejected_stores_and_queries_successfully(monkeypatch: py
             # Query chain feedback
             chain_id = body["chain_id"]
             get_chain_fb = await client.get(
-                f"/api/v1/chains/{chain_id}/feedback",
+                f"/api/v1/chains/{chain_id}/feedback?snapshot_id=s1&snapshot_version=1",
                 headers={"X-Dev-Operator-Id": "ops_expert_01", "X-Dev-Operator-Role": "PRODUCT_OWNER"},
             )
             assert get_chain_fb.status_code == 200

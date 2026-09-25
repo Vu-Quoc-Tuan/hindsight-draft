@@ -383,10 +383,11 @@ async def test_chain_feedback_domain_authorization(sec_fixture, monkeypatch: pyt
         )
         assert resp.status_code == 201
         chain_id = resp.json()["chain_id"]
+        snapshot_context = "?snapshot_id=snap_sec_test&snapshot_version=1"
 
         # 2. Query chain feedback with domain mismatch (OPTICAL) -> 403 Forbidden
         resp_mismatch = await client.get(
-            f"/api/v1/chains/{chain_id}/feedback",
+            f"/api/v1/chains/{chain_id}/feedback{snapshot_context}",
             headers={
                 "X-Dev-Operator-Id": "po_optical",
                 "X-Dev-Operator-Role": "PRODUCT_OWNER",
@@ -398,7 +399,7 @@ async def test_chain_feedback_domain_authorization(sec_fixture, monkeypatch: pyt
 
         # 3. Query chain feedback with matching domain -> 200 OK
         resp_match = await client.get(
-            f"/api/v1/chains/{chain_id}/feedback",
+            f"/api/v1/chains/{chain_id}/feedback{snapshot_context}",
             headers={
                 "X-Dev-Operator-Id": "po_user",
                 "X-Dev-Operator-Role": "PRODUCT_OWNER",
@@ -410,7 +411,7 @@ async def test_chain_feedback_domain_authorization(sec_fixture, monkeypatch: pyt
 
         # 4. Query non-existent chain -> 200 []
         resp_nonexistent = await client.get(
-            "/api/v1/chains/chain_does_not_exist/feedback",
+            f"/api/v1/chains/chain_does_not_exist/feedback{snapshot_context}",
             headers={
                 "X-Dev-Operator-Id": "po_user",
                 "X-Dev-Operator-Role": "PRODUCT_OWNER",
