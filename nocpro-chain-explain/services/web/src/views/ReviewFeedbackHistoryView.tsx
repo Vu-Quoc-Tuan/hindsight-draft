@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState, type FormEvent } from 'react'
 import { api, type ChainOverviewSnapshotContext } from '../api'
-import { reviewFeedbackHistoryErrorPresentation } from './reviewFeedbackHistoryError'
+import { ReviewFeedbackHistoryErrorNotice } from './ReviewFeedbackHistoryErrorNotice'
 import type {
   ReviewDecision,
   ReviewFeedbackHistoryFilters,
@@ -110,7 +110,6 @@ export function ReviewFeedbackHistoryView({
   const page = activeLoadState.status === 'ready' ? activeLoadState.page : null
   const loading = activeLoadState.status === 'loading'
   const error = activeLoadState.status === 'error' ? activeLoadState.message : null
-  const errorPresentation = error ? reviewFeedbackHistoryErrorPresentation(error) : null
 
   useEffect(() => {
     if (!snapshotContext) {
@@ -303,18 +302,11 @@ export function ReviewFeedbackHistoryView({
           )}
 
           {error && (
-            <div role="alert" className="rounded-lg border border-rose-500/40 bg-rose-950/30 px-4 py-3 text-sm text-rose-200">
-              <span className="font-semibold">{errorPresentation?.title}:</span> {errorPresentation?.message}
-              {errorPresentation?.retryable && (
-                <button
-                  type="button"
-                  onClick={() => setReloadEpoch(epoch => epoch + 1)}
-                  className="ml-3 rounded border border-rose-300/30 px-2 py-1 text-xs font-semibold text-rose-100 hover:bg-rose-400/10 focus:outline-none focus:ring-1 focus:ring-rose-300"
-                >
-                  Thử lại
-                </button>
-              )}
-            </div>
+            <ReviewFeedbackHistoryErrorNotice
+              message={error}
+              onRetry={() => setReloadEpoch(epoch => epoch + 1)}
+              variant="alert"
+            />
           )}
 
           <div className="overflow-hidden rounded-xl border border-[#202e47] bg-[#0c1424]">
@@ -332,11 +324,11 @@ export function ReviewFeedbackHistoryView({
                 Đang đọc lịch sử ký duyệt…
               </div>
             ) : error && !page ? (
-              <div className="flex min-h-44 flex-col items-center justify-center px-6 py-10 text-center" role="status">
-                <span className="material-symbols-outlined text-3xl text-rose-300">cloud_off</span>
-                <h3 className="mt-2 font-semibold text-on-surface">Chưa thể hiển thị lịch sử</h3>
-                <p className="mt-1 max-w-lg text-sm text-on-surface-variant">{errorPresentation?.guidance}</p>
-              </div>
+              <ReviewFeedbackHistoryErrorNotice
+                message={error}
+                onRetry={() => setReloadEpoch(epoch => epoch + 1)}
+                variant="status"
+              />
             ) : page && page.items.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[1060px] text-left text-sm">
