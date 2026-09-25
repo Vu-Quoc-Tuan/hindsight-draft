@@ -6,6 +6,7 @@ import asyncio
 import os
 import httpx2
 import pytest
+from sqlalchemy.engine import make_url
 
 from nocpro_api import create_app
 
@@ -134,11 +135,15 @@ def test_calibrate_config_endpoint(app, monkeypatch, tmp_path) -> None:
     database_url = os.environ.get("TEST_DATABASE_URL")
     if not database_url:
         pytest.skip("TEST_DATABASE_URL is not configured")
+    if make_url(database_url).get_backend_name() != "postgresql":
+        pytest.skip("TEST_DATABASE_URL must point to PostgreSQL")
 
     from benchmarks import calibrate_thresholds
 
     monkeypatch.setattr(calibrate_thresholds, "DEFAULT_DATABASE_URL", database_url)
     temp_yaml = tmp_path / "calibrated.yaml"
+    temp_report = tmp_path / "calibration_report.json"
+    monkeypatch.setattr(calibrate_thresholds, "DEFAULT_REPORT_JSON", temp_report)
     monkeypatch.setenv("NOCPRO_CALIBRATED_OUTPUT_PATH", str(temp_yaml))
 
     async def exercise() -> None:
@@ -158,5 +163,6 @@ def test_calibrate_config_endpoint(app, monkeypatch, tmp_path) -> None:
             config_data = config_resp.json()
             assert "v1-calibrated" in config_data["config_version"]
             assert temp_yaml.exists()
+            assert temp_report.exists()
 
     asyncio.run(exercise())
