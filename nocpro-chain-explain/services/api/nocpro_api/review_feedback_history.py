@@ -15,6 +15,7 @@ from sqlalchemy import and_, func, or_, select
 from libs.contracts.topology_identity import snapshot_topology_profile
 from .catalog import (
     catalog_profile_for_snapshot,
+    catalog_profiles_for_provenance_sources,
     catalog_snapshot_identities_for_profile,
 )
 from .persistence.models import (
@@ -148,9 +149,28 @@ async def _active_snapshot_scope(
             snapshot_ingest = await db_session.get(SnapshotIngest, (snapshot_id, snapshot_version))
         profile_id = _text(snapshot_ingest.topology_profile_id) if snapshot_ingest is not None else None
     if not profile_id:
-        profile_id = _text(catalog_profile_for_snapshot(snapshot_id, snapshot_version))
-    if not profile_id:
-        profile_id = snapshot_topology_profile(snapshot_id, None)
+        manifest = getattr(package, "provenance_manifest", None)
+        sources = manifest.get("sources") if isinstance(manifest, dict) else None
+        source_ids = tuple(
+            source["source_id"]
+            for source in sources or ()
+            if isinstance(source, dict) and isinstance(source.get("source_id"), str)
+        )
+        profile_evidence = (
+            _text(catalog_profile_for_snapshot(snapshot_id, snapshot_version)),
+            _text(snapshot_topology_profile(snapshot_id, None)),
+            *catalog_profiles_for_provenance_sources(source_ids),
+        )
+        resolved_profiles = {
+            value.upper() for value in profile_evidence if value
+        }
+        if len(resolved_profiles) == 1:
+            profile_id = next(iter(resolved_profiles))
+        elif len(resolved_profiles) > 1:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="REVIEW_HISTORY_SOURCE_PROFILE_UNAVAILABLE",
+            )
     profile_id = profile_id.upper() if profile_id else None
     if not source_id or not source_kind or profile_id not in _PROFILE_IDS:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="REVIEW_HISTORY_SOURCE_PROFILE_UNAVAILABLE")

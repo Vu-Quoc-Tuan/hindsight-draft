@@ -4,12 +4,29 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
 ProfileKind = Literal["IP_NETWORK", "IT_SERVICES", "ALARM_ONLY"]
+
+_PROVENANCE_SOURCE_PROFILES: dict[str, ProfileKind] = {
+    "synthetic_temporal_topology_v1": "IT_SERVICES",
+}
+
+
+def catalog_profiles_for_provenance_sources(
+    source_ids: Iterable[str],
+) -> tuple[ProfileKind, ...]:
+    """Return distinct catalog profiles explicitly assigned to provenance IDs."""
+    return tuple(sorted({
+        _PROVENANCE_SOURCE_PROFILES[source_id.strip()]
+        for source_id in source_ids
+        if isinstance(source_id, str)
+        and source_id.strip() in _PROVENANCE_SOURCE_PROFILES
+    }))
 
 
 @dataclass(frozen=True)

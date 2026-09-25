@@ -8,9 +8,85 @@ import pytest
 from fastapi import HTTPException
 
 from libs.contracts import IngestedPackage, IngestedSnapshot
-from nocpro_api.review_feedback_history import load_review_feedback_history
+import nocpro_api.catalog as catalog
+from nocpro_api.review_feedback_history import _active_snapshot_scope, load_review_feedback_history
 from nocpro_api.review_principal import ReviewerPrincipal
 from review_learning.contracts import ReviewDomainForbidden
+
+
+def _scope_service(
+    snapshot_id: str,
+    *,
+    source_ids: tuple[str, ...] = (),
+    profile_id: str | None = None,
+):
+    snapshot_version = "v1"
+    snapshot = IngestedSnapshot(
+        snapshot_id=snapshot_id,
+        snapshot_version=snapshot_version,
+        snapshot_time="2026-09-24T00:00:00Z",
+        status="COMPLETE",
+        source="nocpro-mock",
+        source_kind="SYNTHETIC_TEST",
+        produced_at="2026-09-24T00:00:00Z",
+        topology_ref={"profile_id": profile_id} if profile_id else None,
+    )
+    package = IngestedPackage(snapshot=snapshot)
+    package.provenance_manifest = {
+        "sources": [{"source_id": source_id} for source_id in source_ids],
+    }
+    return SimpleNamespace(
+        repository=None,
+        current_package=lambda: package,
+        active_identity=lambda: (snapshot_id, snapshot_version),
+    )
+
+
+def test_review_history_resolves_known_temporal_provenance() -> None:
+    snapshot_id = "synthetic_temporal_topology_v1:opaque-token:snapshot_005"
+    scope = asyncio.run(_active_snapshot_scope(
+        _scope_service(
+            snapshot_id,
+            source_ids=("synthetic_temporal_topology_v1", "synthetic-topology"),
+        ),
+        snapshot_id,
+        "v1",
+    ))
+    assert scope[3] == "IT_SERVICES"
+
+
+@pytest.mark.parametrize(
+    ("snapshot_id", "source_ids"),
+    [
+        ("generated_snapshot", ("unregistered-scenario",)),
+        ("generated_ip_snapshot", ("synthetic_temporal_topology_v1",)),
+    ],
+)
+def test_review_history_keeps_unknown_or_conflicting_provenance_unavailable(
+    snapshot_id: str, source_ids: tuple[str, ...]
+) -> None:
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(_active_snapshot_scope(
+            _scope_service(snapshot_id, source_ids=source_ids), snapshot_id, "v1"
+        ))
+    assert error.value.status_code == 409
+    assert error.value.detail == "REVIEW_HISTORY_SOURCE_PROFILE_UNAVAILABLE"
+
+
+def test_review_history_keeps_ambiguous_provenance_unavailable(monkeypatch) -> None:
+    monkeypatch.setitem(
+        catalog._PROVENANCE_SOURCE_PROFILES,
+        "synthetic_ip_scenario",
+        "IP_NETWORK",
+    )
+    snapshot_id = "generated_snapshot"
+    service = _scope_service(
+        snapshot_id,
+        source_ids=("synthetic_temporal_topology_v1", "synthetic_ip_scenario"),
+    )
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(_active_snapshot_scope(service, snapshot_id, "v1"))
+    assert error.value.detail == "REVIEW_HISTORY_SOURCE_PROFILE_UNAVAILABLE"
 
 
 def _service():
