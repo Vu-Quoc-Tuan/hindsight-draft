@@ -299,7 +299,7 @@ def test_0015_reconciles_preexisting_orm_resolution_table_without_data_loss() ->
             finally:
                 await connection.close()
 
-            _migrate(database, "head")
+            _migrate(database, "0015")
             connection = await asyncpg.connect(_database_url(database))
             try:
                 assert await connection.fetchval(
@@ -314,6 +314,68 @@ def test_0015_reconciles_preexisting_orm_resolution_table_without_data_loss() ->
                 assert await connection.fetchval(
                     "SELECT version_num FROM alembic_version"
                 ) == "0015"
+            finally:
+                await connection.close()
+        finally:
+            await _drop_database(database)
+
+    asyncio.run(exercise())
+
+
+def test_0024_preserves_and_accepts_full_deep_dive_config_identity() -> None:
+    async def exercise() -> None:
+        database = f"nocpro_migration_config_version_{uuid4().hex[:12]}"
+        await _create_database(database)
+        try:
+            _migrate(database, "0023")
+            connection = await asyncpg.connect(_database_url(database))
+            try:
+                await connection.execute(
+                    """
+                    INSERT INTO deep_dive_job (
+                      job_id, snapshot_id, snapshot_version, chain_id,
+                      cache_fingerprint, analysis_config_version, status,
+                      progress_percent
+                    ) VALUES (
+                      'job-config-migration', 'snapshot-1', 'v1', 'chain-1',
+                      'fingerprint', 'legacy-config-v1', 'SUCCEEDED', 100
+                    )
+                    """
+                )
+            finally:
+                await connection.close()
+
+            _migrate(database, "head")
+            full_identity = (
+                "v1-calibrated|similarity:model-v3|p2:"
+                + "candidate-stamp-" * 18
+                + "|attribution-evaluation:"
+                + "evaluation-stamp-" * 18
+            )
+            assert len(full_identity) > 255
+
+            connection = await asyncpg.connect(_database_url(database))
+            try:
+                column_length = await connection.fetchval(
+                    "SELECT character_maximum_length FROM information_schema.columns "
+                    "WHERE table_schema = 'public' AND table_name = 'deep_dive_job' "
+                    "AND column_name = 'analysis_config_version'"
+                )
+                assert column_length is None
+                assert await connection.fetchval(
+                    "SELECT analysis_config_version FROM deep_dive_job "
+                    "WHERE job_id = 'job-config-migration'"
+                ) == "legacy-config-v1"
+
+                await connection.execute(
+                    "UPDATE deep_dive_job SET analysis_config_version = $1 "
+                    "WHERE job_id = 'job-config-migration'",
+                    full_identity,
+                )
+                assert await connection.fetchval(
+                    "SELECT analysis_config_version FROM deep_dive_job "
+                    "WHERE job_id = 'job-config-migration'"
+                ) == full_identity
             finally:
                 await connection.close()
         finally:

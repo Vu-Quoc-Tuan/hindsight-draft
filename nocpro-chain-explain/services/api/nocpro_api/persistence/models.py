@@ -420,7 +420,7 @@ class DeepDiveJobRecord(Base):
     snapshot_version: Mapped[str] = mapped_column(String(255), nullable=False)
     chain_id: Mapped[str] = mapped_column(String(255), nullable=False)
     cache_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
-    analysis_config_version: Mapped[str | None] = mapped_column(String(255))
+    analysis_config_version: Mapped[str | None] = mapped_column(Text)
     topology_version: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     progress_percent: Mapped[int] = mapped_column(nullable=False)

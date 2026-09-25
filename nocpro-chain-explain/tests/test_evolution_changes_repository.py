@@ -10,11 +10,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, insert
+from sqlalchemy import Text, create_engine, insert
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 
-from nocpro_api.persistence.models import Membership
+from nocpro_api.persistence.models import DeepDiveJobRecord, Membership
 from nocpro_api.persistence.repository import SnapshotRepository
 
 
@@ -139,14 +139,22 @@ def test_membership_set_queries_execute_against_sqlite():
         engine.dispose()
 
 
-def test_0023_offline_ddl_has_both_indexes_and_correct_head():
+def test_0023_and_0024_offline_ddl_match_persisted_schema():
     from alembic.script import ScriptDirectory
 
-    output = StringIO()
-    config = Config("alembic.ini", output_buffer=output)
-    assert ScriptDirectory.from_config(config).get_heads() == ["0023"]
+    assert isinstance(DeepDiveJobRecord.__table__.c.analysis_config_version.type, Text)
+
+    index_output = StringIO()
+    config = Config("alembic.ini", output_buffer=index_output)
+    assert ScriptDirectory.from_config(config).get_heads() == ["0024"]
     command.upgrade(config, "0022:0023", sql=True)
-    ddl = output.getvalue().lower()
-    assert "ix_lineage_edge_child_key" in ddl
-    assert "ix_quality_receipts_analysis_identity_gin" in ddl
-    assert "using gin (analysis_identity jsonb_path_ops)" in ddl
+    index_ddl = index_output.getvalue().lower()
+    assert "ix_lineage_edge_child_key" in index_ddl
+    assert "ix_quality_receipts_analysis_identity_gin" in index_ddl
+    assert "using gin (analysis_identity jsonb_path_ops)" in index_ddl
+
+    config = Config("alembic.ini", output_buffer=StringIO())
+    command.upgrade(config, "0023:0024", sql=True)
+    config.output_buffer.seek(0)
+    config_ddl = config.output_buffer.getvalue().lower()
+    assert "alter table deep_dive_job alter column analysis_config_version type text" in config_ddl
