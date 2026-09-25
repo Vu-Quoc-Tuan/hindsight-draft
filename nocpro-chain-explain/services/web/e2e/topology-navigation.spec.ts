@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('real IT source identifier opens a read-only topology tree without P2 promotion', async ({ page }) => {
+test('active chain opens the application topology workspace without promoting navigation to P2', async ({ page }) => {
   const topologyEndpoint = `${(process.env.NOCPRO_E2E_TOPOLOGY_URL || 'http://127.0.0.1:3000/api/v1/topology').replace(/\/$/, '')}/resolve`
   const sourceIdentifier = process.env.NOCPRO_E2E_IT_SOURCE_IDENTIFIER
   test.skip(!sourceIdentifier, 'acceptance must select an unambiguous IT source identifier')
@@ -21,27 +21,33 @@ test('real IT source identifier opens a read-only topology tree without P2 promo
   expect(resolution.p2_mapping_eligible).toBe(false)
   expect(resolution.dependency_semantics).toBe('UNVERIFIED')
 
+  const chainsResponse = await page.request.get('/api/v1/chains')
+  expect(chainsResponse.ok(), 'acceptance must expose an active READY snapshot').toBeTruthy()
+  const chainList = await chainsResponse.json() as {
+    chains: Array<{ chain_id: string; member_count: number }>
+  }
+  const chain = chainList.chains.find(item => item.member_count > 0)
+  expect(chain, 'active snapshot must contain a chain to open').toBeDefined()
+
   const consoleErrors: string[] = []
   page.on('console', (message) => {
-    // Opening a resolved root aborts the previous bounded projection request.
-    // Chromium may surface that deliberate AbortController cancellation as a
-    // transport-only console line; UI/API errors still fail this acceptance.
     if (
       message.type() === 'error'
       && message.text() !== 'Failed to load resource: net::ERR_CONNECTION_CLOSED'
     ) consoleErrors.push(message.text())
   })
-  await page.goto('/')
-  await page.getByRole('button', { name: /IP Network \/ / }).click()
-  await page.getByRole('button', { name: /IT Services/ }).click()
-  await page.getByRole('button', { name: 'Topology' }).click()
-  await expect(page.getByRole('heading', { name: 'Relation Tree Projection' })).toBeVisible()
 
-  await page.getByPlaceholder('Open exact source key or IP…').fill(sourceIdentifier!)
-  await page.getByRole('button', { name: 'Open source key' }).click()
-  await expect(page.getByText(`Opened ${resolution.resource_id}`)).toBeVisible()
-  await expect(page.getByTestId('topology-selected-resource')).toHaveAttribute('data-resource-id', resolution.resource_id!)
-  await expect(page.getByText(/Navigation only; dependency analysis remains unverified/i)).toBeVisible()
-  await expect(page.getByText('P2 capability')).toHaveCount(0)
+  await page.goto('/')
+  await page.getByRole('button', { name: 'All Chains', exact: true }).click()
+  await page.getByText(chain!.chain_id, { exact: true }).click()
+  const topologyResponse = page.waitForResponse(response =>
+    response.url().includes('/api/v1/topology/subgraph'),
+  )
+  await page.getByRole('button', { name: /Topology/ }).click()
+  await expect(page.getByRole('heading', {
+    name: 'Kết nối topology giữa các thiết bị có cảnh báo',
+  })).toBeVisible()
+  expect((await topologyResponse).ok(), 'application topology tab must load its subgraph API').toBeTruthy()
+  await expect(page.getByRole('heading', { name: 'NocPro topology tree' })).toHaveCount(0)
   expect(consoleErrors, 'topology navigation must not log browser errors').toEqual([])
 })
