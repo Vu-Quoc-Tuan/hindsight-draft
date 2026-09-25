@@ -9,6 +9,7 @@ from fastapi import HTTPException
 
 from libs.contracts import IngestedPackage, IngestedSnapshot
 import nocpro_api.catalog as catalog
+from nocpro_api.persistence.models import SnapshotIngest
 from nocpro_api.review_feedback_history import _active_snapshot_scope, load_review_feedback_history
 from nocpro_api.review_principal import ReviewerPrincipal
 from review_learning.contracts import ReviewDomainForbidden
@@ -19,6 +20,7 @@ def _scope_service(
     *,
     source_ids: tuple[str, ...] = (),
     profile_id: str | None = None,
+    repository=None,
 ):
     snapshot_version = "v1"
     snapshot = IngestedSnapshot(
@@ -36,7 +38,7 @@ def _scope_service(
         "sources": [{"source_id": source_id} for source_id in source_ids],
     }
     return SimpleNamespace(
-        repository=None,
+        repository=repository,
         current_package=lambda: package,
         active_identity=lambda: (snapshot_id, snapshot_version),
     )
@@ -53,6 +55,50 @@ def test_review_history_resolves_known_temporal_provenance() -> None:
         "v1",
     ))
     assert scope[3] == "IT_SERVICES"
+
+
+def test_review_history_prefers_explicit_snapshot_profile_over_conflicting_provenance() -> None:
+    snapshot_id = "generated_snapshot"
+    scope = asyncio.run(_active_snapshot_scope(
+        _scope_service(
+            snapshot_id,
+            source_ids=("synthetic_temporal_topology_v1",),
+            profile_id="IP_NETWORK",
+        ),
+        snapshot_id,
+        "v1",
+    ))
+
+    assert scope[3] == "IP_NETWORK"
+
+
+def test_review_history_prefers_persisted_ingest_profile_over_conflicting_provenance() -> None:
+    snapshot_id = "generated_snapshot"
+
+    async def get_snapshot_ingest(model, identity):
+        assert model is SnapshotIngest
+        assert identity == (snapshot_id, "v1")
+        return SimpleNamespace(topology_profile_id="IP_NETWORK")
+
+    class SessionContext:
+        async def __aenter__(self):
+            return SimpleNamespace(get=get_snapshot_ingest)
+
+        async def __aexit__(self, *_args):
+            return None
+
+    repository = SimpleNamespace(sessions=lambda: SessionContext())
+    scope = asyncio.run(_active_snapshot_scope(
+        _scope_service(
+            snapshot_id,
+            source_ids=("synthetic_temporal_topology_v1",),
+            repository=repository,
+        ),
+        snapshot_id,
+        "v1",
+    ))
+
+    assert scope[3] == "IP_NETWORK"
 
 
 @pytest.mark.parametrize(
