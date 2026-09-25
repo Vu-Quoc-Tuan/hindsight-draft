@@ -30,6 +30,7 @@ const AuditStructureView = lazy(() => import('./views/AuditStructureView').then(
 const RecommendationsView = lazy(() => import('./views/RecommendationsView').then(m => ({ default: m.RecommendationsView })))
 const EvolutionView = lazy(() => import('./views/EvolutionView').then(m => ({ default: m.EvolutionView })))
 const TopologyOverlayView = lazy(() => import('./views/TopologyOverlayView').then(m => ({ default: m.TopologyOverlayView })))
+const ReviewFeedbackHistoryView = lazy(() => import('./views/ReviewFeedbackHistoryView').then(m => ({ default: m.ReviewFeedbackHistoryView })))
 const AIAnalystDrawer = lazy(() => import('./components/AIAnalystDrawer').then(m => ({ default: m.AIAnalystDrawer })))
 const LearningModal = lazy(() => import('./components/LearningModal').then(m => ({ default: m.LearningModal })))
 import {
@@ -47,6 +48,7 @@ import type {
   ChainQualitySummary,
   CounterfactualJob,
   Job,
+  ReviewFeedbackHistoryItem,
 } from './types'
 import './App.css'
 
@@ -920,7 +922,12 @@ export default function App() {
   }
 
   // Preset Snapshot selection handler
-  const handleSelectSnapshot = async (id: string, profile: 'IP_NETWORK' | 'IT_SERVICES' | 'ALARM_ONLY', version?: string | null) => {
+  const handleSelectSnapshot = async (
+    id: string,
+    profile: 'IP_NETWORK' | 'IT_SERVICES' | 'ALARM_ONLY',
+    version?: string | null,
+    preserveCurrentTab = false,
+  ): Promise<ChainList | null> => {
     deepDiveSubmissionGeneration.current += 1
     setJob(null)
     const generation = snapshotSelectionGeneration.current + 1
@@ -933,7 +940,7 @@ export default function App() {
     setSelectingSnapshotId(selectionKey)
     try {
       const selected = await api.selectSnapshot(id, version, controller.signal)
-      if (controller.signal.aborted || generation !== snapshotSelectionGeneration.current) return
+      if (controller.signal.aborted || generation !== snapshotSelectionGeneration.current) return null
       setActiveSnapshotContext(selected.snapshot_id, selected.snapshot_version, selected.topology_version)
       setTopologyProfile(profile)
       setTopologyRootId(undefined)
@@ -953,7 +960,7 @@ export default function App() {
       setLiveRefreshIssue('chain-list', null)
       liveSyncMarker.current()
       setChainId('')
-      setCurrentTab('snapshot-overview')
+      if (!preserveCurrentTab) setCurrentTab('snapshot-overview')
       setAnalysisState(null)
       setAnalysisError(null)
       setAssistantPair(null)
@@ -963,16 +970,64 @@ export default function App() {
       setApiStatus('online')
       liveSyncMarker.current()
       scheduleRefresh('catalog', refreshCatalogTask)
+      return chains
     } catch (cause) {
       if (!controller.signal.aborted && generation === snapshotSelectionGeneration.current) {
         setError(cause instanceof Error ? cause.message : 'Snapshot selection failed')
       }
+      return null
     } finally {
       if (generation === snapshotSelectionGeneration.current) {
         setSelectingSnapshotId(null)
         if (snapshotSelectionAbort.current === controller) snapshotSelectionAbort.current = null
       }
     }
+  }
+
+  const handleOpenReviewHistoryItem = async (item: ReviewFeedbackHistoryItem) => {
+    setError(null)
+    if (snapshotSelectionAbort.current) {
+      snapshotSelectionGeneration.current += 1
+      snapshotSelectionAbort.current.abort()
+      snapshotSelectionAbort.current = null
+      setSelectingSnapshotId(null)
+    }
+    let targetChainList = chainList
+    const exactSnapshotIsActive = chainList?.snapshot_id === item.snapshot_id
+      && chainList.snapshot_version === item.snapshot_version
+    if (!exactSnapshotIsActive) {
+      targetChainList = await handleSelectSnapshot(
+        item.snapshot_id,
+        item.profile_id,
+        item.snapshot_version,
+        true,
+      )
+    } else {
+      setTopologyProfile(item.profile_id)
+      setTopologyRootId(undefined)
+    }
+
+    if (!targetChainList) return
+    if (
+      targetChainList.snapshot_id !== item.snapshot_id
+      || targetChainList.snapshot_version !== item.snapshot_version
+    ) {
+      setError(`Không xác nhận được snapshot ${item.snapshot_id}@${item.snapshot_version}; vẫn ở trang Lịch sử ký duyệt.`)
+      return
+    }
+
+    const targetChainExists = targetChainList.chains.some(chain => chain.chain_id === item.chain_id)
+    if (!targetChainExists) {
+      setError(`Không tìm thấy chain ${item.chain_id} trong snapshot ${item.snapshot_id}@${item.snapshot_version}; vẫn ở trang Lịch sử ký duyệt.`)
+      return
+    }
+
+    deepDiveSubmissionGeneration.current += 1
+    setJob(null)
+    setAssistantPair(null)
+    setChainId(item.chain_id)
+    setCurrentTab('validation')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   // Chain selection handler
@@ -1032,7 +1087,7 @@ export default function App() {
     }
     const targetChainId = action.target.chain_id
     const validTabs: SubNavTab[] = [
-      'snapshots-overview', 'snapshot-overview', 'all-chains', 'chain-overview',
+      'snapshots-overview', 'snapshot-overview', 'all-chains', 'review-history', 'chain-overview',
       'why', 'members', 'structure', 'review', 'evolution', 'topology', 'validation',
     ]
     const targetTab = action.target.tab
@@ -1041,7 +1096,7 @@ export default function App() {
       return
     }
     const normalizedTab = targetTab as SubNavTab | undefined
-    const snapshotLevelTab = normalizedTab && ['snapshots-overview', 'snapshot-overview', 'all-chains'].includes(normalizedTab)
+    const snapshotLevelTab = normalizedTab && ['snapshots-overview', 'snapshot-overview', 'all-chains', 'review-history'].includes(normalizedTab)
     if (snapshotLevelTab) {
       deepDiveSubmissionGeneration.current += 1
       setJob(null)
@@ -1140,7 +1195,16 @@ export default function App() {
             deepDiveSubmissionGeneration.current += 1
             setJob(null)
             setChainId('')
+            setAssistantPair(null)
             setCurrentTab('all-chains')
+          } else if (tabName === 'Lịch sử ký duyệt' || tabName === 'review-history') {
+            deepDiveSubmissionGeneration.current += 1
+            setJob(null)
+            setChainId('')
+            setAssistantPair(null)
+            setOverviewPreview(null)
+            setError(null)
+            setCurrentTab('review-history')
           } else {
             setCurrentTab(tabName as SubNavTab)
           }
@@ -1164,7 +1228,7 @@ export default function App() {
       </div>
 
       {/* 2. Sub Navigation Bar (Chain-level IA: only when on a chain-level tab and a chain is selected) */}
-      {!['snapshots-overview', 'snapshot-overview', 'all-chains'].includes(currentTab) && Boolean(chainId) && (
+      {!['snapshots-overview', 'snapshot-overview', 'all-chains', 'review-history'].includes(currentTab) && Boolean(chainId) && (
         <SubNavBar
           currentTab={currentTab}
           onSelectTab={tab => {
@@ -1267,6 +1331,14 @@ export default function App() {
               qualitySummary={qualitySummaries.find(summary => summary.snapshot_id === chainList?.snapshot_id && summary.snapshot_version === chainList?.snapshot_version) ?? null}
               qualitySummaryError={qualitySummaryError}
               onSelectChain={handleSelectChain}
+            />
+          )}
+
+          {currentTab === 'review-history' && (
+            <ReviewFeedbackHistoryView
+              key={JSON.stringify(chainOverviewSnapshotContext ?? null)}
+              snapshotContext={chainOverviewSnapshotContext ?? null}
+              onOpenChain={item => void handleOpenReviewHistoryItem(item)}
             />
           )}
 

@@ -11,6 +11,7 @@ import type {
 import type { RefreshTask } from '../liveUpdates'
 import { InfoTip } from '../components/InfoTip'
 import { ChainQualityCard, RepresentativeMemberCard, TopologyCoverageCard } from '../components/ChainQualityCards'
+import { RecurrentAlarmHistoryPanel } from '../components/RecurrentAlarmHistoryPanel'
 import { EvidenceDetails } from '../components/EvidenceDetails'
 import { compactTime } from '../format'
 
@@ -305,6 +306,12 @@ export function ChainDetailView({
               onOpenEvidence={cardsStatus === 'READY' ? openEvidence : undefined}
             />
           </div>
+
+          <RecurrentAlarmHistoryPanel
+            chainId={analysis.chain_id}
+            snapshotContext={snapshotContext}
+            refreshEpoch={refreshEpoch}
+          />
 
           {cardsPayload ? (
             <div className="flex justify-end">

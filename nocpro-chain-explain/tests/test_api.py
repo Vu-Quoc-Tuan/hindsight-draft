@@ -152,6 +152,54 @@ def test_snapshot_ingest_lists_and_explains_chains():
     assert body["descriptors"]
 
 
+def test_recurrent_alarm_history_requires_and_preserves_snapshot_identity():
+    payload = _payload()
+    snapshot_id = "demo_ip_recurrence"
+    payload["snapshot"]["snapshot_id"] = snapshot_id
+    for index, alarm in enumerate(payload["alarms"], start=1):
+        alarm["snapshot_id"] = snapshot_id
+        alarm["device_code"] = "DEVICE-1"
+        alarm["raw"]["fault_id"] = "FAULT-1"
+        alarm["canonical_start_time"] = f"2026-01-01T00:00:0{index}"
+    for row in payload["chains"] + payload["memberships"]:
+        row["snapshot_id"] = snapshot_id
+
+    async def exercise(client: httpx2.AsyncClient):
+        ingested = await client.post("/api/v1/snapshots", json=payload)
+        current = await client.get(
+            "/api/v1/chains/C1/recurrent-alarms",
+            headers={
+                "X-NocPro-Snapshot-Id": snapshot_id,
+                "X-NocPro-Snapshot-Version": "1",
+            },
+        )
+        stale = await client.get(
+            "/api/v1/chains/C1/recurrent-alarms",
+            headers={
+                "X-NocPro-Snapshot-Id": "different-snapshot",
+                "X-NocPro-Snapshot-Version": "1",
+            },
+        )
+        missing = await client.get("/api/v1/chains/C1/recurrent-alarms")
+        return ingested, current, stale, missing
+
+    ingested, current, stale, missing = run_api_test(exercise)
+
+    assert ingested.status_code == 201
+    assert current.status_code == 200
+    body = current.json()
+    assert (body["snapshot_id"], body["snapshot_version"]) == (snapshot_id, "1")
+    assert body["profile_id"] == "IP_NETWORK"
+    assert body["assumed_utc_count"] == 3
+    assert [(group["device_code"], group["fault_id"], group["count"]) for group in body["groups"]] == [
+        ("DEVICE-1", "FAULT-1", 3),
+    ]
+    assert stale.status_code == 409
+    assert "snapshot" in stale.json()["detail"].lower()
+    assert missing.status_code == 409
+    assert missing.json()["detail"] == "EVIDENCE_SNAPSHOT_CONTEXT_REQUIRED"
+
+
 def test_chain_analysis_does_not_infer_topology_profile_from_snapshot_name(monkeypatch):
     payload = _payload()
     payload["snapshot"]["snapshot_id"] = "quip-demo"

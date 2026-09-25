@@ -8,7 +8,7 @@ import {
   shouldForceCohesionRefresh,
 } from './api'
 import { GroundedProviderBadge } from './GroundedProviderBadge'
-import type { AISuggestion, ChainAnalysis, CohesionNarrativeView, Job } from './types'
+import type { ChainAnalysis, CohesionNarrativeView, Job } from './types'
 
 export function AIAdvisorPanel({
   chainId,
@@ -18,7 +18,6 @@ export function AIAdvisorPanel({
   reviewEpoch = 0,
 }: {
   chainId: string
-  initialSuggestion?: AISuggestion | null
   initialCohesion?: CohesionNarrativeView | null
   analysis?: ChainAnalysis | null
   job?: Job | null

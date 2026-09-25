@@ -9,6 +9,7 @@ import logging
 import os
 import re
 from dataclasses import asdict
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
@@ -35,7 +36,6 @@ from .schemas import (
     OperatorFeedbackView,
     ReasonPolicyView,
     RetractionSubmission,
-    AISuggestionView,
     CohesionNarrativeView,
     AssistantQueryInput,
     AssistantResponseView,
@@ -58,6 +58,7 @@ from .schemas import (
     ApplyThresholdInput,
     ProposalClarityComparisonView,
     ThresholdExplainOptimizationView,
+    RecurrentAlarmHistoryView,
 )
 from .blocking_work import (
     BlockingWorkBusy,
@@ -77,17 +78,22 @@ from .serializers import (
     chain_analysis_view,
     counterfactual_job_view,
     operator_feedback_view,
-    ai_suggestion_view,
     audit_visualization_artifact_view,
     evolution_view,
     job_view,
     pair_evidence_view,
 )
 from .workspace import SnapshotNotLoaded, Workspace, _topology_version
+from .review_feedback_history import (
+    LifecycleStatus,
+    ReviewFeedbackHistoryPage,
+    load_review_feedback_history,
+)
 from .evolution_changes import compare_evolution_facts
 from .cohesion_advisor import (
     CHAIN_OVERVIEW_PROJECTION_VERSION,
 )
+from .recurrent_alarm_history import chain_recurrence_history
 from .quality_freshness import (
     projection_staleness_reason,
     record_quality_freshness_lag,
@@ -1457,6 +1463,31 @@ async def get_chain_evidence_record(
     return EvidenceRecordView(**record)
 
 
+@router.get(
+    "/chains/{chain_id}/recurrent-alarms",
+    response_model=RecurrentAlarmHistoryView,
+)
+async def get_chain_recurrent_alarm_history(
+    chain_id: str,
+    request: Request,
+    snapshot_id: str | None = Header(None, alias="X-NocPro-Snapshot-Id"),
+    snapshot_version: str | None = Header(None, alias="X-NocPro-Snapshot-Version"),
+) -> RecurrentAlarmHistoryView:
+    service = workspace(request)
+    package = _require_evidence_snapshot_context(
+        service,
+        chain_id=chain_id,
+        snapshot_id=snapshot_id,
+        snapshot_version=snapshot_version,
+    )
+    result = await chain_recurrence_history(
+        package,
+        chain_id=chain_id,
+        repository=service.repository,
+    )
+    return RecurrentAlarmHistoryView(**result)
+
+
 @router.get("/chains/{chain_id}")
 async def explain_chain(chain_id: str, request: Request):
     service = workspace(request)
@@ -2202,12 +2233,56 @@ async def get_job_operator_feedback(
 async def get_chain_operator_feedback(
     chain_id: str,
     request: Request,
+    snapshot_id: str = Query(..., min_length=1),
+    snapshot_version: str = Query(..., min_length=1),
     principal: ReviewerPrincipal = Depends(get_reviewer_principal),
 ) -> list[OperatorFeedbackView]:
     try:
         service = workspace(request)
-        feedbacks = await service.list_operator_feedback(chain_id=chain_id, principal=principal)
+        feedbacks = await service.list_operator_feedback(
+            chain_id=chain_id,
+            snapshot_id=snapshot_id,
+            snapshot_version=snapshot_version,
+            principal=principal,
+        )
         return [operator_feedback_view(f) for f in feedbacks]
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.get(
+    "/review-feedback/history",
+    response_model=ReviewFeedbackHistoryPage,
+)
+async def get_review_feedback_history(
+    request: Request,
+    snapshot_id: str = Query(..., min_length=1),
+    snapshot_version: str = Query(..., min_length=1),
+    search: str | None = Query(None, max_length=160),
+    decision: str | None = Query(None, max_length=32),
+    lifecycle_status: LifecycleStatus | None = Query(None),
+    reviewer: str | None = Query(None, max_length=255),
+    since: datetime | None = Query(None),
+    until: datetime | None = Query(None),
+    limit: int = Query(50, ge=1, le=100),
+    cursor: str | None = Query(None, max_length=1024),
+    principal: ReviewerPrincipal = Depends(get_reviewer_principal),
+) -> ReviewFeedbackHistoryPage:
+    try:
+        return await load_review_feedback_history(
+            workspace(request),
+            principal,
+            snapshot_id=snapshot_id,
+            snapshot_version=snapshot_version,
+            search=search,
+            decision=decision,
+            lifecycle_status=lifecycle_status,
+            reviewer=reviewer,
+            since=since,
+            until=until,
+            limit=limit,
+            cursor=cursor,
+        )
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -2297,112 +2372,6 @@ async def get_candidate_similar_cases(
                 "same_lineage_history": [],
             }
         return dict(res)
-    except Exception as exc:
-        raise translate_error(exc) from exc
-
-
-@router.post(
-    "/chains/{chain_id}/ai-suggestion",
-    response_model=AISuggestionView,
-)
-@router.get(
-    "/chains/{chain_id}/ai-suggestion",
-    response_model=AISuggestionView,
-)
-async def get_chain_ai_suggestion(
-    chain_id: str, request: Request, lang: str = Query("vi")
-) -> AISuggestionView:
-    try:
-        service = workspace(request)
-        analysis = service.analyze(chain_id)
-        review_result = None
-        review_status = "NOT_AVAILABLE"
-        review_reason = None
-        package = service.current_package() if hasattr(service, "current_package") else None
-        try:
-            latest_review = await service.latest_review(chain_id)
-            if latest_review and latest_review.result:
-                from tier2.counterfactual.public_contract import (
-                    public_review_result,
-                    review_evaluation_completed,
-                )
-                if hasattr(latest_review.result, "recommendations"):
-                    review_result = public_review_result(latest_review.result, package=package, language=lang)
-                elif isinstance(latest_review.result, dict):
-                    review_result = dict(latest_review.result)
-                    if "evaluated_candidates" in review_result:
-                        from tier2.counterfactual.comparative_explainer import (
-                            build_deterministic_comparative_explanation,
-                        )
-                        cands = []
-                        for cand in review_result.get("evaluated_candidates", []):
-                            if isinstance(cand, dict):
-                                cand_copy = dict(cand)
-                                cand_m_ids = cand.get("member_ids")
-                                if not cand_m_ids:
-                                    ev = cand.get("operation_specific_evidence") or {}
-                                    if ev.get("alarm_id"):
-                                        cand_m_ids = [str(ev["alarm_id"])]
-                                    elif cand.get("partition_delta"):
-                                        p_delta = cand.get("partition_delta") or {}
-                                        b_list = p_delta.get("before") or []
-                                        a_list = p_delta.get("after") or []
-                                        if b_list and a_list:
-                                            b_m = set(b_list[0][1]) if len(b_list) > 0 and len(b_list[0]) > 1 else set()
-                                            a_m = set(a_list[0][1]) if len(a_list) > 0 and len(a_list[0]) > 1 else set()
-                                            diff = b_m - a_m
-                                            if diff:
-                                                cand_m_ids = list(sorted(diff))
-                                cand_copy["member_ids"] = cand_m_ids or []
-                                cand_copy["comparative_explanation"] = build_deterministic_comparative_explanation(
-                                    operation=cand.get("operation", "UNKNOWN"),
-                                    candidate_id=cand.get("candidate_id", ""),
-                                    partition_delta=cand.get("partition_delta"),
-                                    before_metrics=cand.get("before_metrics") or cand.get("before"),
-                                    after_metrics=cand.get("after_metrics") or cand.get("after"),
-                                    metric_deltas=cand.get("metric_deltas"),
-                                    package=package,
-                                    member_ids=cand_m_ids or (),
-                                    source_chain_id=cand.get("source_chain_id") or chain_id,
-                                    target_chain_id=cand.get("target_chain_id"),
-                                    merged_chain_ids=cand.get("merged_chain_ids"),
-                                    operation_evidence=cand.get("operation_specific_evidence"),
-                                    semantic_effects=cand.get("semantic_effects"),
-                                    structural_facts=cand.get("structural_facts"),
-                                    language=lang,
-                                ).as_dict()
-                                cands.append(cand_copy)
-                            else:
-                                cands.append(cand)
-                        review_result["evaluated_candidates"] = cands
-                    if not isinstance(review_result.get("evaluation_completed"), bool):
-                        review_result["evaluation_completed"] = review_evaluation_completed(
-                            review_result.get("operation_status")
-                        )
-                else:
-                    review_result = latest_review.result
-                review_status = "AVAILABLE"
-                if isinstance(review_result, dict):
-                    review_reason = review_result.get("reason")
-                    if not review_reason and review_result.get("recommendation_status") == "UNAVAILABLE":
-                        review_reason = "RECOMMENDATION_UNAVAILABLE"
-        except Exception:
-            logger.exception("Could not load Review artifact for AI suggestion chain=%s", chain_id)
-            review_status = "UNAVAILABLE"
-            review_reason = "REVIEW_ARTIFACT_UNAVAILABLE"
-
-        from .ai_advisor import generate_ai_suggestion
-        suggestion = await _run_grounded_provider(
-            generate_ai_suggestion,
-            chain_id=chain_id,
-            analysis=analysis,
-            review_result=review_result,
-            review_status=review_status,
-            review_reason=review_reason,
-            package=package,
-            language=lang,
-        )
-        return ai_suggestion_view(suggestion)
     except Exception as exc:
         raise translate_error(exc) from exc
 

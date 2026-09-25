@@ -140,6 +140,9 @@ test('Overview path witness loads a pinned four-hop graph before highlighting', 
     const { pathname, searchParams } = url
     let body: unknown = {}
 
+    if (pathname === '/api/v1/events') {
+      return route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'retry: 1000\n\n' })
+    }
     if (pathname.endsWith('/health')) {
       body = { status: 'ok' }
     } else if (pathname.endsWith(`/chains/${chainId}/evidence`)) {
@@ -245,6 +248,24 @@ test('Overview path witness loads a pinned four-hop graph before highlighting', 
     } else if (pathname.endsWith(`/chains/${chainId}/overview-cards`)) {
       overviewRequests.push(url)
       body = overviewCards
+    } else if (pathname.endsWith(`/chains/${chainId}/recurrent-alarms`)) {
+      body = {
+        snapshot_id: snapshotId,
+        snapshot_version: snapshotVersion,
+        chain_id: chainId,
+        profile_id: 'IP_NETWORK',
+        source_id: null,
+        history_scope: 'ACTIVE_SNAPSHOT_ONLY',
+        history_issue: null,
+        snapshot_count: 1,
+        assumed_utc_count: 0,
+        duplicate_observations: 0,
+        conflicting_event_keys: 0,
+        skipped_observations: 0,
+        status: 'UNAVAILABLE',
+        reason: 'NO_DEVICE_FAULT_PAIRS_IN_CHAIN',
+        groups: [],
+      }
     } else if (pathname.endsWith(`/chains/${chainId}/deep-dive`)) {
       body = null
     } else if (pathname.endsWith(`/chains/${chainId}`)) {

@@ -3831,15 +3831,6 @@ button.table-row.is-selected {
   color: #cbd5e1;
 }
 
-.ai-suggestion-body {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: rgba(2, 6, 23, 0.6);
-  padding: 1.4rem;
-  display: grid;
-  gap: 1.25rem;
-}
-
 .ai-provider-notice {
   padding: 0.6rem 0.9rem;
   background: rgba(245, 158, 11, 0.12);

@@ -2,6 +2,7 @@ export type SubNavTab =
   | 'snapshots-overview'
   | 'snapshot-overview'
   | 'all-chains'
+  | 'review-history'
   | 'chain-overview'
   | 'why'
   | 'members'
@@ -28,7 +29,8 @@ export function SubNavBar({
   const isSnapshotLevel = (
     currentTab === 'snapshots-overview' ||
     currentTab === 'snapshot-overview' ||
-    currentTab === 'all-chains'
+    currentTab === 'all-chains' ||
+    currentTab === 'review-history'
   )
   if (!selectedChainId || isSnapshotLevel) {
     return null

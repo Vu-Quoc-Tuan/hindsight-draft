@@ -1,5 +1,4 @@
 import type {
-  AISuggestion,
   CohesionNarrativeView,
   AnalysisConfigView,
   AssistantContext,
@@ -29,6 +28,9 @@ import type {
   ReviewLearningStatus,
   ProposalClarityComparison,
   ThresholdExplainOptimization,
+  RecurrentAlarmHistory,
+  ReviewFeedbackHistoryFilters,
+  ReviewFeedbackHistoryPage,
 } from './types'
 import type { TopologyTreePayload } from './TopologyTree'
 import { clearReviewJobCache } from './reviewJobCache'
@@ -489,6 +491,24 @@ export const api = {
       { signal },
     )
   },
+  chainRecurrentAlarms: (
+    chainId: string,
+    signal?: AbortSignal,
+    snapshotContext?: ChainOverviewSnapshotContext,
+  ) => {
+    const context: ActiveSnapshotContext = snapshotContext
+      ? {
+          snapshotId: snapshotContext.snapshot_id,
+          snapshotVersion: snapshotContext.snapshot_version,
+          topologyVersion: snapshotContext.topology_version,
+        }
+      : activeSnapshotContext
+    return request<RecurrentAlarmHistory>(
+      `/api/v1/chains/${encodeURIComponent(chainId)}/recurrent-alarms`,
+      { signal },
+      context,
+    )
+  },
   evolution: (chainId: string, signal?: AbortSignal) =>
     request<Evolution>(`/api/v1/chains/${encodeURIComponent(chainId)}/evolution`, {
       signal,
@@ -657,16 +677,42 @@ export const api = {
       `/api/v1/review-jobs/${encodeURIComponent(jobId)}/feedback`,
       { signal },
     ),
-  chainFeedback: (chainId: string, signal?: AbortSignal) =>
+  chainFeedback: (
+    chainId: string,
+    snapshotId: string,
+    snapshotVersion: string,
+    signal?: AbortSignal,
+  ) =>
     request<OperatorFeedback[]>(
-      `/api/v1/chains/${encodeURIComponent(chainId)}/feedback`,
+      `/api/v1/chains/${encodeURIComponent(chainId)}/feedback?snapshot_id=${encodeURIComponent(snapshotId)}&snapshot_version=${encodeURIComponent(snapshotVersion)}`,
       { signal },
+      {
+        snapshotId,
+        snapshotVersion,
+        topologyVersion: activeSnapshotContext?.topologyVersion,
+      },
     ),
-  aiSuggestion: (chainId: string, signal?: AbortSignal, lang: string = 'vi') =>
-    request<AISuggestion>(
-      `/api/v1/chains/${encodeURIComponent(chainId)}/ai-suggestion?lang=${encodeURIComponent(lang)}`,
+  reviewFeedbackHistory: (
+    filters: ReviewFeedbackHistoryFilters,
+    snapshotContext: ChainOverviewSnapshotContext,
+    signal?: AbortSignal,
+  ) => {
+    const params = new URLSearchParams()
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== undefined && value !== '') params.set(key, String(value))
+    }
+    params.set('snapshot_id', snapshotContext.snapshot_id)
+    params.set('snapshot_version', snapshotContext.snapshot_version)
+    return request<ReviewFeedbackHistoryPage>(
+      `/api/v1/review-feedback/history?${params.toString()}`,
       { signal },
-    ),
+      {
+        snapshotId: snapshotContext.snapshot_id,
+        snapshotVersion: snapshotContext.snapshot_version,
+        topologyVersion: snapshotContext.topology_version,
+      },
+    )
+  },
   cohesionNarrative: async (
     chainId: string,
     signal?: AbortSignal,

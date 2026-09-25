@@ -68,7 +68,9 @@ export function ValidationView({
 
     Promise.allSettled([
       api.latestReview(analysis.chain_id, controller.signal),
-      api.chainFeedback(analysis.chain_id, controller.signal),
+      snapshotId && snapshotVersion
+        ? api.chainFeedback(analysis.chain_id, snapshotId, snapshotVersion, controller.signal)
+        : Promise.resolve([] as OperatorFeedback[]),
     ])
       .then(([reviewRes, feedbackRes]) => {
         if (cancelled) return

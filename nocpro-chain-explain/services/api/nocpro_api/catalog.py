@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
@@ -210,6 +211,32 @@ def list_catalog_presets() -> list[dict[str, Any]]:
             "unavailable_reason": reason,
         })
     return presets
+
+
+@lru_cache(maxsize=64)
+def catalog_profile_for_snapshot(
+    snapshot_id: str, snapshot_version: str | None = None
+) -> ProfileKind | None:
+    """Return the catalog's profile for an exact preset identity when known."""
+    item = next((entry for entry in _CATALOG if entry.snapshot_id == snapshot_id), None)
+    if item is None:
+        return None
+    preset_version = _preset_snapshot_version(item)
+    if preset_version is not None and snapshot_version is not None and preset_version != snapshot_version:
+        return None
+    return item.profile
+
+
+@lru_cache(maxsize=3)
+def catalog_snapshot_identities_for_profile(
+    profile: ProfileKind,
+) -> tuple[tuple[str, str | None], ...]:
+    """Return known preset IDs and versions for legacy profile inference."""
+    return tuple(
+        (item.snapshot_id, _preset_snapshot_version(item))
+        for item in _CATALOG
+        if item.profile == profile
+    )
 
 
 def load_preset_payload(snapshot_id: str) -> tuple[dict[str, Any], ProfileKind]:

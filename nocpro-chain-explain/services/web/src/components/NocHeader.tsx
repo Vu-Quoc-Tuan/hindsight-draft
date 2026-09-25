@@ -289,8 +289,8 @@ export function NocHeader({
             )}
           </div>
         </div>
-        <nav className="order-3 flex w-full items-center gap-space-sm overflow-x-auto lg:order-none lg:w-auto" aria-label="Snapshot navigation">
-          {([['snapshots-overview', 'Snapshots'], ['snapshot-overview', 'Overview'], ['all-chains', 'All Chains']] as const).map(([view, label]) => (
+        <nav className="order-3 flex w-full items-center gap-space-sm overflow-x-auto lg:order-none lg:w-auto" aria-label="Main navigation">
+          {([['snapshots-overview', 'Snapshots'], ['snapshot-overview', 'Overview'], ['all-chains', 'All Chains'], ['review-history', 'Lịch sử ký duyệt']] as const).map(([view, label]) => (
             <button key={view} className={`shrink-0 rounded px-space-md py-1 font-code-sm text-code-sm transition-all ${currentView === view ? 'bg-surface-container-high font-semibold text-secondary' : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'}`} onClick={() => onNavigate(view)}>{label}</button>
           ))}
         </nav>

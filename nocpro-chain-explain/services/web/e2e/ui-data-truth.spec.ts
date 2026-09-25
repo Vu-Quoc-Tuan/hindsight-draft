@@ -47,14 +47,17 @@ async function installApi(page: Page, delayedB?: Promise<void>, assistantContext
   }))
   await page.route('**/api/v1/**', async route => {
     const url = new URL(route.request().url())
+    if (url.pathname === '/api/v1/events') {
+      return route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'retry: 1000\n\n' })
+    }
     if (url.pathname === '/api/v1/health') return fulfillJson(route, { status: 'ok' })
     if (url.pathname === '/api/v1/config') return fulfillJson(route, { config_version: 'cfg-browser' })
     if (url.pathname === '/api/v1/chains') return fulfillJson(route, chains)
     if (url.pathname === '/api/v1/topology/projection') return fulfillJson(route, {
-      status: 'UNAVAILABLE', reason: 'TOPOLOGY_FIXTURE_UNAVAILABLE', profile: 'IP_NETWORK', topology_kind: 'UNAVAILABLE',
+      status: 'UNAVAILABLE', reason: 'TOPOLOGY_FIXTURE_UNAVAILABLE', profile: 'ALARM_ONLY', topology_kind: 'UNAVAILABLE',
     })
     if (url.pathname === '/api/v1/topology/subgraph') return fulfillJson(route, {
-      status: 'UNAVAILABLE', reason: 'TOPOLOGY_FIXTURE_UNAVAILABLE', profile_id: 'IP_NETWORK',
+      status: 'UNAVAILABLE', reason: 'TOPOLOGY_FIXTURE_UNAVAILABLE', profile_id: 'ALARM_ONLY',
       nodes: [], edges: [], requested_seed_count: 1, resolved_seed_count: 0, retained_seed_count: 0,
       dropped_seed_count: 1, truncated: false, truncation_reasons: [],
     })

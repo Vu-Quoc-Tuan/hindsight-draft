@@ -361,4 +361,54 @@ describe('persisted chain overview request cache', () => {
     await api.chainOverviewCards('C1')
     expect(fetchMock).toHaveBeenCalledTimes(4)
   })
+
+  it('pins recurrent alarm history to the displayed snapshot identity', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: 'UNAVAILABLE' })))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.chainRecurrentAlarms('C 1', undefined, {
+      snapshot_id: 'S 1',
+      snapshot_version: 'v2',
+      topology_version: 'topology-v4',
+    })
+
+    const [requestUrl, requestInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(requestUrl).toBe('/api/v1/chains/C%201/recurrent-alarms')
+    expect(new Headers(requestInit.headers).get('X-NocPro-Snapshot-Id')).toBe('S 1')
+    expect(new Headers(requestInit.headers).get('X-NocPro-Snapshot-Version')).toBe('v2')
+    expect(new Headers(requestInit.headers).get('X-NocPro-Topology-Version')).toBe('topology-v4')
+  })
+
+  it('pins feedback history query and headers to its snapshot context', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [] })))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.reviewFeedbackHistory(
+      { search: 'C 1', decision: 'APPROVE', limit: 25 },
+      { snapshot_id: 'S 1', snapshot_version: 'v2', topology_version: null },
+    )
+
+    const [requestUrl, requestInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    const parsedUrl = new URL(requestUrl, 'http://testserver')
+    expect(parsedUrl.pathname).toBe('/api/v1/review-feedback/history')
+    expect(parsedUrl.searchParams.get('snapshot_id')).toBe('S 1')
+    expect(parsedUrl.searchParams.get('snapshot_version')).toBe('v2')
+    expect(parsedUrl.searchParams.get('search')).toBe('C 1')
+    expect(parsedUrl.searchParams.get('decision')).toBe('APPROVE')
+    expect(new Headers(requestInit.headers).get('X-NocPro-Snapshot-Id')).toBe('S 1')
+    expect(new Headers(requestInit.headers).get('X-NocPro-Snapshot-Version')).toBe('v2')
+    expect(new Headers(requestInit.headers).get('X-NocPro-Topology-Version')).toBe('')
+  })
+
+  it('binds chain feedback reads to the chain snapshot in both query and headers', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([])))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.chainFeedback('C 1', 'S 1', 'v2')
+
+    const [requestUrl, requestInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(requestUrl).toBe('/api/v1/chains/C%201/feedback?snapshot_id=S%201&snapshot_version=v2')
+    expect(new Headers(requestInit.headers).get('X-NocPro-Snapshot-Id')).toBe('S 1')
+    expect(new Headers(requestInit.headers).get('X-NocPro-Snapshot-Version')).toBe('v2')
+  })
 })

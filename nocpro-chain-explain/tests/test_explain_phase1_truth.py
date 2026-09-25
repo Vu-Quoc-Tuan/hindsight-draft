@@ -10,9 +10,6 @@ from pathlib import Path
 from configuration import load_analysis_config
 from libs.contracts import load_validated_package
 from nocpro_api import create_app
-from nocpro_api.ai_advisor import (
-    build_deterministic_narrative,
-)
 from nocpro_api.cohesion_advisor import (
     build_deterministic_cohesion_narrative,
     extract_cohesion_context,
@@ -151,29 +148,8 @@ def test_cohesion_narrative_vietnamese_deterministic():
     assert "DWDM" not in vi_narrative
 
 
-def test_ai_advisor_vietnamese_deterministic():
-    """Verify AI Advisor generates structured Vietnamese summary with clear callouts for weak members."""
-    structured = {
-        "chain_id": "CH-100",
-        "member_count": 5,
-        "role_counts": {"CORE": 3, "WEAK": 2},
-        "weak_members": ["ALM-04", "ALM-05"],
-        "insufficient_members": [],
-        "descriptors": ["device=R1 (coverage 80%)"],
-        "proposals": [{"candidate_id": "CAND-01", "operation": "REMOVE_MEMBER"}],
-        "recommendation_status": "AVAILABLE",
-    }
-
-    vi_narrative = build_deterministic_narrative("CH-100", structured, review_status="AVAILABLE", language="vi")
-    assert "Tóm tắt bằng chứng cho chuỗi CH-100" in vi_narrative
-    assert "**5** cảnh báo" in vi_narrative
-    assert "ALM-04" in vi_narrative
-    assert "REMOVE_MEMBER" in vi_narrative
-    assert "ADR-0024" not in vi_narrative
-
-
-def test_grounded_ai_endpoints_stay_empty_without_a_provider(monkeypatch):
-    """Grounded AI routes must not present deterministic text as provider output."""
+def test_cohesion_narrative_stays_empty_without_a_provider(monkeypatch):
+    """The cohesion endpoint must not present deterministic text as provider output."""
     monkeypatch.delenv("AI_BASE_URL", raising=False)
     monkeypatch.delenv("AI_API_KEY", raising=False)
     monkeypatch.setenv("AI_PROVIDER_PROTOCOL", "OPENAI_COMPATIBLE")
@@ -200,58 +176,7 @@ def test_grounded_ai_endpoints_stay_empty_without_a_provider(monkeypatch):
                 data_en = resp_en.json()
                 assert data_en["narrative"] == ""
                 assert data_en["provider_status"] == "NOT_CONFIGURED"
-
-                # 3. AI Suggestion also remains empty without a provider
-                sug_vi = await client.get("/api/v1/chains/C1/ai-suggestion?lang=vi")
-                assert sug_vi.status_code == 200
-                sug_data = sug_vi.json()
-                assert sug_data["narrative"] == ""
-                assert sug_data["provider_status"] == "NOT_CONFIGURED"
         finally:
             app.state.workspace.close()
 
     asyncio.run(exercise())
-
-
-def test_ai_advisor_uncalibrated_policy_safety_mode():
-    """When review policy is uncalibrated on real data, AI advisor must state safety lock truthfully rather than claiming no improvement."""
-    structured = {
-        "chain_id": "6913556",
-        "member_count": 26,
-        "role_counts": {"CORE": 26, "WEAK": 0},
-        "weak_members": [],
-        "insufficient_members": [],
-        "descriptors": ["location_code=['VN','KV2','HUE','HUE005']"],
-        "proposals": [],
-        "evaluated_improvements": [
-            {
-                "candidate_id": "841a178b",
-                "operation": "SPLIT_CHAIN",
-                "summary_action": "Đề xuất phân tách chuỗi 6913556 thành 2 chuỗi con",
-                "why_better": "Conductance cải thiện",
-                "delta_highlights": [
-                    {"label": "Min Support", "delta": "+16.2%"},
-                    {"label": "Evidence Coverage", "delta": "+16.9%"},
-                ],
-            }
-        ],
-        "review_reason": "COUNTERFACTUAL_POLICY_NOT_CALIBRATED",
-        "recommendation_status": "UNAVAILABLE",
-    }
-
-    vi_narrative = build_deterministic_narrative(
-        "6913556",
-        structured,
-        review_status="AVAILABLE",
-        review_reason="COUNTERFACTUAL_POLICY_NOT_CALIBRATED",
-        language="vi",
-    )
-    # Must truthfully state safety mode and mention the evaluated improvement
-    assert "Chế độ an toàn mặc định" in vi_narrative
-    assert "Đề xuất phân tách chuỗi 6913556" in vi_narrative
-    assert "Rationale metric" in vi_narrative
-    assert "Conductance cải thiện" in vi_narrative
-    assert "+16.2%" in vi_narrative
-    assert "không phải recommendation vận hành" in vi_narrative
-    # MUST NOT falsely claim that experiments brought no improvement
-    assert "Thử nghiệm loại bỏ hoặc phân tách không mang lại cải thiện" not in vi_narrative

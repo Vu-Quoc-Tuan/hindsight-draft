@@ -2377,8 +2377,12 @@ class Workspace:
         self,
         job_id: str | None = None,
         chain_id: str | None = None,
+        snapshot_id: str | None = None,
+        snapshot_version: str | None = None,
         principal: ReviewerPrincipal | None = None,
     ) -> list[Any]:
+        if (snapshot_id is None) != (snapshot_version is None):
+            raise ValueError("snapshot_id and snapshot_version must be supplied together")
         # Validate job existence and domain authorization when job_id is specified
         if job_id is not None:
             session = None
@@ -2414,6 +2418,13 @@ class Workspace:
             pairs = await self.repository.active_review_feedback_with_sessions(
                 job_id=job_id, chain_id=chain_id
             )
+            if snapshot_id is not None and snapshot_version is not None:
+                pairs = [
+                    item for item in pairs
+                    if item.get("session") is not None
+                    and item["session"].snapshot_id == snapshot_id
+                    and item["session"].snapshot_version == snapshot_version
+                ]
             if principal is not None:
                 for item in pairs:
                     sess = item.get("session")
@@ -2469,6 +2480,12 @@ class Workspace:
             results = [f for f in results if f.get("job_id") == job_id]
         if chain_id is not None:
             results = [f for f in results if f.get("chain_id") == chain_id]
+        if snapshot_id is not None and snapshot_version is not None:
+            results = [
+                f for f in results
+                if f.get("snapshot_id") == snapshot_id
+                and f.get("snapshot_version") == snapshot_version
+            ]
 
         if principal is not None:
             for f in results:

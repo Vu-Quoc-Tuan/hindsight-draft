@@ -34,6 +34,47 @@ export type ChainList = {
   chains: ChainSummary[]
 }
 
+export type RecurrentAlarmSnapshotRef = {
+  snapshot_id: string
+  snapshot_version: string
+}
+
+export type RecurrentAlarmOccurrence = {
+  source_id: string
+  alarm_id: string
+  occurred_at: string
+  snapshots: RecurrentAlarmSnapshotRef[]
+}
+
+export type RecurrentAlarmGroup = {
+  device_code: string
+  fault_id: string
+  count: number
+  first_seen: string
+  last_seen: string
+  occurrences: RecurrentAlarmOccurrence[]
+  occurrences_truncated: boolean
+}
+
+export type RecurrentAlarmHistory = {
+  snapshot_id: string
+  snapshot_version: string
+  chain_id: string
+  profile_id: string | null
+  source_id: string | null
+  history_scope: 'MATCHING_PERSISTED_SNAPSHOTS' | 'ACTIVE_SNAPSHOT_ONLY'
+  history_issue: string | null
+  snapshot_count: number
+  assumed_utc_count: number
+  unmatched_chain_alarm_count: number
+  duplicate_observations: number
+  conflicting_event_keys: number
+  skipped_observations: number
+  status: 'AVAILABLE' | 'UNAVAILABLE'
+  reason: string | null
+  groups: RecurrentAlarmGroup[]
+}
+
 export type ChainQualitySummary = {
   snapshot_id: string
   snapshot_version: string
@@ -913,17 +954,55 @@ export type OperatorFeedback = {
   created_at: string
 }
 
-export type AISuggestion = {
+export type ReviewFeedbackLifecycleStatus = 'ACTIVE' | 'SUPERSEDED' | 'RETRACTED'
+
+export type ReviewFeedbackHistoryScope =
+  | 'PERSISTED_SOURCE_PROFILE'
+  | 'PERSISTED_SOURCE_PROFILE_PLUS_ACTIVE'
+  | 'IN_MEMORY_ACTIVE_SNAPSHOT'
+
+export type ReviewFeedbackHistoryItem = {
+  feedback_id: string
+  review_id: string
+  job_id: string
+  snapshot_id: string
+  snapshot_version: string
+  profile_id: 'IP_NETWORK' | 'IT_SERVICES' | 'ALARM_ONLY'
   chain_id: string
-  status: 'AVAILABLE' | 'FALLBACK' | 'ERROR'
-  model: string
-  narrative: string
-  grounded_claims: string[]
-  disclaimer: string
-  provider_status?: string | null
-  review_status: 'AVAILABLE' | 'NOT_AVAILABLE' | 'UNAVAILABLE'
-  review_reason?: string | null
-  recommendation_status: 'AVAILABLE' | 'UNAVAILABLE' | 'NO_CLEAR_ALTERNATIVE'
+  candidate_id: string | null
+  operation: string
+  decision: ReviewDecision | string
+  lifecycle_status: ReviewFeedbackLifecycleStatus
+  lifecycle_at: string | null
+  lifecycle_reason: string | null
+  superseded_by_id: string | null
+  reviewer_subject: string
+  reviewer_role: string
+  confidence: number | null
+  reason: string | null
+  reason_codes: string[]
+  created_at: string
+}
+
+export type ReviewFeedbackHistoryPage = {
+  snapshot_id: string
+  snapshot_version: string
+  profile_id: 'IP_NETWORK' | 'IT_SERVICES' | 'ALARM_ONLY'
+  source_id: string
+  history_scope: ReviewFeedbackHistoryScope
+  items: ReviewFeedbackHistoryItem[]
+  next_cursor: string | null
+}
+
+export type ReviewFeedbackHistoryFilters = {
+  search?: string
+  decision?: ReviewDecision | ''
+  lifecycle_status?: ReviewFeedbackLifecycleStatus | ''
+  reviewer?: string
+  since?: string
+  until?: string
+  limit?: number
+  cursor?: string
 }
 
 export type AnalyticalFinding = {

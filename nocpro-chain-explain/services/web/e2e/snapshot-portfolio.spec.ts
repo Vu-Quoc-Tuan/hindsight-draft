@@ -11,6 +11,20 @@ test('snapshot portfolio and all chains stay evidence-backed', async ({ page }) 
   })
   await page.route('**/api/v1/**', async route => {
     const path = new URL(route.request().url()).pathname
+    if (path === '/api/v1/events') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: [
+          'retry: 1000',
+          '',
+          'id: ad2c5f7a-70aa-4ff6-91d8-8e5037247e76:0',
+          'event: reset',
+          'data: {"reason":"INITIAL_SYNC","epoch":"ad2c5f7a-70aa-4ff6-91d8-8e5037247e76","revision":0}',
+          '',
+        ].join('\n'),
+      })
+    }
     if (path === '/api/v1/health') return json(route, { status: 'ok' })
     if (path === '/api/v1/config') return json(route, { config_version: 'cfg-1' })
     if (path === '/api/v1/snapshots') return json(route, {
@@ -23,7 +37,7 @@ test('snapshot portfolio and all chains stay evidence-backed', async ({ page }) 
       star_counts: { '1': 0, '2': 0, '3': 0, '4': 1, '5': 0 },
       attention_chains: [],
       chain_assessments: [
-        { chain_id: 'C1', member_count: 4, title: 'component=10.1.1.1', duration_seconds: 60, status: 'EVALUATED', stars: 4, label: 'Vững', reason: null },
+        { chain_id: 'C1', member_count: 4, title: 'component=10.1.1.1', duration_seconds: 60, status: 'EVALUATED', stars: 4, label: 'Vững', reason: null, readiness: 'READY' },
         { chain_id: 'C2', member_count: 2, title: 'network_class_name=CORE_LAYER', duration_seconds: null, status: 'EVALUATING', stars: null, label: 'Đang đánh giá', reason: null },
         { chain_id: 'C3', member_count: 1, title: 'device_code=RTR-1', duration_seconds: null, status: 'NOT_APPLICABLE', stars: null, label: 'Singleton không chấm', reason: null },
       ],

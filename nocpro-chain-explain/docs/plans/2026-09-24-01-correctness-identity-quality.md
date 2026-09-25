@@ -139,7 +139,7 @@ return await asyncio.shield(asyncio.wrap_future(future))
 - [ ] `aclose`: reject submissions, cancel chưa start, async wait bounded grace, `shutdown(wait=False, cancel_futures=True)`; document Python threads cannot be force-killed. Provider socket timeouts vẫn bắt buộc; CPU workload không có hard kill guarantee.
 - [ ] Route Busy → controlled 503 + `Retry-After`, giữ error contract; timeout provider trả trạng thái explicit hiện có, không dùng fallback AI prose. Không giữ global workspace mutation lock quanh provider network I/O.
 - [ ] Workspace tests không chạy FastAPI lifespan phải close pool qua owner API; tránh dùng pool asyncio-bound qua nhiều `asyncio.run` loops. Pool instantiated lazily per owner loop; phát hiện cross-loop reuse thay vì silent corruption.
-- [ ] Run `pytest -q tests/test_blocking_work.py tests/test_grounded_llm.py tests/test_ai_advisor.py tests/test_api.py`. Thêm ASGI cancellation test + D1 health probe concurrent slow provider stub.
+- [ ] Run `pytest -q tests/test_blocking_work.py tests/test_grounded_llm.py tests/test_api.py`. Thêm ASGI cancellation test + D1 health probe concurrent slow provider stub.
 - [ ] Xóa hai per-request executor implementations sau khi tất cả call sites chuyển sang pool; giữ một wrapper mỏng nếu phục vụ import compatibility, không giữ execution logic cũ.
 - [ ] Commit: `fix: bound blocking work without blocking request cancellation`.
 

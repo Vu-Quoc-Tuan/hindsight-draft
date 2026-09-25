@@ -33,7 +33,6 @@ from .schemas import (
     ChainAnalysisView,
     CounterfactualJobView,
     OperatorFeedbackView,
-    AISuggestionView,
     AuditVisualizationArtifactView,
     AuditVisualizationEdgeView,
     AuditVisualizationNodeView,
@@ -989,25 +988,4 @@ def operator_feedback_view(feedback: Any) -> OperatorFeedbackView:
         partition_delta=d.get("partition_delta", {}),
         has_manual_correction=bool(d.get("has_manual_correction") or d.get("manual_correction") or str(decision_val) == "MANUAL_CORRECTION"),
         created_at=str(created_at),
-    )
-
-
-def ai_suggestion_view(result: Any) -> AISuggestionView:
-    if hasattr(result, "to_dict"):
-        d = result.to_dict()
-    elif is_dataclass(result):
-        d = asdict(result)
-    else:
-        d = dict(result)
-    return AISuggestionView(
-        chain_id=d["chain_id"],
-        status=d["status"],
-        model=d["model"],
-        narrative=d["narrative"],
-        grounded_claims=list(d.get("grounded_claims", [])),
-        disclaimer=d["disclaimer"],
-        provider_status=d.get("provider_status"),
-        review_status=d.get("review_status", "NOT_AVAILABLE"),
-        review_reason=d.get("review_reason"),
-        recommendation_status=d.get("recommendation_status", "UNAVAILABLE"),
     )

@@ -267,6 +267,47 @@ class ChainAnalysisView(ApiModel):
     phase_durations: dict[str, float]
 
 
+class RecurrentAlarmSnapshotRefView(ApiModel):
+    snapshot_id: str
+    snapshot_version: str
+
+
+class RecurrentAlarmOccurrenceView(ApiModel):
+    source_id: str
+    alarm_id: str
+    occurred_at: str
+    snapshots: list[RecurrentAlarmSnapshotRefView] = Field(default_factory=list)
+
+
+class RecurrentAlarmGroupView(ApiModel):
+    device_code: str
+    fault_id: str
+    count: int
+    first_seen: str
+    last_seen: str
+    occurrences: list[RecurrentAlarmOccurrenceView] = Field(default_factory=list)
+    occurrences_truncated: bool
+
+
+class RecurrentAlarmHistoryView(ApiModel):
+    snapshot_id: str
+    snapshot_version: str
+    chain_id: str
+    profile_id: str | None
+    source_id: str | None
+    history_scope: Literal["MATCHING_PERSISTED_SNAPSHOTS", "ACTIVE_SNAPSHOT_ONLY"]
+    history_issue: str | None
+    snapshot_count: int
+    assumed_utc_count: int
+    unmatched_chain_alarm_count: int
+    duplicate_observations: int
+    conflicting_event_keys: int
+    skipped_observations: int
+    status: Literal["AVAILABLE", "UNAVAILABLE"]
+    reason: str | None
+    groups: list[RecurrentAlarmGroupView] = Field(default_factory=list)
+
+
 class PairEvidenceView(ApiModel):
     channel_family: str
     provider_id: str | None
@@ -864,19 +905,6 @@ class ReasonPolicyView(ApiModel):
 
 class RetractionSubmission(ApiModel):
     reason: str | None = None
-
-
-class AISuggestionView(ApiModel):
-    chain_id: str
-    status: str
-    model: str
-    narrative: str
-    grounded_claims: list[str]
-    disclaimer: str
-    provider_status: str | None = None
-    review_status: str
-    review_reason: str | None = None
-    recommendation_status: str
 
 
 class AnalyticalFindingView(ApiModel):

@@ -209,20 +209,15 @@ current object, such as pair-based analysis for a singleton.
 ### K. Analytical findings, deterministic narratives, LLM grounding, and assistant behavior
 
 | Feature / canonical ID | Exact meaning | Inputs | Producer | Active consumers | Persistence / API / UI / LLM | Eligibility and unavailable semantics | Interpretation boundary | Current state |
-| Analytical finding kind | Typed `OBSERVED`, `DERIVED`, `HYPOTHESIS`, or `LIMITATION` finding | Chain facts and capability results | Cohesion/analysis narrative service | Chain Overview/WHY | API/UI; not automatically Advisor-grounded | Evidence list and availability state required | Kind must not be hidden in prose | **Active in Overview path** |
+| Analytical finding kind | Typed `OBSERVED`, `DERIVED`, `HYPOTHESIS`, or `LIMITATION` finding | Chain facts and capability results | Cohesion/analysis narrative service | Chain Overview/WHY | API/UI; explicit projection required for any LLM surface | Evidence list and availability state required | Kind must not be hidden in prose | **Active in Overview path** |
 | Finding evidence list | Concrete facts supporting one finding | Observed/derived data | Narrative service | UI | API/UI | Only supplied facts | Evidence list should be auditable back to fields/artifacts | **Active** |
 | Finding limitations | Explicit statement of what the finding cannot establish | Capability gates | Narrative service | UI | API/UI | Required for hypotheses/limitations | Limitation is analytical output, not boilerplate disclaimer | **Active** |
 | Confidence basis | Textual basis for confidence/evidence strength | Available evidence/provenance | Narrative service | UI | API/UI | Must reference real evidence and calibration status | Must not fabricate numeric confidence | **Active** |
-| Cohesion narrative | Deterministic structured explanation of why members appear together and what is unavailable | Tier-1B analysis and evidence availability | Cohesion advisor | Chain Overview/WHY | API/UI; separate from AI Advisor grounding | Facts and unavailable reasons required | Keyword/co-occurrence indicators are not verified topology or causal facts | **Active; semantic review still important** |
-| Advisor structured member facts | Alarm ID, membership role, support and representativeness | Tier-1B member analysis | `ai_advisor._member_facts` | Deterministic Advisor draft | Passed to bounded LLM facts indirectly | Analysis must be available | Current projection omits alarm name, device and timestamp | **Active but narrow** |
-| Advisor descriptor facts | Up to three identity/contrastive labels with coverage | Descriptor set | `ai_advisor._descriptor_facts` | Advisor | Directly LLM-grounded | Descriptor availability | Labels are descriptive, not causal | **Active** |
-| Advisor recommendation facts | Recommended operation, deterministic comparative explanation and non-zero deltas | Persisted Review result | AI Advisor projection | Advisor | Directly LLM-grounded | Recommendation must exist and be interpretable | LLM may rewrite but not choose a new action | **Active** |
-| Advisor unavailable facts | Review status/reason and recommendation status | Review artifact/read path | AI Advisor | Advisor | Directly LLM-grounded | Missing/failed Review | Unavailable must not be narrated as “no problem” or “optimal” | **Active** |
-| Grounded LLM renderer | Rewrites a deterministic draft using only bounded facts and references | Draft, structured facts, fact refs | `grounded_llm.render_grounded` | AI Advisor/assistant surfaces | Provider request; output UI | Provider/config/validation gates; deterministic fallback on failure | LLM cannot create evidence, roles, scores, recommendations, causality, root cause, topology dependency or mutations | **Active with fallback** |
+| Cohesion narrative | Deterministic structured explanation of why members appear together and what is unavailable | Tier-1B analysis and evidence availability | Cohesion advisor | Chain Overview/WHY | API/UI; optional bounded rendering through the shared provider | Facts and unavailable reasons required | Keyword/co-occurrence indicators are not verified topology or causal facts | **Active; semantic review still important** |
+| Grounded LLM renderer | Rewrites a deterministic draft using only bounded facts and references | Draft, structured facts, fact refs | `grounded_llm.render_grounded` | Cohesion narrative/assistant surfaces | Provider request; output UI | Provider/config/validation gates; deterministic fallback on failure | LLM cannot create evidence, roles, scores, recommendations, causality, root cause, topology dependency or mutations | **Active with fallback** |
 | Provider status | Records whether external provider or deterministic renderer produced the message | Runtime provider result | Grounded LLM adapter | UI badge/diagnostics | API/UI | Live response required for provider success | Config presence is not proof of provider success | **Active** |
-| Grounded content validation | Rejects malformed/unbounded/provider output that violates response contract | Provider content | Grounded LLM adapter | Advisor/assistant | Runtime | Validation must pass | Validation reduces, but cannot replace correct fact projection | **Active** |
+| Grounded content validation | Rejects malformed/unbounded/provider output that violates response contract | Provider content | Grounded LLM adapter | Cohesion narrative/assistant surfaces | Runtime | Validation must pass | Validation reduces, but cannot replace correct fact projection | **Active** |
 | Read-only assistant | Answers bounded UI/context questions and may navigate permitted views | User query and bounded application context | Assistant API | Assistant drawer | API/UI/LLM | Tool/action allowlist and grounding required | It must not mutate analysis or invent unavailable evidence | **Active** |
-| Missing Advisor facts | Audit verdict, conductance, structural connector, topology hypotheses, entity resolution, chain start/end and core alarm details are not currently in Advisor structured facts | Existing artifacts | No active projection | None | Not LLM-grounded today | Would require explicit evidence-safe projection | Documentation must not claim the LLM receives these | **Known gap** |
 
 ### L. Web UI surfaces and their real feature inputs
 
@@ -245,39 +240,18 @@ current object, such as pair-based analysis for a singleton.
 | Similar Cases | Fingerprint/review-case similarity and prior outcomes | Similar-case APIs | Historical reference | Not probability or automatic approval | **Conditional** |
 | Learning/Ranker modal | Artifact status, features, metrics, label counts, approval/abstention | Review-learning status/train APIs | Model governance and diagnostics | DRAFT/synthetic artifacts are not production models | **Active** |
 | Configuration/calibration | Threshold values, provenance and calibration report | Config APIs | Inspect/update governed analysis configuration | Current baseline still requires production calibration | **Active** |
-| AI Advisor | Deterministic draft, narrow structured facts, Review proposal facts, provider status | AI suggestion API | Readable bounded explanation | Current grounding does not include Audit/Topology/Entity Resolution facts | **Active with deterministic fallback** |
 | Assistant drawer | Bounded application context and permitted navigation/query actions | Assistant API | Interactive read-only help | Must not be treated as analytical authority | **Active** |
 
-## 3. What actually reaches the LLM today
+## 3. Grounded LLM surfaces
 
-The active AI Advisor projection is narrower than the full analysis state. The
-bounded grounding currently contains:
+The separate chain-level `/ai-suggestion` endpoint and its `ai_advisor`
+projection have been removed. The Overview and WHY narrative use
+`cohesion_advisor`; the Assistant remains a separate read-only query surface.
 
-- chain ID and analyzed member count;
-- role counts;
-- IDs of WEAK members;
-- IDs of `INSUFFICIENT_DATA` members;
-- up to three descriptor labels with coverage;
-- persisted Review status/reason and recommendation status;
-- recommended counterfactual operation and candidate ID;
-- deterministic `summary_action`, `why_better`, comparison points, and non-zero metric deltas when present.
-
-The following are **not currently projected into Advisor grounding** and must not
-be documented as if the LLM receives them:
-
-- chain start/end time;
-- alarm name, device and timestamp for CORE members;
-- entity-resolution results;
-- topology subgraph or dependency paths;
-- Audit verdict, conductance and over-merge strength;
-- structural CONNECTOR facts;
-- dominator, propagation or dependency-scope hypotheses;
-- raw pair-channel matrix;
-- Similar Chains results and detailed ranker features.
-
-The LLM is a narrative renderer. It cannot promote a hypothesis into a finding,
-choose a new recommendation, infer root cause, claim propagation direction, or
-say NocPro grouped alarms incorrectly.
+Both active surfaces use the shared grounded renderer. Each passes a
+deterministic draft, an explicit facts projection, and fact references. The
+provider may render those facts in language, but cannot create evidence, choose
+recommendations, infer root cause, or claim propagation direction.
 
 ## 4. Current production-readiness caveats
 
