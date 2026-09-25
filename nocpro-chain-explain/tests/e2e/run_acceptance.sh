@@ -9,6 +9,14 @@ export POSTGRES_HOST_PORT="${POSTGRES_HOST_PORT:-55432}"
 export KAFKA_HOST_PORT="${KAFKA_HOST_PORT:-29092}"
 export API_HOST_PORT="${API_HOST_PORT:-8800}"
 export WEB_HOST_PORT="${WEB_HOST_PORT:-3300}"
+export NOCPRO_LIVE_UPDATES_ENABLED="${NOCPRO_LIVE_UPDATES_ENABLED:-true}"
+if [[ "${NOCPRO_E2E_ALLOW_LIVE_AI:-0}" != "1" ]]; then
+  # Never inherit a developer's .env provider credentials into acceptance by
+  # accident.  Real-provider E2E requires a separate explicit opt-in.
+  export AI_API_KEY=''
+  export AI_BASE_URL=''
+  export AI_MODEL=''
+fi
 export TIER1A_RECOVERY_INTERVAL_SECONDS="${TIER1A_RECOVERY_INTERVAL_SECONDS:-0.25}"
 export NOCPRO_E2E_KAFKA="127.0.0.1:${KAFKA_HOST_PORT}"
 export NOCPRO_E2E_DATABASE_URL="postgresql://nocpro:nocpro@127.0.0.1:${POSTGRES_HOST_PORT}/nocpro"
@@ -65,6 +73,18 @@ wait_for_snapshot_ready() {
   return 1
 }
 
+wait_for_proxy_api() {
+  local deadline=$((SECONDS + 60))
+  until curl -fsS "${NOCPRO_E2E_BASE_URL}/api/v1/health" >/dev/null 2>&1; do
+    if (( SECONDS >= deadline )); then
+      $COMPOSE logs --no-color web api
+      echo "web proxy did not recover after the API restart" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+}
+
 wait_for_postgres
 
 deadline=$((SECONDS + 60))
@@ -90,8 +110,25 @@ from nocpro_mock.loaders.topology_it_csv import ITTopologyLoader
 aliases, _ = ITTopologyLoader(Path("../nocpro-mock/datasets/raw/topo/topoIT")).load_aliases()
 print(next(iter(sorted(aliases))))
 ')"
-
-
+topology_resolve_query="$(.venv/bin/python -c '
+from urllib.parse import urlencode
+import os
+print(urlencode({
+    "profile_id": "IT_SERVICES",
+    "identifier": os.environ["NOCPRO_E2E_IT_SOURCE_IDENTIFIER"],
+}))
+')"
+curl -fsS "$NOCPRO_E2E_BASE_URL/api/v1/topology/resolve?$topology_resolve_query" \
+  | .venv/bin/python -c '
+import json
+import sys
+payload = json.load(sys.stdin)
+assert payload["status"] == "AVAILABLE", payload
+assert payload.get("resource_id"), payload
+assert payload["p2_mapping_eligible"] is False, payload
+assert payload["dependency_semantics"] == "UNVERIFIED", payload
+'
+echo "topology_navigation_api_acceptance=PASS"
 NOCPRO_RUN_DOCKER_E2E=1 PYTHONPATH="../nocpro-mock/src" \
   .venv/bin/python -m pytest tests/e2e/test_postgres_migrations_runtime.py -q
 
@@ -100,6 +137,11 @@ NOCPRO_RUN_DOCKER_E2E=1 PYTHONPATH="../nocpro-mock/src" \
 # from a previous browser scenario.
 NOCPRO_RUN_DOCKER_E2E=1 PYTHONPATH="../nocpro-mock/src" \
   .venv/bin/python -m pytest tests/e2e/test_docker_failures.py -q
+
+# The failure suite restarts the API container.  Check through nginx, not only
+# the direct API port, so a stale container DNS address cannot go unnoticed.
+wait_for_proxy_api
+echo "api_restart_proxy_acceptance=PASS"
 
 snapshot_id="acceptance-real-$(date -u +%Y%m%dT%H%M%SZ)"
 raw_alarm_csv="../nocpro-mock/datasets/raw/alarm/alarm_data.csv"
@@ -114,8 +156,16 @@ if [[ -f "$raw_alarm_csv" ]]; then
   # Counterfactual for Review.  Do not execute the whole suite against the
   # real replay before those later fixtures have been ingested.
   pnpm --dir services/web exec playwright test e2e/operator-flow.spec.ts
-  pnpm --dir services/web exec playwright test e2e/assistant.spec.ts
   pnpm --dir services/web exec playwright test e2e/topology-navigation.spec.ts
+  echo "topology_navigation_browser_acceptance=PASS"
+  if [[ "${NOCPRO_E2E_ALLOW_LIVE_AI:-0}" == "1" && -n "${AI_API_KEY:-}" \
+      && -n "${AI_BASE_URL:-}" && -n "${AI_MODEL:-}" ]]; then
+    pnpm --dir services/web exec playwright test e2e/assistant.spec.ts
+  else
+    pnpm --dir services/web exec playwright test e2e/assistant.spec.ts \
+      --grep "Assistant hides completed and delayed responses when pair context changes"
+    echo "assistant_live_provider_acceptance=BLOCKED_NOT_OPTED_IN_OR_CREDENTIALS_MISSING"
+  fi
 
   curl -fsS "http://127.0.0.1:${API_HOST_PORT}/api/v1/chains/6907125" \
     -o /tmp/nocpro-acceptance-largest-chain.json \
@@ -158,6 +208,7 @@ until curl -fsS "http://127.0.0.1:${API_HOST_PORT}/api/v1/health" >/dev/null; do
   fi
   sleep 1
 done
+wait_for_proxy_api
 NOCPRO_RUN_DOCKER_E2E=1 PYTHONPATH="../nocpro-mock/src" \
   .venv/bin/python -m pytest tests/e2e/test_synthetic_p2_kafka.py -q
 pnpm --dir services/web exec playwright test e2e/evolution.spec.ts
@@ -181,6 +232,7 @@ until curl -fsS "http://127.0.0.1:${API_HOST_PORT}/api/v1/health" >/dev/null; do
   fi
   sleep 1
 done
+wait_for_proxy_api
 NOCPRO_RUN_DOCKER_E2E=1 PYTHONPATH="../nocpro-mock/src" \
   .venv/bin/python -m pytest tests/e2e/test_counterfactual_review.py -q
 pnpm --dir services/web exec playwright test e2e/counterfactual-review.spec.ts

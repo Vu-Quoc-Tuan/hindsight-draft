@@ -510,6 +510,10 @@ def test_nginx_sse_proxy_settings_are_route_scoped() -> None:
     nginx_config = (
         Path(__file__).resolve().parents[1] / "services" / "web" / "nginx.conf"
     ).read_text(encoding="utf-8")
+    assert "resolver 127.0.0.11 valid=5s ipv6=off;" in nginx_config
+    assert "resolver_timeout 2s;" in nginx_config
+    assert "set $api_upstream api:8000;" in nginx_config
+    assert "set $mock_upstream mock-ui:8085;" in nginx_config
     match = re.search(
         r"location\s*=\s*/api/v1/events\s*\{(?P<body>[^{}]*)\}",
         nginx_config,
@@ -517,6 +521,7 @@ def test_nginx_sse_proxy_settings_are_route_scoped() -> None:
     )
     assert match is not None
     location = match.group("body")
+    assert "proxy_pass http://$api_upstream$request_uri;" in location
     for directive in (
         "proxy_buffering off;",
         "proxy_cache off;",
@@ -527,4 +532,10 @@ def test_nginx_sse_proxy_settings_are_route_scoped() -> None:
         assert directive in location
     generic_api = re.search(r"location\s+/api/\s*\{(?P<body>[^{}]*)\}", nginx_config)
     assert generic_api is not None
+    assert "proxy_pass http://$api_upstream$request_uri;" in generic_api.group("body")
     assert "proxy_buffering off;" not in generic_api.group("body")
+    mock_studio = re.search(
+        r"location\s+/mock-studio/\s*\{(?P<body>[^{}]*)\}", nginx_config
+    )
+    assert mock_studio is not None
+    assert "proxy_pass http://$mock_upstream$request_uri;" in mock_studio.group("body")
