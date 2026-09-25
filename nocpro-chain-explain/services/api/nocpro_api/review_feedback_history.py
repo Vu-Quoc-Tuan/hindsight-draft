@@ -151,6 +151,8 @@ async def _active_snapshot_scope(
     if not profile_id:
         manifest = getattr(package, "provenance_manifest", None)
         sources = manifest.get("sources") if isinstance(manifest, dict) else None
+        if not isinstance(sources, (list, tuple)):
+            sources = ()
         source_ids = tuple(
             source["source_id"]
             for source in sources or ()

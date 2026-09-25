@@ -89,6 +89,18 @@ def test_review_history_keeps_ambiguous_provenance_unavailable(monkeypatch) -> N
     assert error.value.detail == "REVIEW_HISTORY_SOURCE_PROFILE_UNAVAILABLE"
 
 
+def test_review_history_keeps_malformed_provenance_unavailable() -> None:
+    snapshot_id = "generated_snapshot"
+    service = _scope_service(snapshot_id)
+    service.current_package().provenance_manifest["sources"] = 1
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(_active_snapshot_scope(service, snapshot_id, "v1"))
+
+    assert error.value.status_code == 409
+    assert error.value.detail == "REVIEW_HISTORY_SOURCE_PROFILE_UNAVAILABLE"
+
+
 def _service():
     snapshot = IngestedSnapshot(
         snapshot_id="history_ip_active",
