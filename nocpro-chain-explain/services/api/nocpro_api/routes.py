@@ -109,7 +109,7 @@ from .entity_resolver import AlarmEntityResolver
 from .review_principal import (
     ReviewReasonPolicyUnavailable,
     ReviewerPrincipal,
-    get_reviewer_principal,
+    get_reviewer_principal_async,
     load_reason_policy,
 )
 from review_learning.contracts import SimilarCaseRetrievalResult
@@ -2133,7 +2133,7 @@ async def record_display_events(
     job_id: str,
     submission: CandidateDisplayEventBatchSubmission,
     request: Request,
-    principal: ReviewerPrincipal = Depends(get_reviewer_principal),
+    principal: ReviewerPrincipal = Depends(get_reviewer_principal_async),
 ) -> CandidateDisplayEventBatchView:
     try:
         service = workspace(request)
@@ -2154,7 +2154,7 @@ async def submit_operator_feedback(
     job_id: str,
     submission: OperatorFeedbackSubmission,
     request: Request,
-    principal: ReviewerPrincipal = Depends(get_reviewer_principal),
+    principal: ReviewerPrincipal = Depends(get_reviewer_principal_async),
 ) -> OperatorFeedbackView:
     try:
         service = workspace(request)
@@ -2176,7 +2176,7 @@ async def supersede_operator_feedback(
     feedback_id: str,
     submission: OperatorFeedbackSubmission,
     request: Request,
-    principal: ReviewerPrincipal = Depends(get_reviewer_principal),
+    principal: ReviewerPrincipal = Depends(get_reviewer_principal_async),
 ) -> OperatorFeedbackView:
     try:
         service = workspace(request)
@@ -2197,7 +2197,7 @@ async def retract_operator_feedback(
     feedback_id: str,
     submission: RetractionSubmission,
     request: Request,
-    principal: ReviewerPrincipal = Depends(get_reviewer_principal),
+    principal: ReviewerPrincipal = Depends(get_reviewer_principal_async),
 ) -> dict[str, Any]:
     try:
         service = workspace(request)
@@ -2216,7 +2216,7 @@ async def retract_operator_feedback(
 async def get_job_operator_feedback(
     job_id: str,
     request: Request,
-    principal: ReviewerPrincipal = Depends(get_reviewer_principal),
+    principal: ReviewerPrincipal = Depends(get_reviewer_principal_async),
 ) -> list[OperatorFeedbackView]:
     try:
         service = workspace(request)
@@ -2235,7 +2235,7 @@ async def get_chain_operator_feedback(
     request: Request,
     snapshot_id: str = Query(..., min_length=1),
     snapshot_version: str = Query(..., min_length=1),
-    principal: ReviewerPrincipal = Depends(get_reviewer_principal),
+    principal: ReviewerPrincipal = Depends(get_reviewer_principal_async),
 ) -> list[OperatorFeedbackView]:
     try:
         service = workspace(request)
@@ -2266,7 +2266,7 @@ async def get_review_feedback_history(
     until: datetime | None = Query(None),
     limit: int = Query(50, ge=1, le=100),
     cursor: str | None = Query(None, max_length=1024),
-    principal: ReviewerPrincipal = Depends(get_reviewer_principal),
+    principal: ReviewerPrincipal = Depends(get_reviewer_principal_async),
 ) -> ReviewFeedbackHistoryPage:
     try:
         return await load_review_feedback_history(
@@ -2296,7 +2296,7 @@ async def get_candidate_similar_cases(
     request: Request,
     top_k: int = Query(5, ge=1, le=20),
     min_common_blocks: int = Query(2, ge=1, le=5),
-    principal: ReviewerPrincipal = Depends(get_reviewer_principal),
+    principal: ReviewerPrincipal = Depends(get_reviewer_principal_async),
 ) -> dict[str, Any]:
     try:
         service = workspace(request)

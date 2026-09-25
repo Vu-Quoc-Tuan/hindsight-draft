@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import httpx2
@@ -53,12 +54,15 @@ async def test_feedback_on_unknown_job_returns_404() -> None:
         async with httpx2.AsyncClient(
             transport=transport, base_url="http://testserver"
         ) as client:
-            resp = await client.post(
-                "/api/v1/review-jobs/unknown-job-id/feedback",
-                json={
-                    "candidate_id": "c1",
-                    "decision": "REJECTED",
-                },
+            resp = await asyncio.wait_for(
+                client.post(
+                    "/api/v1/review-jobs/unknown-job-id/feedback",
+                    json={
+                        "candidate_id": "c1",
+                        "decision": "REJECTED",
+                    },
+                ),
+                timeout=5,
             )
             assert resp.status_code == 404
     finally:

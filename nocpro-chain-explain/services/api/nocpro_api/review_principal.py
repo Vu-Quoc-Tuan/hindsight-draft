@@ -267,6 +267,11 @@ def get_reviewer_principal(request: Request) -> ReviewerPrincipal:
     )
 
 
+async def get_reviewer_principal_async(request: Request) -> ReviewerPrincipal:
+    """Async FastAPI adapter for the synchronous, non-blocking identity resolver."""
+    return get_reviewer_principal(request)
+
+
 DEFAULT_REASONS_PATH = (
     Path(__file__).resolve().parents[3] / "config" / "review-learning" / "review-reasons-v1.yaml"
 )
