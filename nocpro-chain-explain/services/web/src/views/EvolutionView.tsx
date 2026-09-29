@@ -232,18 +232,19 @@ export function EvolutionView({
               {/* Main Interactive Trajectory Curve Container */}
               <div className="w-full bg-[#0c1424] rounded-xl p-space-md border border-[#1b273e] shadow-md flex flex-col gap-space-sm">
                 <div className="flex items-center justify-between flex-wrap gap-2 pb-space-xs border-b border-[#1b273e]">
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-secondary text-[20px]">
-                        stacked_line_chart
-                      </span>
-                      <h2 className="font-headline-md text-sm font-bold text-on-surface">
-                        Chronological Alarm Cascade &amp; Onset Trajectory Curve
-                      </h2>
-                    </div>
-                    <p className="font-body-sm text-[11px] text-on-surface-variant mt-0.5">
-                      Quỹ đạo lan truyền sự cố theo thời gian thực. Nhấp hoặc rê chuột vào các node trên đồ thị để kiểm tra chi tiết.
-                    </p>
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-secondary text-[20px]">
+                      stacked_line_chart
+                    </span>
+                    <h2 className="font-headline-md text-sm font-bold text-on-surface">
+                      Chronological Alarm Cascade &amp; Onset Trajectory Curve
+                    </h2>
+                    <span
+                      className="material-symbols-outlined cursor-help text-[16px] text-on-surface-variant transition-colors hover:text-secondary"
+                      title="Quỹ đạo lan truyền sự cố theo thời gian thực. Nhấp hoặc rê chuột vào các node trên đồ thị để kiểm tra chi tiết."
+                    >
+                      help
+                    </span>
                   </div>
 
                   <div className="flex items-center gap-3 font-code-sm text-[11px] text-on-surface-variant">

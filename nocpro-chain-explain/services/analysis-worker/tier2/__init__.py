@@ -53,10 +53,6 @@ from .attribution_evaluation import (
     RandomDeletionBaseline,
     evaluate_attribution_deletion,
 )
-from .topology_hypotheses import (
-    TopologyHypothesesResult,
-    analyze_topology_hypotheses,
-)
 
 __all__ = [
     "AuditExecutionPolicy",
@@ -85,8 +81,6 @@ __all__ = [
     "Tier2JobManager",
     "Tier2JobView",
     "Tier2Submission",
-    "TopologyHypothesesResult",
-    "analyze_topology_hypotheses",
     "AttributionExecutionPolicy",
     "AttributionMode",
     "AttributionReason",

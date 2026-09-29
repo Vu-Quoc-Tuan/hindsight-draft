@@ -20,8 +20,7 @@ from groups.indexed_statistics import (
 
 from .semantic import EMPTY_TAXONOMY, AlarmTaxonomy
 from .temporal import DEFAULT_SILENT_GAP_SECONDS, segment_bursts
-from .common_dependency import DEFAULT_LAMBDA_DEP, DEFAULT_THETA_CD
-from .dep_upstream_index import DepUpstreamFitIndex
+from .field_values import read_alarm_string_field
 from .dependency import (
     DEFAULT_D_MAX,
     PHYSICAL_RELATIONS,
@@ -41,13 +40,7 @@ EQUALITY_CHANNELS: tuple[tuple[str, str, str], ...] = (
 
 
 def read_indexed_field(alarm: IngestedAlarm, field_name: str) -> str | None:
-    value = getattr(alarm, field_name, None)
-    if value is None:
-        value = alarm.raw.get(field_name)
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
+    return read_alarm_string_field(alarm, field_name)
 
 
 def semantic_group_key(value: str, taxonomy: AlarmTaxonomy) -> str:
@@ -224,8 +217,6 @@ def build_indexed_statistics(
     silent_gap_seconds: int = DEFAULT_SILENT_GAP_SECONDS,
     delay_window_seconds: float | None = None,
     d_max: int = DEFAULT_D_MAX,
-    lambda_dep: float = DEFAULT_LAMBDA_DEP,
-    common_dependency_threshold: float = DEFAULT_THETA_CD,
 ) -> IndexedChainStatistics:
     """Build exact statistics for available indexed channels without pair scans."""
     alarms = package.alarms_of(chain_id)
@@ -324,41 +315,12 @@ def build_indexed_statistics(
         statistics,
         d_max=d_max,
     )
-    _add_dep_upstream_statistics(
-        package,
-        alarms,
-        statistics,
-        lambda_dep=lambda_dep,
-        theta=common_dependency_threshold,
-    )
     # All providers above emit unordered pair support symmetrically. Consumers
     # require this explicit construction contract rather than assuming it.
     statistics.support_index_semantics = (
         SupportIndexSemantics.SYMMETRIC_UNORDERED_PAIRS_V1
     )
     return statistics
-
-
-def _add_dep_upstream_statistics(
-    package: IngestedPackage,
-    alarms: list[IngestedAlarm],
-    statistics: IndexedChainStatistics,
-    *,
-    lambda_dep: float,
-    theta: float,
-) -> None:
-    index = DepUpstreamFitIndex(
-        package,
-        alarms,
-        lambda_dep=lambda_dep,
-        theta=theta,
-    )
-    statistics.channel_meta.update(index.channel_meta)
-    for alarm in alarms:
-        for entry in index.fits_for(alarm):
-            statistics.fits[(alarm.alarm_id, entry.channel_id)] = entry
-        for channel_id, bitmap in index.support_bitmaps_for(alarm):
-            statistics.support_peer_bitmaps[(alarm.alarm_id, channel_id)] = bitmap
 
 
 def _add_dep_hop_statistics(

@@ -759,7 +759,6 @@ class TopologyRepository:
                 "resource_id": None,
                 "mapping_status": "UNMAPPED",
                 "navigation_eligible": False,
-                "p2_mapping_eligible": False,
                 "dependency_semantics": "UNAVAILABLE",
             }
 
@@ -775,8 +774,7 @@ class TopologyRepository:
                     "resource_id": None,
                     "mapping_status": "UNMAPPED",
                     "navigation_eligible": False,
-                    "p2_mapping_eligible": False,
-                    "dependency_semantics": "UNAVAILABLE",
+                        "dependency_semantics": "UNAVAILABLE",
                 }
             target_version = active.topology_version
 
@@ -790,7 +788,6 @@ class TopologyRepository:
                 "mapping_status": "UNMAPPED",
                 "source_field": None,
                 "navigation_eligible": False,
-                "p2_mapping_eligible": False,
                 "dependency_semantics": "UNAVAILABLE",
             }
 
@@ -808,8 +805,7 @@ class TopologyRepository:
                     "mapping_status": "EXACT_RESOURCE_ID",
                     "source_field": "canonical_resource_id",
                     "navigation_eligible": True,
-                    "p2_mapping_eligible": False,
-                    "dependency_semantics": "UNAVAILABLE" if profile_id == "IP_NETWORK" else "UNVERIFIED",
+                        "dependency_semantics": "UNAVAILABLE" if profile_id == "IP_NETWORK" else "UNVERIFIED",
                 }
 
             # 2. Case-insensitive exact display_name match
@@ -829,8 +825,7 @@ class TopologyRepository:
                     "mapping_status": "UNIQUE_SOURCE_FIELD_MATCH",
                     "source_field": "device_code" if profile_id == "IP_NETWORK" else "service_name",
                     "navigation_eligible": True,
-                    "p2_mapping_eligible": False,
-                    "dependency_semantics": "UNAVAILABLE" if profile_id == "IP_NETWORK" else "UNVERIFIED",
+                        "dependency_semantics": "UNAVAILABLE" if profile_id == "IP_NETWORK" else "UNVERIFIED",
                 }
 
             # 3. Verified alias resolution check (status UNIQUE or VERIFIED)
@@ -846,8 +841,7 @@ class TopologyRepository:
                     "mapping_status": "VERIFIED_ALIAS",
                     "source_field": "alias_table",
                     "navigation_eligible": True,
-                    "p2_mapping_eligible": False,
-                    "dependency_semantics": "UNAVAILABLE" if profile_id == "IP_NETWORK" else "UNVERIFIED",
+                        "dependency_semantics": "UNAVAILABLE" if profile_id == "IP_NETWORK" else "UNVERIFIED",
                 }
 
             return {
@@ -858,7 +852,6 @@ class TopologyRepository:
                 "mapping_status": "UNMAPPED",
                 "source_field": None,
                 "navigation_eligible": False,
-                "p2_mapping_eligible": False,
                 "dependency_semantics": "UNAVAILABLE",
             }
 

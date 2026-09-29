@@ -119,7 +119,7 @@ def test_topology_unavailable_capabilities_reach_explain(largest_chain_package):
 
 
 def test_real_ip_replay_exact_mapping_can_supply_undirected_dep_hop():
-    """Exact IP identity plus adjacency is usable proximity evidence, not P2 direction."""
+    """Exact IP identity plus adjacency is proximity evidence, not dependency direction."""
     if not (MOCK_ROOT / "datasets/raw/alarm/alarmIP.csv").is_file():
         pytest.skip("real IP alarm export not present")
     if not (MOCK_ROOT / "datasets/raw/topo/topoIP.csv").is_file():

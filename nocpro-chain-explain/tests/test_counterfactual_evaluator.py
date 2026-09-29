@@ -183,8 +183,6 @@ def test_skipped_small_chain_does_not_fabricate_audit_metrics(monkeypatch) -> No
         "audit.small_chain_threshold": 10,
         "temporal.delay.support_threshold": 0.5,
         "dependency.max_hop": 2,
-        "dependency.lambda_dep": 0.5,
-        "dependency.common_support_threshold": 0.5,
         "temporal.burst.gap_seconds": 60,
     }
     analysis_config = SimpleNamespace(

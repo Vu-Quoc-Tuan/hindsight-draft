@@ -22,11 +22,6 @@ from libs.provenance import (
     normalize_pair_channels,
 )
 
-from .common_dependency import (
-    DEFAULT_LAMBDA_DEP,
-    DEFAULT_THETA_CD,
-    build_dep_upstream_providers,
-)
 from .dependency import (
     DEFAULT_D_MAX,
     PHYSICAL_RELATIONS,
@@ -132,8 +127,6 @@ def exact_cross_chain_evidence(
     delay_distribution: DelayDistribution | None = None,
     delay_threshold: float = DEFAULT_DELAY_THRESHOLD,
     d_max: int = DEFAULT_D_MAX,
-    lambda_dep: float = DEFAULT_LAMBDA_DEP,
-    common_dependency_threshold: float = DEFAULT_THETA_CD,
     silent_gap_seconds: int = DEFAULT_SILENT_GAP_SECONDS,
 ) -> CrossChainEvidence:
     """Return exact audit evidence over ``C_left x C_right``.
@@ -167,12 +160,6 @@ def exact_cross_chain_evidence(
         resolver = ResourceResolver.from_package(package)
     if topology is None and (package.topology.get("edges") or ()):
         topology = build_topology_graph(package, relation_types=PHYSICAL_RELATIONS)
-    dependency_providers = build_dep_upstream_providers(
-        package,
-        resolver=resolver,
-        lambda_dep=lambda_dep,
-        theta=common_dependency_threshold,
-    )
 
     available_counts: dict[EffectiveGroupKey, int] = {}
     support_counts: dict[EffectiveGroupKey, int] = {}
@@ -191,7 +178,6 @@ def exact_cross_chain_evidence(
                 delay_distribution=delay_distribution,
                 delay_threshold=delay_threshold,
                 d_max=d_max,
-                dependency_providers=dependency_providers,
             )
             audit_eligible_groups = [
                 group

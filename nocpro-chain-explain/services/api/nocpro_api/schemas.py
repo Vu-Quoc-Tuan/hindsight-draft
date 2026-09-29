@@ -146,6 +146,7 @@ class ChainOverviewCardsView(ApiModel):
 class EvidencePathView(ApiModel):
     resource_ids: list[str]
     relation_types: list[str]
+    edge_provenance: list[dict[str, Any]] = Field(default_factory=list)
     hop_count: int
     traversal_semantic: str
     max_hops: int
@@ -510,119 +511,6 @@ class AuditVisualizationArtifactView(ApiModel):
     visualization: AuditVisualizationView
 
 
-class DominatorView(ApiModel):
-    status: str
-    reason: str | None
-    semantic: str | None
-    witness_resource_id: str | None
-    covered_resource_ids: list[str]
-    source_ref: str | None
-    source_id: str | None
-    source_version: str | None
-    scenario_id: str | None
-    generator_version: str | None
-    relation_type: str | None
-    provenance_class: str | None
-    provenance_subtype: str | None
-    source_kind: str | None
-
-
-class PropagationDiagnosticsView(ApiModel):
-    candidate_node_count: int
-    candidate_edge_count: int
-    iterations: int
-    final_l1_distance: float | None
-    convergence_tolerance: float | None
-    restart_probability: float | None
-    seed_policy: str | None
-    dangling_policy: str | None
-    config_version: str | None
-    parameter_provenance: dict[str, str]
-
-
-class PropagationNodeScoreView(ApiModel):
-    alarm_id: str
-    score: float
-
-
-class PropagationEdgeHypothesisView(ApiModel):
-    source_alarm_id: str
-    target_alarm_id: str
-    score: float
-    transition_probability: float
-    temporal_delta_seconds: float
-
-
-class PropagationView(ApiModel):
-    status: str
-    reason: str | None
-    semantic: str | None
-    source_ref: str | None
-    source_id: str | None
-    source_version: str | None
-    scenario_id: str | None
-    generator_version: str | None
-    relation_type: str | None
-    provenance_class: str | None
-    provenance_subtype: str | None
-    source_kind: str | None
-    config_version: str | None
-    parameter_provenance: dict[str, str]
-    candidate_node_count: int | None = None
-    candidate_edge_count: int | None = None
-    iterations: int | None = None
-    final_l1_distance: float | None = None
-    convergence_tolerance: float | None = None
-    restart_probability: float | None = None
-    seed_policy: str | None = None
-    dangling_policy: str | None = None
-    diagnostics: PropagationDiagnosticsView
-    node_scores: list[PropagationNodeScoreView]
-    hypotheses: list[PropagationEdgeHypothesisView]
-
-
-class ResourceDetailsView(ApiModel):
-    status: str
-    reason: str | None
-    missing_resources: list[str] | None
-    extra_resources: list[str] | None
-
-
-class DependencyScopeView(ApiModel):
-    status: str
-    reason: str | None
-    semantic: str | None
-    witness_resource_id: str | None
-    source_ref: str | None
-    source_id: str | None
-    source_version: str | None
-    scenario_id: str | None
-    generator_version: str | None
-    relation_type: str | None
-    provenance_class: str | None
-    provenance_subtype: str | None
-    source_kind: str | None
-    observed_resource_count: int | None
-    scope_resource_count: int | None
-    intersection_count: int | None
-    union_count: int | None
-    observed_coverage: float | None
-    scope_precision: float | None
-    jaccard: float | None
-    missing_resource_count: int | None
-    extra_resource_count: int | None
-    max_scope_resources: int | None
-    max_materialized_resources: int | None
-    parameter_provenance: dict[str, str]
-    resource_details: ResourceDetailsView
-
-
-class TopologyHypothesesView(ApiModel):
-    dominator: DominatorView
-    propagation: PropagationView
-    dependency_scope: DependencyScopeView
-
-
 class EvidenceCoverageContributionView(ApiModel):
     group_id: str
     derivation_tag: str
@@ -694,7 +582,6 @@ class DeepDiveView(ApiModel):
     taxonomy_status: str | None
     taxonomy_reason: str | None
     active_fingerprint_blocks: list[str]
-    topology_hypotheses: TopologyHypothesesView
     evidence_attribution: EvidenceCoverageAttributionView
     evidence_attribution_evaluation: AttributionDeletionEvaluationView
 
@@ -1004,28 +891,6 @@ class ConfigView(ApiModel):
 class ConfigUpdateInput(ApiModel):
     parameters: dict[str, float | int]
 
-
-class ParameterCalibrationView(ApiModel):
-    path: str
-    previous_value: float | int
-    calibrated_value: float | int
-    source: str
-    sample_count: int
-    metric_details: dict[str, Any]
-
-
-class CalibrationReportView(ApiModel):
-    timestamp: str
-    database_url_masked: str
-    snapshots_loaded: int
-    chains_evaluated: int
-    alarms_evaluated: int
-    calibrated_parameters: list[ParameterCalibrationView]
-    output_config_path: str
-    status: str
-    chains_loaded: int | None = None
-    chains_skipped_large: int = 0
-    chains_failed: int = 0
 
 
 # -------------------------------------------------------------------------

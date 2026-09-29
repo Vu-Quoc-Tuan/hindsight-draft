@@ -32,9 +32,9 @@ def test_future_timestamp_is_flagged_not_repaired(tmp_path):
     )
     record = AlarmCsvLoader(path).load()[0]
     assert QualityFlag.TIMESTAMP_FUTURE_OUTLIER.value in record.quality_flags
-    # Raw string untouched and canonical value still reflects the dirty input.
+    # Raw string stays intact, but a flagged endpoint cannot drive analysis.
     assert record.raw_start_time == "2098-01-01 00:00:00"
-    assert record.canonical_start_time.year == 2098
+    assert record.canonical_start_time is None
 
 
 def test_end_before_start_is_flagged(tmp_path):
@@ -44,7 +44,37 @@ def test_end_before_start_is_flagged(tmp_path):
     )
     record = AlarmCsvLoader(path).load()[0]
     assert QualityFlag.END_BEFORE_START.value in record.quality_flags
-    assert record.canonical_end_time < record.canonical_start_time
+    assert record.canonical_start_time is not None
+    assert record.canonical_end_time is None
+    assert record.raw_end_time == "2026-01-01 09:00:00"
+
+
+def test_future_end_is_unavailable_without_discarding_valid_start(tmp_path):
+    path = _write_csv(
+        tmp_path / "a.csv",
+        [["1", "a1", "2026-01-02 10:00:00", "2098-01-01 09:00:00", "D1", "N1", "X"]],
+    )
+    record = AlarmCsvLoader(path).load()[0]
+    assert QualityFlag.TIMESTAMP_FUTURE_OUTLIER.value in record.quality_flags
+    assert record.canonical_start_time is not None
+    assert record.canonical_end_time is None
+    assert record.raw_end_time == "2098-01-01 09:00:00"
+
+
+def test_invalid_timestamp_is_excluded_from_chain_span(tmp_path):
+    path = _write_csv(
+        tmp_path / "a.csv",
+        [
+            ["1", "a1", "2026-01-02 10:00:00", "", "D1", "N1", "X"],
+            ["1", "a2", "2098-01-01 10:00:00", "", "D2", "N2", "X"],
+            ["1", "a3", "2026-01-02 10:00:05", "", "D3", "N3", "X"],
+        ],
+    )
+    records = AlarmCsvLoader(path).load()
+    chains, _ = build_chains(
+        records, snapshot_id="s1", source_kind=SourceKind.REAL_EXPORT_REPLAY
+    )
+    assert chains[0].event_span_seconds == 5
 
 
 def test_unparseable_timestamp_flagged_and_canonical_is_none(tmp_path):

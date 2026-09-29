@@ -141,10 +141,10 @@ def create_app(*, workspace: Workspace | None = None) -> FastAPI:
             # Tier-1A/Tier-2 caches.  It must happen before rehydrating READY
             # state; otherwise restart can serve a package built under the
             # previous config while new quality workers use the new version.
-            if os.environ.get("AUTO_CALIBRATE_ON_STARTUP", "true").lower() in {"1", "true", "yes"}:
+            if os.environ.get("AUTO_CALIBRATE_ON_STARTUP", "false").lower() in {"1", "true", "yes"}:
                 try:
                     LOGGER.info("Starting auto-calibration from PostgreSQL before activation...")
-                    report = await service.calibrate_from_database(include_fixtures=True)
+                    report = await service.calibrate_from_database()
                     LOGGER.info(
                         "Auto-calibration from PostgreSQL completed: status=%s, version=%s",
                         report.get("status"),

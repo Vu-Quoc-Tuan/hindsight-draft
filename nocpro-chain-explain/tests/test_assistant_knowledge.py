@@ -15,7 +15,6 @@ def test_default_catalog_covers_frozen_methodology_domains():
         "evolution.lineage",
         "similarity.cosine",
         "status.unavailable",
-        "topology.propagation_hypothesis",
         "review.pareto_frontier",
     } <= ids
 

@@ -413,7 +413,7 @@ def test_production_env_blocks_disabling_governance(monkeypatch):
 
 
 def test_workspace_manifest_threshold_inheritance(trained_ranker, tmp_path, monkeypatch):
-    """Verify Workspace inherits signed manifest abstention_threshold when env var is unset."""
+    """Verify an explicitly active test ranker inherits its manifest threshold."""
     model, metrics, cutoff, fp = trained_ranker
     manifest = _make_manifest(
         metrics,
@@ -427,13 +427,30 @@ def test_workspace_manifest_threshold_inheritance(trained_ranker, tmp_path, monk
     save_ranker_artifact(model, manifest, tmp_path)
     sign_ranker_artifact(tmp_path, principal_id="lead_eng", signing_key="secret123")
 
+    active_config = tmp_path / "review-learning-active.yaml"
+    active_config.write_text(
+        "config_version: test-active-v1\n"
+        "mode: RANKER_ACTIVE\n"
+        "ranker:\n"
+        "  mode: ACTIVE\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("NOCPRO_REVIEW_LEARNING_CONFIG_PATH", str(active_config))
     monkeypatch.setenv("NOCPRO_REVIEW_RANKER_ARTIFACT_DIR", str(tmp_path))
     monkeypatch.setenv("NOCPRO_GOVERNANCE_SIGNING_KEY", "secret123")
+    # The test uses a synthetic DRAFT artifact and exercises Workspace wiring,
+    # not production artifact approval.
+    monkeypatch.setenv("NOCPRO_REVIEW_RANKER_ENFORCE_GOVERNANCE", "0")
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
     monkeypatch.delenv("NOCPRO_REVIEW_RANKER_ABSTENTION_THRESHOLD", raising=False)
 
     from nocpro_api.workspace import Workspace
     ws = Workspace()
-    assert ws.review_learning.abstention_threshold == 0.35
+    try:
+        assert ws.review_learning.abstention_threshold == 0.35
+    finally:
+        ws.close()
 
 
 def test_production_rejects_unsigned_runtime_threshold_override(monkeypatch):

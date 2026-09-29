@@ -24,9 +24,7 @@ from audit import (
 from channels import (
     DEFAULT_DELAY_THRESHOLD,
     DEFAULT_D_MAX,
-    DEFAULT_LAMBDA_DEP,
     DEFAULT_SILENT_GAP_SECONDS,
-    DEFAULT_THETA_CD,
     EMPTY_TAXONOMY,
     AlarmTaxonomy,
     evaluate_chain_channels,
@@ -40,7 +38,7 @@ from descriptor import (
     build_predicate_index,
     mine_descriptors,
 )
-from configuration import AttributionEvaluationConfig, P2TopologyConfig
+from configuration import AttributionEvaluationConfig
 from groups import AuditGraphMode
 from libs.contracts import IngestedPackage
 from similar_chains import (
@@ -52,7 +50,6 @@ from similar_chains import (
 )
 from similar_chains.temporal import CorpusPolicy, parse_time
 
-from .topology_hypotheses import TopologyHypothesesResult, analyze_topology_hypotheses
 from .evidence_attribution import (
     AttributionExecutionPolicy,
     EvidenceCoverageAttributionResult,
@@ -126,7 +123,6 @@ class Tier2AuditAnalysis:
     structural_roles: dict[str, StructuralRoleResult]
     structural_audit: StructuralAuditResult
     over_merge: OverMergeVerdict
-    topology_hypotheses: TopologyHypothesesResult
     evidence_attribution: EvidenceCoverageAttributionResult
     evidence_attribution_evaluation: AttributionDeletionEvaluationResult
     reason: str | None = None
@@ -157,8 +153,6 @@ def analyze_structural_audit(
     small_chain_threshold: int = SMALL_CHAIN_THRESHOLD,
     delay_threshold: float = DEFAULT_DELAY_THRESHOLD,
     d_max: int = DEFAULT_D_MAX,
-    lambda_dep: float = DEFAULT_LAMBDA_DEP,
-    common_dependency_threshold: float = DEFAULT_THETA_CD,
     silent_gap_seconds: int = DEFAULT_SILENT_GAP_SECONDS,
     taxonomy: AlarmTaxonomy = EMPTY_TAXONOMY,
     dependency_edges: list[tuple[str, str, float]] | None = None,
@@ -166,7 +160,6 @@ def analyze_structural_audit(
     cross_block_negative_evidence: bool = False,
     similarity_context: SimilarityQueryContext | None = None,
     similarity_top_k: int = 5,
-    p2_topology_config: P2TopologyConfig | None = None,
     attribution_evaluation_config: AttributionEvaluationConfig | None = None,
 ) -> Tier2AuditAnalysis:
     """Run independent Tier-2 components with component-level fail-closed results."""
@@ -225,15 +218,6 @@ def analyze_structural_audit(
         similarity_trained_until_exclusive = model.trained_until_exclusive
         similarity_corpus_policy = model.corpus_policy
         similarity_model_update_policy = model.model_update_policy
-    # P2 is an independent semantic branch.  It receives the immutable input
-    # package and optional envelope, never the evidence/audit graph produced
-    # above, so hypotheses cannot influence G*_audit or structural roles.
-    topology_hypotheses = analyze_topology_hypotheses(
-        package,
-        chain_id,
-        p2_topology_config,
-    )
-
     exact_allowed = chain.member_count <= policy.exact_max_members
     indexed_evidence = (
         evaluate_chain_indexed(package, chain_id, taxonomy=taxonomy)
@@ -296,8 +280,6 @@ def analyze_structural_audit(
             taxonomy=taxonomy,
             delay_threshold=delay_threshold,
             d_max=d_max,
-            lambda_dep=lambda_dep,
-            common_dependency_threshold=common_dependency_threshold,
             silent_gap_seconds=silent_gap_seconds,
             pair_detail_limit=pair_count,
         )
@@ -309,6 +291,7 @@ def analyze_structural_audit(
             else [
                 (domain.failure_domain_id, domain.member_alarm_ids)
                 for domain in failure_domains_for_chain(package, chain_id)
+                if domain.eligible_for_candidate
             ]
         )
         candidates = generate_candidates(
@@ -347,7 +330,6 @@ def analyze_structural_audit(
         structural_roles=roles,
         structural_audit=structural_audit,
         over_merge=over_merge,
-        topology_hypotheses=topology_hypotheses,
         evidence_attribution=evidence_attribution,
         evidence_attribution_evaluation=evidence_attribution_evaluation,
         config_version=mining_config.config_version,

@@ -5,7 +5,6 @@ import type {
   AssistantHistoryMessage,
   AssistantResponse,
   AuditVisualizationArtifact,
-  CalibrationReport,
   ChainAnalysis,
   ChainOverviewCards,
   ChainList,
@@ -110,6 +109,7 @@ async function request<T>(
     }
     throw new ApiError(response.status, message)
   }
+  if (response.status === 204) return undefined as T
   return (await response.json()) as T
 }
 
@@ -173,7 +173,6 @@ export type TopologyNavigationResolution = {
   mapping_status: 'EXACT_RESOURCE_ID' | 'EXACT_IDENTITY' | 'UNIQUE_SOURCE_FIELD_MATCH' | 'AMBIGUOUS' | 'UNMAPPED'
   source_field: string | null
   navigation_eligible: boolean
-  p2_mapping_eligible: boolean
   dependency_semantics: 'UNVERIFIED' | 'UNAVAILABLE'
   reason?: string
 }
@@ -766,7 +765,7 @@ export const api = {
       signal,
     }),
   calibrateConfig: (signal?: AbortSignal) =>
-    request<CalibrationReport>('/api/v1/config/calibrate', {
+    request<void>('/api/v1/config/calibrate', {
       method: 'POST',
       signal,
     }),

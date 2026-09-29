@@ -5,7 +5,7 @@ Four sources only. No new community detection is run here -- that would be
 
     Entity (categorical)     partition by dominant predicate value
     Dependency pair graph    connected components after threshold theta_dep
-    Failure-domain H_domain  each hyperedge is one candidate block
+    Failure-domain/shared resource context each hyperedge is one block
     Descriptor               extents of top non-redundant IDENTITY rules
 
 Candidate cuts are these blocks plus their pairwise union/difference.
@@ -26,6 +26,7 @@ class CandidateSource(str, Enum):
     ENTITY = "ENTITY"
     DEPENDENCY = "DEPENDENCY"
     FAILURE_DOMAIN = "FAILURE_DOMAIN"
+    SHARED_RESOURCE_CONTEXT = "SHARED_RESOURCE_CONTEXT"
     DESCRIPTOR = "DESCRIPTOR"
     #: Union/difference of two base blocks.
     DERIVED = "DERIVED"
@@ -116,36 +117,59 @@ def dependency_candidates(
 def failure_domain_candidates(
     domains: list[tuple[str, frozenset[str]]],
 ) -> list[Candidate]:
-    """One candidate block per failure-domain hyperedge.
+    """One candidate block per failure-domain/shared-resource hyperedge.
 
     Each hyperedge is used whole, never clique-projected into pair edges
-    (ADR-0011); it simply proposes a block.
+    (ADR-0011); it simply proposes a block. Source-derived shared-storage
+    context keeps a distinct CandidateSource and label so it is not presented
+    as a verified failure domain.
     """
-    return [
-        Candidate(
-            source=CandidateSource.FAILURE_DOMAIN,
-            members=frozenset(members),
-            label=f"failure domain {domain_id}",
+    candidates = []
+    for domain_id, members in domains:
+        if len(members) < 2:
+            continue
+        if domain_id.startswith("SHARED_STORAGE:"):
+            source = CandidateSource.SHARED_RESOURCE_CONTEXT
+            label = f"shared storage context {domain_id.removeprefix('SHARED_STORAGE:')}"
+        else:
+            source = CandidateSource.FAILURE_DOMAIN
+            label = f"failure domain {domain_id}"
+        candidates.append(
+            Candidate(
+                source=source,
+                members=frozenset(members),
+                label=label,
+            )
         )
-        for domain_id, members in domains
-        if len(members) >= 2
-    ]
+    return candidates
 
 
 def descriptor_candidates(
-    descriptors: tuple[Descriptor, ...], index, *, top_k: int = 5
+    descriptors: tuple[Descriptor, ...],
+    index,
+    *,
+    top_k: int = 5,
+    candidate_universe: frozenset[str] | None = None,
 ) -> list[Candidate]:
     """Extents of the top non-redundant IDENTITY rules.
 
     ``descriptors`` is expected to already be redundancy-filtered by the mining
-    step (docs 5); this function only converts extents to member sets.
+    step (docs 5); this function converts extents to member sets. When building
+    an Audit candidate, ``candidate_universe`` restricts the global descriptor
+    extent to the chain being audited; descriptor precision metrics remain
+    global, but a cut may contain only members of its graph.
     """
     candidates: list[Candidate] = []
     for descriptor in descriptors[:top_k]:
         members = frozenset(
             index.universe[i]
             for i in range(len(index.universe))
-            if index.universe[i] is not None and descriptor.matches_alarm_bit(i)
+            if index.universe[i] is not None
+            and descriptor.matches_alarm_bit(i)
+            and (
+                candidate_universe is None
+                or index.universe[i] in candidate_universe
+            )
         )
         if len(members) >= 2:
             candidates.append(
@@ -228,7 +252,11 @@ def generate_candidates(
         entity_candidates(alarms)
         + dependency_candidates(member_list, dependency_edges, theta_dep=theta_dep)
         + failure_domain_candidates(failure_domains)
-        + descriptor_candidates(descriptors, predicate_index)
+        + descriptor_candidates(
+            descriptors,
+            predicate_index,
+            candidate_universe=all_members,
+        )
     )
     base = deduplicate_candidates(base)
 

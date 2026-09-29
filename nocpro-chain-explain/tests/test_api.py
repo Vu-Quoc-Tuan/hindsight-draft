@@ -1128,73 +1128,6 @@ def test_evolution_serializer_keeps_verified_synthetic_artifact_provenance():
     assert result.edges[0].overlap_count == 3
 
 
-def test_pair_why_serializes_channel_family_and_dependency_semantic():
-    payload = _payload()
-    payload["snapshot"]["topology_version"] = "v17"
-    payload["topology"] = {
-            "edges": [
-                {
-                    "edge_id": f"edge-{resource}",
-                    "source_resource_id": "ROOT",
-                    "target_resource_id": resource,
-                    "relation_type": "LOGICAL_DEPENDENCY",
-                    "directed": True,
-                    "source_id": "inventory",
-                    "source_kind": "REAL_EXPORT_REPLAY",
-                    "source_version": "v17",
-                }
-            for resource in ("RA", "RB")
-        ],
-        "active_paths": [
-            {
-                "path_id": f"p-{resource}",
-                "resource_id": resource,
-                    "nodes": [resource, "ROOT"],
-                    "source_id": "inventory",
-                    "source_kind": "REAL_EXPORT_REPLAY",
-                    "source_version": "v17",
-                }
-            for resource in ("RA", "RB")
-        ],
-        "mappings": [
-                {
-                    "alarm_id": "a1",
-                    "resource_id": "RA",
-                    "mapping_status": "EXACT",
-                    "mapping_method": "EXACT_IDENTITY",
-                },
-                {
-                    "alarm_id": "a2",
-                    "resource_id": "RB",
-                    "mapping_status": "EXACT",
-                    "mapping_method": "EXACT_IDENTITY",
-                },
-        ],
-    }
-
-    async def exercise(client: httpx2.AsyncClient):
-        await client.post("/api/v1/snapshots", json=payload)
-        return await client.get("/api/v1/chains/C1/pairs/a1/a2")
-
-    response = run_api_test(exercise)
-
-    assert response.status_code == 200
-    dependencies = [
-        item
-        for item in response.json()["evidence"]
-        if item["channel_family"] == "DEP_UPSTREAM"
-    ]
-    assert {item["dependency_semantic"] for item in dependencies} == {
-        "SHARED_ANCESTOR",
-        "SHARED_ACTIVE_PATH",
-    }
-    assert {item["derivation_tag"] for item in dependencies} == {
-        "dependency:inventory@v17"
-    }
-    assert {item["source_id"] for item in dependencies} == {"inventory"}
-    assert {item["source_version"] for item in dependencies} == {"v17"}
-    assert {item["scenario_id"] for item in dependencies} == {None}
-    assert {item["generator_version"] for item in dependencies} == {None}
 
 
 def test_pair_why_exposes_history_as_config_incomplete_without_changing_other_channels():
@@ -1245,7 +1178,7 @@ def test_chain_analysis_exposes_indexed_t_delay_unavailable_reason():
     }
 
 
-def test_pair_why_keeps_snapshot_available_but_disables_unversioned_topology():
+def test_pair_why_does_not_reintroduce_removed_active_path_channel():
     payload = _payload()
     payload["snapshot"]["topology_version"] = "must-not-be-a-fallback"
     payload["topology"] = {
@@ -1282,14 +1215,61 @@ def test_pair_why_keeps_snapshot_available_but_disables_unversioned_topology():
     response = run_api_test(exercise)
 
     assert response.status_code == 200
-    active_path = next(
-        item
+    assert all(
+        item.get("dependency_semantic") != "SHARED_ACTIVE_PATH"
         for item in response.json()["evidence"]
-        if item["dependency_semantic"] == "SHARED_ACTIVE_PATH"
     )
-    assert active_path["state"] == "UNAVAILABLE"
-    assert active_path["detail"] == "TOPOLOGY_SOURCE_VERSION_MISSING"
-    assert active_path["source_version"] is None
+
+
+def test_proposal_clarity_keeps_no_proposal_rationale_deterministic(monkeypatch):
+    from nocpro_api import grounded_llm
+
+    rationale = "Không có đề xuất nào đủ hard gate và trạng thái Pareto để so sánh cách trình bày."
+    job = SimpleNamespace(job_id="job-empty", chain_id="chain-empty", result=None)
+    service = SimpleNamespace(
+        review_jobs=SimpleNamespace(get=lambda _job_id: job),
+        repository=None,
+        flush_review_persistence=AsyncMock(),
+        current_package=lambda: None,
+        review_learning=None,
+    )
+    comparison = SimpleNamespace(
+        proposals=[],
+        top_proposal_id=None,
+        top_proposal_operation=None,
+        head_to_head_comparisons=[],
+        overall_recommendation_rationale=rationale,
+    )
+    provider_check = Mock(return_value=True)
+    provider_render = Mock(side_effect=AssertionError("provider must not render empty results"))
+    monkeypatch.setattr(api_routes, "workspace", lambda _request: service)
+    monkeypatch.setattr(
+        api_routes,
+        "counterfactual_job_view",
+        lambda *_args, **_kwargs: SimpleNamespace(result={}),
+    )
+    monkeypatch.setattr(
+        api_routes,
+        "compare_proposal_explanations",
+        lambda *_args, **_kwargs: comparison,
+    )
+    monkeypatch.setattr(grounded_llm, "is_provider_configured", provider_check)
+    monkeypatch.setattr(grounded_llm, "render_grounded", provider_render)
+
+    async def exercise():
+        return await api_routes.get_review_job_proposals_clarity(
+            "job-empty", request=SimpleNamespace(), lang="vi"
+        )
+
+    response = asyncio.run(exercise())
+
+    assert response.overall_recommendation_rationale == rationale
+    assert response.proposals == []
+    assert response.top_proposal_id is None
+    assert response.ai_model == "DETERMINISTIC_EVIDENCE"
+    assert response.ai_provider_status == "NOT_APPLIED"
+    provider_check.assert_not_called()
+    provider_render.assert_not_called()
 
 
 def test_deep_dive_is_submitted_and_polled_as_a_job():
@@ -1336,17 +1316,6 @@ def test_deep_dive_is_submitted_and_polled_as_a_job():
     assert evaluation["random"]["seed"] == 42
     assert evaluation["random"]["repetitions"] == 100
     assert evaluation["random"]["repetitions_executed"] == 100
-    topology = polled.json()["result"]["topology_hypotheses"]
-    assert topology["dominator"]["status"] == "UNAVAILABLE"
-    assert topology["dominator"]["reason"] is not None
-    assert "positive_score" not in topology["dominator"]
-    assert topology["propagation"]["status"] == "UNAVAILABLE"
-    assert topology["propagation"]["reason"] == "PROPAGATION_CONFIG_INCOMPLETE"
-    assert topology["dependency_scope"]["status"] == "UNAVAILABLE"
-    assert topology["dependency_scope"]["resource_details"]["missing_resources"] is None
-    assert topology["dependency_scope"]["resource_details"]["extra_resources"] is None
-
-
 def test_latest_deep_dive_rehydrates_the_full_in_memory_result():
     async def exercise(client: httpx2.AsyncClient):
         await client.post("/api/v1/snapshots", json=_payload())

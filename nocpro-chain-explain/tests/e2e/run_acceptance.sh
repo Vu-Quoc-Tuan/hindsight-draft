@@ -125,7 +125,6 @@ import sys
 payload = json.load(sys.stdin)
 assert payload["status"] == "AVAILABLE", payload
 assert payload.get("resource_id"), payload
-assert payload["p2_mapping_eligible"] is False, payload
 assert payload["dependency_semantics"] == "UNVERIFIED", payload
 '
 echo "topology_navigation_api_acceptance=PASS"
@@ -152,9 +151,7 @@ if [[ -f "$raw_alarm_csv" ]]; then
   wait_for_snapshot_ready "$snapshot_id"
 
   # The browser scenarios intentionally depend on different active snapshots:
-  # real replay for core WHY/Audit, synthetic P2 for Evolution, and synthetic
-  # Counterfactual for Review.  Do not execute the whole suite against the
-  # real replay before those later fixtures have been ingested.
+  # real replay for core WHY/Audit and synthetic Counterfactual for Review.
   pnpm --dir services/web exec playwright test e2e/operator-flow.spec.ts
   pnpm --dir services/web exec playwright test e2e/topology-navigation.spec.ts
   echo "topology_navigation_browser_acceptance=PASS"
@@ -197,20 +194,8 @@ else
   echo "ip_topology_dep_hop_acceptance=SKIPPED_IP_INPUT_MISSING"
 fi
 
-ANALYSIS_CONFIG_PATH="/app/config/thresholds/e2e-p2.yaml" \
-  $COMPOSE up -d --force-recreate api
-deadline=$((SECONDS + 60))
-until curl -fsS "http://127.0.0.1:${API_HOST_PORT}/api/v1/health" >/dev/null; do
-  if (( SECONDS >= deadline )); then
-    $COMPOSE logs --no-color api
-    echo "API did not restart with synthetic P2 acceptance config" >&2
-    exit 1
-  fi
-  sleep 1
-done
-wait_for_proxy_api
 NOCPRO_RUN_DOCKER_E2E=1 PYTHONPATH="../nocpro-mock/src" \
-  .venv/bin/python -m pytest tests/e2e/test_synthetic_p2_kafka.py -q
+  .venv/bin/python -m pytest tests/e2e/test_synthetic_temporal_lineage_kafka.py -q
 pnpm --dir services/web exec playwright test e2e/evolution.spec.ts
 
 # T_delay's synthetic sequence has authoritative taxonomy only in its explicit

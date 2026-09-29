@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import random
 
-from channels import AlarmTaxonomy, evaluate_chain_channels
+from channels import AlarmTaxonomy, EvidenceState, evaluate_chain_channels
 from channels.indexed_statistics import build_indexed_statistics
 from groups import (
     RoleThresholds,
@@ -180,6 +180,36 @@ def test_indexed_matches_pairwise_with_mixed_availability(mixed_package):
     _assert_equivalent(mixed_package)
 
 
+def test_placeholder_entity_values_do_not_create_fit_support():
+    package = _package(
+        [
+            {
+                "alarm_id": "a1",
+                "device_code": "N/A",
+                "location_code": "[]",
+            },
+            {
+                "alarm_id": "a2",
+                "device_code": "N/A",
+                "location_code": "[]",
+            },
+        ]
+    )
+
+    oracle = evaluate_chain_channels(package, "C1")
+    pair = next(iter(oracle.matrix.values.values()))
+    pair_by_channel = {value.channel_id: value for value in pair}
+    assert pair_by_channel["E_site"].state is EvidenceState.UNAVAILABLE
+    assert pair_by_channel["E_device"].state is EvidenceState.UNAVAILABLE
+    assert pair_by_channel["T_burst"].state is EvidenceState.UNAVAILABLE
+    assert membership_support("a1", oracle.statistics).support is None
+
+    indexed = build_indexed_statistics(package, "C1")
+    assert indexed.fit_of("a1", "E_site").fit is None
+    assert indexed.fit_of("a1", "E_device").fit is None
+    assert membership_support_from_index("a1", indexed).support is None
+
+
 def test_missing_member_does_not_use_total_peer_denominator(mixed_package):
     oracle = evaluate_chain_channels(mixed_package, "C1")
     indexed = build_indexed_statistics(mixed_package, "C1")
@@ -296,56 +326,3 @@ def test_indexed_dep_hop_matches_pairwise_with_mapping_and_sparse_topology():
     _assert_equivalent(package, d_max=0)
     dmax_zero = build_indexed_statistics(package, "C1", d_max=0)
     assert dmax_zero.fit_of("a1", "Dep_hop").fit is None
-
-
-def test_indexed_dep_upstream_matches_pairwise_and_deduplicates_semantic_tiers():
-    package = _package(
-        [
-            {"alarm_id": "a1", "alarm_name": "DOWN", "device_code": "D1"},
-            {"alarm_id": "a2", "alarm_name": "DOWN", "device_code": "D2"},
-            {"alarm_id": "a3", "alarm_name": "POWER", "device_code": "D3"},
-        ]
-    )
-    package.topology = {
-        "edges": [
-            {
-                "source_resource_id": "ROOT",
-                "target_resource_id": resource,
-                "relation_type": "LOGICAL_DEPENDENCY",
-                "directed": True,
-                "source_id": "inventory",
-                "source_version": "v17",
-            }
-            for resource in ("R1", "R2", "R3")
-        ],
-        "active_paths": [
-            {
-                "path_id": f"p{index}",
-                "resource_id": resource,
-                "nodes": [resource, "ROOT"],
-                "source_id": "inventory",
-                "source_version": "v17",
-            }
-            for index, resource in enumerate(("R1", "R2", "R3"), start=1)
-        ],
-        "mappings": [
-            {
-                "alarm_id": f"a{index}",
-                "resource_id": resource,
-                "mapping_status": "EXACT",
-            }
-            for index, resource in enumerate(("R1", "R2", "R3"), start=1)
-        ],
-    }
-
-    _assert_equivalent(package)
-
-    indexed = build_indexed_statistics(package, "C1")
-    support = membership_support_from_index("a1", indexed)
-    dependency_groups = [
-        group
-        for group in support.group_fits
-        if group.derivation_tag == "dependency:inventory@v17"
-    ]
-    assert len(dependency_groups) == 1
-    assert len(dependency_groups[0].channel_fits) == 2

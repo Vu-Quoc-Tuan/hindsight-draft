@@ -10,13 +10,10 @@ from .analysis_config import (
     ChunkRetentionPolicy,
     ConfiguredValue,
     CounterfactualConfig,
-    DependencyScopeConfig,
     IncrementalSnapshotMode,
     IncrementalSnapshotPolicy,
     ParameterSource,
     PARAMETER_RULES,
-    P2TopologyConfig,
-    PropagationConfig,
     SimilarChainsPolicy,
     load_analysis_config,
 )
@@ -31,14 +28,10 @@ __all__ = [
     "ChunkRetentionPolicy",
     "ConfiguredValue",
     "CounterfactualConfig",
-    "DependencyScopeConfig",
     "IncrementalSnapshotMode",
     "IncrementalSnapshotPolicy",
     "ParameterSource",
     "PARAMETER_RULES",
-    "P2TopologyConfig",
-    "PropagationConfig",
     "SimilarChainsPolicy",
     "load_analysis_config",
 ]
-

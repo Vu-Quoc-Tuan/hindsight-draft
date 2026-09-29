@@ -4,7 +4,9 @@ Three graph kinds must stay distinct:
 
     STATISTICAL     full counts, never sparsified
     VISUALIZATION    top-K, UI only
-    AUDIT            |C| <= ~2k: full graph; larger: supernode/sparsifier
+    AUDIT            exact weighted graph only when |C| <= the configured
+                     exact-member ceiling; above it, the exact Audit path is
+                     unavailable/skipped (no approximation is built here)
 
 Audit **never** runs on the top-K visualization graph: a bridge or weak cut can
 be an artifact of pruning rather than a real structural feature. This module
@@ -27,7 +29,7 @@ from libs.provenance import (
     normalize_pair_channels,
 )
 
-#: Above this member count, the audit graph must not be materialized exactly.
+#: Maximum member count allowed for the implemented exact Audit graph path.
 #: Matches groups.statistics.EXACT_STATISTICS_MAX_MEMBERS (§6's ~2k bound).
 AUDIT_EXACT_MAX_MEMBERS = 2_000
 
@@ -96,10 +98,11 @@ def build_audit_graph(
 
     ``pair_channel_values`` maps an unordered pair to the list of
     ``ChannelValue`` computed for it (the same values statistics accumulates
-    from). Only audit-eligible, available groups contribute weight, and an edge
-    exists only when at least one audit-eligible group supports the pair
-    (mirrors the ``>= 2 distinct groups`` rule at the *audit-edge* level via
-    ``w*_audit`` weighting, not by inventing a separate rule here).
+    from). Only audit-eligible, available groups contribute weight. An edge
+    exists only when at least two distinct audit-eligible groups support the
+    pair. Its weight is the sum of positive scores from supporting groups
+    divided by the number of available audit-eligible groups; available neutral
+    groups therefore remain in the denominator.
     """
     edges: list[AuditEdge] = []
     adjacency: dict[str, dict[str, float]] = {m: {} for m in members}

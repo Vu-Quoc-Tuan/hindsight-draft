@@ -9,11 +9,6 @@ from types import SimpleNamespace
 import pytest
 
 from configuration import (
-    ConfiguredValue,
-    DependencyScopeConfig,
-    ParameterSource,
-    P2TopologyConfig,
-    PropagationConfig,
     load_analysis_config,
 )
 from tier1a import CacheTier, Tier1Cache
@@ -229,10 +224,6 @@ def test_worker_passes_versioned_audit_balance_parameters(analysis_config):
         "temporal.delay.support_threshold"
     )
     assert received["d_max"] == analysis_config.value("dependency.max_hop")
-    assert received["lambda_dep"] == analysis_config.value("dependency.lambda_dep")
-    assert received["common_dependency_threshold"] == analysis_config.value(
-        "dependency.common_support_threshold"
-    )
     assert received["silent_gap_seconds"] == analysis_config.value(
         "temporal.burst.gap_seconds"
     )
@@ -269,17 +260,6 @@ def test_default_worker_runs_real_per_chain_audit(analysis_config):
     assert completed.result.similar_chains == ()
     assert completed.result.similarity_status == "UNAVAILABLE"
     assert completed.result.similarity_unavailable_reason == "LINEAGE_NOT_READY"
-    assert completed.result.topology_hypotheses.dominator.status.value == "UNAVAILABLE"
-    assert completed.result.topology_hypotheses.dominator.reason is not None
-    assert completed.result.topology_hypotheses.propagation.status.value == "UNAVAILABLE"
-    assert (
-        completed.result.topology_hypotheses.propagation.reason.value
-        == "PROPAGATION_CONFIG_INCOMPLETE"
-    )
-    assert (
-        completed.result.topology_hypotheses.dependency_scope.status.value
-        == "UNAVAILABLE"
-    )
 
 
 def test_domain_limits_return_a_successful_job_with_partial_results(analysis_config):
@@ -304,315 +284,14 @@ def test_domain_limits_return_a_successful_job_with_partial_results(analysis_con
         == "ATTRIBUTION_LIMIT_EXCEEDED"
     )
     assert completed.result.similarity_unavailable_reason == "LINEAGE_NOT_READY"
-    assert completed.result.topology_hypotheses is not None
 
 
-def test_p2_config_versions_and_scope_values_are_part_of_cache_stamp(analysis_config):
-    calls = 0
-
-    def analyzer(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-        return {"run": calls}
-
-    def cv(path, value):
-        return ConfiguredValue(
-            path=path, value=value, source=ParameterSource.FROZEN_SPEC
-        )
-
-    propagation = PropagationConfig(
-        config_version="propagation-test-v1",
-        restart_probability=cv("propagation.rwr.restart_probability", 0.2),
-        convergence_tolerance=cv("propagation.rwr.convergence_tolerance", 0.001),
-        max_iterations=cv("propagation.rwr.max_iterations", 10),
-        decay_type="exponential",
-        decay_parameter=cv("propagation.temporal.decay_parameter", 30.0),
-        score_threshold=cv("propagation.acceptance.score_threshold", 0.5),
-        max_candidate_edges=cv("propagation.limits.max_candidate_edges", 20),
-    )
-    scope = DependencyScopeConfig(
-        max_scope_resources=cv("dependency_scope.limits.max_scope_resources", 20),
-        max_materialized_resources=cv(
-            "dependency_scope.limits.max_materialized_resources", 10
-        ),
-    )
-    config_a = replace(
-        analysis_config,
-        p2_topology=P2TopologyConfig(propagation, None, scope, None),
-    )
-    config_b = replace(
-        config_a,
-        p2_topology=replace(
-            config_a.p2_topology,
-            propagation=replace(propagation, config_version="propagation-test-v2"),
-        ),
-    )
-    config_c = replace(
-        config_a,
-        p2_topology=replace(
-            config_a.p2_topology,
-            dependency_scope=replace(
-                scope,
-                max_scope_resources=cv(
-                    "dependency_scope.limits.max_scope_resources", 21
-                ),
-            ),
-        ),
-    )
-    config_d = replace(
-        config_a,
-        p2_topology=replace(
-            config_a.p2_topology,
-            propagation=replace(
-                propagation,
-                restart_probability=cv(
-                    "propagation.rwr.restart_probability", 0.3
-                ),
-            ),
-        ),
-    )
-    config_e = replace(
-        config_a,
-        p2_topology=replace(
-            config_a.p2_topology,
-            propagation=replace(
-                propagation,
-                restart_probability=ConfiguredValue(
-                    path="propagation.rwr.restart_probability",
-                    value=0.2,
-                    source=ParameterSource.DATA_DRIVEN,
-                ),
-            ),
-        ),
-    )
-    config_f = replace(
-        config_a,
-        p2_topology=replace(
-            config_a.p2_topology,
-            dependency_scope=replace(
-                scope,
-                max_scope_resources=cv(
-                    "dependency_scope.limits.max_scope_resources.alias", 20
-                ),
-            ),
-        ),
-    )
-
-    cache = Tier1Cache()
-    with Tier2JobManager(cache=cache, analyzer=analyzer, max_workers=1) as manager:
-        submissions = [
-            manager.submit(_package(), "C1", analysis_config=config)
-            for config in (config_a, config_b, config_c, config_d, config_e, config_f)
-        ]
-        for submission in submissions:
-            assert manager.wait(submission.job_id, timeout=2).status is JobStatus.SUCCEEDED
-
-    keys = [
-        cache.tier_entries(CacheTier.TIER_2)[index].key.config_version
-        for index in range(6)
-    ]
-    assert calls == 6
-    assert all(key != "v1" for key in keys)
-    assert "version='propagation-test-v1'" in keys[0]
-    assert "version='propagation-test-v2'" in keys[1]
-    assert "max_scope_resources=21" in keys[2]
-    assert "restart_probability" in keys[3]
-    assert "value=0.3" in keys[3]
-    assert "source='DATA_DRIVEN'" in keys[4]
-    assert "path='dependency_scope.limits.max_scope_resources'" in keys[0]
-    assert "source='FROZEN_SPEC'" in keys[0]
-    assert "path='dependency_scope.limits.max_scope_resources.alias'" in keys[5]
-    assert keys[0] != keys[5]
 
 
-def test_incomplete_or_unsupported_p2_cannot_reuse_available_cache(analysis_config):
-    calls = 0
-
-    def analyzer(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-        return {"run": calls}
-
-    def cv(path, value, source=ParameterSource.FROZEN_SPEC):
-        return ConfiguredValue(path=path, value=value, source=source)
-
-    propagation = PropagationConfig(
-        config_version="propagation-test-v1",
-        restart_probability=cv("propagation.rwr.restart_probability", 0.2),
-        convergence_tolerance=cv("propagation.rwr.convergence_tolerance", 0.001),
-        max_iterations=cv("propagation.rwr.max_iterations", 10),
-        decay_type="exponential",
-        decay_parameter=cv("propagation.temporal.decay_parameter", 30.0),
-        score_threshold=cv("propagation.acceptance.score_threshold", 0.5),
-        max_candidate_edges=cv("propagation.limits.max_candidate_edges", 20),
-    )
-    scope = DependencyScopeConfig(
-        max_scope_resources=cv("dependency_scope.limits.max_scope_resources", 20),
-        max_materialized_resources=cv(
-            "dependency_scope.limits.max_materialized_resources", 10
-        ),
-    )
-    available = replace(
-        analysis_config,
-        p2_topology=P2TopologyConfig(propagation, None, scope, None),
-    )
-    unsupported = replace(
-        available,
-        p2_topology=replace(
-            available.p2_topology,
-            propagation=replace(propagation, decay_type="linear"),
-        ),
-    )
-    incomplete = replace(
-        available,
-        p2_topology=replace(
-            available.p2_topology,
-            propagation=None,
-            propagation_reason="PROPAGATION_CONFIG_INCOMPLETE",
-        ),
-    )
-    malformed_propagation = replace(
-        available,
-        p2_topology=replace(
-            available.p2_topology,
-            propagation=replace(
-                propagation,
-                restart_probability=ConfiguredValue(
-                    path="propagation.rwr.restart_probability",
-                    value=0.2,
-                    source="FROZEN_SPEC",
-                ),
-            ),
-        ),
-    )
-    malformed_scope = replace(
-        available,
-        p2_topology=replace(
-            available.p2_topology,
-            dependency_scope=replace(
-                scope,
-                max_scope_resources=ConfiguredValue(
-                    path="dependency_scope.limits.max_scope_resources",
-                    value=20,
-                    source="FROZEN_SPEC",
-                ),
-            ),
-        ),
-    )
-
-    for variant in (
-        unsupported,
-        incomplete,
-        malformed_propagation,
-        malformed_scope,
-    ):
-        cache = Tier1Cache()
-        with Tier2JobManager(cache=cache, analyzer=analyzer, max_workers=1) as manager:
-            available_submission = manager.submit(
-                _package(), "C1", analysis_config=available
-            )
-            variant_submission = manager.submit(
-                _package(), "C1", analysis_config=variant
-            )
-            assert available_submission.cache_hit is False
-            assert variant_submission.cache_hit is False
-            assert (
-                manager.wait(available_submission.job_id, timeout=2).status
-                is JobStatus.SUCCEEDED
-            )
-            assert (
-                manager.wait(variant_submission.job_id, timeout=2).status
-                is JobStatus.SUCCEEDED
-            )
-
-    assert calls == 8
 
 
-def test_invalid_present_scope_cannot_collide_with_absent_scope(analysis_config):
-    def cv(path, value, source=ParameterSource.FROZEN_SPEC):
-        return ConfiguredValue(path=path, value=value, source=source)
-
-    propagation = PropagationConfig(
-        config_version="propagation-test-v1",
-        restart_probability=cv("propagation.rwr.restart_probability", 0.2),
-        convergence_tolerance=cv("propagation.rwr.convergence_tolerance", 0.001),
-        max_iterations=cv("propagation.rwr.max_iterations", 10),
-        decay_type="exponential",
-        decay_parameter=cv("propagation.temporal.decay_parameter", 30.0),
-        score_threshold=cv("propagation.acceptance.score_threshold", 0.5),
-        max_candidate_edges=cv("propagation.limits.max_candidate_edges", 20),
-    )
-    malformed_scope = DependencyScopeConfig(
-        max_scope_resources=ConfiguredValue(
-            path="dependency_scope.limits.max_scope_resources",
-            value=20,
-            source="FROZEN_SPEC",
-        ),
-        max_materialized_resources=cv(
-            "dependency_scope.limits.max_materialized_resources", 10
-        ),
-    )
-    propagation_only = replace(
-        analysis_config,
-        p2_topology=P2TopologyConfig(
-            propagation=propagation,
-            propagation_reason=None,
-            dependency_scope=None,
-            dependency_scope_reason="DEPENDENCY_SCOPE_CONFIG_INCOMPLETE",
-        ),
-    )
-    invalid_scope = replace(
-        propagation_only,
-        p2_topology=replace(
-            propagation_only.p2_topology,
-            dependency_scope=malformed_scope,
-            dependency_scope_reason=None,
-        ),
-    )
-
-    with Tier2JobManager(max_workers=1) as manager:
-        first = manager.submit(_package(), "C1", analysis_config=propagation_only)
-        first_view = manager.wait(first.job_id, timeout=5)
-        second = manager.submit(_package(), "C1", analysis_config=invalid_scope)
-        second_view = manager.wait(second.job_id, timeout=5)
-
-    assert first.cache_hit is False
-    assert second.cache_hit is False
-    assert first_view.status is JobStatus.SUCCEEDED
-    assert second_view.status is JobStatus.SUCCEEDED
-    assert first_view.cache_key.config_version != second_view.cache_key.config_version
-    assert (
-        first_view.result.topology_hypotheses.dependency_scope.reason.value
-        == "DEPENDENCY_SCOPE_UNAVAILABLE"
-    )
-    assert (
-        second_view.result.topology_hypotheses.dependency_scope.reason.value
-        == "DEPENDENCY_SCOPE_UNAVAILABLE"
-    )
 
 
-def test_topology_results_are_not_inputs_to_audit_graph(monkeypatch, analysis_config):
-    import tier2.audit_analysis as audit_module
-
-    original = audit_module.build_audit_graph
-    observed = {}
-
-    def recording_build_audit_graph(members, pair_values):
-        observed["members"] = members
-        observed["pair_values"] = pair_values
-        return original(members, pair_values)
-
-    monkeypatch.setattr(audit_module, "build_audit_graph", recording_build_audit_graph)
-    with Tier2JobManager(max_workers=1) as manager:
-        submission = manager.submit(_package(), "C1", analysis_config=analysis_config)
-        completed = manager.wait(submission.job_id, timeout=5)
-
-    assert completed.status is JobStatus.SUCCEEDED
-    assert observed["members"]
-    assert not any(
-        type(value).__name__ == "TopologyHypothesesResult"
-        for value in (*observed["members"], observed["pair_values"])
-    )
 
 
 def test_versioned_similarity_context_is_used_and_part_of_cache_key(analysis_config):

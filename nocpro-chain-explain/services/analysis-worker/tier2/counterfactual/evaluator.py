@@ -176,16 +176,11 @@ def compute_exact_partition_metrics(
                 analysis_config.value("temporal.delay.support_threshold")
             ),
             d_max=int(analysis_config.value("dependency.max_hop")),
-            lambda_dep=float(analysis_config.value("dependency.lambda_dep")),
-            common_dependency_threshold=float(
-                analysis_config.value("dependency.common_support_threshold")
-            ),
             silent_gap_seconds=int(
                 analysis_config.value("temporal.burst.gap_seconds")
             ),
             taxonomy=EMPTY_TAXONOMY,
             similarity_context=None,
-            p2_topology_config=None,
             attribution_evaluation_config=None,
         )
         attribution = tier2.evidence_attribution

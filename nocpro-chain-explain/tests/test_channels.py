@@ -25,6 +25,7 @@ from channels import (
     segment_bursts,
 )
 from channels.base import ChannelValue
+from channels.temporal import context_key
 from libs.contracts import IngestedAlarm
 from libs.provenance import ProvenanceClass
 
@@ -115,6 +116,25 @@ def test_missing_entity_field_is_unavailable_not_neutral():
     assert "missing" in value.detail
 
 
+def test_empty_json_collection_is_missing_for_entity_channel():
+    """Serialized empty arrays are source placeholders, not equal entities."""
+    a = alarm("a1", location_code="[]")
+    b = alarm("a2", location_code="[]")
+
+    value = {v.channel_id: v for v in evaluate_entity_channels(a, b)}["E_site"]
+
+    assert value.state is EvidenceState.UNAVAILABLE
+
+
+def test_na_device_code_is_missing_for_entity_channel():
+    a = alarm("a1", device_code="N/A")
+    b = alarm("a2", device_code="N/A")
+
+    value = {v.channel_id: v for v in evaluate_entity_channels(a, b)}["E_device"]
+
+    assert value.state is EvidenceState.UNAVAILABLE
+
+
 def test_remote_channel_is_separate_from_containment():
     a = alarm("a1", remote_node="X")
     b = alarm("a2", remote_node="X")
@@ -187,6 +207,39 @@ def test_burst_segmentation_is_contextual_not_global():
     segmentation = segment_bursts(alarms)
     assert segmentation.same_burst("a1", "a2") is True
     assert segmentation.same_burst("a1", "a3") is False
+
+
+def test_burst_context_skips_empty_site_and_uses_device_fallback():
+    alarms = [
+        alarm(
+            "a1",
+            location_code="[]",
+            device_code="D1",
+            canonical_start_time="2026-01-01T00:00:00",
+        ),
+        alarm(
+            "a2",
+            location_code="[]",
+            device_code="D2",
+            canonical_start_time="2026-01-01T00:00:00",
+        ),
+    ]
+
+    segmentation = segment_bursts(alarms)
+
+    assert context_key(alarms[0], ("location_code", "device_code")) == "device_code=D1"
+    assert segmentation.same_burst("a1", "a2") is False
+
+
+def test_burst_context_is_unavailable_when_all_context_values_are_placeholders():
+    value = alarm(
+        "a1",
+        location_code="[]",
+        device_code="N/A",
+        canonical_start_time="2026-01-01T00:00:00",
+    )
+
+    assert context_key(value, ("location_code", "device_code")) is None
 
 
 def test_silent_gap_splits_bursts():

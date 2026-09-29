@@ -93,7 +93,7 @@ def test_tier2_uses_explicit_audit_balance_parameters():
     assert result.structural_audit.verdict is not AuditVerdict.SKIPPED_SMALL_CHAIN
 
 
-def test_tier2_passes_explicit_channel_parameters_to_pair_evaluator(monkeypatch):
+def test_tier2_passes_temporal_and_hop_parameters_to_pair_evaluator(monkeypatch):
     import tier2.audit_analysis as audit_module
 
     captured = {}
@@ -112,15 +112,11 @@ def test_tier2_passes_explicit_channel_parameters_to_pair_evaluator(monkeypatch)
         epsilon=0.3,
         delay_threshold=0.17,
         d_max=7,
-        lambda_dep=4.25,
-        common_dependency_threshold=0.61,
         silent_gap_seconds=37,
     )
 
     assert captured["delay_threshold"] == 0.17
     assert captured["d_max"] == 7
-    assert captured["lambda_dep"] == 4.25
-    assert captured["common_dependency_threshold"] == 0.61
     assert captured["silent_gap_seconds"] == 37
 
 
@@ -155,7 +151,6 @@ def test_large_chain_returns_partial_domain_results_without_dense_paths(monkeypa
     )
     # Independent components still return domain results.
     assert result.similarity_unavailable_reason == "LINEAGE_NOT_READY"
-    assert result.topology_hypotheses is not None
     serialized = deep_dive_view(result).model_dump()
     assert serialized["structural_audit"]["verdict"] == "UNAVAILABLE"
     assert serialized["structural_audit"]["reason"] == "AUDIT_LIMIT_EXCEEDED"

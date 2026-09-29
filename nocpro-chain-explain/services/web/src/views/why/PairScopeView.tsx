@@ -287,7 +287,6 @@ export function PairScopeView({
                 : item.channel_family === 'T_delay' ? 'Độ trễ lan truyền có hướng'
                 : item.channel_family === 'S' ? 'Độ tương đồng ngữ nghĩa cảnh báo'
                 : item.channel_family === 'Dep_hop' ? 'Số bước kề cận Topology (Hop)'
-                : item.channel_family === 'DEP_UPSTREAM' ? 'Cổng quan hệ nhân quả thượng lưu'
                 : item.channel_family === 'H' ? 'Quy luật lịch sử (Behavioral Lift)'
                 : item.channel_family
 

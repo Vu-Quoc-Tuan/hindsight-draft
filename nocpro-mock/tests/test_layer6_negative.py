@@ -87,6 +87,28 @@ def test_verified_alias_resolves():
     assert method is MappingMethod.VERIFIED_ALIAS_TABLE
 
 
+def test_structured_unique_mapping_cannot_claim_verified_alias_method():
+    package = MockSnapshotPackage(
+        snapshot=_snapshot(),
+        topology=Topology(
+            mappings=(
+                AlarmResourceMapping(
+                    alarm_id="a1",
+                    resource_id="it:service:S1",
+                    mapping_status=MappingStatus.STRUCTURED_FIELD_UNIQUE,
+                    mapping_method=MappingMethod.VERIFIED_ALIAS_TABLE,
+                    topology_layer="IT",
+                    source_version="sha256:topology-v1",
+                ),
+            )
+        ),
+    )
+
+    result = validate_package(package)
+    assert not result.ok
+    assert any("STRUCTURED_FIELD_EXACT" in error for error in result.errors)
+
+
 def test_conflicting_identifiers_are_ambiguous_not_guessed():
     mapper = ResourceMapper({"DEV-A", "NODE-B"})
     mapping = mapper.map_alarm("a1", device_code="DEV-A", node_reference="NODE-B")

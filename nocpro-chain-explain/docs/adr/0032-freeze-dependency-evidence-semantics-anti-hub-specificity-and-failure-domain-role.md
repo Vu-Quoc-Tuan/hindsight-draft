@@ -4,6 +4,12 @@
 - **Date:** 2026-08-28
 - **Scope:** Topology / dependency evidence
 
+> **Runtime status (2026-09-28):** The pairwise `Dep_upstream`/CommonDependency
+> implementation was removed because checked real replay inputs lack eligible
+> directed dependency and active-path records. This ADR remains the semantic
+> design reference if that capability is reconsidered; see
+> [Deferred Directed Topology](../DEFERRED_DIRECTED_TOPOLOGY.md).
+
 ## Context
 
 Topology relations have different meanings. A shared ancestor is weaker than a shared active path, and a core ancestor of half the network should not create overwhelming evidence. Failure domains are also set-valued rather than ordinary pairwise channels.

@@ -22,12 +22,6 @@ dependency:
   max_hop:
     value: 3
     source: DOCUMENTED_DEFAULT
-  lambda_dep:
-    value: 2.0
-    source: DOCUMENTED_DEFAULT
-  common_support_threshold:
-    value: 0.3
-    source: DOCUMENTED_DEFAULT
 history:
   min_support:
     value: 5
@@ -184,36 +178,3 @@ counterfactual:
     minimum_coverage_improvement: 0.05
     minimum_conductance_improvement: 0.05
     pareto_tolerance: 0.0
-propagation:
-  config_version: propagation-calibrated-v1
-  rwr:
-    restart_probability:
-      value: 0.2
-      source: FROZEN_SPEC
-    convergence_tolerance:
-      value: 0.001
-      source: FROZEN_SPEC
-    max_iterations:
-      value: 100
-      source: FROZEN_SPEC
-  temporal:
-    decay_type: exponential
-    decay_parameter:
-      value: 30.0
-      source: FROZEN_SPEC
-  acceptance:
-    score_threshold:
-      value: 0.0
-      source: FROZEN_SPEC
-  limits:
-    max_candidate_edges:
-      value: 1000
-      source: FROZEN_SPEC
-dependency_scope:
-  limits:
-    max_scope_resources:
-      value: 1000
-      source: FROZEN_SPEC
-    max_materialized_resources:
-      value: 100
-      source: FROZEN_SPEC

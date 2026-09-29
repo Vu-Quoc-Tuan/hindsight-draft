@@ -7,6 +7,7 @@ import json
 import hashlib
 import asyncio
 import logging
+import tempfile
 from concurrent.futures import Future
 from dataclasses import asdict, dataclass, replace
 from types import SimpleNamespace
@@ -283,6 +284,7 @@ class Workspace:
         self._audit_persistence_futures: list[Future] = []
         self._deep_dive_persistence_futures: list[Future] = []
         self._quality_resume_task: asyncio.Task[Any] | None = None
+        self._calibration_lock = asyncio.Lock()
         # When PostgreSQL is available, app.py assigns all automatic quality
         # work to the snapshot-wide runner.  The active UI workspace remains
         # available for explicit/on-demand inspection but must not enqueue a
@@ -292,7 +294,23 @@ class Workspace:
         self._closing = False
         self.operator_feedbacks: list[dict[str, Any]] = []
         self._job_persistence_locks: dict[str, asyncio.Lock] = {}
-        ranker_art_dir = os.environ.get("NOCPRO_REVIEW_RANKER_ARTIFACT_DIR")
+        from review_learning.config import RankerMode, ReviewLearningMode, load_review_learning_config
+
+        review_config_path = Path(os.environ.get(
+            "NOCPRO_REVIEW_LEARNING_CONFIG_PATH", str(ROOT / "config" / "review-learning" / "v1.yaml")
+        ))
+        review_config = load_review_learning_config(review_config_path)
+        if (review_config.mode is ReviewLearningMode.RANKER_ACTIVE) != (review_config.ranker.mode is RankerMode.ACTIVE):
+            raise RuntimeError("Review learning mode and ranker mode must both be ACTIVE or both inactive")
+        if review_config.ranker.mode is RankerMode.SHADOW:
+            raise RuntimeError("SHADOW review ranker execution is not implemented")
+        ranker_art_dir = (
+            os.environ.get("NOCPRO_REVIEW_RANKER_ARTIFACT_DIR")
+            if review_config.ranker.mode is RankerMode.ACTIVE else None
+        )
+        if review_config.ranker.mode is RankerMode.ACTIVE and not ranker_art_dir:
+            raise RuntimeError("ACTIVE review ranker requires NOCPRO_REVIEW_RANKER_ARTIFACT_DIR")
+        self._active_ranker_artifact_dir = ranker_art_dir
         enforce_gov = os.environ.get("NOCPRO_REVIEW_RANKER_ENFORCE_GOVERNANCE", "1").lower() in {"1", "true", "yes"}
         signing_key = os.environ.get("NOCPRO_GOVERNANCE_SIGNING_KEY")
         abstention_thresh_raw = os.environ.get("NOCPRO_REVIEW_RANKER_ABSTENTION_THRESHOLD")
@@ -500,22 +518,70 @@ class Workspace:
         include_fixtures: bool = False,
         output_yaml: Path | None = None,
     ) -> dict[str, Any]:
+        async with self._calibration_lock:
+            return await self._calibrate_from_database_locked(
+                database_url=database_url,
+                include_fixtures=include_fixtures,
+                output_yaml=output_yaml,
+            )
+
+    async def _calibrate_from_database_locked(
+        self,
+        database_url: str | None = None,
+        include_fixtures: bool = False,
+        output_yaml: Path | None = None,
+    ) -> dict[str, Any]:
         from benchmarks.calibrate_thresholds import calibrate_from_postgres
 
         env_output = os.environ.get("NOCPRO_CALIBRATED_OUTPUT_PATH")
         calibrated_output = output_yaml or (Path(env_output) if env_output else ROOT / "config" / "thresholds" / "calibrated.yaml")
-        report = await calibrate_from_postgres(
-            database_url=database_url,
-            output_yaml=calibrated_output,
-            include_fixtures=include_fixtures,
-        )
+        source_config = self._base_config_path
+        previous_bytes = calibrated_output.read_bytes() if calibrated_output.exists() else None
         with self._lock:
-            self.config = load_analysis_config(calibrated_output)
-            self._analysis_generation += 1
-            self.cache.entries.clear()
-            self.jobs.cache.entries.clear()
-            self._prepared_snapshot_cache.clear()
-            self._prepared_activation_cache.clear()
+            starting_generation = self._analysis_generation
+            active_config = replace(self.config, parameters=dict(self.config.parameters))
+        try:
+            report = await calibrate_from_postgres(
+                database_url=database_url,
+                base_config_path=source_config,
+                output_yaml=calibrated_output,
+                include_fixtures=include_fixtures,
+                active_config=active_config,
+            )
+            new_config = load_analysis_config(calibrated_output)
+            with self._lock:
+                if self._analysis_generation != starting_generation:
+                    raise RuntimeError(
+                        "Configuration changed while calibration was running; "
+                        "the calibration output was discarded"
+                    )
+                self.config = new_config
+                self._analysis_generation += 1
+                self.cache.entries.clear()
+                self.jobs.cache.entries.clear()
+                self._prepared_snapshot_cache.clear()
+                self._prepared_activation_cache.clear()
+        except Exception:
+            if previous_bytes is None:
+                calibrated_output.unlink(missing_ok=True)
+            else:
+                rollback_path: Path | None = None
+                try:
+                    calibrated_output.parent.mkdir(parents=True, exist_ok=True)
+                    with tempfile.NamedTemporaryFile(
+                        "wb", dir=calibrated_output.parent,
+                        prefix=f".{calibrated_output.name}.rollback.",
+                        suffix=".tmp", delete=False,
+                    ) as rollback_file:
+                        rollback_path = Path(rollback_file.name)
+                        rollback_file.write(previous_bytes)
+                        rollback_file.flush()
+                        os.fsync(rollback_file.fileno())
+                    os.replace(rollback_path, calibrated_output)
+                finally:
+                    if rollback_path is not None:
+                        rollback_path.unlink(missing_ok=True)
+            raise
 
         return asdict(report)
 
@@ -1451,10 +1517,6 @@ class Workspace:
                 self.config.value("temporal.delay.support_threshold")
             ),
             d_max=int(self.config.value("dependency.max_hop")),
-            lambda_dep=float(self.config.value("dependency.lambda_dep")),
-            common_dependency_threshold=float(
-                self.config.value("dependency.common_support_threshold")
-            ),
             silent_gap_seconds=int(
                 self.config.value("temporal.burst.gap_seconds")
             ),
@@ -2709,7 +2771,7 @@ class Workspace:
         loaded = model is not None
 
         # Read data profile if available
-        art_dir = os.environ.get("NOCPRO_REVIEW_RANKER_ARTIFACT_DIR")
+        art_dir = self._active_ranker_artifact_dir
 
         data_profile = None
         if art_dir:

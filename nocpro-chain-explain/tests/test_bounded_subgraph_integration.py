@@ -69,8 +69,6 @@ def test_chain_6913556_structural_audit_no_split():
         small_chain_threshold=int(analysis_config.value("audit.small_chain_threshold")),
         delay_threshold=float(analysis_config.value("temporal.delay.support_threshold")),
         d_max=int(analysis_config.value("dependency.max_hop")),
-        lambda_dep=float(analysis_config.value("dependency.lambda_dep")),
-        common_dependency_threshold=float(analysis_config.value("dependency.common_support_threshold")),
         silent_gap_seconds=int(analysis_config.value("temporal.burst.gap_seconds")),
     )
 

@@ -37,6 +37,15 @@ This prevents UI sparsification artifacts from becoming methodology claims.
 
 Graph objects/DTOs should carry purpose/type explicitly.
 
+### Current implementation status (checked 2026-09-27)
+
+The accepted design above mentions a supernode/sparsifier policy above the Audit
+size threshold. The current source does not implement that approximate Audit
+path: Tier-2 builds the exact graph only when the chain is within its exact
+member ceiling; otherwise the graph is `NOT_COMPUTED` and Structural Audit is
+`UNAVAILABLE` with `AUDIT_LIMIT_EXCEEDED`. Do not claim an approximate Audit
+result until a separately verified implementation and its guarantees exist.
+
 ## Invariants / required tests
 
 - Changing visualization top-K does not change audit verdict on the same canonical inputs.

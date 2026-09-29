@@ -7,7 +7,9 @@ Verified against the real export (docs 02/13):
   - dirty timestamps: 2 year-2098 start times, 360 rows with end < start
 
 Policy (ADR-MOCK-0002): raw strings are preserved exactly as exported; canonical
-parsed values are additive; dirty rows are flagged, never repaired.
+parsed values are additive; dirty rows are flagged, never repaired. A flagged
+future or out-of-order endpoint is withheld from canonical time fields so it
+cannot silently affect spans or temporal channels.
 """
 
 from __future__ import annotations
@@ -222,14 +224,24 @@ class AlarmCsvLoader:
         if (raw_end or "").strip() and end is None:
             flags.append(QualityFlag.UNPARSEABLE_TIMESTAMP.value)
 
-        if start is not None and start.year >= self.future_year_threshold:
+        future_start = start is not None and start.year >= self.future_year_threshold
+        future_end = end is not None and end.year >= self.future_year_threshold
+        if future_start:
             flags.append(QualityFlag.TIMESTAMP_FUTURE_OUTLIER.value)
-        if end is not None and end.year >= self.future_year_threshold:
+        if future_end:
             flags.append(QualityFlag.TIMESTAMP_FUTURE_OUTLIER.value)
 
         # Both timestamps must parse before an ordering claim is made.
-        if start is not None and end is not None and end < start:
+        end_before_start = start is not None and end is not None and end < start
+        if end_before_start:
             flags.append(QualityFlag.END_BEFORE_START.value)
+
+        # Keep the exported strings above for audit. Invalid canonical endpoints
+        # are unavailable to every downstream time-based consumer.
+        if future_start:
+            start = None
+        if future_end or end_before_start:
+            end = None
 
         return AlarmRecord(
             alarm_id=alarm_id,

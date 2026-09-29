@@ -173,6 +173,7 @@ def _check_mappings(pkg: MockSnapshotPackage, errors: list[str]) -> None:
         resolved = mp.mapping_status in (
             MappingStatus.EXACT,
             MappingStatus.VERIFIED_ALIAS,
+            MappingStatus.STRUCTURED_FIELD_UNIQUE,
         )
         if resolved and not mp.resource_id:
             errors.append(
@@ -194,6 +195,24 @@ def _check_mappings(pkg: MockSnapshotPackage, errors: list[str]) -> None:
             errors.append(
                 f"mapping for alarm {mp.alarm_id!r} claims "
                 f"{mp.mapping_status.value} with mapping_method=NONE"
+            )
+        if (
+            mp.mapping_status is MappingStatus.STRUCTURED_FIELD_UNIQUE
+            and mp.mapping_method is not MappingMethod.STRUCTURED_FIELD_EXACT
+        ):
+            errors.append(
+                f"mapping for alarm {mp.alarm_id!r} claims "
+                "STRUCTURED_FIELD_UNIQUE without "
+                "mapping_method=STRUCTURED_FIELD_EXACT"
+            )
+        if (
+            mp.mapping_method is MappingMethod.STRUCTURED_FIELD_EXACT
+            and mp.mapping_status is not MappingStatus.STRUCTURED_FIELD_UNIQUE
+        ):
+            errors.append(
+                f"mapping for alarm {mp.alarm_id!r} uses "
+                "STRUCTURED_FIELD_EXACT without "
+                "mapping_status=STRUCTURED_FIELD_UNIQUE"
             )
 
 

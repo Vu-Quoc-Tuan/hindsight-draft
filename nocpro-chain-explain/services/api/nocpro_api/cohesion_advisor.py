@@ -39,8 +39,8 @@ def hydrate_persisted_deep_dive(value: Any) -> Any:
 
     Deep Dive jobs are persisted as the public JSON projection.  After an API
     restart the cohesion extractor used to receive that dict while only
-    looking for domain-object attributes, silently dropping all P2 facts and
-    falling back to the preliminary recommendation.  Rehydrate only the
+    looking for domain-object attributes, silently dropping Tier-2 audit facts
+    and falling back to the preliminary recommendation. Rehydrate only the
     bounded projection (never arbitrary code or pickled objects).
     """
     if not isinstance(value, dict):
@@ -321,7 +321,11 @@ def _build_topology_connectivity(
     resource_devices: dict[str, set[str]] = {}
     resource_mapping_statuses: dict[str, set[str]] = {}
     mapped_alarm_ids: set[str] = set()
-    resolved_mappings = resolve_topology_mappings(raw_mappings or (), member_ids) or {}
+    resolved_mappings = resolve_topology_mappings(
+        raw_mappings or (),
+        member_ids,
+        allow_structured_field_unique=True,
+    ) or {}
     for alarm_id, mapping in resolved_mappings.items():
         resource_id = mapping["resource_id"]
         mapped_alarm_ids.add(alarm_id)
@@ -340,7 +344,8 @@ def _build_topology_connectivity(
         if alarm_devices.get(alarm_id):
             resource_devices.setdefault(resource_id, set()).add(alarm_devices[alarm_id])
 
-    adjacency_by_relation: dict[str, dict[str, set[str]]] = {}
+    adjacency: dict[str, set[str]] = {}
+    edge_records_by_pair: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for edge in raw_edges or ():
         source = _record_value(edge, "source_resource_id")
         target = _record_value(edge, "target_resource_id")
@@ -348,9 +353,41 @@ def _build_topology_connectivity(
         if not source or not target:
             continue
         source, target = str(source), str(target)
-        adjacency = adjacency_by_relation.setdefault(relation, {})
         adjacency.setdefault(source, set()).add(target)
         adjacency.setdefault(target, set()).add(source)
+        edge_record = {
+            "relation_type": relation,
+            "edge_source_resource_id": source,
+            "edge_target_resource_id": target,
+        }
+        for field in (
+            "edge_id",
+            "source_id",
+            "source_kind",
+            "source_version",
+            "provenance_class",
+            "provenance_subtype",
+            "quality_status",
+            "dependency_semantics",
+            "directed",
+        ):
+            value = _record_value(edge, field)
+            if value is not None:
+                edge_record[field] = value
+        pair_key = tuple(sorted((source, target)))
+        edge_records_by_pair.setdefault(pair_key, []).append(edge_record)
+
+    for edge_records in edge_records_by_pair.values():
+        edge_records.sort(key=lambda record: tuple(
+            str(record.get(field, ""))
+            for field in (
+                "relation_type",
+                "source_id",
+                "source_version",
+                "edge_source_resource_id",
+                "edge_target_resource_id",
+            )
+        ))
 
     resources = sorted(set(resource_by_alarm.values()))
     paths: list[dict[str, Any]] = []
@@ -359,20 +396,42 @@ def _build_topology_connectivity(
         targets = resources[source_index + 1:]
         if not targets:
             continue
-        best_paths: dict[str, tuple[list[str], str]] = {}
-        for relation, adjacency in sorted(adjacency_by_relation.items()):
-            candidates = shortest_paths_to_targets(
-                adjacency, source, set(targets), max_hops=max_hops
-            )
-            for target, candidate in candidates.items():
-                prior = best_paths.get(target)
-                if prior is None or len(candidate) < len(prior[0]):
-                    best_paths[target] = candidate, relation
+        best_paths = shortest_paths_to_targets(
+            adjacency, source, set(targets), max_hops=max_hops
+        )
         for target in targets:
-            best = best_paths.get(target)
-            if best is None:
+            best_path = best_paths.get(target)
+            if best_path is None:
                 continue
-            best_path, best_relation = best
+            edge_relation_types: list[str] = []
+            edge_provenance: list[dict[str, Any]] = []
+            for hop_index, (left, right) in enumerate(zip(best_path, best_path[1:])):
+                edge_records = edge_records_by_pair.get(tuple(sorted((left, right))), [])
+                relations = sorted({record["relation_type"] for record in edge_records})
+                if not relations:
+                    continue
+                edge_relation_types.append(relations[0])
+                edge_provenance.append({
+                    "hop_index": hop_index,
+                    "from_resource_id": left,
+                    "to_resource_id": right,
+                    "relation_types": relations,
+                    "source_records": edge_records,
+                })
+            if len(edge_relation_types) != len(best_path) - 1:
+                # A shortest path without a recorded edge witness must not be
+                # reported as verified structural connectivity.
+                continue
+            relation_types = sorted({
+                relation
+                for hop in edge_provenance
+                for relation in hop["relation_types"]
+            })
+            path_relation = (
+                edge_relation_types[0]
+                if len(set(edge_relation_types)) == 1
+                else "MIXED"
+            )
             transit_counter.update(best_path[1:-1])
             paths.append({
                 "source": source,
@@ -382,7 +441,10 @@ def _build_topology_connectivity(
                 "hop_count": len(best_path) - 1,
                 "max_hops": max_hops,
                 "path": best_path,
-                "relation_type": best_relation,
+                "relation_type": path_relation,
+                "relation_types": relation_types,
+                "edge_relation_types": edge_relation_types,
+                "edge_provenance": edge_provenance,
                 "mapping_statuses": sorted(
                     resource_mapping_statuses.get(source, set())
                     | resource_mapping_statuses.get(target, set())
@@ -609,6 +671,9 @@ def _build_audit_partition_summary(
                 "target_devices": sorted(target_devices),
                 "hop_count": path.get("hop_count"),
                 "relation_type": path.get("relation_type"),
+                "relation_types": list(path.get("relation_types") or []),
+                "edge_relation_types": list(path.get("edge_relation_types") or []),
+                "edge_provenance": list(path.get("edge_provenance") or []),
                 "path": list(path.get("path") or []),
                 "traversal_semantic": path.get("traversal_semantic"),
             })
@@ -1171,8 +1236,6 @@ def _build_analytical_findings(
     audit_verdict: str | None,
     audit_reason: str | None,
     audit_detail: dict[str, Any],
-    dominator_info: dict[str, Any] | None = None,
-    propagation_info: dict[str, Any] | None = None,
     over_merge_info: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Derive findings without upgrading correlation into topology or causality."""
@@ -1237,9 +1300,12 @@ def _build_analytical_findings(
         for path in topology_connectivity.get("display_paths", [])[:2]:
             source_label = ", ".join(path.get("source_devices") or [path["source"]])
             target_label = ", ".join(path.get("target_devices") or [path["target"]])
+            relation_label = " → ".join(
+                path.get("edge_relation_types") or [path["relation_type"]]
+            )
             evidence.append(
                 f"{source_label} ↔ {target_label}: {' → '.join(path['path'])} "
-                f"({path['hop_count']} hop, {path['relation_type']})."
+                f"({path['hop_count']} hop, {relation_label})."
             )
         if topology_connectivity.get("display_paths_truncated"):
             evidence.append(
@@ -1282,43 +1348,6 @@ def _build_analytical_findings(
             limitations=["SHARED_PATH_UNVERIFIED", "DEPENDENCY_UNVERIFIED"],
             confidence_basis="FAIL_CLOSED_TOPOLOGY_GATE",
             confidence="HIGH",
-        ))
-
-    # Tier-2 Dominator Witness
-    if dominator_info and dominator_info.get("witness_resource_id") and dominator_info.get("status") == "AVAILABLE":
-        wit = dominator_info["witness_resource_id"]
-        cov_cnt = len(dominator_info.get("covered_resource_ids", []))
-        findings.append(_finding(
-            "TOPOLOGY_DOMINATOR_WITNESS",
-            kind="DERIVED",
-            status="AVAILABLE",
-            title="Tài nguyên chi phối Topo (Dominator Witness)",
-            claim=f"Phát hiện tài nguyên chi phối '{wit}' bao quát {cov_cnt} tài nguyên trong cụm sự cố.",
-            evidence=[
-                f"Witness resource: {wit}.",
-                f"Phạm vi bao quát: {cov_cnt} tài nguyên chịu ảnh hưởng trực tiếp.",
-            ],
-            limitations=["CAUSAL_DIRECTION_UNVERIFIED"],
-            confidence_basis="TIER2_TOPOLOGY_HYPOTHESIS",
-            confidence="HIGH",
-        ))
-
-    # Tier-2 Propagation Flow
-    if propagation_info and propagation_info.get("hypotheses"):
-        hyps = propagation_info["hypotheses"]
-        findings.append(_finding(
-            "TOPOLOGY_PROPAGATION_FLOW",
-            kind="DERIVED",
-            status="AVAILABLE",
-            title="Luồng lan truyền đồ thị (RWR Flow)",
-            claim=f"Mô hình lan truyền xác định luồng chuyển tiếp chính với {len(hyps)} liên kết xác suất cao.",
-            evidence=[
-                f"Liên kết: {h['source']} → {h['target']} (xác suất {h.get('prob', 0):.2f}, delta={h.get('delta_seconds', 0)}s)."
-                for h in hyps[:3]
-            ],
-            limitations=["PROPAGATION_DIRECTION_UNVERIFIED"],
-            confidence_basis="TIER2_PROPAGATION_MODEL",
-            confidence="MEDIUM",
         ))
 
     if onsets and paths:
@@ -1405,12 +1434,10 @@ def _build_analytical_findings(
     priority = {
         "TEMPORAL_PROGRESSION": 0,
         "SHARED_TOPOLOGY_CONTEXT": 1,
-        "TOPOLOGY_DOMINATOR_WITNESS": 2,
-        "TOPOLOGY_PROPAGATION_FLOW": 3,
-        "AUDIT_COHESION": 4,
-        "OVER_MERGE_EVALUATION": 5,
-        "PROPAGATION_COMPATIBLE_PATTERN": 6,
-        "ALARM_CONCENTRATION": 7,
+        "AUDIT_COHESION": 2,
+        "OVER_MERGE_EVALUATION": 3,
+        "PROPAGATION_COMPATIBLE_PATTERN": 4,
+        "ALARM_CONCENTRATION": 5,
     }
     return sorted(findings, key=lambda item: priority.get(item["finding_id"], 10))
 
@@ -1845,52 +1872,12 @@ def extract_cohesion_context(
     )
 
     # -------------------------------------------------------------------------
-    # 4b. Tier-2 Deep Dive Capabilities (Dominator, Propagation, OverMerge, Attribution)
+    # 4b. Tier-2 Deep Dive Capabilities (OverMerge, Attribution)
     # -------------------------------------------------------------------------
-    dominator_info: dict[str, Any] | None = None
-    propagation_info: dict[str, Any] | None = None
     over_merge_info: dict[str, Any] | None = None
     evidence_attribution_info: dict[str, Any] | None = None
 
     if deep_dive_analysis is not None:
-        top_hyp = getattr(deep_dive_analysis, "topology_hypotheses", None)
-        if top_hyp is not None:
-            dom = getattr(top_hyp, "dominator", None)
-            if dom is not None:
-                dom_st = getattr(getattr(dom, "status", None), "value", str(getattr(dom, "status", "")))
-                dominator_info = {
-                    "status": dom_st,
-                    "witness_resource_id": getattr(dom, "witness_resource_id", None),
-                    "covered_resource_ids": list(getattr(dom, "covered_resource_ids", ())),
-                    "semantic": getattr(dom, "semantic", None),
-                    "relation_type": getattr(dom, "relation_type", None),
-                }
-
-            prop = getattr(top_hyp, "propagation", None)
-            if prop is not None:
-                prop_st = getattr(getattr(prop, "status", None), "value", str(getattr(prop, "status", "")))
-                prop_scores = getattr(prop, "node_scores", ())
-                prop_hyps = getattr(prop, "hypotheses", ())
-                propagation_info = {
-                    "status": prop_st,
-                    "candidate_node_count": getattr(prop, "candidate_node_count", 0),
-                    "candidate_edge_count": getattr(prop, "candidate_edge_count", 0),
-                    "top_node_scores": [
-                        {"alarm_id": n.alarm_id, "score": round(float(n.score), 4)}
-                        for n in list(prop_scores)[:5]
-                    ],
-                    "hypotheses": [
-                        {
-                            "source": h.source_alarm_id,
-                            "target": h.target_alarm_id,
-                            "score": round(float(h.score), 3),
-                            "prob": round(float(h.transition_probability), 3),
-                            "delta_seconds": round(float(h.temporal_delta_seconds), 1),
-                        }
-                        for h in list(prop_hyps)[:5]
-                    ],
-                }
-
         ev_attr = getattr(deep_dive_analysis, "evidence_attribution", None)
         if ev_attr is not None:
             ev_st = getattr(getattr(ev_attr, "status", None), "value", str(getattr(ev_attr, "status", "")))
@@ -1930,8 +1917,6 @@ def extract_cohesion_context(
         audit_verdict=audit_verdict,
         audit_reason=audit_reason,
         audit_detail=audit_detail,
-        dominator_info=dominator_info,
-        propagation_info=propagation_info,
         over_merge_info=over_merge_info,
     )
 
@@ -1945,10 +1930,10 @@ def extract_cohesion_context(
                 "Chuỗi có độ gắn kết cao và thuần nhất; khuyến nghị kỹ sư NOC tập trung xử lý tại thiết bị khởi phát và rà soát các liên kết downstream theo đường transit."
                 if audit_status == "EVALUATED"
                 else (
-                    "Counterfactual đã hoàn tất nhưng Audit Graph P2 chưa chạy; "
+                    "Counterfactual đã hoàn tất nhưng Structural Audit chưa chạy; "
                     "khuyến nghị theo dõi thiết bị khởi phát và chờ kiểm định cấu trúc."
                     if recommendation_summary["evaluation_completed"]
-                    else "Đang ở giai đoạn phân tích sơ bộ; khuyến nghị theo dõi thiết bị khởi phát và chờ kết quả kiểm định chuyên sâu P2."
+                    else "Đang ở giai đoạn phân tích sơ bộ; khuyến nghị theo dõi thiết bị khởi phát và chờ Structural Audit."
                 )
             )
         )
@@ -2070,9 +2055,7 @@ def extract_cohesion_context(
         },
         "recommendations": recommendation_summary,
         "quality_assessment": quality_assessment,
-        "tier2_p2": {
-            "dominator": dominator_info,
-            "propagation": propagation_info,
+        "tier2_audit": {
             "evidence_attribution": evidence_attribution_info,
             "over_merge": over_merge_info,
         },
@@ -2291,7 +2274,28 @@ def build_deterministic_cohesion_narrative(context: dict[str, Any], language: st
 def _build_investigation_evidence(context: dict[str, Any]) -> dict[str, Any]:
     """Select bounded, high-value evidence for LLM investigation synthesis."""
     topology = context.get("topology") or {}
-    p2 = context.get("tier2_p2") or {}
+    tier2_audit = context.get("tier2_audit") or {}
+    topology_paths = []
+    for path in (topology.get("display_paths") or [])[:2]:
+        if not isinstance(path, dict):
+            continue
+        topology_paths.append({
+            key: path.get(key)
+            for key in (
+                "source",
+                "target",
+                "source_devices",
+                "target_devices",
+                "hop_count",
+                "max_hops",
+                "path",
+                "relation_type",
+                "relation_types",
+                "edge_relation_types",
+                "mapping_statuses",
+                "traversal_semantic",
+            )
+        })
     binding_observations = [
         {
             "type": item.get("type"),
@@ -2319,7 +2323,10 @@ def _build_investigation_evidence(context: dict[str, Any]) -> dict[str, Any]:
         "grouping_dimensions": context.get("why") or {},
         "binding_observations": binding_observations,
         "topology": {
-            "paths": (topology.get("display_paths") or [])[:2],
+            # Per-edge source records remain in the API evidence projection;
+            # this LLM prompt gets only the bounded structural witness needed
+            # to explain the observed path without duplicating provenance blobs.
+            "paths": topology_paths,
             "connected_pair_count": topology.get("connected_pair_count", 0),
             "pair_total": topology.get("pair_total", 0),
             "max_path_hops": topology.get("max_path_hops"),
@@ -2331,10 +2338,8 @@ def _build_investigation_evidence(context: dict[str, Any]) -> dict[str, Any]:
         "member_roles": context.get("roles") or {},
         "representative_member": context.get("representative_member"),
         "tier2": {
-            "dominator": p2.get("dominator"),
-            "propagation": p2.get("propagation"),
-            "evidence_attribution": p2.get("evidence_attribution"),
-            "over_merge": p2.get("over_merge"),
+            "evidence_attribution": tier2_audit.get("evidence_attribution"),
+            "over_merge": tier2_audit.get("over_merge"),
         },
         "findings": findings,
         "interpretation_rules": {
@@ -2600,19 +2605,13 @@ def generate_cohesion_narrative(
             f"complete={separation.get('edge_counts_are_complete')}"
         )
 
-    # Tier-2 P2 facts
-    p2 = context.get("tier2_p2", {})
-    if p2:
-        dom = p2.get("dominator") or {}
-        if dom.get("witness_resource_id"):
-            claims.append(f"Dominator witness resource: {dom['witness_resource_id']} covering {len(dom.get('covered_resource_ids', []))} resources")
-        prop = p2.get("propagation") or {}
-        for h in prop.get("hypotheses", [])[:4]:
-            claims.append(f"Propagation hypothesis: {h['source']} -> {h['target']} transition prob {h['prob']} delta {h['delta_seconds']}s")
-        om = p2.get("over_merge") or {}
+    # Tier-2 structural audit facts
+    tier2_audit = context.get("tier2_audit", {})
+    if tier2_audit:
+        om = tier2_audit.get("over_merge") or {}
         if om.get("structural_separation"):
             claims.append(f"Over-merge warning: strength {om.get('strength')}, separation={om.get('structural_separation')}, {om.get('narrative')}")
-        attr = p2.get("evidence_attribution") or {}
+        attr = tier2_audit.get("evidence_attribution") or {}
         for c in attr.get("contributions", [])[:4]:
             claims.append(f"Evidence attribution {c['group_id']}: {c['attribution']}% support across {c['supported_pairs']} pairs")
 
@@ -2675,7 +2674,7 @@ def generate_cohesion_narrative(
             "Omit repeated dashboard facts, but use enough prose to explain complex evidence and its limitations. "
             "Cover 4 key pillars: "
             "(1) Incident onset T0 and temporal progression across devices; "
-            "(2) Network correlation and topology transit (cross-layer signals, dominator witness, or shared transit); "
+            "(2) Network correlation and topology transit (cross-layer signals or shared transit); "
             "(3) Audit Graph cohesion (Conductance Phi vs Epsilon, assessing whether this is a single cohesive incident or an over-merged cluster); "
             "(4) Actionable operational recommendation for remediation (target device priority or partition split). "
             "Follow ADR-0024 strictly using only provided grounding facts without unverified root-cause claims."

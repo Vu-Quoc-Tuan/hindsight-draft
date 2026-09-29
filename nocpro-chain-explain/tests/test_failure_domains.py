@@ -124,3 +124,201 @@ def test_tier1b_chain_and_member_results_expose_domain_hyperedges():
     ]
     assert analysis.members["a2"].failure_domains == analysis.failure_domains
     assert analysis.members["a9"].failure_domains == ()
+
+
+def test_structured_source_mapping_only_resolves_shared_storage_context():
+    """Navigation-only alarm matches may expose storage context, not H_domain/Dep_hop."""
+    from channels.dependency import ResourceResolver, build_topology_graph
+
+    package = _package()
+    package.topology["mappings"] = [
+        {
+            "alarm_id": "a1",
+            "resource_id": "it:instance:I1",
+            "mapping_status": "STRUCTURED_FIELD_UNIQUE",
+            "mapping_method": "STRUCTURED_FIELD_EXACT",
+            "topology_layer": "IT",
+            "source_version": "sha256:topology-v1",
+        },
+        {
+            "alarm_id": "a2",
+            "resource_id": "it:instance:I2",
+            "mapping_status": "STRUCTURED_FIELD_UNIQUE",
+            "mapping_method": "STRUCTURED_FIELD_EXACT",
+            "topology_layer": "IT",
+            "source_version": "sha256:topology-v1",
+        },
+    ]
+    package.topology["edges"] = [
+        {
+            "edge_id": "I1-storage",
+            "source_resource_id": "it:instance:I1",
+            "target_resource_id": "it:storage:S1",
+            "relation_type": "INSTANCE_LINKS_STORAGE",
+            "directed": True,
+            "source_id": "storage.csv",
+            "source_kind": "REAL_EXPORT_REPLAY",
+            "source_version": "sha256:topology-v1",
+            "provenance_class": "EXTERNAL_OPERATIONAL",
+            "provenance_subtype": "TOPOLOGY_EXTERNAL",
+            "quality_status": "UNKNOWN",
+        },
+        {
+            "edge_id": "I2-storage",
+            "source_resource_id": "it:instance:I2",
+            "target_resource_id": "it:storage:S1",
+            "relation_type": "INSTANCE_LINKS_STORAGE",
+            "directed": True,
+            "source_id": "storage.csv",
+            "source_kind": "REAL_EXPORT_REPLAY",
+            "source_version": "sha256:topology-v1",
+            "provenance_class": "EXTERNAL_OPERATIONAL",
+            "provenance_subtype": "TOPOLOGY_EXTERNAL",
+            "quality_status": "UNKNOWN",
+        },
+    ]
+    package.topology["failure_domains"] = [
+        {
+            "failure_domain_id": "UNVERIFIED-SRLG",
+            "domain_type": "SRLG",
+            "members": ["it:instance:I1", "it:instance:I2"],
+            "source_id": "inventory.csv",
+            "source_kind": "REAL_EXPORT_REPLAY",
+            "provenance_class": "EXTERNAL_OPERATIONAL",
+            "provenance_subtype": "TOPOLOGY_EXTERNAL",
+            "quality_status": "UNKNOWN",
+        }
+    ]
+
+    # The general topology/dependency resolver intentionally rejects this weaker
+    # mapping status. Only the source-context adapter below may use it.
+    assert ResourceResolver.from_package(package).resolved == {}
+    assert build_topology_graph(
+        package, relation_types=frozenset({"SERVICE_DEPENDS_ON"})
+    ).adjacency == {}
+    contexts = failure_domains_for_chain(package, "C")
+    assert len(contexts) == 1
+    assert contexts[0].domain_type == "SHARED_STORAGE_CONTEXT"
+    assert contexts[0].member_alarm_ids == frozenset({"a1", "a2"})
+    assert contexts[0].quality_status == "UNKNOWN"
+    assert contexts[0].failure_domain_id != "UNVERIFIED-SRLG"
+
+
+def test_shared_storage_context_with_two_alarms_on_one_instance_is_not_audit_candidate():
+    """Duplicate alarms on one resource do not prove a shared-resource block."""
+    from channels.dependency import ResourceResolver
+
+    package = _package()
+    package.topology["mappings"] = [
+        {
+            "alarm_id": "a1",
+            "resource_id": "it:instance:I1",
+            "mapping_status": "STRUCTURED_FIELD_UNIQUE",
+            "mapping_method": "STRUCTURED_FIELD_EXACT",
+            "topology_layer": "IT",
+            "source_version": "sha256:topology-v1",
+        },
+        {
+            "alarm_id": "a2",
+            "resource_id": "it:instance:I1",
+            "mapping_status": "STRUCTURED_FIELD_UNIQUE",
+            "mapping_method": "STRUCTURED_FIELD_EXACT",
+            "topology_layer": "IT",
+            "source_version": "sha256:topology-v1",
+        },
+    ]
+    package.topology["failure_domains"] = []
+    package.topology["edges"] = [
+        {
+            "edge_id": f"{instance}-storage",
+            "source_resource_id": f"it:instance:{instance}",
+            "target_resource_id": "it:storage:S1",
+            "relation_type": "INSTANCE_LINKS_STORAGE",
+            "directed": True,
+            "source_id": "storage.csv",
+            "source_kind": "REAL_EXPORT_REPLAY",
+            "source_version": "sha256:topology-v1",
+            "provenance_class": "EXTERNAL_OPERATIONAL",
+            "provenance_subtype": "TOPOLOGY_EXTERNAL",
+            "quality_status": "UNKNOWN",
+        }
+        for instance in ("I1", "I2")
+    ]
+
+    assert ResourceResolver.from_package(package).resolved == {}
+    contexts = failure_domains_for_chain(package, "C")
+    assert len(contexts) == 1
+    context = contexts[0]
+    assert context.member_alarm_ids == frozenset({"a1", "a2"})
+    assert context.member_resource_ids == frozenset({"it:instance:I1"})
+    assert context.eligible_for_candidate is False
+
+
+def test_failed_storage_source_edge_does_not_create_shared_context_candidate():
+    """A FAIL edge remains visible as FAIL but cannot propose an Audit block."""
+    package = _package()
+    package.topology["mappings"] = [
+        {
+            "alarm_id": "a1",
+            "resource_id": "it:instance:I1",
+            "mapping_status": "STRUCTURED_FIELD_UNIQUE",
+            "mapping_method": "STRUCTURED_FIELD_EXACT",
+            "topology_layer": "IT",
+            "source_version": "sha256:topology-v1",
+        },
+        {
+            "alarm_id": "a2",
+            "resource_id": "it:instance:I2",
+            "mapping_status": "STRUCTURED_FIELD_UNIQUE",
+            "mapping_method": "STRUCTURED_FIELD_EXACT",
+            "topology_layer": "IT",
+            "source_version": "sha256:topology-v1",
+        },
+    ]
+    package.topology["failure_domains"] = []
+    package.topology["edges"] = [
+        {
+            "edge_id": "I1-storage",
+            "source_resource_id": "it:instance:I1",
+            "target_resource_id": "it:storage:S1",
+            "relation_type": "INSTANCE_LINKS_STORAGE",
+            "directed": True,
+            "source_id": "storage.csv",
+            "source_kind": "REAL_EXPORT_REPLAY",
+            "source_version": "sha256:topology-v1",
+            "provenance_class": "EXTERNAL_OPERATIONAL",
+            "provenance_subtype": "TOPOLOGY_EXTERNAL",
+            "quality_status": "FAIL",
+        },
+        {
+            "edge_id": "I2-storage",
+            "source_resource_id": "it:instance:I2",
+            "target_resource_id": "it:storage:S1",
+            "relation_type": "INSTANCE_LINKS_STORAGE",
+            "directed": True,
+            "source_id": "storage.csv",
+            "source_kind": "REAL_EXPORT_REPLAY",
+            "source_version": "sha256:topology-v1",
+            "provenance_class": "EXTERNAL_OPERATIONAL",
+            "provenance_subtype": "TOPOLOGY_EXTERNAL",
+            "quality_status": "UNKNOWN",
+        },
+    ]
+
+    contexts = failure_domains_for_chain(package, "C")
+    assert len(contexts) == 1
+    assert contexts[0].quality_status == "FAIL"
+    assert contexts[0].member_alarm_ids == frozenset({"a1", "a2"})
+    assert contexts[0].eligible_for_candidate is False
+
+    analysis = analyze_structural_audit(
+        package,
+        "C",
+        policy=AuditExecutionPolicy(exact_max_members=10),
+        mining_config=MiningConfig(config_version="test"),
+        epsilon=0.3,
+    )
+    assert not any(
+        item.candidate.source is CandidateSource.SHARED_RESOURCE_CONTEXT
+        for item in analysis.structural_audit.scored_candidates
+    )

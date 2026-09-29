@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { api } from '../api'
-import type { AnalysisConfigView, CalibrationReport, ReviewLearningStatus } from '../types'
+import type { AnalysisConfigView, ReviewLearningStatus } from '../types'
 import { InfoTip } from './InfoTip'
 
 export type LearningTab = 'engine' | 'ranker'
@@ -28,7 +28,6 @@ export function LearningModal({
   const [calibrating, setCalibrating] = useState(false)
   const [engineError, setEngineError] = useState<string | null>(null)
   const [engineSuccess, setEngineSuccess] = useState<string | null>(null)
-  const [calibrationReport, setCalibrationReport] = useState<CalibrationReport | null>(null)
 
   // Ranker state
   const [rankerStatus, setRankerStatus] = useState<ReviewLearningStatus | null>(null)
@@ -141,18 +140,11 @@ export function LearningModal({
     setEngineSuccess(null)
     setCalibrating(true)
     try {
-      const report = await api.calibrateConfig()
-      setCalibrationReport(report)
+      await api.calibrateConfig()
       const freshConfig = await api.getConfig()
       setConfig(freshConfig)
       setValues({ ...freshConfig.editable_parameters })
-      if (report.status === 'PRODUCTION_CALIBRATED') {
-        setEngineSuccess(`Đã hiệu chuẩn sản xuất thành công từ PostgreSQL! Version: ${freshConfig.config_version}`)
-      } else {
-        setEngineSuccess(
-          `Đã hoàn tất đánh giá (${report.snapshots_loaded ?? 0} snapshot, ${report.alarms_evaluated ?? 0} cảnh báo). Dữ liệu chưa đủ mẫu để hiệu chuẩn sản xuất, hệ thống tiếp tục duy trì bộ tham số an toàn (baseline requires calibration).`
-        )
-      }
+      setEngineSuccess('Đã cập nhật cấu hình.')
       onConfigChanged?.(freshConfig)
     } catch (err) {
       setEngineError(err instanceof Error ? err.message : 'Failed to calibrate from PostgreSQL')
@@ -188,7 +180,7 @@ export function LearningModal({
             <h2 id="learning-modal-title" className="text-sm font-bold text-on-surface">
               Learning &amp; Calibration
             </h2>
-            <InfoTip text="Tự động học tham số động cơ từ CSDL PostgreSQL & Quản trị mô hình AI xếp hạng phản hồi chuyên viên" />
+            <InfoTip text="Hiệu chuẩn tham số theo phân phối dữ liệu PostgreSQL; quản trị riêng mô hình XGBoost xếp hạng đề xuất từ phản hồi chuyên viên." />
             <span className="sr-only">Provenance &amp; Reproducibility</span>
           </div>
 
@@ -334,54 +326,6 @@ export function LearningModal({
                 <div className="p-3 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
                   <span className="material-symbols-outlined text-[18px]">check_circle</span>
                   <span>{engineSuccess}</span>
-                </div>
-              )}
-
-              {/* Calibration Report Preview (if just executed) */}
-              {calibrationReport && (
-                <div className="p-3.5 rounded-xl bg-[#091426] border border-sky-500/30 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[16px]">insights</span>
-                      <span>Kết quả hiệu chuẩn (Calibration Report)</span>
-                    </h4>
-                    <span className="text-[10px] font-mono text-on-surface-variant">{calibrationReport.timestamp}</span>
-                  </div>
-
-                  <div className="flex gap-4 text-xs font-mono text-on-surface-variant flex-wrap">
-                    <span>Snapshots: <strong className="text-on-surface">{calibrationReport.snapshots_loaded}</strong></span>
-                    <span>Chains: <strong className="text-on-surface">{calibrationReport.chains_evaluated}</strong></span>
-                    <span>Alarms: <strong className="text-on-surface">{calibrationReport.alarms_evaluated}</strong></span>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs font-mono border-collapse text-left">
-                      <thead>
-                        <tr className="border-b border-[#1b2f4d] text-on-surface-variant text-[11px]">
-                          <th className="py-1 font-semibold">Tham số</th>
-                          <th className="py-1 font-semibold">Trước</th>
-                          <th className="py-1 font-semibold">Sau hiệu chuẩn</th>
-                          <th className="py-1 font-semibold">Nguồn</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#13233a]">
-                        {calibrationReport.calibrated_parameters.map(p => (
-                          <tr key={p.path}>
-                            <td className="py-1 text-on-surface">{p.path}</td>
-                            <td className="py-1 text-on-surface-variant">{p.previous_value}</td>
-                            <td className="py-1 text-secondary font-bold">{p.calibrated_value}</td>
-                            <td className="py-1">
-                              <span className={`px-1.5 py-0.2 rounded text-[10px] ${
-                                p.source === 'DATA_DRIVEN' ? 'bg-secondary/15 text-secondary' : 'bg-slate-500/15 text-slate-400'
-                              }`}>
-                                {p.source}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
                 </div>
               )}
 

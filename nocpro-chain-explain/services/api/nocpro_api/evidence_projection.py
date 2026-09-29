@@ -142,8 +142,60 @@ def _topology_path_record(
     hops = path_row.get("hop_count")
     max_hops = path_row.get("max_hops", _MAX_EVIDENCE_PATH_HOPS)
     relation = path_row.get("relation_type")
+    declared_relations = _strings(path_row.get("relation_types"))
+    raw_edge_relations = path_row.get("edge_relation_types")
+    if isinstance(raw_edge_relations, list):
+        edge_relation_types = list(raw_edge_relations)
+    elif isinstance(relation, str) and relation and relation != "MIXED":
+        edge_relation_types = [relation] * hops if _non_negative_int(hops) else []
+    else:
+        edge_relation_types = []
+    if not declared_relations and isinstance(relation, str) and relation and relation != "MIXED":
+        declared_relations = [relation]
+    raw_edge_provenance = path_row.get("edge_provenance")
+    edge_provenance_present = "edge_provenance" in path_row
+    edge_provenance = raw_edge_provenance if isinstance(raw_edge_provenance, list) else []
     semantic = path_row.get("traversal_semantic")
     statuses = _strings(path_row.get("mapping_statuses"))
+    edge_provenance_valid = not edge_provenance_present or (
+        isinstance(raw_edge_provenance, list)
+        and isinstance(nodes, list)
+        and _non_negative_int(hops)
+        and len(nodes) == hops + 1
+        and len(raw_edge_provenance) == hops
+        and all(
+            isinstance(edge, dict)
+            and type(edge.get("hop_index")) is int
+            and edge.get("hop_index") == index
+            and edge.get("from_resource_id") == nodes[index]
+            and edge.get("to_resource_id") == nodes[index + 1]
+            and isinstance(edge.get("relation_types"), list)
+            and bool(edge.get("relation_types"))
+            and all(
+                isinstance(relation_type, str) and relation_type
+                for relation_type in edge.get("relation_types", [])
+            )
+            and bool(_strings(edge.get("relation_types")))
+            and isinstance(edge.get("source_records"), list)
+            and bool(edge.get("source_records"))
+            and all(
+                isinstance(source_record, dict)
+                and source_record.get("relation_type") in _strings(edge.get("relation_types"))
+                for source_record in edge.get("source_records", [])
+            )
+            for index, edge in enumerate(raw_edge_provenance)
+        )
+    )
+    edge_relations_well_formed = (
+        _non_negative_int(hops)
+        and len(edge_relation_types) == hops
+        and all(isinstance(item, str) and item for item in edge_relation_types)
+    )
+    edge_relations_supported = (
+        edge_relations_well_formed
+        and bool(declared_relations)
+        and set(edge_relation_types).issubset(set(declared_relations))
+    )
     malformed = (
         not isinstance(nodes, list)
         or len(nodes) < 2
@@ -160,6 +212,8 @@ def _topology_path_record(
         or hops > max_hops
         or not isinstance(relation, str)
         or not relation
+        or not edge_relations_supported
+        or not edge_provenance_valid
         or semantic != "UNDIRECTED_STRUCTURAL_CONNECTIVITY"
     )
     mapping_unverified = not statuses or not set(statuses).issubset(RESOLVED_STATUSES)
@@ -177,13 +231,14 @@ def _topology_path_record(
     else:
         path_value = {
             "resource_ids": list(nodes),
-            "relation_types": [relation] * hops,
+            "relation_types": edge_relation_types,
             "hop_count": hops,
             "traversal_semantic": semantic,
             "max_hops": max_hops,
             "topology_version": identity.topology_version or "",
             "mapping_statuses": statuses,
             "analysis_truncated": analysis_truncated,
+            "edge_provenance": edge_provenance,
         }
         if source_partial:
             reasons.append("TOPOLOGY_SOURCE_PARTIAL")

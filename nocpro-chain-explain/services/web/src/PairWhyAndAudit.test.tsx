@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import { AuditStructureView } from './views/AuditStructureView'
 import { ChainDetailView } from './views/ChainDetailView'
+import { ChainScopeView } from './views/why/ChainScopeView'
 import { PairScopeView } from './views/why/PairScopeView'
 import type { ChainAnalysis, DeepDive, Job, PairWhy } from './types'
 
@@ -52,7 +53,6 @@ const deepDive = {
   similar_chains: [], similarity_status: 'UNAVAILABLE', similarity_unavailable_reason: 'NO_MODEL',
   similarity_model_version: null, similarity_trained_until_exclusive: null, similarity_corpus_policy: null,
   similarity_model_update_policy: null, taxonomy_status: null, taxonomy_reason: null, active_fingerprint_blocks: [],
-  topology_hypotheses: {} as DeepDive['topology_hypotheses'],
   evidence_attribution: {
     status: 'AVAILABLE', mode: 'EXACT', reason: null, detail: null, chain_size: 2,
     exact_max_members: 100, total_pair_count: 1, covered_pair_count: 1, total_coverage: 1, contributions: [],
@@ -67,6 +67,35 @@ const deepDive = {
 } satisfies DeepDive
 
 describe('Pair WHY and structural Audit data truth', () => {
+  it('shows shared storage as inventory context without calling it dependency evidence', () => {
+    const analysisWithStorageContext: ChainAnalysis = {
+      ...analysis,
+      members: analysis.members.map((member, index) => ({
+        ...member,
+        failure_domains: index === 0
+          ? ['SHARED_STORAGE:storage.csv:it:storage:VSP E590H - 10.208.91.93']
+          : [],
+      })),
+    }
+
+    const html = renderToStaticMarkup(
+      <ChainScopeView
+        analysis={analysisWithStorageContext}
+        job={null}
+        distinctDevices={[]}
+        observedStart={null}
+        observedEnd={null}
+        onSwitchScope={() => {}}
+        onSelectMember={() => {}}
+      />,
+    )
+
+    expect(html).toContain('Ngữ cảnh storage dùng chung')
+    expect(html).toContain('VSP E590H - 10.208.91.93')
+    expect(html).toContain('Nguồn storage.csv')
+    expect(html).toContain('không chứng minh dependency')
+  })
+
   it('renders the backend Dep_hop witness as structural path evidence', () => {
     const pairWhy: PairWhy = {
       chain_id: 'C-REAL',

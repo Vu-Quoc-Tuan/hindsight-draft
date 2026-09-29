@@ -23,12 +23,16 @@ from ..contract import (
     MockSnapshotPackage,
     ProvenanceClass,
     ProvenanceManifest,
+    QualityStatus,
+    RelationType,
     Snapshot,
     SnapshotStatus,
     SourceKind,
     SourceRecord,
     SystemMetadata,
     Topology,
+    TopologyEdge,
+    TopologyNode,
     TopologyRef,
     canonical_topology_version,
 )
@@ -58,6 +62,80 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _alarm_source_id(path: str | Path) -> str:
+    """Return a stable manifest identity for the known raw alarm exports."""
+    stem = Path(path).stem.casefold()
+    return {
+        "alarmit": "alarm_it_csv",
+        "alarmip": "alarm_ip_csv",
+        "alarm_data": "alarm_data_csv",
+    }.get(stem, "alarm_data_csv")
+
+
+def _it_navigation_projection(graph, mapped_resource_ids: set[str]) -> Topology:
+    """Embed a bounded two-hop neighborhood of mapped IT resources.
+
+    Expanding two hops from every mapped resource and retaining the induced
+    source edges preserves paths up to four hops between mapped resources for
+    bounded topology navigation. The projection preserves source edge
+    direction, but it does not convert source relations into dependency
+    evidence.
+    """
+    nodes_by_id = {node.resource_id: node for node in graph.nodes}
+    seeds = set(mapped_resource_ids) & set(nodes_by_id)
+    if not seeds:
+        return Topology()
+
+    neighbours: dict[str, set[str]] = {}
+    for edge in graph.edges:
+        neighbours.setdefault(edge.source_id, set()).add(edge.target_id)
+        neighbours.setdefault(edge.target_id, set()).add(edge.source_id)
+
+    # Include the complete two-hop neighborhood around mapped nodes. This
+    # retains the middle of four-hop paths between mapped resources while
+    # keeping the embedded graph much smaller than the full topoIT export.
+    selected = set(seeds)
+    frontier = set(seeds)
+    for _ in range(2):
+        frontier = {
+            neighbour
+            for resource_id in frontier
+            for neighbour in neighbours.get(resource_id, set())
+        } - selected
+        selected.update(frontier)
+
+    projected_nodes = tuple(
+        TopologyNode(
+            resource_id=node.resource_id,
+            source_id=node.source_tables[0] if node.source_tables else "topo_it_dir",
+            source_kind=SourceKind.REAL_EXPORT_REPLAY,
+            topology_layer="IT",
+            source_version=graph.source_version,
+        )
+        for node in (nodes_by_id[resource_id] for resource_id in sorted(selected))
+    )
+    projected_edges = tuple(
+        TopologyEdge(
+            edge_id=(
+                f"{edge.source_id}->{edge.target_id}:"
+                f"{edge.relation_type}:{edge.source_table}"
+            ),
+            source_resource_id=edge.source_id,
+            target_resource_id=edge.target_id,
+            relation_type=RelationType(edge.relation_type),
+            directed=True,
+            source_id=edge.source_table,
+            source_kind=SourceKind.REAL_EXPORT_REPLAY,
+            source_version=edge.source_version,
+            provenance_class=ProvenanceClass.EXTERNAL_OPERATIONAL,
+            quality_status=QualityStatus.UNKNOWN,
+        )
+        for edge in graph.edges
+        if edge.source_id in selected and edge.target_id in selected
+    )
+    return Topology(nodes=projected_nodes, edges=projected_edges)
+
+
 def build_real_replay_snapshot(
     *,
     alarm_csv_path: str | Path,
@@ -68,16 +146,28 @@ def build_real_replay_snapshot(
     topo_ip_path: str | Path | None = None,
     topo_it_dir: str | Path | None = None,
     chain_ids: set[str] | None = None,
+    alarm_ids: set[str] | None = None,
     limit: int | None = None,
     bounded_subgraph: bool = True,
     include_raw_topology: bool = False,
+    include_it_source_relations: bool = False,
 ) -> MockSnapshotPackage:
     """Replay the real alarm export as one canonical snapshot.
 
-    ``chain_ids`` / ``limit`` subset the export for fast iteration; the resulting
-    snapshot is still internally consistent.
+    ``chain_ids`` selects complete observed chains, while ``alarm_ids`` and
+    ``limit`` may produce partial chains. In the latter case ``member_count``
+    describes only members in this replay slice; the manifest records the
+    selection so consumers do not mistake it for a complete source chain.
     """
     config.assert_policy_safe()
+    if include_it_source_relations and topo_it_dir is None:
+        raise ValueError(
+            "include_it_source_relations requires a topo_it_dir source"
+        )
+    if include_it_source_relations and not config.topo_it_enabled:
+        raise ValueError(
+            "include_it_source_relations requires topo_it_enabled=true"
+        )
     reference_time = snapshot_time or datetime.now(timezone.utc).replace(tzinfo=None)
     source_kind = SourceKind.REAL_EXPORT_REPLAY
 
@@ -86,6 +176,8 @@ def build_real_replay_snapshot(
     )
     records = []
     for record in loader.iter_records():
+        if alarm_ids is not None and record.alarm_id not in alarm_ids:
+            continue
         if chain_ids is not None and record.chaining_id not in chain_ids:
             continue
         records.append(record)
@@ -102,7 +194,7 @@ def build_real_replay_snapshot(
 
     sources = [
         SourceRecord(
-            source_id="alarm_data_csv",
+            source_id=_alarm_source_id(alarm_csv_path),
             source_kind=source_kind,
             file_path=str(alarm_csv_path),
             record_count=len(records),
@@ -174,7 +266,10 @@ def build_real_replay_snapshot(
     elif topo_it_dir is not None and config.topo_it_enabled:
         it_dir = Path(topo_it_dir)
         from ..loaders.topology_it_csv import ITTopologyLoader
-        from ..normalize.resource_mapping import build_it_resource_mapper
+        from ..normalize.resource_mapping import (
+            build_it_navigation_mapper,
+            build_it_resource_mapper,
+        )
 
         it_loader = ITTopologyLoader(it_dir)
         it_graph = it_loader.load_graph()
@@ -190,7 +285,11 @@ def build_real_replay_snapshot(
                 topology_version=it_version,
                 source_version=it_source_version,
             )
-        it_mapper = build_it_resource_mapper(it_dir)
+        it_mapper = (
+            build_it_navigation_mapper(it_dir, source_version=it_source_version)
+            if include_it_source_relations
+            else build_it_resource_mapper(it_dir, source_version=it_source_version)
+        )
         mappings = tuple(
             it_mapper.map_real_alarm(
                 a.alarm_id,
@@ -201,13 +300,53 @@ def build_real_replay_snapshot(
             )
             for a in alarms
         )
-        topology = Topology(nodes=(), edges=(), mappings=mappings)
+        if include_it_source_relations:
+            mapped_resource_ids = {
+                mapping.resource_id
+                for mapping in mappings
+                if mapping.resource_id is not None
+                and mapping.mapping_status
+                in (
+                    MappingStatus.EXACT,
+                    MappingStatus.VERIFIED_ALIAS,
+                    MappingStatus.STRUCTURED_FIELD_UNIQUE,
+                )
+            }
+            projected_topology = _it_navigation_projection(
+                it_graph, mapped_resource_ids
+            )
+            topology = Topology(
+                nodes=projected_topology.nodes,
+                edges=projected_topology.edges,
+                mappings=mappings,
+            )
+            projection_note = (
+                "Embedded two-hop topoIT source-relation projection around "
+                f"{len(mapped_resource_ids)} uniquely mapped alarm resources: "
+                f"{len(projected_topology.nodes)} nodes and "
+                f"{len(projected_topology.edges)} edges. Edges preserve source "
+                "direction for navigation and retain source paths up to four "
+                "hops between mapped resources; dependency semantics remain "
+                f"unverified. Full loader view: {len(it_graph.nodes)} nodes and "
+                f"{len(it_graph.edges)} source relations."
+            )
+            topology_record_count = len(projected_topology.edges)
+        else:
+            topology = Topology(nodes=(), edges=(), mappings=mappings)
+            projection_note = (
+                f"No topoIT relations are embedded. The loader read "
+                f"{len(it_graph.nodes)} nodes and {len(it_graph.edges)} source "
+                "relations to obtain source identity and canonical resource IDs."
+            )
+            topology_record_count = 0
+        unavailable.extend(("VERIFIED_DEPENDENCY", "ACTIVE_PATH"))
         sources.append(
             SourceRecord(
-                source_id="topo_it_xml",
+                source_id="topo_it_dir",
                 source_kind=source_kind,
                 file_path=str(it_dir),
-                record_count=len(it_graph.nodes) + len(it_graph.edges),
+                record_count=topology_record_count,
+                notes=(projection_note,),
             )
         )
     else:
@@ -241,8 +380,22 @@ def build_real_replay_snapshot(
             unavailable_capabilities=tuple(unavailable),
             notes=(
                 "Observed chaining_id partition replayed as-is; no re-clustering.",
-                "cah.chaining_explain and is_root_alarm are empty in this export "
-                "and are not fabricated.",
+                "Root-related source fields, including cah.chaining_explain and "
+                "is_root_alarm, remain raw source facts; this replay does not "
+                "reinterpret them or use them to change the observed partition.",
+                *(
+                    (
+                        "Alarm selection came from an explicit alarm_ids set; "
+                        "sample representativeness depends on the caller's selection.",
+                    )
+                    if alarm_ids is not None
+                    else ()
+                ),
+                *(
+                    (projection_note,)
+                    if topo_it_dir is not None and config.topo_it_enabled
+                    else ()
+                ),
             ),
         ),
     )

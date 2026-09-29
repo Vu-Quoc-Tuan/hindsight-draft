@@ -4,6 +4,13 @@
 - **Date:** 2026-08-30
 - **Scope:** P2 topology extensions
 
+> **Implementation status (2026-09-28):** This ADR records the earlier design
+> and acceptance decision. The Dominator, RWR Propagation, Dependency Scope,
+> and upstream pairwise runtime code has since been removed because checked real
+> replay inputs lack the required evidence records. Follow
+> [Deferred Directed Topology](../DEFERRED_DIRECTED_TOPOLOGY.md) before restoring
+> any part of this capability.
+
 ## Context
 
 ADR-0029 kept P2 closed until MVP, P0, integration acceptance and performance

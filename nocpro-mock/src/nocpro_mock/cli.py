@@ -88,6 +88,20 @@ def _emit(package, args: argparse.Namespace) -> int:
 
 def _cmd_replay(args: argparse.Namespace) -> int:
     config = load_config(args.config)
+    if args.include_it_source_relations:
+        if not args.topo_it_dir:
+            print(
+                "--include-it-source-relations requires --topo-it-dir",
+                file=sys.stderr,
+            )
+            return 2
+        if not config.topo_it_enabled:
+            print(
+                "--include-it-source-relations requires a config with "
+                "real_sources.topo_it.enabled=true",
+                file=sys.stderr,
+            )
+            return 2
     package = build_real_replay_snapshot(
         alarm_csv_path=args.alarm_csv,
         config=config,
@@ -96,8 +110,10 @@ def _cmd_replay(args: argparse.Namespace) -> int:
         topo_ip_path=args.topo_ip if args.with_topology else None,
         topo_it_dir=args.topo_it_dir,
         chain_ids=set(args.chain_id) if args.chain_id else None,
+        alarm_ids=set(args.alarm_id) if args.alarm_id else None,
         limit=args.limit,
         include_raw_topology=getattr(args, "include_raw_topology", False),
+        include_it_source_relations=args.include_it_source_relations,
     )
     return _emit(package, args)
 
@@ -293,6 +309,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="explicit logical version used for transport and persistence identity",
     )
     p_replay.add_argument("--chain-id", action="append", default=[])
+    p_replay.add_argument(
+        "--alarm-id",
+        action="append",
+        default=[],
+        help="include one exact source alarm ID; may be repeated",
+    )
+    p_replay.add_argument(
+        "--include-it-source-relations",
+        action="store_true",
+        help="embed the bounded topoIT source-relation projection for navigation",
+    )
     p_replay.add_argument("--limit", type=int, default=None)
     p_replay.add_argument("--out", default=None)
     _add_kafka_options(p_replay)

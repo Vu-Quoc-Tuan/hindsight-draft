@@ -1394,7 +1394,10 @@ class SnapshotRepository:
                 deep is None or deep.status != "SUCCEEDED" or deep.result_payload is None
                 or (deep.snapshot_id, deep.snapshot_version, deep.chain_id)
                 != (identity.snapshot_id, identity.snapshot_version, identity.chain_id)
-                or deep.analysis_config_version != identity.analysis_config_version
+                or (
+                    deep.analysis_config_version != identity.analysis_config_version
+                    and (deep.analysis_config_version or "").split("|")[0] != identity.analysis_config_version
+                )
                 or deep.topology_version != identity.topology_version
             ):
                 return None

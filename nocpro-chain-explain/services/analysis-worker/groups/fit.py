@@ -6,11 +6,15 @@
 
     Fit_g(x,C) = max{ Fit_k(x,C) : k in g, Fit_k != ⊥ }
     G_role(x,C) = groups with role_eligible=true and Fit_g != ⊥
-    MembershipSupport(x,C) = mean over G_role of Fit_g(x,C)
+    MembershipSupport(x,C) = sum(Fit_g for g in G_role) / |G_role|
 
 The vector ``[Fit_g]`` is always retained; the scalar exists only for
-ranking/role. Aggregation happens per derivation group, so three views of one
-field cannot inflate support.
+ranking/role. ``Fit_g`` uses an unweighted maximum within each effective
+derivation group; MembershipSupport is an unweighted arithmetic mean across
+computable role-eligible groups. ``domain_size`` is used only inside each
+``Fit_k`` ratio and does not weight either aggregation. No sampling-uncertainty
+correction is applied by this formula. Distinct effective groups are separate
+votes by implementation policy, not proof of independent evidence.
 """
 
 from __future__ import annotations
@@ -125,7 +129,7 @@ def group_fits(alarm_id: str, statistics: ChannelStatistics) -> list[GroupFit]:
             for channel in group.channels
         )
         available = [f.fit for f in fits if f.fit is not None]
-        # Fit_g = max over channels whose Fit_k is not ⊥.
+        # Fit_g = unweighted max over channels whose Fit_k is not ⊥.
         results.append(
             GroupFit(
                 group=group,
@@ -171,5 +175,6 @@ def membership_support(
     """
     fits = tuple(group_fits(alarm_id, statistics))
     role_fits = [gf.fit for gf in fits if gf.role_eligible and gf.fit is not None]
+    # Equal-weight arithmetic mean; domain_size does not weight groups here.
     support = sum(role_fits) / len(role_fits) if role_fits else None
     return MembershipSupport(alarm_id=alarm_id, support=support, group_fits=fits)

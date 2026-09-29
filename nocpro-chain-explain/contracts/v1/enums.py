@@ -131,7 +131,17 @@ class RelationType(str, Enum):
 
     IP_ADJACENCY = "IP_ADJACENCY"
     LOGICAL_DEPENDENCY = "LOGICAL_DEPENDENCY"
+    # Retained for compatible payloads; this enum value does not verify a
+    # dependency claim. The topoIT projection uses the source relations below.
     SERVICE_DEPENDS_ON = "SERVICE_DEPENDS_ON"
+    # Source-table links retain their exported direction for navigation only.
+    # They do not assert an operational dependency or a propagation path.
+    SERVICE_HAS_MODULE = "SERVICE_HAS_MODULE"
+    MODULE_HAS_INSTANCE = "MODULE_HAS_INSTANCE"
+    MODULE_LINKS_DATABASE = "MODULE_LINKS_DATABASE"
+    DATABASE_LINKS_SERVICE = "DATABASE_LINKS_SERVICE"
+    DATABASE_LINKS_INSTANCE = "DATABASE_LINKS_INSTANCE"
+    INSTANCE_LINKS_STORAGE = "INSTANCE_LINKS_STORAGE"
 
 
 class QualityFlag(str, Enum):

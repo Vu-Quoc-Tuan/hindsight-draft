@@ -2,7 +2,9 @@
 
 A disputed alarm is unresolved; it must not contribute to a structural path,
 quality score, or dependency channel. Callers may require all alarms (P2) or
-use only individually resolved alarms (P0 and descriptive connectivity).
+use only individually resolved alarms (P0 and descriptive connectivity). A
+navigation-only consumer may explicitly opt into structured-field-unique
+matches; that opt-in does not make them dependency-eligible.
 """
 
 from __future__ import annotations
@@ -39,6 +41,7 @@ def resolve_topology_mappings(
     alarm_ids: Iterable[str] | None = None,
     *,
     require_all: bool = False,
+    allow_structured_field_unique: bool = False,
 ) -> dict[str, dict[str, Any]] | None:
     """Return unambiguous rows, or ``None`` if complete resolution is required.
 
@@ -64,9 +67,19 @@ def resolve_topology_mappings(
         rows_by_alarm.setdefault(alarm_id, []).append(row)
 
     resolved: dict[str, dict[str, Any]] = {}
+    accepted_statuses = (
+        RESOLVED_STATUSES | {"STRUCTURED_FIELD_UNIQUE"}
+        if allow_structured_field_unique
+        else RESOLVED_STATUSES
+    )
     for alarm_id, rows in rows_by_alarm.items():
         statuses = {_canonical(row.get("mapping_status")) for row in rows}
-        if len(statuses) != 1 or not statuses <= RESOLVED_STATUSES:
+        if len(statuses) != 1 or not statuses <= accepted_statuses:
+            continue
+        if statuses == {"STRUCTURED_FIELD_UNIQUE"} and any(
+            _canonical(row.get("mapping_method")) != "STRUCTURED_FIELD_EXACT"
+            for row in rows
+        ):
             continue
         signatures = {
             tuple(sorted(

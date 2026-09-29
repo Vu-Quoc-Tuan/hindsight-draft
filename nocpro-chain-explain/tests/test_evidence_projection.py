@@ -108,6 +108,7 @@ def test_four_hop_overview_witness_is_complete_and_stable():
     assert witness["path"] == {
         "resource_ids": ["R-A", "X", "Y", "Z", "R-B"],
         "relation_types": ["IP_ADJACENCY"] * 4,
+        "edge_provenance": [],
         "hop_count": 4,
         "traversal_semantic": "UNDIRECTED_STRUCTURAL_CONNECTIVITY",
         "max_hops": 4,
@@ -121,6 +122,83 @@ def test_four_hop_overview_witness_is_complete_and_stable():
         semantic="UNDIRECTED_STRUCTURAL_CONNECTIVITY",
     )["evidence_id"]
     assert witness["analysis_identity"] == _identity().to_payload()
+
+
+def test_overview_path_preserves_mixed_per_hop_relations_and_source_records():
+    projection = _overview(["R-A", "MODULE", "R-B"])
+    path = projection["topology"]["display_paths"][0]
+    path.update({
+        "relation_type": "MIXED",
+        "relation_types": ["MODULE_HAS_INSTANCE", "SERVICE_HAS_MODULE"],
+        "edge_relation_types": ["MODULE_HAS_INSTANCE", "SERVICE_HAS_MODULE"],
+        "edge_provenance": [
+            {
+                "hop_index": 0,
+                "from_resource_id": "R-A",
+                "to_resource_id": "MODULE",
+                "relation_types": ["MODULE_HAS_INSTANCE"],
+                "source_records": [{
+                    "relation_type": "MODULE_HAS_INSTANCE",
+                    "source_id": "service_module.csv",
+                    "source_version": "sha256:topology-v1",
+                    "provenance_class": "EXTERNAL_OPERATIONAL",
+                }],
+            },
+            {
+                "hop_index": 1,
+                "from_resource_id": "MODULE",
+                "to_resource_id": "R-B",
+                "relation_types": ["SERVICE_HAS_MODULE"],
+                "source_records": [{
+                    "relation_type": "SERVICE_HAS_MODULE",
+                    "source_id": "service_module.csv",
+                    "source_version": "sha256:topology-v1",
+                    "provenance_class": "EXTERNAL_OPERATIONAL",
+                }],
+            },
+        ],
+    })
+
+    bundle = build_evidence_bundle(
+        identity=_identity(),
+        overview_projection=projection,
+        pair_evidence=None,
+        audit_artifact=None,
+        review_result=None,
+    )
+    witness = _record(bundle, "TOPOLOGY_PATH", semantic="UNDIRECTED_STRUCTURAL_CONNECTIVITY")
+
+    assert witness["status"] == "AVAILABLE"
+    assert witness["path"]["relation_types"] == [
+        "MODULE_HAS_INSTANCE",
+        "SERVICE_HAS_MODULE",
+    ]
+    assert witness["path"]["edge_provenance"] == path["edge_provenance"]
+
+
+def test_malformed_edge_provenance_makes_overview_path_unavailable():
+    projection = _overview()
+    projection["topology"]["display_paths"][0]["edge_provenance"] = [{
+        "hop_index": 1,
+        "from_resource_id": "R-A",
+        "to_resource_id": "R-B",
+        "relation_types": ["IP_ADJACENCY"],
+        "source_records": [{"relation_type": "IP_ADJACENCY"}],
+    }]
+
+    bundle = build_evidence_bundle(
+        identity=_identity(),
+        overview_projection=projection,
+        pair_evidence=None,
+        audit_artifact=None,
+        review_result=None,
+    )
+    witness = next(
+        record for record in bundle["records"] if record["kind"] == "TOPOLOGY_PATH"
+    )
+
+    assert witness["status"] == "UNAVAILABLE"
+    assert "TOPOLOGY_PATH_INVALID" in witness["reason_codes"]
 
 
 def test_pair_why_three_hop_witness_is_not_equal_to_overview_path():

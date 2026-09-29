@@ -1,11 +1,10 @@
 """Entity channels ``E_*`` (§4A, POST_HOC).
 
-``E_reference``, ``E_device``, ``E_card`` and ``E_site`` are separate typed
-channels. ``E_remote`` is a relation, deliberately outside the containment scale.
-
-Critical detail: the derivation tag is the **source field**, so every channel
-derived from ``reference`` shares one derivation group and therefore votes once.
-That is what stops three views of the same field inflating agreement.
+``E_reference``, ``E_device``, ``E_card`` and ``E_site`` compare separate raw
+fields. ``E_remote`` is a relation, not a level in a containment scale. The
+derivation tags below define current aggregation boundaries; they do not prove
+that fields are statistically independent, physically nested, or derived from
+the same source measurement.
 """
 
 from __future__ import annotations
@@ -16,6 +15,7 @@ from libs.contracts import IngestedAlarm
 from libs.provenance import ProvenanceClass
 
 from .base import ChannelValue, unavailable
+from .field_values import read_alarm_string_field
 
 #: Entity channel id -> (raw field, derivation tag).
 #: device_code and node_reference are distinct fields, hence distinct groups.
@@ -36,14 +36,8 @@ EQUALITY_THRESHOLD = 1.0
 
 
 def _field(alarm: IngestedAlarm, field: str) -> str | None:
-    """Read a field from the canonical attribute or fall back to raw."""
-    value = getattr(alarm, field, None)
-    if value is None:
-        value = alarm.raw.get(field)
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
+    """Read a field while preserving missing-value semantics."""
+    return read_alarm_string_field(alarm, field)
 
 
 @dataclass(frozen=True)

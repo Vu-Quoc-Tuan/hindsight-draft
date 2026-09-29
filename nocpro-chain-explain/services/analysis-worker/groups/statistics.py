@@ -14,9 +14,10 @@ Memory is O(members x channels), not O(pairs): counts are accumulated in a
 streaming pass, so nothing is materialized. ADR-0015 prohibits unguarded pair
 *materialization*, not exact aggregation.
 
-Above :data:`EXACT_STATISTICS_MAX_MEMBERS` even a streaming pass is too costly, so
-the result is marked ``exact=False`` and the caller must apply an explicit
-supernode/sparsifier policy. It never degrades silently.
+Above :data:`EXACT_STATISTICS_MAX_MEMBERS` even a streaming pass is too costly,
+so the result is marked ``exact=False``. This module does not build an
+approximation; callers must surface the relevant capability as unavailable or
+skip the exact-only operation. It never degrades silently.
 """
 
 from __future__ import annotations

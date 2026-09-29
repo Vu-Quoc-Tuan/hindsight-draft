@@ -1423,10 +1423,7 @@ export default function App() {
               scheduleRefresh={scheduleRefresh}
               cancelRefresh={cancelRefresh}
               topologyPayload={topologyPayload}
-              topologyHypotheses={activeJob?.status === 'SUCCEEDED' ? activeJob.result?.topology_hypotheses : null}
               onRootChange={setTopologyRootId}
-              onRunDeepDive={() => void runDeepDive()}
-              isDeepDiveRunning={activeJob?.status === 'QUEUED' || activeJob?.status === 'RUNNING'}
             />
           )}
         </Suspense>

@@ -177,6 +177,38 @@ def test_membership_support_averages_role_eligible_groups_only():
     assert support.computable_group_count == 2
 
 
+def test_membership_support_does_not_weight_groups_by_domain_size():
+    """Group fits get equal weight even when their available-peer counts differ."""
+    statistics = stats(
+        ["x", "y", "z", "w"],
+        {
+            ("x", "y"): [
+                value("wide", "wide", score=1.0),
+                value("small", "small", score=0.0),
+            ],
+            ("x", "z"): [
+                value("wide", "wide", score=1.0),
+                value("small", "small", available=False),
+            ],
+            ("x", "w"): [
+                value("wide", "wide", score=1.0),
+                value("small", "small", available=False),
+            ],
+        },
+    )
+
+    support = membership_support("x", statistics)
+
+    # Fit_wide=3/3, Fit_small=0/1; equal group averaging gives 0.5.
+    # Weighting by domain_size would instead give 0.75.
+    assert support.support == pytest.approx(0.5)
+    fits = {fit.derivation_tag: fit for fit in support.role_group_fits}
+    assert fits["wide"].fit == pytest.approx(1.0)
+    assert fits["wide"].channel_fits[0].domain_size == 3
+    assert fits["small"].fit == pytest.approx(0.0)
+    assert fits["small"].channel_fits[0].domain_size == 1
+
+
 def test_system_fact_channel_never_enters_support():
     statistics = stats(
         ["x", "y"],

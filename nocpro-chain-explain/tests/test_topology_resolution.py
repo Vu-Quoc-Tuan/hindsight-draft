@@ -1,4 +1,4 @@
-"""Shared mapping and structural-path contracts across P0, P2, and Overview."""
+"""Shared mapping and structural-path contracts across analysis and Overview."""
 
 from libs.contracts.topology_mapping import resolve_resource_ids
 from libs.contracts.topology_paths import (
@@ -41,6 +41,38 @@ def test_conflicting_claim_is_not_counted_by_overview_regardless_of_order():
 def test_identical_duplicate_claims_are_harmless():
     rows = [_mapping("a1", "R1"), _mapping("a1", "R1")]
     assert resolve_resource_ids(rows, {"a1"}, require_all=True) == {"a1": "R1"}
+
+
+def test_structured_field_unique_is_navigation_opt_in_not_default_mapping():
+    row = {
+        "alarm_id": "a1",
+        "resource_id": "it:instance:I1",
+        "mapping_status": "STRUCTURED_FIELD_UNIQUE",
+        "mapping_method": "STRUCTURED_FIELD_EXACT",
+    }
+    assert resolve_resource_ids([row], {"a1"}, require_all=True) is None
+    assert _build_topology_connectivity(
+        raw_mappings=[row],
+        raw_edges=[],
+        member_ids={"a1"},
+        alarm_devices={"a1": "D1"},
+    )["mapped_alarm_ids"] == {"a1"}
+
+
+def test_structured_field_unique_with_wrong_method_stays_unresolved():
+    row = {
+        "alarm_id": "a1",
+        "resource_id": "it:instance:I1",
+        "mapping_status": "STRUCTURED_FIELD_UNIQUE",
+        "mapping_method": "VERIFIED_ALIAS_TABLE",
+    }
+    result = _build_topology_connectivity(
+        raw_mappings=[row],
+        raw_edges=[],
+        member_ids={"a1"},
+        alarm_devices={"a1": "D1"},
+    )
+    assert result["mapped_alarm_ids"] == set()
 
 
 def test_shared_bfs_is_bounded_and_deterministic():

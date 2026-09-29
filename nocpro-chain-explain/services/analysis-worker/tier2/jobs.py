@@ -15,7 +15,6 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from channels import EMPTY_TAXONOMY, AlarmTaxonomy
-from configuration import DependencyScopeConfig, PropagationConfig
 from groups import AuditGraphMode
 from libs.contracts import IngestedPackage
 from tier1a import CacheKey, CacheTier, Tier1Cache
@@ -30,83 +29,6 @@ from .audit_artifact import (
     ReviewAuditArtifact,
     build_review_audit_artifact,
 )
-from .topology_hypotheses.propagation import _configured_values
-from .topology_hypotheses.scope_overlap import _limits
-
-
-def _p2_cache_stamp(analysis_config: Any) -> str | None:
-    """Return a deterministic stamp for every available P2 sub-config.
-
-    Propagation has an explicit version, but the version alone is not enough:
-    an operator can construct two envelopes with the same version while
-    changing a value or its provenance.  Scope currently has no independent
-    version field, so its configured values and provenance are included to
-    prevent changing either ceiling from reusing an old Tier-2 result.  An
-    absent/incomplete production P2 envelope contributes no suffix; this keeps
-    the existing shipped ``v1`` cache identity while the result remains
-    structured ``UNAVAILABLE``.
-    """
-    p2 = getattr(analysis_config, "p2_topology", None)
-    if p2 is None:
-        return None
-    parts: list[str] = []
-    propagation = getattr(p2, "propagation", None)
-    if isinstance(propagation, PropagationConfig):
-        numeric = _configured_values(propagation)
-        propagation_fields = (
-            (
-                "restart_probability",
-                propagation.restart_probability,
-            ),
-            (
-                "convergence_tolerance",
-                propagation.convergence_tolerance,
-            ),
-            ("max_iterations", propagation.max_iterations),
-            ("decay_parameter", propagation.decay_parameter),
-            ("score_threshold", propagation.score_threshold),
-            ("max_candidate_edges", propagation.max_candidate_edges),
-        )
-        # Incomplete/unsupported envelopes deliberately produce no
-        # propagation suffix.  That makes them unable to collide with a
-        # complete available envelope, even when config_version is reused.
-        if numeric is not None:
-            identities = [
-                f"{name}[path={getattr(configured, 'path')!r},"
-                f"value={getattr(configured, 'value')!r},"
-                f"source={getattr(getattr(configured, 'source'), 'value', getattr(configured, 'source'))!r}]"
-                for name, configured in propagation_fields
-            ]
-            parts.append(
-                "propagation:"
-                f"version={propagation.config_version.strip()!r},"
-                f"decay_type={propagation.decay_type!r},"
-                + ",".join(identities)
-            )
-    scope = getattr(p2, "dependency_scope", None)
-    if scope is None:
-        pass
-    elif isinstance(scope, DependencyScopeConfig) and _limits(scope) is not None:
-        values = []
-        for name in ("max_scope_resources", "max_materialized_resources"):
-            configured = getattr(scope, name, None)
-            if configured is None:
-                continue
-            source = getattr(getattr(configured, "source", None), "value", None)
-            values.append(
-                f"{name}={getattr(configured, 'value', None)!r}"
-                f"[path={getattr(configured, 'path', None)!r},"
-                f"source={source or getattr(configured, 'source', None)!r}]"
-            )
-        if values:
-            parts.append("scope:" + ",".join(values))
-    else:
-        # Keep absent scope unsuffixed, but distinguish a concrete malformed
-        # scope object from a valid propagation-only envelope.
-        parts.append("scope:INVALID")
-    return ";".join(parts) or None
-
-
 def _attribution_evaluation_cache_stamp(analysis_config: Any) -> str:
     config = getattr(analysis_config, "attribution_evaluation", None)
     if config is None:
@@ -358,9 +280,6 @@ class Tier2JobManager:
                 f"{run_config_version}|similarity:"
                 f"{similarity_context.model.model_version}"
             )
-        p2_stamp = _p2_cache_stamp(analysis_config)
-        if p2_stamp is not None:
-            run_config_version = f"{run_config_version}|p2:{p2_stamp}"
         run_config_version = (
             f"{run_config_version}|attribution-evaluation:"
             f"{_attribution_evaluation_cache_stamp(analysis_config)}"
@@ -425,10 +344,6 @@ class Tier2JobManager:
                     analysis_config.value("temporal.delay.support_threshold")
                 ),
                 d_max=int(analysis_config.value("dependency.max_hop")),
-                lambda_dep=float(analysis_config.value("dependency.lambda_dep")),
-                common_dependency_threshold=float(
-                    analysis_config.value("dependency.common_support_threshold")
-                ),
                 silent_gap_seconds=int(
                     analysis_config.value("temporal.burst.gap_seconds")
                 ),
@@ -440,7 +355,6 @@ class Tier2JobManager:
                 similarity_top_k=int(
                     analysis_config.value("similar_chains.result_top_k")
                 ),
-                p2_topology_config=getattr(analysis_config, "p2_topology", None),
                 attribution_evaluation_config=getattr(
                     analysis_config, "attribution_evaluation", None
                 ),

@@ -96,6 +96,25 @@ export function ChainScopeView({
 
   const members = useMemo(() => analysis.members || [], [analysis.members])
   const totalAlarms = members.length || analysis.member_count || 1
+  const sharedStorageContexts = useMemo(() => {
+    const prefix = 'SHARED_STORAGE:'
+    const marker = ':storage:'
+    const contexts = new Map<string, string>()
+
+    members.forEach(member => {
+      const domains = member.failure_domains || []
+      domains.forEach(domainId => {
+        if (!domainId.startsWith(prefix)) return
+        const markerIndex = domainId.lastIndexOf(marker)
+        const label = markerIndex >= 0
+          ? domainId.slice(markerIndex + marker.length)
+          : domainId.slice(prefix.length)
+        if (label) contexts.set(domainId, label)
+      })
+    })
+
+    return Array.from(contexts, ([id, label]) => ({ id, label }))
+  }, [members])
 
   // Dynamic Alarm Type Dominance Analysis (DIM 01: Entity / Alarm Type Anchor)
   const { dominantAlarmName, dominantAlarmCount, dominantAlarmPct } = useMemo(() => {
@@ -159,7 +178,7 @@ export function ChainScopeView({
   }, [members, totalAlarms, distinctDevices])
 
   // Dynamic Temporal Span
-  const { timeSpanLabel, timeSpanSecs, startLabel, endLabel } = useMemo(() => {
+  const { timeSpanLabel, timeSpanSecs, startLabel, endLabel, validTimeCount } = useMemo(() => {
     const times = members
       .map(m => m.canonical_start_time)
       .filter((t): t is string => Boolean(t))
@@ -171,6 +190,7 @@ export function ChainScopeView({
       return {
         timeSpanLabel: 'N/A',
         timeSpanSecs: null,
+        validTimeCount: times.length,
         startLabel: observedStart ? observedStart.slice(11, 19) : (times.length === 1 ? new Date(times[0]).toISOString().slice(11, 19) : 'N/A'),
         endLabel: observedEnd ? observedEnd.slice(11, 19) : (times.length === 1 ? new Date(times[0]).toISOString().slice(11, 19) : 'N/A'),
       }
@@ -188,6 +208,7 @@ export function ChainScopeView({
     return {
       timeSpanLabel: formatted,
       timeSpanSecs: diffSec,
+      validTimeCount: times.length,
       startLabel: new Date(times[0]).toISOString().slice(11, 19),
       endLabel: new Date(times[times.length - 1]).toISOString().slice(11, 19),
     }
@@ -195,17 +216,16 @@ export function ChainScopeView({
 
   // Derived dimensional metrics
   const descriptors = useMemo(() => analysis.descriptors || [], [analysis.descriptors])
-  const unavailableCaps = useMemo(() => (analysis.graybox?.unavailable_capabilities || []).map(c => c.toUpperCase()), [analysis.graybox])
   const availability = analysis.evidence_availability || {}
   const isHistAvailable = availability.historical?.state === 'AVAILABLE'
   const isDelayUnavailable = availability.temporal_delay?.state !== 'AVAILABLE'
   const isTopoUnavailable = availability.topology?.state !== 'AVAILABLE'
   const isDepUnavailable = availability.dependency?.state !== 'AVAILABLE'
 
-  // DIM 02: Burst arrivals (computed from real timestamps)
-  const { burstCount, burstPct, arrivalRate } = useMemo(() => {
+  // Chain-level timestamp summary. This is not contextual T_burst.
+  const { burstCount, burstPct, arrivalRate, validTimestampCount } = useMemo(() => {
     if (timeSpanSecs === null) {
-      return { burstCount: null, burstPct: null, arrivalRate: null }
+      return { burstCount: null, burstPct: null, arrivalRate: null, validTimestampCount: null }
     }
     const times = members
       .map(m => m.canonical_start_time)
@@ -214,38 +234,39 @@ export function ChainScopeView({
       .filter(t => !isNaN(t))
       .sort((a, b) => a - b)
     if (times.length === 0) {
-      return { burstCount: null, burstPct: null, arrivalRate: null }
+      return { burstCount: null, burstPct: null, arrivalRate: null, validTimestampCount: null }
     }
     const windowStart = times[0]
     const inBurst = times.filter(t => t - windowStart <= 60000).length
-    const pct = ((inBurst / totalAlarms) * 100).toFixed(1)
-    const rate = (totalAlarms / Math.max(1, timeSpanSecs)).toFixed(2)
+    const pct = ((inBurst / times.length) * 100).toFixed(1)
+    const rate = timeSpanSecs > 0 ? (times.length / timeSpanSecs).toFixed(2) : null
     return {
       burstCount: inBurst,
       burstPct: pct,
       arrivalRate: rate,
+      validTimestampCount: times.length,
     }
   }, [members, timeSpanSecs, totalAlarms])
 
-  // DIM 04: Historical Lift
-  const { histLift, histConfidence } = useMemo(() => {
-    if (isHistAvailable && descriptors.length > 0) {
+  // Descriptor lift/precision measure descriptor selection, not historical H.
+  const { descriptorLift, descriptorPrecision } = useMemo(() => {
+    if (descriptors.length > 0) {
       const maxL = Math.max(...descriptors.map(d => d.lift || 0))
       const conf = descriptors[0].precision_global ? (descriptors[0].precision_global * 100).toFixed(1) : null
       return {
-        histLift: maxL > 0 ? maxL.toFixed(2) : null,
-        histConfidence: conf,
+        descriptorLift: maxL > 0 ? maxL.toFixed(2) : null,
+        descriptorPrecision: conf,
       }
     }
-    return { histLift: null, histConfidence: null }
-  }, [descriptors, isHistAvailable])
+    return { descriptorLift: null, descriptorPrecision: null }
+  }, [descriptors])
 
   // Evaluated dimensions count (truthful telemetry channels with observations)
   const evaluatedCount = [
     dominantAlarmCount > 0,
     timeSpanSecs !== null,
     dominantCount > 0 && dominantDevice !== null,
-    histLift !== null,
+    isHistAvailable,
     !isDelayUnavailable,
     !isTopoUnavailable,
   ].filter(Boolean).length
@@ -453,8 +474,8 @@ export function ChainScopeView({
             </div>
             <p className="text-xs text-on-surface-variant leading-relaxed">
               {timeSpanSecs === null
-                ? 'Không đủ dữ liệu mốc thời gian để đánh giá độ đồng bộ và dồn cục thời gian.'
-                : `Khung thời gian xuất hiện quan sát được. Có ${burstCount} / ${totalAlarms} cảnh báo phát sinh đồng bộ trong khung ${typeof timeSpanSecs === 'number' ? timeSpanSecs.toFixed(1) : timeSpanLabel}s.`}
+                ? `Có ${validTimeCount}/${totalAlarms} cảnh báo với timestamp hợp lệ; cần ít nhất hai mốc để tính khoảng thời gian.`
+                : `Khoảng quan sát ${timeSpanSecs.toFixed(1)}s; ${burstCount}/${validTimestampCount} timestamp hợp lệ nằm trong 60 giây từ cảnh báo đầu (${validTimestampCount}/${totalAlarms} cảnh báo có timestamp). Đây không phải điểm T_burst.`}
             </p>
 
             {/* SVG Sparkline & Window Details */}
@@ -464,25 +485,8 @@ export function ChainScopeView({
                   Khởi phát: <span className="text-on-surface font-semibold">{timeSpanSecs !== null ? `${startLabel} (T+0s)` : 'N/A'}</span>
                 </span>
                 <span className="text-secondary font-bold">
-                  {burstPct !== null ? `${burstPct}% Cụm đồng bộ` : 'N/A'}
+                  {burstPct !== null ? `${burstPct}% timestamp trong 60s đầu` : 'N/A'}
                 </span>
-              </div>
-              {/* Sparkline Visual of Alarms Arrival */}
-              <div className="w-full h-8 flex items-end gap-1 pt-1">
-                {timeSpanSecs !== null ? (
-                  <>
-                    <div className="flex-1 bg-[#1a2942] h-1 rounded-sm"></div>
-                    <div className="flex-1 bg-[#1a2942] h-2.5 rounded-sm"></div>
-                    <div className="flex-1 bg-secondary h-7 rounded-sm"></div>
-                    <div className="flex-1 bg-secondary h-6 rounded-sm"></div>
-                    <div className="flex-1 bg-secondary h-4.5 rounded-sm"></div>
-                    <div className="flex-1 bg-[#1a2942] h-2 rounded-sm"></div>
-                    <div className="flex-1 bg-[#1a2942] h-1 rounded-sm"></div>
-                    <div className="flex-1 bg-[#1a2942] h-1 rounded-sm"></div>
-                  </>
-                ) : (
-                  <div className="w-full h-1 bg-[#1a2942] rounded-sm"></div>
-                )}
               </div>
               <div className="flex justify-between items-center font-label-caps text-[10px] text-on-surface-variant">
                 <span>
@@ -496,10 +500,10 @@ export function ChainScopeView({
           <div className="mt-3 pt-2 border-t border-[#1b273e] flex items-center justify-between text-on-surface-variant font-code-sm text-xs">
             <span className="flex items-center gap-1 text-secondary">
               <span className="material-symbols-outlined text-[14px]">bolt</span>
-              {timeSpanSecs !== null ? (timeSpanSecs <= 60 ? 'Đột biến dồn cục (Micro-Burst)' : 'Khoảng trôi kéo dài') : 'Không có dữ liệu thời gian'}
+              {timeSpanSecs !== null ? 'Thống kê timestamp quan sát' : 'Không có dữ liệu thời gian'}
             </span>
             <span className="text-on-surface font-semibold">
-              {typeof timeSpanSecs === 'number' ? `ΔT Max = ${timeSpanSecs.toFixed(2)}s` : 'ΔT = N/A'}
+              {typeof timeSpanSecs === 'number' ? `Khoảng đầu-cuối = ${timeSpanSecs.toFixed(2)}s` : 'Khoảng đầu-cuối = N/A'}
             </span>
           </div>
         </div>
@@ -555,7 +559,7 @@ export function ChainScopeView({
           </div>
         </div>
 
-        {/* DIM 04: Historical Co-occurrence */}
+        {/* DIM 04: Descriptor statistics; historical H is separate Pair WHY evidence. */}
         <div
           onClick={() => setSelectedCardId(selectedCardId === 'dim-4' ? null : 'dim-4')}
           className={`rounded-xl p-space-md shadow flex flex-col justify-between cursor-pointer transition-all border ${
@@ -568,39 +572,29 @@ export function ChainScopeView({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-tertiary text-[18px]">history_edu</span>
-                <span className="font-code-md text-sm text-on-surface font-bold">DIM 04: Historical Co-occ.</span>
+                <span className="font-code-md text-sm text-on-surface font-bold">DIM 04: Descriptor Statistics</span>
               </div>
               <span className={`px-2 py-0.5 rounded font-label-caps text-[10px] uppercase font-bold ${
                 descriptors.length > 0
                   ? 'bg-secondary/15 text-secondary'
-                  : unavailableCaps.some(c => c.includes('HISTORICAL'))
-                  ? 'bg-surface-container-high/40 text-on-surface-variant'
-                  : 'bg-tertiary/15 text-tertiary'
+                  : 'bg-surface-container-high/40 text-on-surface-variant'
               }`}>
-                {descriptors.length > 0
-                  ? 'Grounded'
-                  : unavailableCaps.some(c => c.includes('HISTORICAL'))
-                  ? 'Chưa nạp CSDL'
-                  : 'Chưa đánh giá'}
+                {descriptors.length > 0 ? 'Có descriptor' : 'Không có descriptor'}
               </span>
             </div>
             <p className="text-xs text-on-surface-variant leading-relaxed">
-              {totalAlarms <= 1
-                ? 'Chuỗi đơn lẻ (1 cảnh báo): Không áp dụng đánh giá đồng xuất hiện trong lịch sử.'
-                : descriptors.length > 0
-                ? `Mẫu hình lặp lại trong lịch sử. Thể hiện sự liên kết thực nghiệm với ${descriptors.length} quy tắc tương phản.`
-                : unavailableCaps.some(c => c.includes('HISTORICAL'))
-                ? 'Mô hình quy tắc đồng xuất hiện lịch sử chưa nạp CSDL hoặc chưa được kích hoạt.'
-                : 'Chưa đủ dữ liệu lịch sử (Support < 5) để sinh quy tắc đồng xuất hiện với Lift > 1 cho tổ hợp này.'}
+              {descriptors.length > 0
+                ? `${descriptors.length} descriptor mô tả chain hiện tại; lift và precision bên dưới thuộc bước khai thác descriptor, không phải điểm Historical H.`
+                : 'Không có descriptor để tính lift/precision. Historical H được đánh giá riêng theo cặp tại Pair WHY.'}
             </p>
 
             {/* Historical Matrix Card */}
             <div className="flex flex-col gap-1.5 bg-[#080d17] p-space-sm rounded-lg border border-[#1b273e]/60 font-code-sm text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-on-surface-variant">
-                  Mined Rules: <span className="text-on-surface font-semibold">{totalAlarms <= 1 ? 'N/A (Singleton)' : `${descriptors.length} Rules`}</span>
+                  Descriptors: <span className="text-on-surface font-semibold">{descriptors.length}</span>
                 </span>
-                <span className="text-tertiary font-bold">Lift: {totalAlarms <= 1 ? 'N/A' : histLift ? `${histLift}x` : 'N/A'}</span>
+                <span className="text-tertiary font-bold">Descriptor lift: {descriptorLift ? `${descriptorLift}x` : 'N/A'}</span>
               </div>
               <div className="w-full bg-[#151f33] h-2 rounded-full overflow-hidden flex">
                 <div
@@ -609,8 +603,8 @@ export function ChainScopeView({
                 ></div>
               </div>
               <div className="flex justify-between items-center font-label-caps text-[10px] text-on-surface-variant">
-                <span>Baseline: 1.0</span>
-                <span>Confidence: {totalAlarms <= 1 ? 'N/A' : histConfidence ? `${histConfidence}%` : 'N/A'}</span>
+                <span>H: {isHistAvailable ? 'Xem Pair WHY' : 'Chưa khả dụng'}</span>
+                <span>Descriptor precision: {descriptorPrecision ? `${descriptorPrecision}%` : 'N/A'}</span>
               </div>
             </div>
           </div>
@@ -618,22 +612,10 @@ export function ChainScopeView({
           <div className="mt-3 pt-2 border-t border-[#1b273e] flex items-center justify-between text-on-surface-variant font-code-sm text-xs">
             <span className="flex items-center gap-1 text-tertiary">
               <span className="material-symbols-outlined text-[14px]">auto_graph</span>
-              {totalAlarms <= 1
-                ? 'Chuỗi đơn lẻ'
-                : histLift
-                ? 'Grounded Rules'
-                : unavailableCaps.some(c => c.includes('HISTORICAL'))
-                ? 'CSDL chưa nạp'
-                : 'Chưa đủ dữ liệu sinh luật'}
+              {descriptorLift ? 'Descriptor đã tính' : 'Chưa có descriptor'}
             </span>
             <span className="text-on-surface font-semibold">
-              {totalAlarms <= 1
-                ? 'Không áp dụng'
-                : histLift
-                ? `Rules: ${descriptors.length}`
-                : unavailableCaps.some(c => c.includes('HISTORICAL'))
-                ? 'Chưa kết nối CSDL lịch sử'
-                : 'Chưa đủ tần suất (Support < 5)'}
+              {`Historical H: ${isHistAvailable ? 'xem Pair WHY' : 'chưa khả dụng'}`}
             </span>
           </div>
         </div>
@@ -654,33 +636,32 @@ export function ChainScopeView({
                 <span className="font-code-md text-sm text-on-surface font-bold">DIM 05: Temporal Delay</span>
               </div>
               <span className={`px-2 py-0.5 rounded font-label-caps text-[10px] uppercase font-bold ${
-                totalAlarms <= 1
+                totalAlarms <= 1 || isDelayUnavailable
                   ? 'bg-surface-container-high/40 text-on-surface-variant'
                   : 'bg-secondary/15 text-secondary'
               }`}>
-                {totalAlarms <= 1 ? 'Chuỗi đơn lẻ (N/A)' : 'Đo theo cặp'}
+                {totalAlarms <= 1 ? 'Chuỗi đơn lẻ (N/A)' : isDelayUnavailable ? 'Chưa khả dụng' : 'Có model theo cặp'}
               </span>
             </div>
             <p className="text-xs text-on-surface-variant leading-relaxed">
               {totalAlarms <= 1
                 ? 'Chuỗi đơn lẻ (1 cảnh báo): Không có cặp cảnh báo để đo độ trễ lan truyền.'
-                : 'Độ trễ thời gian được đo chính xác theo từng cặp cảnh báo (A → B). Vui lòng xem phân phối delay tại tab Pair WHY.'}
+                : isDelayUnavailable
+                ? 'T_delay chưa có model khả dụng cho dữ liệu này. Timestamp của chain không đủ để suy ra điểm delay.'
+                : 'T_delay dùng phân phối độ trễ theo cặp; xem bằng chứng cụ thể tại Pair WHY.'}
             </p>
 
             {/* Delay Metric Box */}
             <div className="flex flex-col gap-1.5 bg-[#080d17] p-space-sm rounded-lg border border-[#1b273e]/60 font-code-sm text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-on-surface-variant">
-                  Phương thức: <span className="text-on-surface font-semibold">{totalAlarms <= 1 ? 'N/A (Singleton)' : 'Đo theo cặp (Pair WHY)'}</span>
+                  Phương thức: <span className="text-on-surface font-semibold">{totalAlarms <= 1 ? 'N/A (Singleton)' : isDelayUnavailable ? 'Model chưa khả dụng' : 'Theo cặp (Pair WHY)'}</span>
                 </span>
-                <span className="text-secondary font-bold">{totalAlarms <= 1 ? 'N/A' : 'Pairwise'}</span>
-              </div>
-              <div className="w-full bg-[#151f33] h-2 rounded-full overflow-hidden flex">
-                <div className="bg-secondary h-full rounded-full transition-all" style={{ width: totalAlarms <= 1 ? '0%' : '100%' }}></div>
+                <span className="text-secondary font-bold">{totalAlarms <= 1 ? 'N/A' : isDelayUnavailable ? 'Unavailable' : 'Pairwise'}</span>
               </div>
               <div className="flex justify-between items-center font-label-caps text-[10px] text-on-surface-variant">
-                <span>{totalAlarms <= 1 ? 'Độ trễ: N/A' : 'Chi tiết: Tab Pair WHY'}</span>
-                <span>{totalAlarms <= 1 ? 'Chuỗi 1 alarm' : 'Phân phối Histogram/KDE'}</span>
+                <span>{totalAlarms <= 1 ? 'Không có cặp alarm' : isDelayUnavailable ? 'Model chưa sẵn sàng' : 'Điểm được tính riêng cho từng cặp'}</span>
+                <span>Không có điểm tổng hợp chain-level</span>
               </div>
             </div>
           </div>
@@ -689,7 +670,7 @@ export function ChainScopeView({
             <span className="flex items-center gap-1 text-secondary">
               <span className="material-symbols-outlined text-[14px]">tune</span> Phân tích theo cặp
             </span>
-            <span className="text-on-surface font-semibold">{totalAlarms <= 1 ? 'Không áp dụng' : 'Khả dụng tại Pair WHY'}</span>
+            <span className="text-on-surface font-semibold">{totalAlarms <= 1 ? 'Không áp dụng' : isDelayUnavailable ? 'Chưa khả dụng' : 'Xem Pair WHY'}</span>
           </div>
         </div>
 
@@ -716,33 +697,54 @@ export function ChainScopeView({
             </div>
             <p className="text-xs text-on-surface-variant leading-relaxed">
               {isTopoUnavailable
-                ? 'Đồ thị topo mạng IP Core chưa khả dụng trong cấu hình hiện tại.'
-                : 'Ánh xạ topo vật lý IP Core: các thiết bị router/switch đã được kết nối và xác thực trên đồ thị mạng.'}
+                ? 'Dữ liệu topology chưa khả dụng cho chain này.'
+                : 'Dữ liệu topology đã được nạp; phạm vi ánh xạ cụ thể hiển thị bên dưới khi có số liệu.'}
             </p>
 
             {/* Topology Ring Representation */}
             {(() => {
-              const topoMapped = narrativeData?.context?.topology?.mapped ?? 0
-              const topoTotal = narrativeData?.context?.topology?.total || totalAlarms
-              const topoPct = topoTotal > 0 && !isTopoUnavailable ? Math.round((topoMapped / topoTotal) * 100) : (isTopoUnavailable ? 0 : 100)
+              const topoMapped = narrativeData?.context?.topology?.mapped
+              const topoTotal = narrativeData?.context?.topology?.total
+              const topoPct = !isTopoUnavailable && typeof topoMapped === 'number' && typeof topoTotal === 'number' && topoTotal > 0
+                ? Math.round((topoMapped / topoTotal) * 100) : null
               return (
                 <div className="flex flex-col gap-1.5 bg-[#080d17] p-space-sm rounded-lg border border-[#1b273e]/60 font-code-sm text-xs">
                   <div className="flex items-center justify-between">
-                    <span className="text-on-surface-variant">Đồ thị IP Core</span>
+                    <span className="text-on-surface-variant">Ánh xạ topology</span>
                     <span className="text-secondary font-bold">
-                      {isTopoUnavailable ? 'Chưa kết nối' : `${topoPct}% Core Mapped (${topoMapped}/${topoTotal})`}
+                      {topoPct === null ? 'Chưa có số liệu ánh xạ' : `${topoPct}% (${topoMapped}/${topoTotal})`}
                     </span>
                   </div>
                   <div className="w-full bg-[#151f33] h-2 rounded-full overflow-hidden flex">
-                    <div className="bg-secondary h-full rounded-full transition-all" style={{ width: `${isTopoUnavailable ? 0 : topoPct}%` }}></div>
+                    <div className="bg-secondary h-full rounded-full transition-all" style={{ width: `${topoPct ?? 0}%` }}></div>
                   </div>
                   <div className="flex justify-between items-center font-label-caps text-[10px] text-on-surface-variant">
-                    <span>Tính kề vật lý: {isTopoUnavailable ? 'Chưa kề' : 'Đã map IP Core'}</span>
-                    <span>Khoảng cách hop: {isTopoUnavailable ? 'N/A' : (narrativeData?.context?.topology?.max_path_hops ? `Tối đa ${narrativeData.context.topology.max_path_hops} hops` : 'Xem tại Pair WHY')}</span>
+                    <span>Phạm vi: {topoPct === null ? 'Chưa xác định' : 'Có ánh xạ'}</span>
+                    <span>Khoảng cách hop: {isTopoUnavailable ? 'N/A' : (typeof narrativeData?.context?.topology?.max_path_hops === 'number' ? `Tối đa ${narrativeData.context.topology.max_path_hops} hops` : 'Chưa có số liệu')}</span>
                   </div>
                 </div>
               )
             })()}
+
+            {sharedStorageContexts.length > 0 && (
+              <div className="flex flex-col gap-1.5 bg-cyan-950/20 p-space-sm rounded-lg border border-cyan-900/50 font-code-sm text-xs">
+                <div className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-cyan-300 text-[15px]">storage</span>
+                  <span className="text-on-surface font-semibold">Ngữ cảnh storage dùng chung</span>
+                  <InfoTip text="Lấy từ quan hệ trong storage.csv: các instance cùng được nối tới một storage. Đây là ngữ cảnh inventory; không xác nhận dependency vận hành, nguyên nhân chung hay chiều lan truyền." />
+                </div>
+                <ul className="flex flex-col gap-1 text-cyan-100/90">
+                  {sharedStorageContexts.map(context => (
+                    <li key={context.id} title={context.id} className="break-words">
+                      {context.label}
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-[10px] text-on-surface-variant leading-relaxed">
+                  Nguồn storage.csv · metadata inventory; không chứng minh dependency hoặc quan hệ nhân quả.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="mt-3 pt-2 border-t border-[#1b273e] flex items-center justify-between text-on-surface-variant font-code-sm text-xs">
@@ -863,15 +865,9 @@ export function ChainScopeView({
             {/* CARD 2: SHARED TOPOLOGY CONTEXT */}
             {(() => {
               const topoFinding = analyticalFindings.find(f => f.finding_id === 'SHARED_TOPOLOGY_CONTEXT')
-              const domFinding = analyticalFindings.find(f => f.finding_id === 'TOPOLOGY_DOMINATOR_WITNESS')
-              const propFinding = analyticalFindings.find(f => f.finding_id === 'TOPOLOGY_PROPAGATION_FLOW')
-              const domData = narrativeData?.context?.tier2_p2?.dominator
-              const propData = narrativeData?.context?.tier2_p2?.propagation
               const isExpanded = Boolean(expandedTraceIds['TOPO'])
               const evidenceList = [
                 ...(topoFinding?.evidence || []),
-                ...(domFinding?.evidence || []),
-                ...(propFinding?.evidence || []),
               ]
               return (
                 <div className="bg-[#091120] rounded-lg border border-[#1b273e] p-space-md flex flex-col justify-between transition-all hover:border-cyan-500/40">
@@ -908,26 +904,6 @@ export function ChainScopeView({
                         Mở evidence topology ({topoFinding.evidence_ids.length})
                       </button>
                     ) : null}
-
-                    {/* Dominator Witness Badge (Tier-2 P2) */}
-                    {(domFinding || domData?.witness_resource_id) && (
-                      <div className="flex items-center gap-1.5 text-[11px] text-purple-300 font-code-sm bg-purple-950/40 px-2 py-1 rounded border border-purple-800/50">
-                        <span className="material-symbols-outlined text-[13px] text-purple-400 shrink-0">shield</span>
-                        <span className="font-bold">Dominator:</span>
-                        <span className="truncate">{domData?.witness_resource_id || domFinding?.claim}</span>
-                        {domData?.covered_resource_ids && (
-                          <span className="text-[10px] text-purple-400 ml-auto">({domData.covered_resource_ids.length} resources)</span>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Propagation Flow Chip (Tier-2 P2) */}
-                    {(propFinding || (propData?.hypotheses && propData.hypotheses.length > 0)) && (
-                      <div className="flex items-center gap-1.5 text-[11px] text-cyan-300 font-code-sm bg-cyan-950/30 px-2 py-1 rounded border border-cyan-800/40">
-                        <span className="material-symbols-outlined text-[13px] text-cyan-400 shrink-0">route</span>
-                        <span className="truncate">{propFinding?.claim || `Lan truyền RWR: ${propData?.hypotheses?.length} giả thuyết luồng`}</span>
-                      </div>
-                    )}
 
                     <div className="flex items-start gap-1.5 text-[10px] text-amber-300/90 font-code-sm bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20 leading-relaxed">
                       <span className="material-symbols-outlined text-[13px] shrink-0 mt-0.5 text-amber-400">info</span>
@@ -988,7 +964,7 @@ export function ChainScopeView({
 
               if (isEvaluated) {
                 const overMergeFinding = analyticalFindings.find(f => f.finding_id === 'OVER_MERGE_EVALUATION')
-                const overMergeData = narrativeData?.context?.tier2_p2?.over_merge
+                const overMergeData = narrativeData?.context?.tier2_audit?.over_merge
                 const evidenceList = [
                   ...(auditFinding?.evidence || []),
                   ...(overMergeFinding?.evidence || []),

@@ -1,10 +1,9 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import type { ChainAnalysis, ChainOverviewCards, Member, TopologyHypothesesResult } from '../types'
+import type { ChainAnalysis, ChainOverviewCards, Member } from '../types'
 
 import type { TopologyTreePayload } from '../TopologyTree'
 import type { RefreshTask } from '../liveUpdates'
-import { TopologyHypotheses } from '../TopologyHypotheses'
 import { InfoTip } from '../components/InfoTip'
 import { EvidenceDetails, type EvidencePathSelector } from '../components/EvidenceDetails'
 import { api, type ChainOverviewSnapshotContext, type TopologySubgraphResult } from '../api'
@@ -19,7 +18,6 @@ import {
 interface TopologyOverlayViewProps {
   analysis: ChainAnalysis
   topologyPayload?: TopologyTreePayload | null
-  topologyHypotheses?: TopologyHypothesesResult | null
   subgraphData?: TopologySubgraphResult | null
   snapshotKey?: string | null
   snapshotContext?: ChainOverviewSnapshotContext
@@ -28,8 +26,6 @@ interface TopologyOverlayViewProps {
   scheduleRefresh?: (key: string, task: RefreshTask) => boolean
   cancelRefresh?: (key: string) => void
   onRootChange?: (resourceId: string) => void
-  onRunDeepDive?: () => void
-  isDeepDiveRunning?: boolean
 }
 
 interface NetworkNode {
@@ -113,7 +109,6 @@ const EMPTY_CANONICAL_TERMINALS: string[] = []
 export function TopologyOverlayView({
   analysis,
   topologyPayload,
-  topologyHypotheses,
   subgraphData: externalSubgraph,
   snapshotKey = null,
   snapshotContext,
@@ -122,8 +117,6 @@ export function TopologyOverlayView({
   scheduleRefresh,
   cancelRefresh,
   onRootChange: _onRootChange,
-  onRunDeepDive,
-  isDeepDiveRunning,
 }: TopologyOverlayViewProps) {
   const [selectedDeviceSelection, setSelectedDeviceSelection] = useState<ContextBoundSelection<string> | null>(null)
   const [hoveredEdgeSelection, setHoveredEdgeSelection] = useState<ContextBoundSelection<string> | null>(null)
@@ -1949,66 +1942,6 @@ export function TopologyOverlayView({
             </>
           )}
 
-          {/* Topology Hypotheses */}
-          {topologyHypotheses ? (
-            <TopologyHypotheses
-              topology_hypotheses={topologyHypotheses}
-              action={
-                onRunDeepDive && (
-                  <button
-                    type="button"
-                    onClick={onRunDeepDive}
-                    disabled={isDeepDiveRunning}
-                    className="inline-flex items-center gap-space-xs rounded bg-secondary-container px-space-sm py-1 text-xs font-semibold text-on-secondary-container shadow-sm transition-colors hover:bg-secondary-container/80 disabled:opacity-50"
-                  >
-                    <span aria-hidden="true" className={`material-symbols-outlined text-[14px] ${isDeepDiveRunning ? 'animate-spin' : ''}`}>
-                      {isDeepDiveRunning ? 'sync' : 'refresh'}
-                    </span>
-                    {isDeepDiveRunning ? 'Đang phân tích...' : 'Làm mới Deep Dive'}
-                  </button>
-                )
-              }
-            />
-          ) : (
-            <section className="bg-[#0c1424] rounded-xl border border-[#1b273e] p-space-md shadow-md flex flex-col gap-space-sm">
-              <div className="flex items-center justify-between pb-space-xs border-b border-[#1b273e]">
-                <div className="flex items-center gap-space-xs">
-                  <span className="material-symbols-outlined text-secondary text-[18px]">account_tree</span>
-                  <span className="font-label-caps text-xs uppercase text-secondary font-bold tracking-wider">
-                    GIẢ THUYẾT TOPOLOGY &amp; LAN TRUYỀN PHỤ THUỘC
-                  </span>
-                </div>
-                <span className="font-code-sm text-xs text-on-surface-variant">
-                  Nút thống trị P2 &amp; Lan truyền có hướng
-                </span>
-              </div>
-              {isDeepDiveRunning ? (
-                <div className="py-space-lg text-center text-on-surface-variant text-sm flex flex-col items-center justify-center gap-3">
-                  <span className="material-symbols-outlined animate-spin text-secondary text-[28px]">progress_activity</span>
-                  <div className="flex flex-col gap-1">
-                    <span className="font-semibold text-on-surface text-sm">Đang phân tích giả thuyết Topology P2 &amp; lan truyền...</span>
-                    <span className="text-xs font-code-sm text-on-surface-variant">
-                      Tính toán cây thống trị Dominator, bước ngẫu nhiên RWR và phạm vi ảnh hưởng phụ thuộc
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div className="py-space-md text-center text-on-surface-variant text-sm flex flex-col items-center gap-2">
-                  <span>Chưa có dữ liệu phân tích Deep Dive cho chuỗi này.</span>
-                  {onRunDeepDive && (
-                    <button
-                      type="button"
-                      onClick={onRunDeepDive}
-                      className="inline-flex items-center gap-space-xs rounded bg-primary px-space-md py-space-xs text-sm font-semibold text-on-primary shadow-sm hover:bg-primary/90"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">query_stats</span>
-                      <span>Chạy Deep Dive</span>
-                    </button>
-                  )}
-                </div>
-              )}
-            </section>
-          )}
         </>
       )}
 

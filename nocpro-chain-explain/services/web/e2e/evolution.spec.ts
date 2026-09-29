@@ -15,7 +15,7 @@ test('synthetic verified sequence renders persisted Evolution without production
       break
     }
   }
-  test.skip(!chainId, 'synthetic P2 acceptance fixture is not active')
+  test.skip(!chainId, 'synthetic lineage acceptance fixture is not active')
   expect(chainId).not.toBe('')
 
   const consoleErrors: string[] = []

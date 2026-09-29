@@ -172,27 +172,28 @@ export function ReviewFeedbackHistoryView({
 
   return (
     <section className="mx-auto w-full max-w-[1500px] space-y-space-md">
-      <header className="flex flex-wrap items-end justify-between gap-space-md border-b border-[#1a2942] pb-space-md">
-        <div>
-          <p className="font-code-sm text-[11px] font-bold uppercase tracking-[0.18em] text-secondary">
-            Quyết định vận hành · Counterfactual
-          </p>
-          <h1 className="mt-1 font-headline-lg text-2xl font-bold tracking-tight text-on-surface">
-            Lịch sử ký duyệt
-          </h1>
-          <p className="mt-1 max-w-3xl text-sm text-on-surface-variant">
-            Tra cứu quyết định đã lưu và mở lại đúng snapshot cùng chain để xem trong Validation.
-          </p>
-        </div>
-        {snapshotContext && (
-          <div className="rounded-md border border-[#22314d] bg-[#0c1424] px-3 py-2 font-code-sm text-xs text-on-surface-variant">
-            <span className="text-secondary">Đang lọc theo snapshot</span>
-            <span className="mx-2 text-[#50617d]">/</span>
-            <span className="text-on-surface">{snapshotContext.snapshot_id}</span>
-            <span className="text-[#8090aa]">@{snapshotContext.snapshot_version}</span>
+      <section className="overflow-hidden rounded-xl border border-[#1e2b44] bg-[#0c1322] shadow-sm">
+        <div className="flex flex-col gap-space-md border-b border-[#1a253c] bg-[#0f1728] px-space-lg py-space-md">
+          <div>
+            <div className="flex items-center gap-2 text-secondary">
+              <span className="material-symbols-outlined text-[22px]">history_edu</span>
+              <span className="font-label-caps text-xs font-bold uppercase tracking-[0.16em]">Review history</span>
+            </div>
+            <div className="mt-2 flex items-center gap-2">
+              <h1 className="font-headline-lg text-2xl font-bold text-on-surface">Lịch sử ký duyệt</h1>
+              <span
+                className="material-symbols-outlined cursor-help text-[18px] text-on-surface-variant transition-colors hover:text-secondary"
+                title="Tra cứu quyết định đã lưu và mở lại đúng snapshot cùng chain để xem trong Validation."
+              >
+                help
+              </span>
+            </div>
+            <p className="mt-1 max-w-3xl text-sm text-on-surface-variant">
+              Tra cứu quyết định đã lưu và mở lại đúng snapshot cùng chain để xem trong Validation.
+            </p>
           </div>
-        )}
-      </header>
+        </div>
+      </section>
 
       {!snapshotContext ? (
         <div className="rounded-xl border border-[#283752] bg-[#0d1525] px-space-lg py-space-xl text-center">

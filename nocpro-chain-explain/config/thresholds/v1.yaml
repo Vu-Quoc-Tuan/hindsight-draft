@@ -18,8 +18,6 @@ temporal:
 
 dependency:
   max_hop: {value: 3, source: DOCUMENTED_DEFAULT}
-  lambda_dep: {value: 2.0, source: DOCUMENTED_DEFAULT}
-  common_support_threshold: {value: 0.3, source: DOCUMENTED_DEFAULT}
 
 history:
   min_support: {value: 5, source: DOCUMENTED_DEFAULT}

@@ -1,0 +1,29 @@
+{
+  "schema_version": "audit-diagnostics-experiment-v1",
+  "experiment_id": "audit-coverage-sensitivity-v1",
+  "description": "Frozen exact baseline and leave-one-effective-audit-group-out diagnostic.",
+  "variant_policy": {
+    "baseline": true,
+    "logo_groups": "ALL_RESOLVED_AUDIT_ELIGIBLE_GROUPS",
+    "unsupported_variants": "REJECT"
+  },
+  "audit_policy": {
+    "epsilon_phi": 0.3,
+    "epsilon_phi_source": "config/thresholds/v1.yaml:audit.global_weak_baseline",
+    "epsilon_phi_status": "DOCUMENTED_WEAK_BASELINE_NOT_PRODUCTION_CALIBRATED"
+  },
+  "materiality_policy": {
+    "epsilon_num": 1e-12,
+    "delta_phi": null,
+    "rationale": "No operational delta_phi has been approved; report winner regret without a materiality verdict.",
+    "policy_version": "diagnostic-materiality-v1"
+  },
+  "limits": {
+    "max_members": 500,
+    "max_pairs": 124750,
+    "max_variants": 32,
+    "max_candidates": 128,
+    "max_example_pairs_per_section": 50,
+    "timeout_seconds": 300
+  }
+}

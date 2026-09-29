@@ -85,7 +85,7 @@ SEMANTIC_REGISTRY: dict[str, dict[str, str]] = {
         "title": "Topology navigation",
         "definition": "A read-only normalized source-relation tree for navigating IP or IT topology records.",
         "interpretation": "IT directed source relations are navigation data, not validated operational dependency semantics.",
-        "limitation": "Topology navigation never promotes an edge to P2/RCA evidence.",
+        "limitation": "Topology navigation never promotes an edge to verified dependency or RCA evidence.",
     },
 }
 

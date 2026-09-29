@@ -23,8 +23,6 @@ from libs.contracts import IngestedPackage
 
 from audit.structural_role import StructuralRole, StructuralRoleResult
 from channels import (
-    DEFAULT_LAMBDA_DEP,
-    DEFAULT_THETA_CD,
     DEFAULT_SILENT_GAP_SECONDS,
     DEFAULT_D_MAX,
     IndexedChainEvidence,
@@ -223,8 +221,6 @@ def analyze_chain(
     max_values_per_field: int = DEFAULT_MAX_VALUES_PER_FIELD,
     redundancy_small_dt_seconds: int = DEFAULT_SMALL_DT_SECONDS,
     d_max: int = DEFAULT_D_MAX,
-    lambda_dep: float = DEFAULT_LAMBDA_DEP,
-    common_dependency_threshold: float = DEFAULT_THETA_CD,
 ) -> ChainAnalysis:
     """Run Tier-1B analysis for one chain."""
     analysis_started = perf_counter()
@@ -238,8 +234,6 @@ def analyze_chain(
         taxonomy=taxonomy,
         silent_gap_seconds=silent_gap_seconds,
         d_max=d_max,
-        lambda_dep=lambda_dep,
-        common_dependency_threshold=common_dependency_threshold,
     )
     graybox = adapt_graybox_metadata(package, chain_id)
     domain_evidence = failure_domains_for_chain(package, chain_id)
@@ -384,8 +378,6 @@ def analyze_chain(
             taxonomy=taxonomy,
             silent_gap_seconds=silent_gap_seconds,
             d_max=d_max,
-            lambda_dep=lambda_dep,
-            common_dependency_threshold=common_dependency_threshold,
         )
         for rival in rivals
     }
@@ -494,10 +486,6 @@ def analyze_chain_configured(
             analysis_config.value("redundancy.small_dt_seconds")
         ),
         d_max=int(analysis_config.value("dependency.max_hop")),
-        lambda_dep=float(analysis_config.value("dependency.lambda_dep")),
-        common_dependency_threshold=float(
-            analysis_config.value("dependency.common_support_threshold")
-        ),
     )
     result.parameter_provenance = {
         path: configured.source.value

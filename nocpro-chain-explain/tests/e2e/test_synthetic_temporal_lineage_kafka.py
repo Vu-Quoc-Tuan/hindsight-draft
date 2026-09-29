@@ -1,13 +1,8 @@
-"""Docker acceptance for the snapshot topology trust boundary over Kafka.
+"""Docker acceptance for snapshot lineage and evolution over Kafka.
 
-Snapshot-v1 can carry observed topology records, but it cannot grant the
-runtime-only capability metadata required by P2. The Kafka path must therefore
-keep P2 unavailable for topology embedded in a snapshot, even when those edges
-are directed and versioned. P2 eligibility is covered separately by focused
-analysis tests using the trusted runtime topology contract.
-
-This proves implementation behavior only. ``SYNTHETIC_TEST`` output remains
-ineligible for production validation.
+The integrated synthetic sequence verifies persisted membership transitions and
+similarity model cutoffs. ``SYNTHETIC_TEST`` output remains ineligible for
+production validation.
 """
 
 from __future__ import annotations
@@ -15,7 +10,6 @@ from __future__ import annotations
 import asyncio
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
-import json
 import os
 from pathlib import Path
 from uuid import uuid4
@@ -26,18 +20,12 @@ import pytest
 
 if os.environ.get("NOCPRO_RUN_DOCKER_E2E") != "1":
     pytest.skip(
-        "set NOCPRO_RUN_DOCKER_E2E=1 to run synthetic Kafka P2 acceptance",
+        "set NOCPRO_RUN_DOCKER_E2E=1 to run synthetic Kafka lineage acceptance",
         allow_module_level=True,
     )
 
 pytest.importorskip("nocpro_mock")
 
-from nocpro_mock.contract import (
-    AlarmResourceMapping,
-    MappingMethod,
-    MappingStatus,
-    Topology,
-)
 from nocpro_mock.producer.kafka_snapshot import (
     KafkaSnapshotConfig,
     publish_snapshot,
@@ -45,10 +33,8 @@ from nocpro_mock.producer.kafka_snapshot import (
 from nocpro_mock.scenarios import (
     INTEGRATED_TEMPORAL_TOPOLOGY,
     build_synthetic_snapshot,
-    generate_dependency_hierarchy,
     generate_integrated_topology,
     load_scenario,
-    parse_scenario,
 )
 
 
@@ -60,70 +46,7 @@ DATABASE_URL = os.environ.get(
     "postgresql://nocpro:nocpro@127.0.0.1:55432/nocpro",
 )
 API_URL = os.environ.get("NOCPRO_E2E_API_URL", "http://127.0.0.1:8800")
-GENERATOR_VERSION = "mockgen-synthetic-p2-e2e-v1"
-TOPOLOGY_SOURCE_ID = "synthetic-topology"
-TOPOLOGY_SOURCE_VERSION = "syn-topo-p2-e2e-v1"
 MOCK_REPO = Path(__file__).resolve().parents[3] / "nocpro-mock"
-
-
-def _versioned_package(case: str, logical_time: datetime):
-    token = uuid4().hex[:10]
-    scenario_id = f"synthetic_p2_kafka_{case.lower()}_{token}"
-    chain_id = f"SYN-CHAIN-{case}-{token}"
-    alarm_ids = tuple(f"SYN-ALARM-{case}-{index}-{token}" for index in range(1, 4))
-    resource_ids = ("SYN-R1", "SYN-R2", "SYN-R3")
-    scenario = parse_scenario(
-        {
-            "scenario_id": scenario_id,
-            "source_kind": "SYNTHETIC_TEST",
-            "seed": 20260831,
-            "topology_source": {
-                "source_id": TOPOLOGY_SOURCE_ID,
-                "source_version": TOPOLOGY_SOURCE_VERSION,
-            },
-            "topology": {
-                "relation_type": "LOGICAL_DEPENDENCY",
-                "directed": True,
-                "edges": [
-                    ["SYN-ROOT", "SYN-R1"],
-                    ["SYN-R1", "SYN-R2"],
-                    ["SYN-R2", "SYN-R3"],
-                ],
-            },
-        }
-    )
-    nodes, edges = generate_dependency_hierarchy(
-        scenario, generator_version=GENERATOR_VERSION
-    )
-    mappings = tuple(
-        AlarmResourceMapping(
-            alarm_id=alarm_id,
-            resource_id=resource_id,
-            mapping_status=MappingStatus.EXACT,
-            mapping_method=MappingMethod.EXACT_IDENTITY,
-            mapping_confidence=1.0,
-            source_version=TOPOLOGY_SOURCE_VERSION,
-        )
-        for alarm_id, resource_id in zip(alarm_ids, resource_ids, strict=True)
-    )
-    package = build_synthetic_snapshot(
-        scenario_id=scenario_id,
-        seed=scenario.seed,
-        generator_version=GENERATOR_VERSION,
-        snapshot_index=0,
-        chains={chain_id: list(alarm_ids)},
-        topology=Topology(nodes=nodes, edges=edges, mappings=mappings),
-        topology_source=scenario.topology_source,
-    )
-    package = replace(
-        package,
-        snapshot=replace(
-            package.snapshot,
-            snapshot_time=logical_time.isoformat(),
-            produced_at=logical_time.isoformat(),
-        ),
-    )
-    return package, chain_id
 
 
 async def _wait_for_ready(
@@ -268,82 +191,7 @@ async def _deep_dive_result(client: httpx2.AsyncClient, chain_id: str) -> dict:
     raise AssertionError(f"Tier-2 job did not finish; last={last}")
 
 
-async def _deep_dive(client: httpx2.AsyncClient, chain_id: str) -> dict:
-    result = await _deep_dive_result(client, chain_id)
-    return result["topology_hypotheses"]
-
-
-def _assert_snapshot_topology_does_not_enable_p2(topology: dict) -> None:
-    expected_reasons = {
-        "dominator": "DIRECTED_TOPOLOGY_UNAVAILABLE",
-        "propagation": "DIRECTED_TOPOLOGY_UNAVAILABLE",
-        # Scope is explicitly downstream of the strict dominator witness; it
-        # remains unavailable when that prerequisite is unavailable.
-        "dependency_scope": "DEPENDENCY_SCOPE_UNAVAILABLE",
-    }
-    for capability, expected_reason in expected_reasons.items():
-        result = topology[capability]
-        assert result["status"] == "UNAVAILABLE", json.dumps(
-            result, indent=2, sort_keys=True
-        )
-        assert result["reason"] == expected_reason
-
-
-def test_01_versioned_snapshot_topology_does_not_enable_p2_through_kafka():
-    async def exercise() -> None:
-        package, chain_id = _versioned_package(
-            "VERSIONED", await _next_logical_time()
-        )
-        assert package.snapshot.topology_ref is None
-        assert package.topology.edges
-        assert all(
-            edge.source_version == TOPOLOGY_SOURCE_VERSION
-            for edge in package.topology.edges
-        )
-        await publish_snapshot(
-            package,
-            bootstrap_servers=KAFKA_BOOTSTRAP,
-            config=KafkaSnapshotConfig(chunk_target_bytes=128),
-        )
-        await _wait_for_ready(package.snapshot.snapshot_id)
-        async with httpx2.AsyncClient(base_url=API_URL, timeout=10.0) as client:
-            await _wait_until_active(client, package.snapshot.snapshot_id)
-            topology = await _deep_dive(client, chain_id)
-
-        _assert_snapshot_topology_does_not_enable_p2(topology)
-
-    asyncio.run(exercise())
-
-
-def test_02_unversioned_snapshot_topology_cannot_enable_p2():
-    async def exercise() -> None:
-        package, chain_id = _versioned_package(
-            "UNVERSIONED", await _next_logical_time()
-        )
-        foreign_topology = replace(
-            package.topology,
-            edges=tuple(
-                replace(edge, source_version=None) for edge in package.topology.edges
-            ),
-        )
-        package = replace(package, topology=foreign_topology)
-        assert package.snapshot.topology_ref is None
-        await publish_snapshot(
-            package,
-            bootstrap_servers=KAFKA_BOOTSTRAP,
-            config=KafkaSnapshotConfig(chunk_target_bytes=128),
-        )
-        await _wait_for_ready(package.snapshot.snapshot_id)
-        async with httpx2.AsyncClient(base_url=API_URL, timeout=10.0) as client:
-            await _wait_until_active(client, package.snapshot.snapshot_id)
-            topology = await _deep_dive(client, chain_id)
-
-        _assert_snapshot_topology_does_not_enable_p2(topology)
-
-    asyncio.run(exercise())
-
-
-def test_03_temporal_snapshot_topology_stays_out_of_p2_while_lineage_is_ready():
+def test_temporal_snapshot_lineage_and_evolution_are_persisted():
     async def exercise() -> None:
         packages = _integrated_packages(await _next_logical_time())
         for package in packages:
@@ -415,7 +263,6 @@ def test_03_temporal_snapshot_topology_stays_out_of_p2_while_lineage_is_ready():
             assert deep_dive["similarity_trained_until_exclusive"] == (
                 latest.snapshot.snapshot_time
             )
-            topology = deep_dive["topology_hypotheses"]
 
         assert evolution_payload["status"] == "AVAILABLE"
         assert evolution_payload["source_kind"] == "SYNTHETIC_TEST"
@@ -454,7 +301,5 @@ def test_03_temporal_snapshot_topology_stays_out_of_p2_while_lineage_is_ready():
             edge["event_type"] == "SHRINK"
             for edge in evolution_payload["edges"]
         )
-
-        _assert_snapshot_topology_does_not_enable_p2(topology)
 
     asyncio.run(exercise())

@@ -39,6 +39,12 @@ Bốn provenance class:
 | `BEHAVIORAL` | mẫu học từ lịch sử hành vi |
 | `EXTERNAL_OPERATIONAL` | nhãn hoặc validation vận hành từ nguồn ngoài |
 
+Provenance class mô tả nguồn evidence, không định nghĩa đối tượng được gán
+nhãn. `EXTERNAL_OPERATIONAL` tự nó không phải nhãn pair-relatedness, cùng
+incident hay đúng/sai của một Audit proposal. `review-label-v1` hiện ánh xạ
+feedback vào relevance của Counterfactual candidate; không dùng nó thay cho
+nhãn pair hoặc incident nếu chưa có phép ánh xạ được kiểm định riêng.
+
 `source_kind`, `chaining_usage` và quality/capability gate quyết định một dữ
 liệu có được dùng cho Explain, Role, Audit hoặc Validate hay không. Synthetic
 source luôn phải có nhãn `SYNTHETIC_TEST`; derived window từ một export là
@@ -59,17 +65,50 @@ Missing không phải negative evidence. `UNAVAILABLE` không được đổi th
 `NEUTRAL`, zero hoặc “weak”. Missing system pair record là `UNKNOWN`, không phải
 NocPro đã đánh giá pair là independent.
 
-Các channel chính:
+Các channel pairwise hiện hành được liệt kê đầy đủ trong
+[Feature Capability Matrix](FEATURE_CAPABILITY_MATRIX.md). Một số ranh giới cần
+giữ rõ khi diễn giải:
 
-- `E_device`, `E_card`, `E_site`, `E_remote`: evidence entity/co-location.
-- `S`: semantic similarity.
+- Entity có năm sub-channel: `E_reference`, `E_device`, `E_card`, `E_site` và
+  `E_remote`. Bốn channel đầu so khớp các field riêng; `E_remote` là quan hệ
+  remote, không phải một mức trong hierarchy containment. Source không bảo đảm
+  device → card → site thực sự lồng nhau, cũng không xác lập `E_reference` nằm
+  trong hierarchy đó. Mỗi channel có derivation tag riêng; việc có group riêng
+  là quy tắc gom hiện hành, không phải bằng chứng rằng field đó độc lập về
+  thống kê hay nguồn đo.
+- `S`: quan hệ ordinal theo alarm name, family và category có taxonomy phù hợp;
+  không phải fuzzy text similarity.
 - `T_burst`: cùng contextual burst trong blocking context.
 - `T_delay`: compatibility với phân phối delay có hướng học từ lịch sử.
 - `Dep_hop`: khoảng cách hop khi alarm-resource mapping và topology semantics
   phù hợp.
-- `H`: historical co-occurrence/lift theo episode độc lập.
-- dependency/failure-domain signals chỉ khả dụng khi capability tương ứng được
-  xác minh.
+- Hai provider `DepUpstreamAncestor` và `DepUpstreamActivePath` đã được gỡ khỏi
+  runtime ngày 2026-09-28 vì replay thật hiện không có directed dependency
+  records hoặc active-path records phù hợp. Điều kiện khôi phục nằm trong
+  [Deferred Directed Topology](DEFERRED_DIRECTED_TOPOLOGY.md).
+- `H`: historical pair association/lift chỉ được thêm trong Pair WHY; không vào
+  Membership/Role hay `G*_audit`.
+- `H_domain`: membership theo failure-domain set/hyperedge để hỗ trợ context và
+  candidate generation; không phải điểm pairwise và không được clique-project.
+  Quan hệ `INSTANCE_LINKS_STORAGE` được giữ riêng là candidate
+  `SHARED_RESOURCE_CONTEXT` khi topology hydrate đầy đủ source trace; chỉ đủ
+  điều kiện làm Audit candidate nếu chain có ít nhất hai instance khác nhau
+  cùng thuộc context. Nó chỉ nói các resource cùng trỏ tới storage, không biến
+  thành failure-domain hay pair support. Edge có `quality_status=FAIL` vẫn có thể
+  hiện như context để kiểm tra nhưng không được dùng làm candidate. Preset Explain `real_alarm_it_demo@5` mang 2.373 cạnh loại này trong
+  projection hai hop quanh resource được map; 14 storage resource có giao với
+  mapping của alarm và tạo 23 source-context memberships trên 14 chain. Không
+  chain nào đủ hai instance khác nhau để thành candidate. Các alias topoIT duy nhất mang
+  status `STRUCTURED_FIELD_UNIQUE`; chúng chỉ được dùng để tìm shared-storage
+  context `UNKNOWN`, không được coi như verified mapping cho `Dep_hop` hoặc
+  explicit failure-domain. Đây vẫn là context, không phải dependency hoặc nhãn
+  cùng incident.
+
+Input Contract v1 có `operational_context` với context ID/type, affected
+resources, thời gian và provenance; Mock có thể tạo các record này cho synthetic
+scenario. Pairwise evaluator hiện chưa dùng chúng để ghép hai alarm. Provenance
+subtype `MAINTENANCE` tự nó chỉ phân loại nguồn; nó không khẳng định hai alarm
+cùng một event vận hành.
 
 Evidence cùng derivation phải được deduplicate trước khi aggregate để tránh
 double-count. Một derivation group phải đồng nhất provenance và eligibility.
@@ -78,12 +117,36 @@ Raw NocPro values thuộc System Fact, không được normalize lén thành `s_
 ## 4. Fit, membership và role
 
 Với channel `k`, `Fit_k` là tỉ lệ pair khả dụng của member với các peer đạt
-`SUPPORT`. Không có pair khả dụng thì `Fit_k = unavailable`, không phải 0.
+`SUPPORT`:
 
-Với derivation group `g`, `Fit_g` aggregate các channel cùng nguồn suy dẫn.
-`MembershipSupport(x,C)` là trung bình trên các group role-eligible và khả dụng.
-Role chỉ được quyết định khi đạt minimum computable groups và availability
-coverage.
+```text
+Fit_k(x,C) = supporting available peers / available peers
+```
+
+Không có pair khả dụng thì `Fit_k = unavailable`, không phải 0. Với effective
+derivation group `g`, implementation lấy giá trị lớn nhất trong các `Fit_k`
+tính được của group đó. Sau đó:
+
+```text
+Fit_g(x,C) = max(Fit_k(x,C) for computable k in g)
+G_role(x,C) = computable groups whose role_eligible flag is true
+MembershipSupport(x,C) = sum(Fit_g for g in G_role) / |G_role|
+```
+
+Hai phép gộp trên đều không trọng số: `Fit_g` là max trong group;
+`MembershipSupport` là trung bình cộng giữa các group role-eligible khả dụng.
+`domain_size` làm mẫu số bên trong từng `Fit_k`, nhưng không được dùng để cân
+trọng số giữa các channel hoặc group. Công thức không có hiệu chỉnh phương sai,
+khoảng tin cậy hay shrinkage theo cỡ mẫu; một `Fit_k` có ít pair khả dụng vẫn
+có thể cực trị hơn. Đây là giới hạn cần đo độ nhạy, chưa tự nó chứng minh công
+thức sai.
+
+`MembershipSupport` là phép aggregate mô tả, không phải xác suất membership và
+không tuyên bố các effective group độc lập. Distinct group keys là ranh giới
+triển khai, không chứng minh nguồn bằng chứng độc lập. Đây là công thức riêng
+với trọng số cạnh Audit, không được dùng thay thế lẫn nhau. Role chỉ được quyết
+định khi đạt minimum computable groups và availability coverage; các gate này
+không phải hiệu chỉnh bất định lấy mẫu.
 
 Các trục role độc lập:
 
@@ -107,6 +170,13 @@ Descriptor mining dùng bitmap/index và giữ hai mục tiêu riêng:
 Phải báo các metric liên quan cùng nhau (support, precision, recall/FPR, lift,
 margin, representativeness khi khả dụng). Missing descriptor khiến
 representativeness unavailable; không có nghĩa chain atypical.
+
+Descriptor predicates hiện có gồm cả severity và alarm type. Các descriptor này
+có thể tác động gián tiếp tới representativeness dùng trong phân loại `CORE` và
+tới candidate generation của Structural Audit. Chúng không phải pairwise
+compatibility channel; `S` cũng không so severity/alarm type. Vì vậy không mô tả
+severity/type là “chỉ dùng để viết narrative”, nhưng cũng không diễn giải
+descriptor equality thành bằng chứng pairwise rằng hai alarm thuộc cùng sự cố.
 
 Similar Chains dùng fingerprint đã version và cosine baseline trên corpus
 `history < current snapshot`. Taxonomy block có thể unavailable mà model vẫn
@@ -161,8 +231,13 @@ small-chain oracle hoặc explicit equivalence/debugging.
 ## 8. Structural Audit
 
 Audit chạy trên `G*_audit`, không chạy trên graph đã cắt top-K để hiển thị.
-Edge cần đủ distinct audit-eligible derivation groups. `SYSTEM_FACT` và
-`BEHAVIORAL` không tự động trở thành audit weight.
+Với mỗi pair, cạnh chỉ tồn tại khi ít nhất hai distinct audit-eligible
+derivation groups trả `SUPPORT`. Trọng số hiện tại là tổng positive score của
+các group hỗ trợ chia cho số audit-eligible groups khả dụng; group khả dụng
+nhưng `NEUTRAL` nằm trong mẫu số, còn group `UNAVAILABLE` không nằm trong mẫu số.
+Distinct groups không chứng minh các nguồn bằng chứng độc lập. `SYSTEM_FACT` và
+`BEHAVIORAL` không tự động trở thành audit weight; riêng `H` bị loại khỏi pair
+profile của Audit.
 
 Candidate cut được tạo deterministic từ entity, dependency, failure-domain và
 descriptor primitives cùng phép union/difference đã định nghĩa. Conductance và
@@ -171,7 +246,22 @@ ceiling. Vượt ceiling hoặc thiếu evidence phải trả component `UNAVAIL
 không chạy một approximation không khai báo.
 
 Audit visualization là projection bounded của artifact exact đã persist. Nó
-không feed ngược vào Audit, Role, topology hypothesis hoặc Counterfactual.
+không feed ngược vào Audit, Role hoặc Counterfactual.
+CLI chẩn đoán coverage/LOGO offline được mô tả trong
+[Audit Diagnostics](audit-diagnostics.md); nó không thay đổi graph, verdict,
+Role hay production policy và không chứng minh feature set đầy đủ.
+
+Pair channels hiện có `SUPPORT`, `NEUTRAL`, `UNAVAILABLE`, chưa có verdict
+phủ định tường minh trong `K_pair`. `negative_score` trong cấu trúc channel
+không tự tạo ra trạng thái phản đối. Gray-box có thể giữ `M_pair.system_semantic`
+với giá trị `VETO` như upstream `SYSTEM_FACT`; nó được trình bày tách biệt và
+không tạo Audit edge hay post-hoc negative channel. Tier-2 có input tùy chọn
+`cross_block_negative_evidence` (mặc định `false`), nhưng source hiện không có
+producer nội bộ đã xác định cho input này. Counterfactual Review cũng có một
+đường nhận external-validation contradiction đã qua eligibility gate; đường đó
+không phải `K_pair` và không được tự xem là producer cho Audit hook. Audit
+coverage/sensitivity diagnostic chỉ đo các evidence group đã khai báo, không
+kiểm chứng rằng tập channel bao phủ mọi quan hệ thật.
 
 ## 9. Evolution và drift
 
@@ -193,11 +283,11 @@ Topology navigation và analysis semantics là hai capability khác nhau:
   có thể hỗ trợ bounded `Dep_hop` proximity.
 - IT export hiện cung cấp source relations hữu ích cho navigation, nhưng direction
   và business dependency semantics chưa được xác minh.
-- Display tree, alias resolver hoặc primary path không được dùng để suy ra
-  common ancestor, active path, dominator, propagation hoặc failure domain.
-
-Các P2 topology hypothesis chỉ chạy với directed topology, mapping và temporal
-capability phù hợp. Nếu thiếu, kết quả đúng là `UNAVAILABLE`.
+- Directed dominator/propagation/scope analysis và hai shared-context provider
+  hiện không nằm trong runtime. Display tree, alias resolver, primary path,
+  undirected adjacency và snapshot metadata không tự xác nhận dependency hoặc
+  nguyên nhân. Quy trình bổ sung lại có gate dữ liệu và kiểm thử ở
+  [Deferred Directed Topology](DEFERRED_DIRECTED_TOPOLOGY.md).
 
 ## 11. Counterfactual Review
 

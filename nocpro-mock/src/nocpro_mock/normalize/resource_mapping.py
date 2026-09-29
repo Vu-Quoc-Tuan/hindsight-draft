@@ -45,12 +45,26 @@ class ResourceMapper:
         ambiguous_aliases: set[str] | None = None,
         topology_layer: str | None = None,
         source_version: str | None = None,
+        alias_mapping_status: MappingStatus = MappingStatus.VERIFIED_ALIAS,
+        alias_mapping_method: MappingMethod = MappingMethod.VERIFIED_ALIAS_TABLE,
+        alias_mapping_confidence: float | None = 1.0,
     ) -> None:
+        valid_alias_claims = {
+            (MappingStatus.VERIFIED_ALIAS, MappingMethod.VERIFIED_ALIAS_TABLE),
+            (MappingStatus.STRUCTURED_FIELD_UNIQUE, MappingMethod.STRUCTURED_FIELD_EXACT),
+        }
+        if (alias_mapping_status, alias_mapping_method) not in valid_alias_claims:
+            raise ValueError(
+                "alias mapping status/method must be a supported explicit pair"
+            )
         self.known_resources = known_resources
         self.aliases = aliases or {}
         self.ambiguous_aliases = ambiguous_aliases or set()
         self.topology_layer = topology_layer
         self.source_version = source_version
+        self.alias_mapping_status = alias_mapping_status
+        self.alias_mapping_method = alias_mapping_method
+        self.alias_mapping_confidence = alias_mapping_confidence
 
     def map_identifier(self, identifier: str | None) -> tuple[
         str | None, MappingStatus, MappingMethod, float | None
@@ -71,9 +85,9 @@ class ResourceMapper:
             if alias.resource_id in self.known_resources:
                 return (
                     alias.resource_id,
-                    MappingStatus.VERIFIED_ALIAS,
-                    MappingMethod.VERIFIED_ALIAS_TABLE,
-                    1.0,
+                    self.alias_mapping_status,
+                    self.alias_mapping_method,
+                    self.alias_mapping_confidence,
                 )
             # An alias pointing at an absent resource resolves nothing.
             return None, MappingStatus.UNMAPPED, MappingMethod.NONE, None
@@ -231,6 +245,36 @@ def build_it_resource_mapper(
         known_resources=known_resources,
         topology_layer="IT",
         source_version=source_version or graph.source_version,
+    )
+
+
+def build_it_navigation_mapper(
+    topo_it_dir: str | Path,
+    *,
+    source_version: str | None = None,
+) -> ResourceMapper:
+    """Build a mapper for exact topoIT source-field matches used in navigation.
+
+    The emitted ``STRUCTURED_FIELD_UNIQUE`` rows say only that the exported
+    field resolves to one resource in this topoIT version. The general topology
+    resolver intentionally does not accept that status for ``Dep_hop`` or
+    explicit failure-domain membership.
+    """
+    from ..loaders.topology_it_csv import ITTopologyLoader
+
+    loader = ITTopologyLoader(topo_it_dir)
+    graph = loader.load_graph()
+    aliases, ambiguous_aliases = loader.load_aliases()
+    known_resources = {node.resource_id for node in graph.nodes}
+    return ResourceMapper(
+        known_resources=known_resources,
+        aliases=aliases,
+        ambiguous_aliases=ambiguous_aliases,
+        topology_layer="IT",
+        source_version=source_version or graph.source_version,
+        alias_mapping_status=MappingStatus.STRUCTURED_FIELD_UNIQUE,
+        alias_mapping_method=MappingMethod.STRUCTURED_FIELD_EXACT,
+        alias_mapping_confidence=None,
     )
 
 

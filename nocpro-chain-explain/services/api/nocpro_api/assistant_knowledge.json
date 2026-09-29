@@ -98,18 +98,6 @@
       "sources": ["docs/adr/0022-use-normalized-fingerprint-cosine-similarity-as-the-similar-chains-baseline.md", "services/analysis-worker/similar_chains/similarity.py"]
     },
     {
-      "id": "topology.propagation_hypothesis",
-      "category": "topology",
-      "title": "Propagation hypothesis",
-      "aliases": ["propagation", "lan truyền", "active path", "topology hypothesis"],
-      "definition": "Giả thuyết P2 được capability-gate từ mapping tài nguyên, topology có hướng và thứ tự thời gian khả dụng.",
-      "interpretation": "Khi đủ capability, nó nêu giả thuyết có provenance để operator kiểm tra.",
-      "formula": {"plain": "AVAILABLE only if mapping AND directed topology AND temporal ordering gates pass", "latex": "available=mapping\\land directed\\_topology\\land temporal"},
-      "availability": "Thiếu bất kỳ capability bắt buộc nào phải trả UNAVAILABLE với reason cụ thể.",
-      "must_not_claim": "Không được biến source relations hoặc adjacency thành causal propagation đã xác nhận.",
-      "sources": ["docs/adr/0029-freeze-implementation-scope-mvp-p0-first-p1-core-minimum-bar-is-3-1.md", "services/analysis-worker/tier2/audit_analysis.py"]
-    },
-    {
       "id": "review.pareto_frontier",
       "category": "review",
       "title": "Counterfactual Pareto frontier",

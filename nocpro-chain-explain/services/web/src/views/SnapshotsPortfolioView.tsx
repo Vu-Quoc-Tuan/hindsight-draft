@@ -129,12 +129,7 @@ export function SnapshotsPortfolioView({
           </div>
           <span className="font-code-sm text-xs text-on-surface-variant">{totalSnapshots} snapshot</span>
         </div>
-        <div className="mt-space-md grid grid-cols-2 gap-2 md:grid-cols-5">
-          <div className="rounded-lg border border-[#22304c] bg-[#080d17] px-3 py-2">
-            <span className="block text-xs text-on-surface-variant">Tổng snapshot</span>
-            <strong className="mt-1 block text-2xl text-on-surface">{totalSnapshots}</strong>
-            <span className="font-code-sm text-[11px] text-on-surface-variant">100%</span>
-          </div>
+        <div className="mt-space-md grid grid-cols-2 gap-2 md:grid-cols-4">
           {statusOrder.map(status => (
             <div key={status} className="rounded-lg border border-[#22304c] bg-[#080d17] px-3 py-2">
               <span className={`block text-xs ${STATUS_META[status].color}`}>{STATUS_META[status].label}</span>

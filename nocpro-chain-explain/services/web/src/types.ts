@@ -400,7 +400,6 @@ export type DeepDive = {
   taxonomy_status: string | null
   taxonomy_reason: string | null
   active_fingerprint_blocks: string[]
-  topology_hypotheses: TopologyHypothesesResult
   evidence_attribution: EvidenceCoverageAttributionResult
   evidence_attribution_evaluation: AttributionDeletionEvaluationResult
 }
@@ -732,117 +731,6 @@ export type CounterfactualJob = {
   artifact_revision?: ArtifactRevision | null
   result: CounterfactualResult | null
   error: string | null
-}
-
-export type TopologyHypothesisStatus = 'AVAILABLE' | 'UNAVAILABLE'
-
-type TopologyProvenance = {
-  source_ref: string | null
-  source_id: string | null
-  source_version: string | null
-  scenario_id: string | null
-  generator_version: string | null
-  relation_type: string | null
-  provenance_class: string | null
-  provenance_subtype: string | null
-  source_kind: string | null
-}
-
-export type DominatorResult = TopologyProvenance & {
-  status: 'AVAILABLE'
-  reason: null
-  semantic: string
-  witness_resource_id: string | null
-  covered_resource_ids: string[]
-} | TopologyProvenance & {
-  status: 'UNAVAILABLE'
-  reason: string
-  semantic: string | null
-  witness_resource_id: string | null
-  covered_resource_ids: string[]
-}
-
-export type PropagationNodeScore = {
-  alarm_id: string
-  score: number
-}
-
-export type PropagationEdgeHypothesis = {
-  source_alarm_id: string
-  target_alarm_id: string
-  score: number
-  transition_probability: number
-  temporal_delta_seconds: number
-}
-
-type PropagationResultBase = TopologyProvenance & {
-  config_version: string | null
-  parameter_provenance: Record<string, string>
-  candidate_node_count: number
-  candidate_edge_count: number
-  iterations: number
-  final_l1_distance: number | null
-  convergence_tolerance: number | null
-  restart_probability: number | null
-  seed_policy: string | null
-  dangling_policy: string | null
-  node_scores: PropagationNodeScore[]
-  hypotheses: PropagationEdgeHypothesis[]
-}
-
-export type PropagationResult = PropagationResultBase & {
-  status: 'AVAILABLE'
-  reason: null
-  semantic: string
-} | PropagationResultBase & {
-  status: 'UNAVAILABLE'
-  reason: string
-  semantic: string | null
-}
-
-export type ResourceDetails = {
-  status: 'AVAILABLE'
-  reason: null
-  missing_resources: string[]
-  extra_resources: string[]
-} | {
-  status: 'UNAVAILABLE'
-  reason: string
-  missing_resources: null
-  extra_resources: null
-}
-
-type DependencyScopeResultBase = TopologyProvenance & {
-  witness_resource_id: string | null
-  observed_resource_count: number | null
-  scope_resource_count: number | null
-  intersection_count: number | null
-  union_count: number | null
-  observed_coverage: number | null
-  scope_precision: number | null
-  jaccard: number | null
-  missing_resource_count: number | null
-  extra_resource_count: number | null
-  max_scope_resources: number | null
-  max_materialized_resources: number | null
-  parameter_provenance: Record<string, string>
-  resource_details: ResourceDetails
-}
-
-export type DependencyScopeResult = DependencyScopeResultBase & {
-  status: 'AVAILABLE'
-  reason: null
-  semantic: string
-} | DependencyScopeResultBase & {
-  status: 'UNAVAILABLE'
-  reason: string
-  semantic: string | null
-}
-
-export type TopologyHypothesesResult = {
-  dominator: DominatorResult
-  propagation: PropagationResult
-  dependency_scope: DependencyScopeResult
 }
 
 export type ReviewDecision =
@@ -1206,27 +1094,7 @@ export type CohesionNarrativeView = {
     }>
     analytical_findings?: AnalyticalFinding[]
     has_p2?: boolean
-    tier2_p2?: {
-      dominator?: {
-        status: string
-        witness_resource_id?: string | null
-        covered_resource_ids?: string[]
-        semantic?: string | null
-        relation_type?: string | null
-      } | null
-      propagation?: {
-        status: string
-        candidate_node_count: number
-        candidate_edge_count: number
-        top_node_scores?: Array<{ alarm_id: string; score: number }>
-        hypotheses?: Array<{
-          source: string
-          target: string
-          score: number
-          prob: number
-          delta_seconds: number
-        }>
-      } | null
+    tier2_audit?: {
       evidence_attribution?: {
         status: string
         total_coverage?: number | null
@@ -1351,29 +1219,6 @@ export type AnalysisConfigView = {
   status: string
   editable_parameters: Record<string, number>
   parameters_detail: ParameterItem[]
-}
-
-export type ParameterCalibration = {
-  path: string
-  previous_value: number
-  calibrated_value: number
-  source: string
-  sample_count: number
-  metric_details: Record<string, any>
-}
-
-export type CalibrationReport = {
-  timestamp: string
-  database_url_masked: string
-  snapshots_loaded: number
-  chains_loaded?: number
-  chains_evaluated: number
-  alarms_evaluated: number
-  calibrated_parameters: ParameterCalibration[]
-  output_config_path: string
-  status: string
-  chains_skipped_large?: number
-  chains_failed?: number
 }
 
 export type ProposalClarityItem = {

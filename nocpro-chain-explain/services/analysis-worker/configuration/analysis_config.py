@@ -134,32 +134,6 @@ class CounterfactualConfig:
 
 
 @dataclass(frozen=True)
-class PropagationConfig:
-    config_version: str
-    restart_probability: ConfiguredValue
-    convergence_tolerance: ConfiguredValue
-    max_iterations: ConfiguredValue
-    decay_type: str
-    decay_parameter: ConfiguredValue
-    score_threshold: ConfiguredValue
-    max_candidate_edges: ConfiguredValue
-
-
-@dataclass(frozen=True)
-class DependencyScopeConfig:
-    max_scope_resources: ConfiguredValue
-    max_materialized_resources: ConfiguredValue
-
-
-@dataclass(frozen=True)
-class P2TopologyConfig:
-    propagation: PropagationConfig | None
-    propagation_reason: str | None
-    dependency_scope: DependencyScopeConfig | None
-    dependency_scope_reason: str | None
-
-
-@dataclass(frozen=True)
 class _ParameterRule:
     numeric_type: type[int] | type[float]
     minimum: float | None = None
@@ -212,20 +186,6 @@ _POSITIVE_FLOAT = _ParameterRule(float, 0.0, inclusive_minimum=False)
 _POSITIVE_INT = _ParameterRule(int, 0, inclusive_minimum=False)
 _NONNEGATIVE_INT = _ParameterRule(int, 0)
 
-_P2_PROPAGATION_RULES: dict[str, _ParameterRule] = {
-    "rwr.restart_probability": _STRICT_PROBABILITY,
-    "rwr.convergence_tolerance": _POSITIVE_FLOAT,
-    "rwr.max_iterations": _POSITIVE_INT,
-    "temporal.decay_parameter": _POSITIVE_FLOAT,
-    "acceptance.score_threshold": _PROBABILITY,
-    "limits.max_candidate_edges": _POSITIVE_INT,
-}
-
-_P2_DEPENDENCY_SCOPE_RULES: dict[str, _ParameterRule] = {
-    "limits.max_scope_resources": _POSITIVE_INT,
-    "limits.max_materialized_resources": _POSITIVE_INT,
-}
-
 ATTRIBUTION_RANDOMIZATION_ALGORITHM = "SPLITMIX64_FISHER_YATES_V1"
 
 
@@ -234,8 +194,6 @@ PARAMETER_RULES: dict[str, _ParameterRule] = {
     "temporal.delay.bandwidth_seconds": _POSITIVE_FLOAT,
     "temporal.delay.support_threshold": _PROBABILITY,
     "dependency.max_hop": _POSITIVE_INT,
-    "dependency.lambda_dep": _POSITIVE_FLOAT,
-    "dependency.common_support_threshold": _PROBABILITY,
     "history.min_support": _POSITIVE_INT,
     "history.lambda_h": _POSITIVE_FLOAT,
     "role.c_min": _PROBABILITY,
@@ -286,7 +244,6 @@ class AnalysisConfig:
     historical_evidence_reason: str | None
     temporal_delay: TemporalDelayPolicy | None
     temporal_delay_reason: str | None
-    p2_topology: P2TopologyConfig
     attribution_evaluation: AttributionEvaluationConfig | None = None
     attribution_evaluation_reason: str | None = None
     counterfactual: CounterfactualConfig | None = None
@@ -336,7 +293,7 @@ def _lookup(document: dict[str, Any], path: str) -> Any:
     return current
 
 
-def _load_p2_configured_value(
+def _load_configured_value(
     document: dict[str, Any],
     path: str,
     rule: _ParameterRule,
@@ -366,84 +323,6 @@ def _load_p2_configured_value(
     )
 
 
-def _load_propagation_config(document: dict[str, Any]) -> PropagationConfig:
-    raw_config_version = _lookup(document, "config_version")
-    if not isinstance(raw_config_version, str) or not raw_config_version.strip():
-        raise AnalysisConfigError(
-            "propagation.config_version must be a non-empty string"
-        )
-    raw_decay_type = _lookup(document, "temporal.decay_type")
-    if raw_decay_type != "exponential":
-        raise AnalysisConfigError(
-            "propagation.temporal.decay_type must be exponential"
-        )
-    values = {
-        path: _load_p2_configured_value(
-            document, path, rule, configured_path=f"propagation.{path}"
-        )
-        for path, rule in _P2_PROPAGATION_RULES.items()
-    }
-    return PropagationConfig(
-        config_version=raw_config_version.strip(),
-        restart_probability=values["rwr.restart_probability"],
-        convergence_tolerance=values["rwr.convergence_tolerance"],
-        max_iterations=values["rwr.max_iterations"],
-        decay_type="exponential",
-        decay_parameter=values["temporal.decay_parameter"],
-        score_threshold=values["acceptance.score_threshold"],
-        max_candidate_edges=values["limits.max_candidate_edges"],
-    )
-
-
-def _load_dependency_scope_config(document: dict[str, Any]) -> DependencyScopeConfig:
-    values = {
-        path: _load_p2_configured_value(
-            document, path, rule, configured_path=f"dependency_scope.{path}"
-        )
-        for path, rule in _P2_DEPENDENCY_SCOPE_RULES.items()
-    }
-    max_scope_resources = values["limits.max_scope_resources"]
-    max_materialized_resources = values["limits.max_materialized_resources"]
-    if max_materialized_resources.value > max_scope_resources.value:
-        raise AnalysisConfigError(
-            "dependency_scope.limits.max_materialized_resources must be <= "
-            "max_scope_resources"
-        )
-    return DependencyScopeConfig(
-        max_scope_resources=max_scope_resources,
-        max_materialized_resources=max_materialized_resources,
-    )
-
-
-def _load_optional_p2_topology(document: dict[str, Any]) -> P2TopologyConfig:
-    raw_propagation = document.get("propagation")
-    try:
-        if not isinstance(raw_propagation, dict):
-            raise AnalysisConfigError("propagation must be a YAML mapping")
-        propagation = _load_propagation_config(raw_propagation)
-        propagation_reason = None
-    except AnalysisConfigError:
-        propagation = None
-        propagation_reason = "PROPAGATION_CONFIG_INCOMPLETE"
-
-    raw_dependency_scope = document.get("dependency_scope")
-    try:
-        if not isinstance(raw_dependency_scope, dict):
-            raise AnalysisConfigError("dependency_scope must be a YAML mapping")
-        dependency_scope = _load_dependency_scope_config(raw_dependency_scope)
-        dependency_scope_reason = None
-    except AnalysisConfigError:
-        dependency_scope = None
-        dependency_scope_reason = "DEPENDENCY_SCOPE_CONFIG_INCOMPLETE"
-
-    return P2TopologyConfig(
-        propagation=propagation,
-        propagation_reason=propagation_reason,
-        dependency_scope=dependency_scope,
-        dependency_scope_reason=dependency_scope_reason,
-    )
-
-
 def _load_optional_attribution_evaluation(
     document: dict[str, Any],
 ) -> tuple[AttributionEvaluationConfig | None, str | None]:
@@ -459,13 +338,13 @@ def _load_optional_attribution_evaluation(
                 "attribution_evaluation.randomization.algorithm must be "
                 f"{ATTRIBUTION_RANDOMIZATION_ALGORITHM}"
             )
-        seed = _load_p2_configured_value(
+        seed = _load_configured_value(
             raw,
             "seed",
             _NONNEGATIVE_INT,
             configured_path="attribution_evaluation.randomization.seed",
         )
-        repetitions = _load_p2_configured_value(
+        repetitions = _load_configured_value(
             raw,
             "repetitions",
             _POSITIVE_INT,
@@ -488,7 +367,7 @@ def _load_optional_historical_evidence(
 ) -> tuple[HistoricalEvidencePolicy | None, str | None]:
     """Do not invent ``lift_cap`` merely because older configs lack it."""
     try:
-        lift_cap = _load_p2_configured_value(
+        lift_cap = _load_configured_value(
             document,
             "history.lift_cap",
             _ParameterRule(float, 1.0, inclusive_minimum=False),
@@ -514,7 +393,7 @@ def _load_optional_temporal_delay(
         if not isinstance(raw, dict):
             raise AnalysisConfigError("temporal.delay must be a YAML mapping")
         def scalar(name: str, rule: _ParameterRule) -> ConfiguredValue:
-            return _load_p2_configured_value(raw, name, rule, configured_path=f"temporal.delay.{name}")
+            return _load_configured_value(raw, name, rule, configured_path=f"temporal.delay.{name}")
         def sequence(name: str) -> tuple[float, ...]:
             values = raw.get(name)
             if not isinstance(values, list) or not values or any(isinstance(v, bool) or not isinstance(v, (int, float)) or v <= 0 for v in values):
@@ -769,7 +648,6 @@ def load_analysis_config(
         temporal_cutoff="snapshot_time",
         exclude_same_lineage=True,
     )
-    p2_topology = _load_optional_p2_topology(document)
     historical_evidence, historical_evidence_reason = _load_optional_historical_evidence(
         document, parameters
     )
@@ -791,7 +669,6 @@ def load_analysis_config(
         historical_evidence_reason=historical_evidence_reason,
         temporal_delay=temporal_delay,
         temporal_delay_reason=temporal_delay_reason,
-        p2_topology=p2_topology,
         attribution_evaluation=attribution_evaluation,
         attribution_evaluation_reason=attribution_evaluation_reason,
         counterfactual=counterfactual,

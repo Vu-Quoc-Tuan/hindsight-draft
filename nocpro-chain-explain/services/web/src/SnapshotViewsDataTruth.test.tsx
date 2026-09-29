@@ -10,6 +10,7 @@ import type { ChainList } from './types'
 const chainList: ChainList = {
   snapshot_id: 'S-REAL',
   snapshot_version: 'v2',
+  topology_version: 'topo-v2',
   chains: [
     {
       chain_id: 'C-REAL',
@@ -39,6 +40,8 @@ describe('snapshot views use only factual chain summary fields', () => {
     )
 
     expect(html).toContain('S-REAL@v2')
+    expect(html).toContain('Topology version:')
+    expect(html).toContain('topo-v2')
     expect(html).toContain('Observed chain')
     expect(html).toContain('Observed chain-size distribution')
     expect(html).toContain('Avg Size')
@@ -211,7 +214,7 @@ describe('snapshot views use only factual chain summary fields', () => {
     )
 
     expect(html).toContain('0 snapshot')
-    expect(html).toContain('Tổng snapshot')
+    expect(html).toContain('Chưa đủ dữ liệu')
     expect(html).not.toContain('NaN')
     expect(html).not.toContain('Infinity')
   })

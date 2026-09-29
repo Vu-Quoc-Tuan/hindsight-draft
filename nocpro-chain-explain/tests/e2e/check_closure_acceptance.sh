@@ -12,7 +12,7 @@ require_file() {
 
 require_file "${repo_dir}/docker-compose.yml"
 require_file "${repo_dir}/tests/e2e/test_postgres_migrations_runtime.py"
-require_file "${repo_dir}/tests/e2e/test_synthetic_p2_kafka.py"
+require_file "${repo_dir}/tests/e2e/test_synthetic_temporal_lineage_kafka.py"
 require_file "${repo_dir}/tests/e2e/test_counterfactual_review.py"
 require_file "${repo_dir}/migrations/versions/0008_temporal_delay_model.py"
 require_file "${mock_dir}/docs/examples/synthetic/temporal_delay_patterns/sequence.yaml"

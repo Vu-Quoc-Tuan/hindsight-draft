@@ -28,7 +28,7 @@ from libs.contracts import IngestedAlarm
 from libs.provenance import ProvenanceClass, ProvenanceSubtype
 
 from .base import ChannelValue, unavailable
-from .contracts import ChannelFamily, DependencySemantic
+from .contracts import ChannelFamily
 from .dependency import ResourceResolver, TopologyGraph
 
 CHANNEL_ID = "Dep_embed"
@@ -259,7 +259,6 @@ def evaluate_topo_embedding_channel(
             reason=reason,
             threshold=threshold,
             channel_family=ChannelFamily.DEP_EMBEDDING,
-            dependency_semantic=DependencySemantic.SHARED_ACTIVE_PATH,
         )
 
     if model is None:
@@ -285,7 +284,6 @@ def evaluate_topo_embedding_channel(
         negative_score=0.0,
         provenance_subtype=ProvenanceSubtype.TOPOLOGY_EXTERNAL,
         channel_family=ChannelFamily.DEP_EMBEDDING,
-        dependency_semantic=DependencySemantic.SHARED_ACTIVE_PATH,
         detail=f"Latent topology affinity: {affinity:.3f} (cos={cos:.3f}, dim={model.dimension})",
         evidence_metadata={
             "resource_a": res_a,

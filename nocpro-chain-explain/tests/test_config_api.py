@@ -142,27 +142,26 @@ def test_calibrate_config_endpoint(app, monkeypatch, tmp_path) -> None:
 
     monkeypatch.setattr(calibrate_thresholds, "DEFAULT_DATABASE_URL", database_url)
     temp_yaml = tmp_path / "calibrated.yaml"
-    temp_report = tmp_path / "calibration_report.json"
-    monkeypatch.setattr(calibrate_thresholds, "DEFAULT_REPORT_JSON", temp_report)
     monkeypatch.setenv("NOCPRO_CALIBRATED_OUTPUT_PATH", str(temp_yaml))
 
     async def exercise() -> None:
         transport = httpx2.ASGITransport(app=app)
         async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
             resp = await client.post("/api/v1/config/calibrate")
-            assert resp.status_code == 200
-            data = resp.json()
-            assert "timestamp" in data
-            assert "database_url_masked" in data
-            assert "calibrated_parameters" in data
-            assert len(data["calibrated_parameters"]) > 0
+            assert resp.status_code in {204, 422}
+            if resp.status_code == 204:
+                assert not resp.content
+            else:
+                assert "No threshold family" in resp.json()["detail"]
 
             # Verify active config updated
             config_resp = await client.get("/api/v1/config")
             assert config_resp.status_code == 200
             config_data = config_resp.json()
-            assert "v1-calibrated" in config_data["config_version"]
-            assert temp_yaml.exists()
-            assert temp_report.exists()
+            if resp.status_code == 204:
+                assert "v1-calibrated" in config_data["config_version"]
+                assert temp_yaml.exists()
+            else:
+                assert not temp_yaml.exists()
 
     asyncio.run(exercise())

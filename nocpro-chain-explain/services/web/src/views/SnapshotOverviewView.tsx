@@ -1,6 +1,12 @@
 import type { ChainList, ChainQualitySummary } from '../types'
 import { formatDuration } from '../format'
 
+function formatTimestamp(value: string | null): string {
+  if (!value) return 'N/A'
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString('vi-VN')
+}
+
 interface SnapshotOverviewViewProps {
   chainList?: ChainList | null
   onSelectChain: (chainId: string) => void
@@ -46,6 +52,14 @@ export function SnapshotOverviewView({
   ]
   const isHeavyTail = Math.max(0, ...sizes) > 10
   const attentionChains = qualitySummary?.attention_chains ?? []
+  const observedStarts = chains
+    .map(chain => chain.start_time)
+    .filter((time): time is string => typeof time === 'string')
+    .sort()
+  const observedEnds = chains
+    .map(chain => chain.end_time)
+    .filter((time): time is string => typeof time === 'string')
+    .sort()
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-space-lg animate-fadeIn select-none">
@@ -128,16 +142,13 @@ export function SnapshotOverviewView({
         </div>
       </section>
 
-      <section className="grid min-w-0 grid-cols-1 gap-space-md">
+      <section className="grid min-w-0 grid-cols-1 gap-space-md lg:grid-cols-2">
         <article className="min-w-0 rounded-xl border border-[#1e2b44] bg-[#0c1322] p-space-md shadow-sm">
           <div className="flex items-center justify-between border-b border-[#1a253c] pb-3">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-secondary text-[20px]">bar_chart</span>
               <h2 className="font-headline-md text-headline-md font-bold text-on-surface">Observed chain-size distribution</h2>
             </div>
-            <span className="rounded border border-[#22304c] bg-[#141d30] px-2 py-0.5 font-code-sm text-[11px] text-on-surface-variant">
-              {totalChains.toLocaleString()} chains
-            </span>
           </div>
           <div className="mt-space-md space-y-space-sm">
             {buckets.map(bucket => {
@@ -173,6 +184,36 @@ export function SnapshotOverviewView({
           </div>
         </article>
 
+        {/* Card 2: Observed temporal coverage */}
+        <article className="min-w-0 rounded-xl border border-[#1e2b44] bg-[#0c1322] p-space-md shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between border-b border-[#1a253c] pb-3">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-secondary text-[20px]">schedule</span>
+                <h2 className="font-headline-md text-headline-md font-bold text-on-surface">Observed temporal coverage</h2>
+              </div>
+              <button
+                type="button"
+                className="rounded-lg border border-secondary/40 bg-secondary/10 px-2.5 py-1 font-code-sm text-xs font-semibold text-secondary hover:bg-secondary hover:text-[#07101d] transition-colors"
+                onClick={() => onNavigate('multi-chain-timeline')}
+              >
+                Factual timeline →
+              </button>
+            </div>
+            <dl className="mt-space-md grid grid-cols-[auto_minmax(0,1fr)] gap-x-space-md gap-y-space-sm text-code-sm">
+              <dt className="text-on-surface-variant">First observed start</dt>
+              <dd className="break-words text-right text-on-surface font-mono">{formatTimestamp(observedStarts[0] ?? null)}</dd>
+              <dt className="text-on-surface-variant">Last observed end</dt>
+              <dd className="break-words text-right text-on-surface font-mono">{formatTimestamp(observedEnds.at(-1) ?? null)}</dd>
+              <dt className="text-on-surface-variant">Snapshot identity</dt>
+              <dd className="break-all text-right text-primary font-mono">{chainList.snapshot_id}@{chainList.snapshot_version}</dd>
+            </dl>
+          </div>
+          <div className="mt-space-md border-t border-[#1a253c] pt-space-sm font-code-sm text-xs text-on-surface-variant flex items-center justify-between">
+            <span>Topology version: <strong className="text-on-surface">{chainList.topology_version ?? 'Unavailable'}</strong></span>
+            <span>Total chains: <strong className="text-secondary">{totalChains}</strong></span>
+          </div>
+        </article>
       </section>
 
       {/* 3. Bottom Tier: action-first quality queue */}

@@ -105,7 +105,7 @@ _CATALOG: list[CatalogItem] = [
         profile="IT_SERVICES",
         alarm_count=500,
         chain_count=226,
-        description="Observed IT alarms with directed source relations to microservice topology.",
+        description="Observed IT alarms with bounded topoIT source-relation navigation; source-field mappings and dependencies remain unverified.",
         badge="Real Replay",
         file_path="real_alarm_it_demo.json",
     ),

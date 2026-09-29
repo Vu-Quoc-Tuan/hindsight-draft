@@ -9,6 +9,7 @@ import pytest
 from nocpro_api import create_app
 from nocpro_api.catalog import load_preset_payload
 from nocpro_api.cohesion_advisor import (
+    _build_topology_connectivity,
     _resolve_recommendations,
     _quality_stars_for_score,
     _topology_source_status,
@@ -141,26 +142,6 @@ def test_grounding_diagnostic_refresh_does_not_hide_raw_provider_prose_behind_ca
     assert _should_preserve_cached_cohesion(cached, rejected_raw, "same-input") is False
 
 
-def test_persisted_deep_dive_projection_restores_p2_attributes():
-    value = hydrate_persisted_deep_dive({
-        "over_merge_strength": "MODERATE",
-        "over_merge_narrative": "possible split",
-        "topology_hypotheses": {
-            "dominator": {
-                "status": "AVAILABLE",
-                "witness_resource_id": "core-1",
-                "covered_resource_ids": ["r1"],
-            },
-            "propagation": {
-                "status": "UNAVAILABLE",
-                "node_scores": [],
-                "hypotheses": [],
-            },
-        },
-    })
-
-    assert value.over_merge.strength == "MODERATE"
-    assert value.topology_hypotheses.dominator.witness_resource_id == "core-1"
 
 
 def test_chain_6335571_findings_are_evidence_bounded():
@@ -198,6 +179,15 @@ def test_chain_6335571_findings_are_evidence_bounded():
         for path in context["topology"]["display_paths"]
     )
     assert context["topology"]["max_path_hops"] == 4
+    assert any(path["relation_type"] == "MIXED" for path in context["topology"]["display_paths"])
+    for path in context["topology"]["display_paths"]:
+        assert len(path["edge_relation_types"]) == path["hop_count"]
+        assert len(path["edge_provenance"]) == path["hop_count"]
+        assert all(
+            source_record.get("source_version")
+            for hop in path["edge_provenance"]
+            for source_record in hop["source_records"]
+        )
     assert context["topology"]["dependency_verified"] is False
     assert context["alarm_observation_groups"]
     assert all("device" in item and "alarm_name" in item for item in context["alarm_observation_groups"])
@@ -224,6 +214,92 @@ def test_chain_6335571_findings_are_evidence_bounded():
         "không có điểm đứt gãy",
     ):
         assert unsupported not in rendered
+
+
+def test_topology_connectivity_traverses_mixed_relations_with_edge_provenance():
+    mappings = [
+        {
+            "alarm_id": "a1",
+            "resource_id": "instance-a",
+            "mapping_status": "EXACT",
+            "topology_layer": "IT",
+        },
+        {
+            "alarm_id": "a2",
+            "resource_id": "instance-b",
+            "mapping_status": "EXACT",
+            "topology_layer": "IT",
+        },
+    ]
+    edges = [
+        {
+            "source_resource_id": "service",
+            "target_resource_id": "module-a",
+            "relation_type": "SERVICE_HAS_MODULE",
+            "directed": True,
+            "source_id": "service_module.csv",
+            "source_kind": "REAL_EXPORT_REPLAY",
+            "source_version": "sha256:topology-v1",
+            "provenance_class": "EXTERNAL_OPERATIONAL",
+            "provenance_subtype": "TOPOLOGY_EXTERNAL",
+        },
+        {
+            "source_resource_id": "module-a",
+            "target_resource_id": "instance-a",
+            "relation_type": "MODULE_HAS_INSTANCE",
+            "directed": True,
+            "source_id": "service_module.csv",
+            "source_kind": "REAL_EXPORT_REPLAY",
+            "source_version": "sha256:topology-v1",
+            "provenance_class": "EXTERNAL_OPERATIONAL",
+            "provenance_subtype": "TOPOLOGY_EXTERNAL",
+        },
+        {
+            "source_resource_id": "service",
+            "target_resource_id": "module-b",
+            "relation_type": "SERVICE_HAS_MODULE",
+            "directed": True,
+            "source_id": "service_module.csv",
+            "source_kind": "REAL_EXPORT_REPLAY",
+            "source_version": "sha256:topology-v1",
+            "provenance_class": "EXTERNAL_OPERATIONAL",
+            "provenance_subtype": "TOPOLOGY_EXTERNAL",
+        },
+        {
+            "source_resource_id": "module-b",
+            "target_resource_id": "instance-b",
+            "relation_type": "MODULE_HAS_INSTANCE",
+            "directed": True,
+            "source_id": "service_module.csv",
+            "source_kind": "REAL_EXPORT_REPLAY",
+            "source_version": "sha256:topology-v1",
+            "provenance_class": "EXTERNAL_OPERATIONAL",
+            "provenance_subtype": "TOPOLOGY_EXTERNAL",
+        },
+    ]
+
+    result = _build_topology_connectivity(
+        raw_mappings=mappings,
+        raw_edges=edges,
+        member_ids={"a1", "a2"},
+        alarm_devices={"a1": "device-a", "a2": "device-b"},
+    )
+
+    assert result["connected_pair_count"] == 1
+    path = result["paths"][0]
+    assert path["relation_type"] == "MIXED"
+    assert set(path["edge_relation_types"]) == {
+        "SERVICE_HAS_MODULE",
+        "MODULE_HAS_INSTANCE",
+    }
+    assert len(path["edge_provenance"]) == 4
+    assert all(
+        source_record["source_version"] == "sha256:topology-v1"
+        and source_record["provenance_subtype"] == "TOPOLOGY_EXTERNAL"
+        for hop in path["edge_provenance"]
+        for source_record in hop["source_records"]
+    )
+    assert path["traversal_semantic"] == "UNDIRECTED_STRUCTURAL_CONNECTIVITY"
 
 
 def test_topology_analysis_completeness_is_not_display_path_truncation():
@@ -1246,38 +1322,13 @@ def test_ai_investigation_does_not_reject_a_grounded_detailed_answer_by_sentence
     assert result.provider_status == "OK"
 
 
-def test_cohesion_narrative_rich_p2_and_operational_insights():
-    """Verify that P2 deep dive facts enrich context, findings, and generate actionable operational insights."""
+def test_cohesion_narrative_tier2_audit_and_operational_insights():
+    """Verify Audit facts and operational context remain grounded without directed topology analysis."""
     payload, _profile = load_preset_payload("real_alarm_it_demo")
     workspace = Workspace()
     try:
         workspace.replace_snapshot(payload)
         deep_dive_analysis = SimpleNamespace(
-            topology_hypotheses=SimpleNamespace(
-                dominator=SimpleNamespace(
-                    status=SimpleNamespace(value="AVAILABLE"),
-                    witness_resource_id="10.210.48.136",
-                    covered_resource_ids=("10.210.48.136", "10.210.48.96"),
-                    semantic="DOMINATOR",
-                    relation_type="TRANSIT",
-                ),
-                propagation=SimpleNamespace(
-                    status=SimpleNamespace(value="AVAILABLE"),
-                    candidate_node_count=2,
-                    candidate_edge_count=1,
-                    node_scores=(SimpleNamespace(alarm_id="ALM-1", score=0.75),),
-                    hypotheses=(
-                        SimpleNamespace(
-                            source_alarm_id="6335571",
-                            target_alarm_id="6335572",
-                            score=0.88,
-                            transition_probability=0.85,
-                            temporal_delta_seconds=12.5,
-                        ),
-                    ),
-                ),
-                dependency_scope=None,
-            ),
             evidence_attribution=SimpleNamespace(
                 status=SimpleNamespace(value="AVAILABLE"),
                 total_coverage=0.92,
@@ -1289,8 +1340,8 @@ def test_cohesion_narrative_rich_p2_and_operational_insights():
                         supported_pair_count=18,
                     ),
                     SimpleNamespace(
-                        group_id="TOPOLOGY_TRANSIT",
-                        derivation_tag="TRANSIT",
+                        group_id="dependency_hop",
+                        derivation_tag="IP_ADJACENCY",
                         attribution=0.27,
                         supported_pair_count=8,
                     ),
@@ -1326,13 +1377,11 @@ def test_cohesion_narrative_rich_p2_and_operational_insights():
             deep_dive_analysis=deep_dive_analysis,
         )
 
-        # 1. Verify P2 enriched facts
-        assert "tier2_p2" in context
-        p2 = context["tier2_p2"]
-        assert p2["dominator"]["witness_resource_id"] == "10.210.48.136"
-        assert len(p2["dominator"]["covered_resource_ids"]) == 2
-        assert p2["propagation"]["hypotheses"][0]["prob"] == 0.85
-        assert len(p2["evidence_attribution"]["contributions"]) == 2
+        # Tier-2 Audit facts remain separate from deferred directed-topology analysis.
+        assert "tier2_audit" in context
+        tier2_audit = context["tier2_audit"]
+        assert tier2_audit["over_merge"]["strength"] == "NONE"
+        assert len(tier2_audit["evidence_attribution"]["contributions"]) == 2
 
         # 2. Verify Operational Insights
         assert "operational_insights" in context
@@ -1342,12 +1391,10 @@ def test_cohesion_narrative_rich_p2_and_operational_insights():
         assert op["actionable_takeaway"] is not None
         assert "tập trung xử lý tại thiết bị khởi phát" in op["actionable_takeaway"]
 
-        # 3. Verify Analytical Findings include Dominator & Propagation
+        # 3. Findings retain the structural Audit result; no causal topology claim is added.
         findings = {item["finding_id"]: item for item in context["analytical_findings"]}
-        assert "TOPOLOGY_DOMINATOR_WITNESS" in findings
-        assert "10.210.48.136" in findings["TOPOLOGY_DOMINATOR_WITNESS"]["claim"]
-        assert "TOPOLOGY_PROPAGATION_FLOW" in findings
-        assert findings["TOPOLOGY_PROPAGATION_FLOW"]["status"] == "AVAILABLE"
+        assert "AUDIT_COHESION" in findings
+        assert not any("DOMINATOR" in key or "TOPOLOGY_PROPAGATION" in key for key in findings)
 
         # 4. Verify the overview narrative stays short and adds an insight
         # instead of repeating the rating/topology cards.

@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from benchmarks.calibrate_thresholds import (
     _quantile,
-    load_packages_from_directory,
     run_calibration,
 )
 from configuration import load_analysis_config
@@ -20,19 +18,18 @@ def test_quantile_calculation() -> None:
     assert _quantile(data, 0.5) == 30.0
 
 
-def test_calibration_generates_valid_yaml_and_report(tmp_path: Path) -> None:
+def test_calibration_applies_valid_families_without_report(tmp_path: Path, monkeypatch) -> None:
+    from benchmarks import calibrate_thresholds
     repo_root = Path(__file__).resolve().parents[1]
-    synthetic_dir = repo_root.parent / "nocpro-mock" / "docs" / "examples" / "synthetic"
-    
-    packages = []
-    if synthetic_dir.is_dir():
-        packages = load_packages_from_directory(synthetic_dir)
+    monkeypatch.setattr(calibrate_thresholds, "calculate_temporal_gaps", lambda packages: [45.0] * 5)
+    monkeypatch.setattr(calibrate_thresholds, "calculate_support_scores", lambda packages, config_path: [0.4] * 10)
+    monkeypatch.setattr(calibrate_thresholds, "calculate_conductance_values", lambda packages, **kwargs: [0.2] * 20)
 
     out_yaml = tmp_path / "calibrated.yaml"
     report_json = tmp_path / "report.json"
 
-    base_raw, report = run_calibration(
-        packages=packages,
+    base_raw, _ = run_calibration(
+        packages=[],
         base_config_yaml=repo_root / "config" / "thresholds" / "v1.yaml",
         output_yaml=out_yaml,
         report_json=report_json,
@@ -40,22 +37,12 @@ def test_calibration_generates_valid_yaml_and_report(tmp_path: Path) -> None:
     )
 
     assert out_yaml.exists()
-    assert report_json.exists()
+    assert not report_json.exists()
 
     # Must be readable by load_analysis_config without schema errors
     config = load_analysis_config(out_yaml)
-    assert config.config_version == "v1-calibrated"
-    assert config.value("temporal.burst.gap_seconds") > 0
+    assert config.config_version.startswith("v1-calibrated-")
+    assert config.value("temporal.burst.gap_seconds") == 45
     assert config.value("role.s_min") >= config.value("role.s_weak")
-
-    # Verify report structure
-    report_data = json.loads(report_json.read_text(encoding="utf-8"))
-    assert report_data["output_config_path"] == str(out_yaml)
-    assert len(report_data["calibrated_parameters"]) > 0
-    assert "postgresql+asyncpg://nocpro:****@localhost:5432/nocpro" in report_data["database_url_masked"]
-    assert "chains_loaded" in report_data
-    assert "chains_evaluated" in report_data
-    assert "chains_skipped_large" in report_data
-    assert "chains_failed" in report_data
-    assert report.chains_loaded >= report.chains_evaluated
-
+    assert config.value("audit.global_weak_baseline") == 0.2
+    assert base_raw["status"] == "baseline_requires_calibration"

@@ -40,7 +40,6 @@ from .schemas import (
     AssistantQueryInput,
     AssistantResponseView,
     AuditVisualizationArtifactView,
-    CalibrationReportView,
     ConfigUpdateInput,
     ConfigView,
     EvolutionView,
@@ -2073,18 +2072,21 @@ async def get_review_job_proposals_clarity(
         comparison_res = compare_proposal_explanations(candidates_raw, package=pkg)
 
         ai_model = "DETERMINISTIC_EVIDENCE"
-        ai_provider_status = "NOT_CONFIGURED"
+        has_eligible_proposal = bool(
+            comparison_res.proposals and comparison_res.top_proposal_id
+        )
+        ai_provider_status = "NOT_CONFIGURED" if has_eligible_proposal else "NOT_APPLIED"
         overall_rationale = comparison_res.overall_recommendation_rationale
         try:
             from .grounded_llm import is_provider_configured, render_grounded
-            if is_provider_configured() and overall_rationale:
+            if has_eligible_proposal and is_provider_configured() and overall_rationale:
                 rendered = await _run_grounded_provider(
                     render_grounded,
                     draft=overall_rationale,
                     facts={
                         "top_proposal": comparison_res.top_proposal_operation,
                         "top_proposal_id": comparison_res.top_proposal_id,
-                        "candidates_count": len(candidates_raw),
+                        "candidates_count": len(comparison_res.proposals),
                     },
                     fact_refs=[job.chain_id, comparison_res.top_proposal_operation or ""],
                     purpose="ADVISOR",
@@ -2747,11 +2749,10 @@ async def reset_config(request: Request) -> ConfigView:
         raise translate_error(exc) from exc
 
 
-@router.post("/config/calibrate", response_model=CalibrationReportView)
-async def calibrate_config(request: Request) -> CalibrationReportView:
+@router.post("/config/calibrate", status_code=204)
+async def calibrate_config(request: Request) -> None:
     try:
-        report = await workspace(request).calibrate_from_database(include_fixtures=True)
-        return CalibrationReportView(**report)
+        await workspace(request).calibrate_from_database()
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -2852,7 +2853,6 @@ async def get_topology_resolve(
         "mapping_status": "UNMAPPED",
         "source_field": None,
         "navigation_eligible": False,
-        "p2_mapping_eligible": False,
         "dependency_semantics": "UNAVAILABLE",
     }
 

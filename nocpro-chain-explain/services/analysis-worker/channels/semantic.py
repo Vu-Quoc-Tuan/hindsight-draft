@@ -18,6 +18,7 @@ from libs.contracts import IngestedAlarm
 from libs.provenance import ProvenanceClass
 
 from .base import ChannelValue, unavailable
+from .field_values import read_alarm_string_field
 
 CHANNEL_ID = "S"
 DERIVATION_TAG = "semantic"
@@ -58,8 +59,8 @@ def evaluate_semantic_channel(
     taxonomy: AlarmTaxonomy = EMPTY_TAXONOMY,
 ) -> ChannelValue:
     """Evaluate ``S`` for a pair."""
-    left = (alarm_a.alarm_name or "").strip() or None
-    right = (alarm_b.alarm_name or "").strip() or None
+    left = read_alarm_string_field(alarm_a, "alarm_name")
+    right = read_alarm_string_field(alarm_b, "alarm_name")
 
     if left is None or right is None:
         return unavailable(

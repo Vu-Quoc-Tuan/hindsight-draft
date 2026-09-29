@@ -65,7 +65,6 @@ def app() -> FastAPI:
             "mapping_status": "UNIQUE_SOURCE_FIELD_MATCH",
             "source_field": "service_name",
             "navigation_eligible": True,
-            "p2_mapping_eligible": False,
             "dependency_semantics": "UNVERIFIED",
         }
     )
@@ -135,7 +134,6 @@ async def test_topology_resolve(app: FastAPI):
     data = res.json()
     assert data["status"] == "AVAILABLE"
     assert data["resource_id"] == "svc1"
-    assert data["p2_mapping_eligible"] is False
     assert data["dependency_semantics"] == "UNVERIFIED"
 
 

@@ -1,0 +1,79 @@
+schema_version: audit-scope-policy-v1
+policy_id: audit-exact-scope-v1
+policy_version: "1"
+description: >-
+  Conservative scope rules for the exact chain evaluator used by Structural
+  Audit. Every distinct pair in the declared chain is applicable unless a
+  future version adds an explicit, pre-registered rule proving otherwise.
+approval_status: UNAPPROVED_DIAGNOSTIC_POLICY
+scope_rules:
+  - rule_id: alarm_pair_in_declared_diagnostic_population
+    rule_version: "1"
+    predicate: every_distinct_pair
+    source: chain_member_universe
+    description: Every distinct unordered pair in the frozen chain is in scope.
+channels:
+  - channel_id: E_reference
+    execution_binding: exact_chain_evaluator
+    scope_rule_id: alarm_pair_in_declared_diagnostic_population
+    required_scope_metadata: []
+    not_applicable_rule_ids: []
+    missing_input_policy: applicable_unavailable
+  - channel_id: E_device
+    execution_binding: exact_chain_evaluator
+    scope_rule_id: alarm_pair_in_declared_diagnostic_population
+    required_scope_metadata: []
+    not_applicable_rule_ids: []
+    missing_input_policy: applicable_unavailable
+  - channel_id: E_card
+    execution_binding: exact_chain_evaluator
+    scope_rule_id: alarm_pair_in_declared_diagnostic_population
+    required_scope_metadata: []
+    not_applicable_rule_ids: []
+    missing_input_policy: applicable_unavailable
+  - channel_id: E_site
+    execution_binding: exact_chain_evaluator
+    scope_rule_id: alarm_pair_in_declared_diagnostic_population
+    required_scope_metadata: []
+    not_applicable_rule_ids: []
+    missing_input_policy: applicable_unavailable
+  - channel_id: E_remote
+    execution_binding: exact_chain_evaluator
+    scope_rule_id: alarm_pair_in_declared_diagnostic_population
+    required_scope_metadata: []
+    not_applicable_rule_ids: []
+    missing_input_policy: applicable_unavailable
+  - channel_id: S
+    execution_binding: exact_chain_evaluator
+    scope_rule_id: alarm_pair_in_declared_diagnostic_population
+    required_scope_metadata: []
+    not_applicable_rule_ids: []
+    missing_input_policy: applicable_unavailable
+  - channel_id: T_burst
+    execution_binding: exact_chain_evaluator
+    scope_rule_id: alarm_pair_in_declared_diagnostic_population
+    required_scope_metadata: []
+    not_applicable_rule_ids: []
+    missing_input_policy: applicable_unavailable
+  - channel_id: T_delay
+    execution_binding: exact_chain_evaluator
+    scope_rule_id: alarm_pair_in_declared_diagnostic_population
+    required_scope_metadata: []
+    not_applicable_rule_ids: []
+    missing_input_policy: applicable_unavailable
+  - channel_id: Dep_hop
+    execution_binding: exact_chain_evaluator
+    scope_rule_id: alarm_pair_in_declared_diagnostic_population
+    required_scope_metadata: []
+    not_applicable_rule_ids: []
+    missing_input_policy: applicable_unavailable
+capability_catalog:
+  H:
+    status: EXCLUDED_BY_EXECUTION_PROFILE
+    reason: H is behavior-only PairWHY evidence and does not enter the exact Audit evaluator.
+  H_domain:
+    status: CANDIDATE_HYPEREDGE_ONLY
+    reason: Failure-domain evidence proposes candidate blocks; it is not pairwise clique evidence.
+  Dep_embed:
+    status: NOT_IN_DEFAULT_AUDIT_EXECUTION_PROFILE
+    reason: The canonical exact Tier-2 Audit path does not invoke the topology embedding evaluator.

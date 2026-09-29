@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('active chain opens the application topology workspace without promoting navigation to P2', async ({ page }) => {
+test('active chain opens the topology workspace without promoting navigation to dependency evidence', async ({ page }) => {
   const topologyEndpoint = `${(process.env.NOCPRO_E2E_TOPOLOGY_URL || 'http://127.0.0.1:3000/api/v1/topology').replace(/\/$/, '')}/resolve`
   const sourceIdentifier = process.env.NOCPRO_E2E_IT_SOURCE_IDENTIFIER
   test.skip(!sourceIdentifier, 'acceptance must select an unambiguous IT source identifier')
@@ -13,12 +13,10 @@ test('active chain opens the application topology workspace without promoting na
   const resolution = await resolutionResponse.json() as {
     status: string
     resource_id: string | null
-    p2_mapping_eligible: boolean
     dependency_semantics: string
   }
   expect(resolution.status).toBe('AVAILABLE')
   expect(resolution.resource_id).toBeTruthy()
-  expect(resolution.p2_mapping_eligible).toBe(false)
   expect(resolution.dependency_semantics).toBe('UNVERIFIED')
 
   const chainsResponse = await page.request.get('/api/v1/chains')

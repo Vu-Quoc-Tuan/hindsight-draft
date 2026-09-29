@@ -336,6 +336,50 @@ def test_descriptor_candidates_use_the_mined_extent():
     assert candidates[0].members == frozenset({"a0", "a1", "a2"})
 
 
+def test_generated_descriptor_candidate_is_scoped_to_the_chain():
+    from audit.candidates import generate_candidates
+    from descriptor import Descriptor, DescriptorKind, DescriptorMetrics, Predicate
+
+    in_chain = [
+        alarm("a1", alarm_name="Power supply failed"),
+        alarm("a2", alarm_name="Power supply failed"),
+    ]
+    outside_chain = alarm("b1", alarm_name="Power supply failed")
+    universe = [*in_chain, outside_chain]
+    index = build_predicate_index(universe)
+    predicate = next(
+        item
+        for item in index.predicates()
+        if item.field == "alarm_name" and item.value == "Power supply failed"
+    )
+    descriptor = Descriptor(
+        kind=DescriptorKind.IDENTITY,
+        predicates=(predicate,),
+        extent=index.bitmap(predicate),
+        metrics=DescriptorMetrics(
+            true_positives=2,
+            false_positives=1,
+            target_size=2,
+            universe_size=3,
+        ),
+    )
+
+    candidates = generate_candidates(
+        alarms=in_chain,
+        dependency_edges=[],
+        failure_domains=[],
+        descriptors=(descriptor,),
+        predicate_index=index,
+        include_derived=False,
+    )
+
+    descriptor_candidate = next(
+        candidate for candidate in candidates
+        if candidate.source is CandidateSource.DESCRIPTOR
+    )
+    assert descriptor_candidate.members == frozenset({"a1", "a2"})
+
+
 def test_derived_candidates_are_union_and_difference():
     a = Candidate(source=CandidateSource.ENTITY, members=frozenset({"1", "2", "3"}), label="A")
     b = Candidate(source=CandidateSource.ENTITY, members=frozenset({"3", "4", "5"}), label="B")

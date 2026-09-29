@@ -16,6 +16,7 @@ services:
       - "127.0.0.1:${API_HOST_PORT:-8000}:8000"
     environment:
       NOCPRO_LIVE_UPDATES_ENABLED: "${NOCPRO_LIVE_UPDATES_ENABLED:-false}"
+      NOCPRO_INITIAL_SNAPSHOT_ID: "${NOCPRO_INITIAL_SNAPSHOT_ID:-real_alarm_it_demo}"
 
   web:
     ports: !override

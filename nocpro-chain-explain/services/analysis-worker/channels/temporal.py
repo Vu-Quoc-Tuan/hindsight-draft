@@ -26,6 +26,7 @@ from libs.contracts import IngestedAlarm
 from libs.provenance import ProvenanceClass
 
 from .base import ChannelValue, unavailable
+from .field_values import read_alarm_string_field
 
 BURST_CHANNEL = "T_burst"
 BURST_DERIVATION = "temporal_burst"
@@ -58,9 +59,9 @@ def context_key(alarm: IngestedAlarm, fields: tuple[str, ...]) -> str | None:
     burst question is not answerable, and a global fallback is forbidden.
     """
     for name in fields:
-        value = getattr(alarm, name, None) or alarm.raw.get(name)
-        if value and str(value).strip():
-            return f"{name}={str(value).strip()}"
+        value = read_alarm_string_field(alarm, name)
+        if value is not None:
+            return f"{name}={value}"
     return None
 
 
